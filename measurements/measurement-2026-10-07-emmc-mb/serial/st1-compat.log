@@ -1,0 +1,154 @@
+RB2
+NewTOS booting on rpi4
+[serial] output on: boot arguments contain `serial=on`
+Phase 02 reached.
+[mm] DTB at 0x0000000000000100
+[mm] firmware: ARM memory bank 0: 0x0000000000000000 + 1006632960 bytes (960 MiB)
+[mm] firmware: VC memory: 0x000000003c000000 + 67108864 bytes (64 MiB)
+[mm] device tree: no usable /memory node (blob invalid or absent)
+[mm] memory map:
+[mm]   DRAM  : 0x0000000000000000..0x000000003c000000 (1006632960 bytes) — source: firmware
+[mm]   kernel: 0x0000000000080000..0x00000000002d3000 (2437120 bytes)
+[mm]   ST-RAM: 0x0000000000400000..0x0000000000e00000 (10485760 bytes)
+[mm]   TT-RAM: 0x0000000001000000..0x000000003be00000 (987758592 bytes)
+[mm]   OSrsvd: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]     heap: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]   MMIO 00: 0x00000000fd500000..0x00000000fd510000
+[mm]   MMIO 01: 0x00000000fe000000..0x00000000ff000000
+[mm]   MMIO 02: 0x00000000ff800000..0x0000000100000000
+[mm] MMU reinstalled (high-half via TTBR1, TTBR0 deferred to Phase 06).
+[mm] frames ST-RAM: total=2560 used=0 free=2560 (10485760 B free)
+[mm] frames TT-RAM: total=241152 used=0 free=241152 (987758592 B free)
+[mm] alloc ST-RAM frame -> 0x0000000000400000
+[mm] alloc TT-RAM frame -> 0x0000000001000000
+[mm] heap after init: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[mm] heap smoke OK
+[mm] heap after smoke: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[fb] VideoCore display geometry detected: 640x480
+[fb] alpha mode = 2
+[fb] 640x480 pitch 2560 virtual height 960 -> 2 screen page(s), 2400 KiB
+[fb] VideoCore fb up: 640x480 stride 640px
+[mm] memory protection ON: table arena 0x01000000+2472 tables
+[mm] BDOS pools: ST-RAM 0x00400000+10485760 TT-RAM 0x019a8000+977633280
+[mm] user address space: pools mapped VA = PA (472 shared L3 tables, 4-KiB pages, rights per process)
+[mm] BDOS ST-RAM after init: total=10485760 free=10485760 used=0 largest_free=10485760 (free_mds=1 alloc_mds=0)
+[mm] BDOS TT-RAM after init: total=977633280 free=977633280 used=0 largest_free=977633280 (free_mds=1 alloc_mds=0)
+[emmc] SD card on controller @ 0xffff0000fe300000
+[emmc] M1 SLOTISR_VER=0x24020000 (SDHCI spec 0x02) CAPABILITIES=0x052134b4 (base 52 MHz)
+[emmc] M1 CONTROL0=0x00000f00 CONTROL1=0x000e0207 div=2 -> SDCLK ~13000000 Hz
+[emmc] M1 mailbox clock rate: EMMC(1)=50000000 Hz EMMC2(12)=700000000 Hz
+[emmc] FS08 mode: emmc=compat (CMD17/CMD24 per sector) — bus 1-bit (not attempted, emmc=compat, SCR SD_BUS_WIDTHS=0x0), CONTROL0[1] Data Transfer Width=0
+[emmc] M1 during identification: 2 error(s), 0 timeout(s), 2 recovery(ies) CTO=2
+[clock] seeded from kernel8.img: 2026-10-07 10:54:40
+[emmc] === microSD (SD-host) read/write test ===
+[emmc] card initialised: 524288 blocks (256 MiB)
+[emmc] sector 0: 00 00 00 00 ..., sig=0xaa55 (valid 55AA)
+[emmc] write+read-back @ sector 524287 OK (restored)
+[emmc] CMD17 rejected by card: status=0x40000900 ADDRESS_ERROR (state 4)
+[emmc] CMD24 rejected by card: status=0x40000900 ADDRESS_ERROR (state 4)
+[emmc] R1 out-of-range probe @ block 528384: read -> Err(Card), write -> Err(Card) OK (refused)
+[emmc] R1 probe: 2 card rejection(s), last status=0x40000900 ADDRESS_ERROR=2
+[emmc] FS08 multi-read 64 sectors @ 524224 (to the card's end): multi Ok(()), single Ok(()), equal=true OK
+[emmc] FS08 multi-write 64 sectors: write Ok(()), read-back multi=true single=true, restored=true (card rejections +0, io errors +0, timeouts +0) OK
+[emmc] mounted 2 partition(s); Drvmap=0xc
+[emmc] Rwabs(read sec 0 of C:) -> 0 ; first eb 3c, sig=0xaa55 OK
+[emmc] Rwabs(PHYS abs-sec 0) -> 0 ; ==raw_block:true !=logical:true OK
+[emmc] Getbpb(C:) recsiz=512 clsiz=4 clsizb=2048 rdlen=32 fsiz=256 fatrec=257 datrec=545 numcl=65399 flags=0x1
+[emmc] Getbpb(D:) -> ptr
+[emmc] FAT mount(C:) clsizb=2048 numcl=65399 root@513(rel)
+[emmc] HELLO.TXT cluster=15 size=32
+[emmc] chain length=1 (expected 1 clusters) OK
+[emmc] cluster[0] first bytes: "Hello from the NewTOS desktop!
+"
+[emmc] fat_entry(2) -> Some(0) (expect Some(3))
+[emmc]   entry: "SPOTLI~1   " attr=0x12 cl=4 size=0
+[emmc]   entry: "README  TXT" attr=0x20 cl=12 size=64
+[emmc]   entry: "HELLO   TXT" attr=0x20 cl=15 size=32
+[emmc]   entry: "CONFIG  TXT" attr=0x20 cl=18 size=20
+[emmc]   entry: "NEWDESK INF" attr=0x20 cl=21 size=21
+[emmc]   entry: "KEYBOARDKBD" attr=0x20 cl=24 size=28
+[emmc]   entry: "KERNEL8 IMG" attr=0x20 cl=27 size=4096
+[emmc]   entry: "LYNXBOOTIMG" attr=0x20 cl=31 size=512
+[emmc]   entry: "DATA    BIN" attr=0x20 cl=34 size=4096
+[emmc]   entry: "ACC        " attr=0x10 cl=36 size=0
+[emmc]   entry: "GEMSYS     " attr=0x10 cl=39 size=0
+[emmc]   entry: "SUB        " attr=0x10 cl=42 size=0
+[emmc]   entry: "PROOF   TXT" attr=0x20 cl=50 size=19
+[emmc]   entry: "AUTO       " attr=0x10 cl=54 size=0
+[emmc]   entry: "HELLO   NCP" attr=0x20 cl=62 size=4388
+[emmc]   entry: "PHYSBASENCP" attr=0x20 cl=82 size=6616
+[emmc]   entry: "BIG     NCP" attr=0x20 cl=72 size=16336
+[emmc]   entry: "HELLO2  NCP" attr=0x20 cl=67 size=5968
+[emmc]   entry: "CMDLINE NTP" attr=0x20 cl=106 size=6752
+[emmc]   entry: "CMDLINE NCP" attr=0x20 cl=100 size=6752
+[emmc]   entry: "SCRFLIP NCP" attr=0x20 cl=88 size=7224
+[emmc]   entry: "ARGVTESTNAP" attr=0x20 cl=112 size=9040
+[emmc]   entry: "SYSACC2 NAC" attr=0x20 cl=137 size=7752
+[emmc]   entry: "DTACHILDNCP" attr=0x20 cl=119 size=6104
+[emmc]   entry: "LIBTEST NCP" attr=0x20 cl=143 size=98856
+[emmc]   entry: "SYSINFO NCP" attr=0x20 cl=124 size=10240
+[emmc]   entry: "CLOCKTSTNCP" attr=0x20 cl=194 size=94664
+[emmc]   entry: "SETJMPT NCP" attr=0x20 cl=243 size=13760
+[emmc]   entry: "MATHTST NCP" attr=0x20 cl=252 size=68992
+[emmc]   entry: "LDG        " attr=0x10 cl=286 size=0
+[emmc]   entry: "LDGTEST NCP" attr=0x20 cl=321 size=118312
+[emmc]   entry: "ZVIEW      " attr=0x10 cl=379 size=0
+[emmc]   entry: "COREMARK   " attr=0x10 cl=1548 size=0
+[emmc]   entry: "DUMPVDI NAP" attr=0x20 cl=1667 size=156048
+[emmc]   entry: "VDI     TSV" attr=0x20 cl=1746 size=6636
+[emmc]   entry: "VDIDRAW NAP" attr=0x20 cl=1752 size=164792
+[emmc]   entry: "APPS       " attr=0x10 cl=1833 size=0
+[emmc]   entry: "TERADESKINF" attr=0x20 cl=2345 size=3058
+[emmc] root entries=38; find("hello.txt") -> 15
+[emmc] Fopen("c:/hello.txt") -> 6
+[emmc] Fread(64) -> 32 : "Hello from the NewTOS desktop!
+"
+[emmc] Fseek(0,END) -> size=32 (expect 1000)
+[emmc] Fseek(508,SET)->-64 ; Fread(32) -> 0 across cluster 2->3: ""
+[emmc] Fread at EOF -> 0 (expect 0)
+[emmc] Fclose -> 0 OK
+[emmc] Fsfirst("c:/*.txt") -> 0
+[emmc]   match: "README.TXT" attr=0x20 size=64
+[emmc]   match: "HELLO.TXT" attr=0x20 size=32
+[emmc]   match: "CONFIG.TXT" attr=0x20 size=20
+[emmc]   match: "PROOF.TXT" attr=0x20 size=19
+[emmc] *.txt matches=4 ; final rc=-49 (expect -49 ENMFIL)
+[emmc] *.* matches=29 (expect 3, label excluded)
+[emmc] Fsfirst("c:/*.*", FA_VOL) -> 0 name="NEWTOS"
+[emmc] Dgetdrv -> 2 (default C:)
+[emmc] Dsetdrv(C:) -> drvmap=0xc ; Dgetdrv -> 2
+[emmc] Dfree(C:) -> 0 ; free=63232 total=65399 recsiz=512 clsiz=4 ; free=126464 KiB
+[emmc] Fcreate("c:/WRITE.TXT") -> 6
+[emmc] Fwrite(1500) -> 1500 ; Fclose -> 0
+[emmc] re-read size=1500 -> 1500 bytes, match=true (spans 3 clusters)
+[emmc] Fdelete(DELME.TXT) -> 0 ; re-open -> -33 (expect -33 EFILNF)
+[emmc] Fopen("c:/SUB/INNER.TXT")=-33 read=-1 : ""
+[emmc]   SUB entry: "INSIDE.TXT"
+[emmc]   SUB entry: "PROOF.TXT"
+[emmc]   SUB entry: "CURDIR.NCP"
+[emmc] Fsfirst("c:/SUB/*.*")=3 entries (expect 1: INNER.TXT)
+[emmc] Fcreate("c:/SUB/CREATED.TXT")=6 ; read back 11 : "in subdir!
+"
+[emmc] Fopen("c:/NOPE/x.txt") -> -33 (expect -34 EPTHNF)
+[emmc] Dcreate(MYDIR)=0 ; file=6 ; Ddelete(non-empty)=-36 (exp -36) ; Ddelete(empty)=0 ; re-Dcreate=0
+[emmc] Dsetpath(c:/SUB)=0 Dgetpath="\SUB" ; rel Fopen(INNER.TXT)=-33 read=-1
+[emmc] Dsetpath(..) -> Dgetpath="" (expect root "")
+[emmc] Fattrib get=0x0 set(0x21)=0x21 get=0x21 ; set(SUBDIR)=-36 (exp -36)
+[emmc] Fattrib dir GET("C:\CLIPBRD\")=0x10 (exp>=0 &0x10) dir GET("C:\CLIPBRD")=0x10 ; file GET=0x0 (&0x10==0) ; dir SET=-36 (exp -36) ; missing GET=-33 (exp -33)
+[emmc] Fdatime set=[0x6000,0x5aa1] get=[0x6000,0x5aa1] match=true
+[emmc] Frename=0 ; old open=-33 (exp -33) ; new open=6 (exp >=6)
+[emmc] sector cache: 322 hits / 294 misses (52% hit rate)
+[pcie] RC not present (no response at RC_BASE); USB disabled
+[proc] stand-in PDs: initial_basepage 0x0024a000, AES PD 0x0024a100 (read-only to all)
+[acc] loaded C:\ACC\SYSACC.NAC into slot 0 (entry 0x19aa000)
+[acc] loaded C:\SYSACC2.NAC into slot 1 (entry 0x19ad000)
+[acc] 2 file(s) found, 2 process(es) started
+[aes] gsx_malloc: screen buffer pa=0x019ae000 len=614400 (kernel-owned, WF_SCREEN)
+[sched] switch -> slot 0
+[sched] running
+[sched] switch -> slot 1
+[sched] running
+[sched] switch -> kernel client
+[acc] all accessories have issued their message wait
+[shell] sh_ldapp: starting NEWDESK, sh_nextapp=3, sh_isgem=1
+[desk] desktop up (2 drives, 0 window(s) from the context)

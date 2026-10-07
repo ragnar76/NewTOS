@@ -167,6 +167,7 @@ The BCM groups the SDHCI registers into 32-bit words (datasheet §5).
 
 ```
 1   TM_BLKCNT_EN   block-count enable
+3:2 TM_AUTO_CMD_EN 00 = none, 01 = Auto CMD12, 10 = Auto CMD23 (SD-HC 3.00 §2.2.5)
 4   TM_DAT_DIR     1 = card → host (read)
 5   TM_MULTI_BLOCK multi-block transfer
 ```
@@ -269,9 +270,59 @@ v1 card. The same OCR layout comes back in the R3 response, where
    the buffer.
 6. Wait `INTERRUPT.DATA_DONE`.
 
-Multi-block (CMD18) and writes (CMD24/25) follow the same pattern with
-`TM_MULTI_BLOCK`/`TM_BLKCNT_EN` and the opposite `TM_DAT_DIR`; added
-after single-block read works.
+### 4a. Multi-block read/write (CMD18/CMD25) — FS08, 2026-10-07
+
+SD-HC 3.00 §3.7.2.1 ("Not using DMA"), with Auto CMD12 (§1.11, §2.2.5):
+
+1. `BLKSIZECNT = (n << 16) | 512` — Block Count is 16 bits, 1..=65535
+   (§2.2.3, Table 2-5); a longer request is split into such chunks.
+2. `ARG1` = first block address, as for CMD17.
+3. `CMDTM = (18 << 24) | RSPNS_48 | CRCCHK | IXCHK | ISDATA | TM_DAT_DIR |
+   TM_MULTI_BLOCK | TM_BLKCNT_EN | TM_AUTO_CMD12` (`0x…36` low half).
+   CMD25: the same without `TM_DAT_DIR`.
+4. Wait `CMD_DONE`; check the R1 in `RESP0` (refused ⇒ no data phase).
+5. Per block: wait `READ_RDY` (`WRITE_RDY`), clear it, move 128 words.
+6. Wait `DATA_DONE` — for a multiple-block command it also covers the Auto
+   CMD12 (§3.7.1.2 Note 2).
+7. The Auto CMD12's R1b is in `RESP3` = REP[127:96] (§2.2.7, Table 2-12);
+   the driver checks it like any R1.
+
+`OUT_OF_RANGE` at the end of the card: SD Phys 9.10 §4.3.3 "When the last
+block of user area is read using CMD18, the host should ignore
+OUT_OF_RANGE"; SD-HC 3.00 §3.7.1.2 Note 3 places it in the Auto CMD12
+response or the next memory command's. The driver masks that bit in the
+Auto CMD12 response of a CMD18 that ended on the last block, and once in
+the next data command's R1 if that command stays inside the card.
+
+Errors: `INTERRUPT` bit 24 is `Auto CMD Error` (Error Interrupt Status
+bit 8, §2.2.18); details in `CONTROL2[15:0]` = Auto CMD Error Status
+(§2.2.23; bit 0 `Auto CMD12 Not Executed`). Recovery §3.10.2: if the Auto
+CMD12 was executed, CMD-line reset first, then CMD12, then DAT-line reset;
+otherwise CMD12 and the resets as in §3.8. Data-phase errors without Auto
+CMD error take the existing §3.8/§3.10.1 path.
+
+Boot argument `emmc=compat` (`kernel/src/bootargs.rs`) keeps one
+CMD17/CMD24 per sector and the 1-bit bus.
+
+### 4b. 4-bit bus (ACMD51 + ACMD6) — FS08, 2026-10-07
+
+After `CMD7` (transfer state) and the switch to ~25 MHz:
+
+1. `ACMD51 SEND_SCR` (adtc, R1, SD Phys 9.10 §4.7.4): one 8-byte block,
+   `BLKSIZECNT = (1 << 16) | 8`. The SCR is "wide width data … shifted
+   from the MSB bit" (§3.6.1), the data port is little endian (SD-HC 3.00
+   §1.7 (2)): byte 0 = SCR[63:56], byte 1 = SCR[55:48];
+   `SD_BUS_WIDTHS` = SCR[51:48] = low nibble of byte 1, bit 2 = 4-bit
+   (§5.6, Table 5-21).
+2. SD-HC 3.00 §3.4, SD-memory-only path: (1) `IRPT_MASK` bit 8 (Card
+   Interrupt Status Enable) off, (4) `ACMD6 SET_BUS_WIDTH` arg `0b10`
+   (§4.7.4: "'00'=1bit or '10'=4 bits bus"), (5) Host Control 1 bit 1
+   `Data Transfer Width` = 1 (§2.2.10; `CONTROL0` bit 1), (8) bit 8 back on.
+3. Any failure (SCR read, ACMD6 R1) leaves card and host on the 1-bit bus
+   (DAT1-3 "start to operate as DAT lines after SET_BUS_WIDTH", §3.7.1
+   Table 3-1 note 2) and is shown in the boot line `[emmc] FS08 mode: …`.
+   circle notes that SEND_SCR "may fail with a DATA_TIMEOUT on the
+   Raspberry Pi 4" (`addon/SDCard/emmc.cpp:2367`, tertiary).
 
 **How long may each of those waits take?** §7. Steps 5 and 6 are the ones
 with a card-side limit (100 ms minimum for a read, 250 ms of programming
@@ -333,9 +384,10 @@ call into `Err(BlockError::Card)`, which the BIOS adapter
 `EWRITF` on a write, the same way EmuTOS' own `sd.c` does (§5 "Mapping a
 card error" above). Each bit is additionally counted on its own
 (`ErrorStats::card_bits`), but that count is diagnostic only — it never
-changes which error code comes back. `check_r1()` is called nowhere
-except after `CMD17` (read) and `CMD24` (write); no other command's R1
-is examined this way. The table states, in our own words, what each bit
+changes which error code comes back. `check_r1()` is called after
+the data commands `CMD17`/`CMD18` (read) and `CMD24`/`CMD25` (write), on
+the Auto CMD12 response of a multiple-block transfer, and since FS08 on
+`ACMD51`/`ACMD6` at init; no other command's R1 is examined this way. The table states, in our own words, what each bit
 means and — where our code treats it differently from that shared
 baseline — what that difference is; it does not restate the
 specification's own wording, only the section it comes from.
@@ -397,7 +449,7 @@ take; §3.8.1 asks for both bits to be set, §3.10.1 arrives at them one at
 a time. That is a separate question from whether a given controller
 decodes a two-bit write — QEMU's SDHCI model does not (HW03, finding N1).
 
-> **One exception, for the day multi-block lands.** SD-HC 3.00 §3.7.1.2,
+> **One exception — handled since FS08 (§4a).** SD-HC 3.00 §3.7.1.2,
 > Note 3: "When the last block of un-protected area is read using memory
 > multiple block read command (CMD18), OUT_OF_RANGE error may occur even
 > if the sequence is correct. The Host Driver should ignore it. This
@@ -593,7 +645,8 @@ traceable. `kernel/src/drivers/bcm2711/emmc.rs`:
 |---|---|---|
 | `WRITE_BUSY_MS` | 1000 ms | §4.6.2.2 Application Note ("more than 500 ms"), doubled for margin; still below the controller's own ≈ 2.58 s |
 | `READ_MS` | 200 ms | §4.6.2.1 minimum of 100 ms, doubled for the same reason |
-| `CTRL_MS` | = `WRITE_BUSY_MS` | the phases §7.5 gives no card-side limit for: the two Command Inhibit waits, Command Complete, Buffer Write Ready |
+| `CTRL_MS` | = `WRITE_BUSY_MS` | the phases §7.5 gives no card-side limit for: the two Command Inhibit waits, Command Complete |
+| Buffer Write Ready | `WRITE_BUSY_MS` | since FS08 it also waits out the busy at the block gap of a CMD25 (§7.1 row 4) |
 | `DATA_TOUNIT` | `0xE` | SD-HC §2.2.15 maximum, see §7.3 |
 
 Each is a **duration on the ARM generic timer**, not an iteration count —

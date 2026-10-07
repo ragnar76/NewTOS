@@ -36,6 +36,12 @@ mod kernel_bootargs;
 #[cfg(test)]
 #[path = "../../../kernel/src/key_repeat.rs"]
 mod kernel_key_repeat;
+/// FS08 — the SD driver's pure transfer planning (multi-block chunking,
+/// Transfer Mode bits, SCR bus widths, the CMD18 OUT_OF_RANGE rule).
+/// Dependency-free, compiled here by path like `kernel_bootargs`.
+#[cfg(test)]
+#[path = "../../../kernel/src/drivers/bcm2711/emmc_xfer.rs"]
+mod kernel_emmc_xfer;
 
 /// ARCH03 E8b — the loader's ELF parser, compiled here by path (it is pure,
 /// `no_std`, dependency-free) so `xtask prgflags` reads the PRGFLAGS note

@@ -1,0 +1,21 @@
+QEMU trace (-trace sdcard_normal_command,sdcard_app_command,sdhci_end_transfer), FSBENCH run mbt, kernel8-v1, append 'serial=on memprot=on'
+CMD17 1175966
+CMD18 358
+CMD24 43
+CMD25 0
+CMD12 358
+ACMD06 1
+ACMD51 1
+sdhci 'Automatically issue CMD12': 358
+trace lines total:  1177093
+first CMD18 lines:
+sdcard_normal_command SD  READ_MULTIPLE_BLOCK/ CMD18 arg 0x08053c00 (mode transfer, state transfer)
+sdhci_end_transfer Automatically issue CMD12 0x00000000
+sdcard_normal_command SD    STOP_TRANSMISSION/ CMD12 arg 0x00000000 (mode transfer, state sendingdata)
+--
+sdcard_normal_command SD  READ_MULTIPLE_BLOCK/ CMD18 arg 0x08053c00 (mode transfer, state transfer)
+sdhci_end_transfer Automatically issue CMD12 0x00000000
+sdcard_normal_command SD    STOP_TRANSMISSION/ CMD12 arg 0x00000000 (mode transfer, state sendingdata)
+sdcard_normal_command SD  READ_MULTIPLE_BLOCK/ CMD18 arg 0x08063c00 (mode transfer, state transfer)
+sdhci_end_transfer Automatically issue CMD12 0x00000000
+sdcard_normal_command SD    STOP_TRANSMISSION/ CMD12 arg 0x00000000 (mode transfer, state sendingdata)

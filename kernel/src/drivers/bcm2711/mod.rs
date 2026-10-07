@@ -5,6 +5,7 @@
 //! Source: BCM2711 ARM Peripherals datasheet §1.2.4.
 
 pub mod emmc;
+pub mod emmc_xfer;
 pub mod framebuffer;
 pub mod mailbox;
 pub mod pl011;

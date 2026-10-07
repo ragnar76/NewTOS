@@ -1,0 +1,119 @@
+measurement-2026-10-07-emmc-mb -- TASK/FS08 fix part 1: the EMMC driver path
+(user decision 2026-10-07: multi-block + 4-bit bus). Developer self-evidence;
+the Tester's verdict is separate.
+
+Date 2026-10-07, branch desk-rebuild, HEAD 8a53e48 plus this change,
+uncommitted (method/fs08-emmc-change.diff). QEMU 11 raspi4b, -append
+"serial=on memprot=on" (+ emmc=compat where named), one QEMU at a time,
+bounded by sleep/kill of our own pid or the QMP helper (macOS has no
+`timeout`). No SD card, Pi or TT touched; nothing copied to any card.
+Scratch (target dirs, base cards, run clones, traces) in the session
+scratchpad; per user rule ONE base card per content, every run on an APFS
+clone (cp -c) that is deleted after the run; hashes in
+checks/kernels-and-bases-sha256.txt and checks/run-cards-sha256.txt.
+
+INPUT (FS08 evidence)
+  measurements/measurement-2026-10-07-fs08-pi/RUNINFO.TXT: real Pi FSBENCH,
+  BIOS Lrwabs ~700 KB/s, ~0.7 ms per sector, identical for 1 and 128 sectors
+  per call -> one card command per sector. docs/analysis/fs08-sd-read-2026-10-07.md
+  §2.4 / §5 options B (CMD18) and C (4-bit).
+
+CHANGE (method/fs08-emmc-change.diff)
+  kernel/src/drivers/bcm2711/emmc_xfer.rs  NEW, pure (host-tested via xtask):
+    Transfer Mode bits (SD-HC 3.00 §2.2.5: BCE bit1, Auto CMD12 = 01b in 3:2,
+    read bit4, multi bit5), MAX_BLOCKS_PER_CMD 0xFFFF (§2.2.3), chunking,
+    BLKSIZECNT packing, SCR SD_BUS_WIDTHS (SD Phys 9.10 §5.6 Table 5-21,
+    wide-width data MSB first §3.6.1), CMD18 last-block OUT_OF_RANGE rule
+    (SD Phys 9.10 §4.3.3, SD-HC 3.00 §3.7.1.2 Note 3), ACMD6 arg '10'
+    (§4.7.4), Host Control 1 bit 1 (SD-HC 3.00 §2.2.10). 8 tests.
+  kernel/src/drivers/bcm2711/emmc.rs
+    read_blocks/write_blocks: whole request in chunks of <= 65535 sectors,
+      each ONE command: read_run (CMD17 | CMD18+BCE+Auto CMD12),
+      write_run (CMD24 | CMD25+BCE+Auto CMD12), PIO per block with Buffer
+      Read/Write Ready (SD-HC 3.00 §3.7.2.1), Transfer Complete covers the
+      Auto CMD12 (§3.7.1.2 Note 2), Auto CMD12 R1b checked in RESP3
+      (§2.2.7 Table 2-12). R1 of CMD17/18/24/25 checked before data as before.
+    Auto CMD Error (INTERRUPT bit 24, §2.2.18) named in the error counters;
+      Auto CMD Error Status (CONTROL2[15:0], §2.2.23) saved/printed; recovery
+      §3.10.2: CMD-line reset before the CMD12 when the Auto CMD12 was
+      executed; otherwise the existing §3.8/§3.10.1 path (CMD12 + resets).
+    Phase::WriteRdy now has the write-busy limit (block-gap busy in a CMD25,
+      SD Phys §4.6.2.2; numerically unchanged, CTRL_MS == WRITE_BUSY_MS).
+    init_card: after CMD7 + 25 MHz, unless compat: ACMD51 SEND_SCR (8-byte
+      block), if SD_BUS_WIDTHS bit 2: SD-HC 3.00 §3.4 steps (1) card-int
+      status enable off, (4) ACMD6 arg 2 with R1 check, (5) CONTROL0 bit 1,
+      (8) back on. Any failure -> stays 1-bit, reported, init succeeds.
+    Boot line "[emmc] FS08 mode: ..." (mode, bus width, why, SCR widths,
+      CONTROL0 bit 1).
+    set_compat(): emmc=compat -> 1-bit, CMD17/CMD24 per sector (old driver).
+  kernel/src/bootargs.rs   EMMC_COMPAT = "emmc=compat" + host test.
+  kernel/src/lib.rs        set_compat(boot_switch(... EMMC_COMPAT)) before emmc::init.
+  kernel/src/selftest_emmc.rs  (feature selftest-emmc only) multi_block_test:
+    last 64 sectors of the card: CMD18 vs 64x CMD17 equal; CMD25 pattern,
+    read back multi + single; restore + check.
+  tools/xtask/src/main.rs  emmc_xfer.rs compiled by path for the host tests.
+  docs/hardware/emmc-sd.md §1 (TM bits 3:2), §4a multi-block, §4b 4-bit,
+    §5 (check_r1 callers; the CMD18 note marked handled), §7.6 (WriteRdy).
+  BIOS Rwabs (tos-api/src/bios/mod.rs:139-221) already hands the full count
+  to read_blocks/write_blocks in ONE call -> no change needed there. The
+  FAT/GEMDOS sector cache (single-sector reads/writes) is untouched (next
+  task "FAT wie EmuTOS").
+
+QEMU RESULTS (kernel8-final = kernel8-v1, sha256 dbe7835a..., release rpi4)
+  smoke1   default card, plain boot: "[emmc] FS08 mode: multi-block (CMD18/
+           CMD25 + Auto CMD12) — bus 4-bit (ACMD6 ok, SCR SD_BUS_WIDTHS=0x5),
+           CONTROL0[1] Data Transfer Width=1"; CONTROL0=0x00000f02;
+           desktop up; fsck clean.                      serial/smoke1.log
+  st1 / st1-compat  selftest-emmc kernel (afbb1216...), default / emmc=compat:
+           FS08 multi-read 64 sectors to the card's end: multi == 64x single
+           OK; multi-write 64: read-back multi=true single=true, restored,
+           +0 card rejections / io errors / timeouts OK (both modes; compat
+           = CMD17/CMD24 underneath). The GEMDOS write checks (Fcreate/
+           Fwrite 1500/re-read match, Dcreate/Ddelete, Frename, Fdatime,
+           Fattrib) print identically in both modes, and the two run cards
+           are BYTE-IDENTICAL afterwards (sha256 6ebe4fc5...); fsck clean.
+           QEMU trace (checks/q-st1-trace-head.txt, serial/st1-trace-run.log): ACMD51, ACMD06 arg 2,
+           CMD18 + "Automatically issue CMD12", CMD25 likewise.
+           (QEMU's 256 MiB card is SDSC = byte addressing; the Pi card is
+           SDHC = block addressing; both go through card_address().)
+  mb / compat  FSBENCH (C:\AUTO\FSBENCH.NCP 2362d3fb..., = Pi package),
+           two-partition card, memprot=on: summary "100 reads crc ok, 0 bad,
+           0 missing/failed" in BOTH (checks/q-{mb,compat}-FSBENCH.LOG);
+           D:\FSBENCH\ = SHA256SUMS after both; fsck clean C: and D:.
+           QEMU timings are NOT representative (no card latency modelled):
+           L1 ~4.5-5 MB/s either way.
+  mbt      FSBENCH again with QEMU trace (checks/q-mbt-command-counts.txt):
+           CMD18 = 358 = exactly the L1 "128 sec/call" calls (1+2+16+160 per
+           pass x 2 passes) -> each 128-sector Lrwabs is ONE card command;
+           Auto CMD12 358; CMD17 1 175 966 (FAT/GEMDOS sector cache + chain
+           walk, unchanged by design); 100/100 crc ok; fsck clean.
+  api-mb / api-compat  APITEST (#Z C:\APITEST.NCP): TOTAL 106/0/5 both
+           (= baseline); fsck clean.
+
+STATIC CHECKS (method/checks.sh final -> checks/final-*)
+  host tests 1185/0/1 (baseline 1176/0/1, +9 new: 8 emmc_xfer, 1 bootargs)
+  release builds rpi4 + qemu-virt (fresh): tos-api 64 / kernel 94 (= baseline)
+  clippy rpi4 / qemu-virt: tos-api 76 / kernel 125 (= baseline); no hit in a
+    changed file (also with --features selftest-emmc: 125, none in emmc.rs /
+    selftest_emmc.rs)
+  desk drift probe 31 (= baseline); SDK host tests 16/0/0 (= baseline)
+
+NOT DONE HERE (Tester / Pi)
+  GUI regression (EmuDESK/TeraDesk/QED open+save/zView/S2ALL with the
+  injector) -- Tester. GEMDOS writes are single-sector CMD24 (cache) in both
+  modes; CMD25 is reached only by BIOS Rwabs with count > 1 (selftest above).
+  Real Pi 4: bin/kernel8.img + bin/LIESMICH.TXT (not copied).
+
+PI PACKAGE  bin/kernel8.img sha256 dbe7835aed9f7a5b93e952e803bc9b7228581d51d671b49ee3f1d8285dd9817c
+  (bin/SHA256SUMS; *.img gitignored), bin/LIESMICH.TXT (German: what to
+  expect, emmc=compat fallback via cmdline.txt, FSBENCH.NC -> .NCP rename for
+  the comparison run, park again afterwards).
+
+OPEN / RISKS ON REAL HW
+  * circle (tertiary) notes ACMD51 SEND_SCR "may fail with a DATA_TIMEOUT on
+    the Raspberry Pi 4" (addon/SDCard/emmc.cpp:2367) -> we then stay 1-bit
+    (reported), multi-block still active.
+  * The Auto CMD12 response check reads RESP3 per SD-HC 3.00 Table 2-12;
+    circle does not read it. If EMMC2 did not store it there, every
+    multi-sector transfer would fail with EREADF/EWRITF -> emmc=compat.
+  * Real SDCLK of EMMC2 still unknown (M1); High Speed (option D) not done.

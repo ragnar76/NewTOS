@@ -1,0 +1,67 @@
+FS08 Teil 1 -- SD-Treiber: Mehrblock-Lesen/-Schreiben + 4-Bit-Bus
+=================================================================
+
+Kernel: kernel8.img   sha256 dbe7835aed9f7a5b93e952e803bc9b7228581d51d671b49ee3f1d8285dd9817c
+        (release, board-rpi4, Stand desk-rebuild 8a53e48 + FS08-EMMC, nicht committet)
+Nichts davon ist auf eine Karte kopiert. Kopieren nur auf Ansage des Anwenders.
+
+WAS SICH AENDERT
+  * Mehrere Sektoren in einem Aufruf (z. B. BIOS Rwabs/Lrwabs mit 128 Sektoren)
+    gehen jetzt als EIN Kartenkommando (CMD18 bzw. CMD25) an die Karte statt
+    als ein Kommando je Sektor. Die Wartezeit der Karte je Kommando faellt
+    damit einmal pro Aufruf an, nicht mehr je Sektor.
+  * Nach dem Start schaltet der Kernel den Bus von 1 Bit auf 4 Bit (ACMD6),
+    wenn die Karte es in ihrem SCR-Register meldet (praktisch jede SD-Karte).
+  * NICHT geaendert: Dateisystem/GEMDOS-Puffer. GEMDOS (Fread) liest weiterhin
+    sektorweise ueber den Puffer und laeuft die Clusterkette ab -- das ist die
+    naechste Aufgabe ("FAT wie EmuTOS"). Zu erwarten ist der Gewinn deshalb vor
+    allem in FSBENCH-Ebene L1 (BIOS) mit 128 Sektoren je Aufruf; L1 mit
+    1 Sektor je Aufruf und L2/L3 nur durch den 4-Bit-Bus (kleinerer Anteil).
+
+WAS ZU ERWARTEN IST (Pi, nicht gemessen -- QEMU bildet die Kartenlatenz nicht ab)
+  * Vorher (FS08-Pi-Messung): L1 ~630-760 KB/s, gleich fuer 1 und 128
+    Sektoren je Aufruf.
+  * Jetzt: L1 mit 128 Sektoren je Aufruf deutlich schneller als mit 1 Sektor;
+    wie viel, haengt vom echten SD-Takt der EMMC2 ab (offen, Messung M1 in
+    docs/analysis/fs08-sd-read-2026-10-07.md §5/§6). Bleiben beide Zeilen gleich,
+    ist der neue Weg NICHT aktiv -> serielles Protokoll ansehen (unten).
+  * Alle 100 Lesungen muessen weiter "crc ok" sein.
+
+SERIELLES PROTOKOLL (nur mit serial=on in cmdline.txt)
+  Eine neue Zeile nach den "[emmc] M1 ..."-Zeilen, z. B.
+    [emmc] FS08 mode: multi-block (CMD18/CMD25 + Auto CMD12) — bus 4-bit (ACMD6 ok, SCR SD_BUS_WIDTHS=0x5), CONTROL0[1] Data Transfer Width=1
+  Moegliche Abweichungen und was sie heissen:
+    "ACMD51 SEND_SCR failed" -> Bus bleibt 1 Bit, Mehrblock trotzdem aktiv
+       (laut circle kann SEND_SCR auf der Pi 4 mit DATA_TIMEOUT scheitern).
+    "card lists no 4-bit" / "ACMD6 failed" -> Bus bleibt 1 Bit.
+  Fehlerzeilen "[emmc] CMD12 rejected by card" oder "[emmc] ... error ... ACMD"
+  waehrend des Betriebs -> bitte melden (Foto/Log) und auf emmc=compat gehen.
+
+RUECKFALL OHNE KERNELTAUSCH: emmc=compat
+  Auf der Boot-Partition der Karte die Datei cmdline.txt (eine einzige Zeile).
+  Dort das Wort  emmc=compat  ergaenzen, durch Leerzeichen getrennt von den
+  anderen Eintraegen, z. B.:
+      serial=on emmc=compat
+  Gibt es keine cmdline.txt, eine neue Datei mit genau dieser einen Zeile
+  anlegen (emmc=compat, ggf. mit serial=on davor). Klein schreiben, ohne
+  Leerzeichen um das "=". Wirkung beim naechsten Start: 1-Bit-Bus, ein
+  Kommando je Sektor -- genau das bisherige Verhalten. Wort wieder entfernen
+  = neuer Weg. (Gleicher Mechanismus wie serial=on / memprot=..., TASK/SER01.)
+
+VERGLEICHSLAUF MIT FSBENCH (macht der Lead auf Ansage)
+  1. kernel8.img auf die Boot-Partition kopieren.
+  2. C:\AUTO\FSBENCH.NC zurueck in C:\AUTO\FSBENCH.NCP umbenennen
+     (liegt geparkt auf der Karte; D:\FSBENCH\ mit den 10 Testdateien muss
+     noch da sein).
+  3. Booten, Seiten fotografieren wie beim ersten Lauf (Taste je Seite).
+     FSBENCH haengt an C:\FSBENCH.LOG an -- der alte Lauf bleibt darin stehen.
+  4. Fuer den Vergleich mit demselben Kernel: zweiter Lauf mit emmc=compat in
+     cmdline.txt, danach emmc=compat wieder entfernen.
+  5. C:\FSBENCH.LOG zurueckgeben, danach C:\AUTO\FSBENCH.NCP wieder in
+     FSBENCH.NC umbenennen (parken).
+
+WENN ETWAS SCHIEFGEHT
+  * Lese-/Schreibfehler, Dateien unlesbar, Desktop meldet Fehler -> emmc=compat
+    setzen (oben) und neu starten.
+  * Start bleibt vor dem Desktop haengen -> vorherigen Kernel zurueckkopieren.
+  * Schreibtest danach am Mac: fsck_msdos -n auf C: und D: (nur lesen).

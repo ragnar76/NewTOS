@@ -72,6 +72,7 @@ pub fn run() {
     }
 
     r1_rejection_test();
+    multi_block_test();
 
     // ── partition table + BIOS Rwabs over the real trap path ──
     let n = tos_api::bios::mount();
@@ -181,6 +182,79 @@ fn r1_rejection_test() {
         }
     }
     kprintln!("");
+}
+
+/// FS08: one `CMD18` / `CMD25` over several sectors must move the same
+/// bytes as one `CMD17` / `CMD24` per sector.
+///
+/// Works on the **last** [`MB_SECTORS`] sectors of the card, so the read
+/// also covers the end-of-card case in which SD Phys 9.10 §4.3.3 tells the
+/// host to ignore a spurious `OUT_OF_RANGE` (in the Auto CMD12 response or
+/// the next command's). **Non-destructive:** the original contents are
+/// read first and written back at the end, then checked.
+fn multi_block_test() {
+    const MB_SECTORS: usize = 64;
+    const SZ: usize = 512;
+    let blocks = emmc::SDCARD.block_count();
+    if blocks <= MB_SECTORS as u64 {
+        return;
+    }
+    let lba = blocks - MB_SECTORS as u64;
+    let before = emmc::error_stats();
+    let mut orig = alloc::vec![0u8; MB_SECTORS * SZ];
+    let mut single = alloc::vec![0u8; MB_SECTORS * SZ];
+    let mut back = alloc::vec![0u8; MB_SECTORS * SZ];
+    let mut test = alloc::vec![0u8; MB_SECTORS * SZ];
+    for (i, b) in test.iter_mut().enumerate() {
+        *b = (i as u8) ^ ((i / SZ) as u8).wrapping_mul(37) ^ 0x5A;
+    }
+
+    // Multi-block read vs. one single-block read per sector.
+    let read_multi = emmc::SDCARD.read_blocks(lba, &mut orig);
+    let mut read_single = Ok(());
+    for (i, s) in single.chunks_exact_mut(SZ).enumerate() {
+        read_single = read_single.and_then(|_| emmc::SDCARD.read_blocks(lba + i as u64, s));
+    }
+    let reads_agree = read_multi.is_ok() && read_single.is_ok() && orig == single;
+    kprintln!(
+        "[emmc] FS08 multi-read {} sectors @ {} (to the card's end): multi {:?}, single {:?}, equal={} {}",
+        MB_SECTORS,
+        lba,
+        read_multi,
+        read_single,
+        orig == single,
+        if reads_agree { "OK" } else { "FAIL" },
+    );
+    if !reads_agree {
+        return; // no write without a trustworthy copy of the original
+    }
+
+    // Multi-block write, read back both ways.
+    let write_multi = emmc::SDCARD.write_blocks(lba, &test);
+    let back_multi = emmc::SDCARD.read_blocks(lba, &mut back);
+    let multi_ok = write_multi.is_ok() && back_multi.is_ok() && back == test;
+    let mut back_single = Ok(());
+    for (i, s) in back.chunks_exact_mut(SZ).enumerate() {
+        back_single = back_single.and_then(|_| emmc::SDCARD.read_blocks(lba + i as u64, s));
+    }
+    let single_ok = back_single.is_ok() && back == test;
+    // Restore, and check the restore.
+    let restore = emmc::SDCARD.write_blocks(lba, &orig);
+    let check = emmc::SDCARD.read_blocks(lba, &mut back);
+    let restored = restore.is_ok() && check.is_ok() && back == orig;
+    let after = emmc::error_stats();
+    kprintln!(
+        "[emmc] FS08 multi-write {} sectors: write {:?}, read-back multi={} single={}, restored={} (card rejections +{}, io errors +{}, timeouts +{}) {}",
+        MB_SECTORS,
+        write_multi,
+        multi_ok,
+        single_ok,
+        restored,
+        after.card_errors - before.card_errors,
+        after.io_errors - before.io_errors,
+        after.timeouts - before.timeouts,
+        if multi_ok && single_ok && restored { "OK" } else { "FAIL" },
+    );
 }
 
 /// Phase 09 D1: mount the FAT volume on `drive` and walk the cluster

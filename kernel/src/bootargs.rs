@@ -42,6 +42,13 @@ pub const ASID_ON: &[u8] = b"asid=on";
 /// every few process starts — the path that otherwise needs 65 535 of them.
 pub const ASID_TINY: &[u8] = b"asid=tiny";
 
+/// The fallback switch of the SD driver (FS08): `emmc=compat` keeps the
+/// microSD bus at 1 bit and moves every sector with its own single-block
+/// command (`CMD17`/`CMD24`) — the driver as it was before FS08. Without it
+/// the driver switches the card to the 4-bit bus (`ACMD6`) when its SCR
+/// allows, and moves multi-sector requests with one `CMD18`/`CMD25`.
+pub const EMMC_COMPAT: &[u8] = b"emmc=compat";
+
 /// `true` if `args` contains `token` as a whole whitespace-delimited token.
 ///
 /// `args` ends at its first NUL byte, if any. An empty `token` never
@@ -75,6 +82,16 @@ mod tests {
         assert!(!has_token(b"asid=tiny", ASID_ON));
         assert!(has_token(b"asid=tiny\r\n", ASID_TINY));
         assert!(!has_token(b"asid=on", ASID_TINY));
+    }
+
+    #[test]
+    fn emmc_compat_is_a_whole_token() {
+        assert!(has_token(b"serial=on emmc=compat memprot=on", EMMC_COMPAT));
+        assert!(has_token(b"emmc=compat\r\n", EMMC_COMPAT));
+        assert!(!has_token(b"emmc=compatx", EMMC_COMPAT));
+        assert!(!has_token(b"emmc=COMPAT", EMMC_COMPAT));
+        assert!(!has_token(b"emmc=", EMMC_COMPAT));
+        assert!(!has_token(b"serial=on memprot=on", EMMC_COMPAT));
     }
 
     #[test]

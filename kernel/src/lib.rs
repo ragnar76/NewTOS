@@ -344,6 +344,12 @@ extern "C" fn kernel_main_rust(dtb_phys: usize, entry_el: u64) -> ! {
     // Bring up the microSD card and mount its partitions before the boot
     // screen, so the drive map is populated when initinfo renders it.
     // board-rpi4 / QEMU raspi4b only (no block device on aarch64-virt).
+    // FS08: `emmc=compat` in the boot arguments keeps the pre-FS08 SD path
+    // (1-bit bus, one CMD17/CMD24 per sector); default is multi-block + 4-bit.
+    #[cfg(feature = "board-rpi4")]
+    drivers::bcm2711::emmc::set_compat(boot_switch(dtb, false, |args: &[u8]| {
+        bootargs::has_token(args, bootargs::EMMC_COMPAT)
+    }));
     #[cfg(feature = "board-rpi4")]
     // SAFETY: boot CPU; VideoCore firmware has released the card.
     if unsafe { drivers::bcm2711::emmc::init() } {

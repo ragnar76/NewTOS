@@ -2,11 +2,22 @@
 //!
 //! Reference: [`docs/hardware/emmc-sd.md`] — the on-board microSD card
 //! slot (EMMC2 @ `0xFE34_0000`), the SD Host Controller + SD Physical
-//! Layer specs. Bring-up scope: PIO single-block **read** (no DMA, no
-//! IRQ). First test vehicle is QEMU `raspi4b`'s `emmc` device.
+//! Layer specs. PIO data transfers (no DMA), polled (no IRQ). First test
+//! vehicle is QEMU `raspi4b`'s `emmc` device.
+//!
+//! **Transfer modes (FS08).** By default a request of more than one sector
+//! goes to the card as **one** `CMD18`/`CMD25` with Block Count and Auto
+//! CMD12 (SD-HC 3.00 §3.7.2.1, §1.11), and after identification the bus is
+//! switched to **4 bit** (`ACMD6` + Host Control 1 `Data Transfer Width`,
+//! SD-HC 3.00 §3.4) when the card's SCR says it can. The boot argument
+//! `emmc=compat` ([`crate::bootargs::EMMC_COMPAT`], applied through
+//! [`set_compat`] before [`init`]) keeps the pre-FS08 behaviour: 1-bit bus,
+//! one `CMD17`/`CMD24` per sector. The pure planning arithmetic lives in
+//! [`super::emmc_xfer`] so the host suite can test it.
 
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 
+use super::emmc_xfer::{self as xfer, Transfer, TM_DAT_CARD2HOST, TM_MULTI};
 use crate::hal::block::{BlockDevice, BlockError, SECTOR_SIZE};
 
 /// SD-host controller candidate bases (low-peripheral mode). On real
@@ -39,6 +50,10 @@ const CONTROL1: usize = 0x2C;
 const INTERRUPT: usize = 0x30;
 const IRPT_MASK: usize = 0x34;
 const IRPT_EN: usize = 0x38;
+/// `CONTROL2`: low half = **Auto CMD Error Status** (SD-HC 3.00 §2.2.23,
+/// offset 03Ch), high half = Host Control 2 (03Eh) — `docs/hardware/emmc-sd.md`
+/// §1.
+const CONTROL2: usize = 0x3C;
 const CAPABILITIES: usize = 0x40;
 const SLOTISR_VER: usize = 0xFC;
 
@@ -66,6 +81,10 @@ const INT_CMD_DONE: u32 = 1 << 0;
 const INT_DATA_DONE: u32 = 1 << 1;
 const INT_WRITE_RDY: u32 = 1 << 4;
 const INT_READ_RDY: u32 = 1 << 5;
+/// `Card Interrupt` (Normal Interrupt Status bit 8, SD-HC 3.00 §2.2.17).
+/// Its status enable in `IRPT_MASK` is switched off while the bus width
+/// changes — SD-HC 3.00 §3.4 steps (1) and (8).
+const INT_CARD: u32 = 1 << 8;
 const INT_ERROR_MASK: u32 = 0xFFFF_0000;
 
 // INTERRUPT error bits (upper half), SD-HC 3.00 §2.2.18 "Error Interrupt
@@ -81,6 +100,15 @@ const INT_ERR_CBAD: u32 = 1 << 19; // Command Index Error
 const INT_ERR_DTO: u32 = 1 << 20; // Data Timeout Error
 const INT_ERR_DCRC: u32 = 1 << 21; // Data CRC Error
 const INT_ERR_DEND: u32 = 1 << 22; // Data End Bit Error
+/// `Auto CMD Error` — Error Interrupt Status bit 8 (SD-HC 3.00 §2.2.18),
+/// bit 24 of the BCM's 32-bit `INTERRUPT` word: the Auto CMD12 that ends a
+/// multiple-block transfer failed, details in [`CONTROL2`] (§2.2.23).
+const INT_ERR_ACMD: u32 = 1 << 24;
+
+// Auto CMD Error Status (SD-HC 3.00 §2.2.23, Table 2-30).
+/// Bit 0 `Auto CMD12 Not Executed`: the controller could not issue the
+/// Auto CMD12 at all; bits 4:1 are then meaningless.
+const ACMD_NOT_EXECUTED: u32 = 1 << 0;
 
 // ── R1 card status (SD Phys 9.10 Table 4-42, `docs/hardware/emmc-sd.md`
 // §5) ────────────────────────────────────────────────────────────────
@@ -241,8 +269,7 @@ const CMD_TYPE_ABORT: u32 = 3 << 22;
 const fn cmd(index: u32) -> u32 {
     index << 24
 }
-// Transfer-mode flags (lower half).
-const TM_DAT_CARD2HOST: u32 = 1 << 4;
+// Transfer-mode flags (lower half): `emmc_xfer::TM_*`, SD-HC 3.00 §2.2.5.
 
 // SD commands as full CMDTM words.
 const GO_IDLE: u32 = cmd(0) | RSP_NONE;
@@ -255,6 +282,19 @@ const SET_BLOCKLEN: u32 = cmd(16) | RSP_48 | CMD_CRCCHK | CMD_IXCHK;
 const READ_SINGLE: u32 =
     cmd(17) | RSP_48 | CMD_CRCCHK | CMD_IXCHK | CMD_ISDATA | TM_DAT_CARD2HOST;
 const WRITE_SINGLE: u32 = cmd(24) | RSP_48 | CMD_CRCCHK | CMD_IXCHK | CMD_ISDATA;
+/// `CMD18 READ_MULTIPLE_BLOCK` (SD Phys 9.10 §4.3.3, command table §4.7.4:
+/// adtc, R1) with Block Count + Auto CMD12 (SD-HC 3.00 §2.2.5, §1.11).
+const READ_MULTIPLE: u32 =
+    cmd(18) | RSP_48 | CMD_CRCCHK | CMD_IXCHK | CMD_ISDATA | TM_DAT_CARD2HOST | TM_MULTI;
+/// `CMD25 WRITE_MULTIPLE_BLOCK` (SD Phys 9.10 §4.3.4, §4.7.4: adtc, R1)
+/// with Block Count + Auto CMD12.
+const WRITE_MULTIPLE: u32 = cmd(25) | RSP_48 | CMD_CRCCHK | CMD_IXCHK | CMD_ISDATA | TM_MULTI;
+/// `ACMD6 SET_BUS_WIDTH` (SD Phys 9.10 §4.7.4 application command table:
+/// ac, R1).
+const SET_BUS_WIDTH: u32 = cmd(6) | RSP_48 | CMD_CRCCHK | CMD_IXCHK;
+/// `ACMD51 SEND_SCR` (SD Phys 9.10 §4.7.4: adtc, R1) — one 8-byte block
+/// card to host, the SCR (§5.6).
+const SEND_SCR: u32 = cmd(51) | RSP_48 | CMD_CRCCHK | CMD_IXCHK | CMD_ISDATA | TM_DAT_CARD2HOST;
 const APP_CMD: u32 = cmd(55) | RSP_48 | CMD_CRCCHK | CMD_IXCHK;
 const SD_SEND_OP_COND: u32 = cmd(41) | RSP_48; // ACMD41, R3 (no CRC/index check)
 /// CMD12 `STOP_TRANSMISSION`, issued as the **abort command** of SD-HC §3.8.
@@ -440,7 +480,8 @@ pub enum Phase {
     CmdDone,
     /// Buffer Read Ready — the card's data has arrived in the FIFO.
     ReadRdy,
-    /// Buffer Write Ready — the FIFO has room for the block.
+    /// Buffer Write Ready — the FIFO has room for the block. Inside a
+    /// `CMD25` this also waits out the card's busy **between** blocks.
     WriteRdy,
     /// Transfer Complete of a read.
     ReadDone,
@@ -463,12 +504,15 @@ impl Phase {
     /// The timeout this phase is allowed, in milliseconds.
     const fn limit_ms(self) -> u32 {
         match self {
-            // Card busy: the write-busy limit of SD Phys §4.6.2.2.
-            Phase::DatInhibit | Phase::WriteDone => WRITE_BUSY_MS,
+            // Card busy: the write-busy limit of SD Phys §4.6.2.2. Buffer
+            // Write Ready belongs here since FS08: inside a multiple-block
+            // write it is also the busy at the block gap (§4.6.2.2, 250 ms;
+            // `docs/hardware/emmc-sd.md` §7.1 row 4).
+            Phase::DatInhibit | Phase::WriteRdy | Phase::WriteDone => WRITE_BUSY_MS,
             // Card read latency: the 100 ms minimum of SD Phys §4.6.2.1.
             Phase::ReadRdy | Phase::ReadDone => READ_MS,
             // Controller handshakes: the wedged-controller backstop.
-            Phase::CmdInhibit | Phase::CmdDone | Phase::WriteRdy => CTRL_MS,
+            Phase::CmdInhibit | Phase::CmdDone => CTRL_MS,
         }
     }
 
@@ -514,7 +558,7 @@ pub const PHASE_NAMES: [&str; Phase::COUNT] =
     ["cmd_inhibit", "dat_inhibit", "cmd_done", "read_rdy", "write_rdy", "read_done", "write_done"];
 
 /// The error bits the driver counts by name, in [`ERROR_BIT_NAMES`] order.
-const ERROR_BIT_MASKS: [u32; 7] = [
+const ERROR_BIT_MASKS: [u32; 8] = [
     INT_ERR_CTO,
     INT_ERR_CCRC,
     INT_ERR_CEND,
@@ -522,10 +566,12 @@ const ERROR_BIT_MASKS: [u32; 7] = [
     INT_ERR_DTO,
     INT_ERR_DCRC,
     INT_ERR_DEND,
+    INT_ERR_ACMD,
 ];
 
 /// Names of the counted error bits, in [`ERROR_BIT_MASKS`] order.
-pub const ERROR_BIT_NAMES: [&str; 7] = ["CTO", "CCRC", "CEND", "CBAD", "DTO", "DCRC", "DEND"];
+pub const ERROR_BIT_NAMES: [&str; 8] =
+    ["CTO", "CCRC", "CEND", "CBAD", "DTO", "DCRC", "DEND", "ACMD"];
 
 // ── Error bookkeeping (audit finding 12: report the bits, do not just
 // clear them) ────────────────────────────────────────────────────────
@@ -544,6 +590,35 @@ static ERR_R1_TOTAL: AtomicU32 = AtomicU32::new(0);
 static ERR_R1_LAST: AtomicU32 = AtomicU32::new(0);
 static ERR_R1_BIT_COUNT: [AtomicU32; R1_BIT_MASKS.len()] =
     [const { AtomicU32::new(0) }; R1_BIT_MASKS.len()];
+/// Auto CMD Error Status ([`CONTROL2`] low half, SD-HC 3.00 §2.2.23) as it
+/// was at the most recent `Auto CMD Error`.
+static ERR_LAST_ACMD: AtomicU32 = AtomicU32::new(0);
+
+/// `emmc=compat` (FS08): 1-bit bus, one `CMD17`/`CMD24` per sector — the
+/// pre-FS08 driver. Set by [`set_compat`] from the boot arguments before
+/// [`init`]; default off.
+static COMPAT: AtomicBool = AtomicBool::new(false);
+/// Did [`init`] switch the card and the host to the 4-bit bus?
+static BUS_4BIT: AtomicBool = AtomicBool::new(false);
+/// The SCR's `SD_BUS_WIDTHS` field as read at init (0 = not read).
+static SCR_WIDTHS: AtomicU32 = AtomicU32::new(0);
+/// A `CMD18` just read the card's last block: the spurious `OUT_OF_RANGE`
+/// SD Phys 9.10 §4.3.3 tells the host to ignore may still arrive in the
+/// response of the next memory command (SD-HC 3.00 §3.7.1.2 Note 3).
+static OOR_PENDING: AtomicBool = AtomicBool::new(false);
+
+/// Select the transfer mode for the coming [`init`]: `true` = the
+/// `emmc=compat` fallback (1-bit bus, single-block commands only).
+/// Has an effect only before the card is initialised.
+pub fn set_compat(compat: bool) {
+    COMPAT.store(compat, Ordering::Relaxed);
+}
+
+/// Is the driver in the `emmc=compat` fallback mode?
+fn compat() -> bool {
+    COMPAT.load(Ordering::Relaxed)
+}
+
 /// Print failures on the console? Off while [`init`] probes the controller
 /// bases — a slot without a card answers every response command with a
 /// command timeout, and that is the probe doing its job.
@@ -561,8 +636,8 @@ pub struct ErrorStats {
     pub last_phase: Phase,
     /// How often each named error bit was seen, in [`ERROR_BIT_NAMES`] order.
     pub bits: [u32; ERROR_BIT_MASKS.len()],
-    /// Errors with none of the named bits set (current-limit, Auto-CMD,
-    /// ADMA, tuning — SD-HC §2.2.18 bits 23-26).
+    /// Errors with none of the named bits set (current-limit, ADMA,
+    /// tuning — SD-HC §2.2.18 bits 23, 25, 26).
     pub other: u32,
     /// Waits that ended on an error bit (`BlockError::Io`).
     pub io_errors: u32,
@@ -706,6 +781,12 @@ fn note_failure(phase: Phase, status: u32, timed_out: bool) {
     }
 
     ERR_IO_TOTAL.fetch_add(1, Ordering::Relaxed);
+    // Auto CMD Error: its detail register is valid only while the error is
+    // set (SD-HC 3.00 §2.2.23), so it is saved here, before any reset.
+    let acmd = if status & INT_ERR_ACMD != 0 { rd(CONTROL2) & 0xFFFF } else { 0 };
+    if status & INT_ERR_ACMD != 0 {
+        ERR_LAST_ACMD.store(acmd, Ordering::Relaxed);
+    }
     let mut named = 0u32;
     for (i, mask) in ERROR_BIT_MASKS.iter().enumerate() {
         if status & mask != 0 {
@@ -725,6 +806,9 @@ fn note_failure(phase: Phase, status: u32, timed_out: bool) {
             crate::kprint!(" {}", ERROR_BIT_NAMES[i]);
         }
     }
+    if status & INT_ERR_ACMD != 0 {
+        crate::kprint!(" (Auto CMD Error Status=0x{:04x})", acmd);
+    }
     crate::kprintln!("");
 }
 
@@ -736,21 +820,25 @@ fn note_failure(phase: Phase, status: u32, timed_out: bool) {
 /// Returns `Err(BlockError::Card)` when any Type-`E` bit is set: the card
 /// has refused or failed the command, whatever the controller's
 /// `INTERRUPT` register says.
-fn check_r1(cmd_index: u32, status: u32) -> Result<(), BlockError> {
-    if status & R1_ERROR_MASK == 0 {
+///
+/// `mask` is the set of bits that count as a refusal — normally
+/// [`R1_ERROR_MASK`]; without `OUT_OF_RANGE` where SD Phys 9.10 §4.3.3 says
+/// to ignore it ([`xfer::r1_mask`]).
+fn check_r1(cmd_index: u32, status: u32, mask: u32) -> Result<(), BlockError> {
+    if status & mask == 0 {
         return Ok(());
     }
     ERR_R1_TOTAL.fetch_add(1, Ordering::Relaxed);
     ERR_R1_LAST.store(status, Ordering::Relaxed);
-    for (i, mask) in R1_BIT_MASKS.iter().enumerate() {
-        if status & mask != 0 {
+    for (i, bit) in R1_BIT_MASKS.iter().enumerate() {
+        if status & mask & bit != 0 {
             ERR_R1_BIT_COUNT[i].fetch_add(1, Ordering::Relaxed);
         }
     }
     if REPORT_ERRORS.load(Ordering::Relaxed) {
         crate::kprint!("[emmc] CMD{} rejected by card: status=0x{:08x}", cmd_index, status);
-        for (i, mask) in R1_BIT_MASKS.iter().enumerate() {
-            if status & mask != 0 {
+        for (i, bit) in R1_BIT_MASKS.iter().enumerate() {
+            if status & mask & bit != 0 {
                 crate::kprint!(" {}", R1_BIT_NAMES[i]);
             }
         }
@@ -845,6 +933,18 @@ impl Emmc {
         // nothing and leaves no stale bit for the next command to trip on.
         wr(INTERRUPT, rd(INTERRUPT));
         if abort {
+            // SD-HC 3.00 §3.10.2 (Auto CMD12 Error Recovery): when the Auto
+            // CMD12 that ends a multiple-block transfer *was* issued and
+            // failed (`Auto CMD12 Not Executed` = 0), the CMD line is reset
+            // first, steps (6)-(7), and only then is CMD12 issued again,
+            // step (8); the DAT line reset of steps (11)-(12) follows below.
+            // No command without data is ever in flight during a transfer
+            // here, so the CMD_wo_DAT branches of that figure do not arise.
+            if status & INT_ERR_ACMD != 0
+                && ERR_LAST_ACMD.load(Ordering::Relaxed) & ACMD_NOT_EXECUTED == 0
+            {
+                Self::soft_reset(C1_SRST_CMD);
+            }
             Self::abort_transaction();
         }
         Self::soft_reset(phase.resets(status));
@@ -1039,8 +1139,82 @@ impl Emmc {
 
         // Switch to default speed (~25 MHz) for transfers.
         Self::set_clock(25_000_000)?;
+
+        // FS08: the 4-bit bus, unless `emmc=compat` asks for the old 1-bit
+        // driver. A failure here is not a failed init — the card is in
+        // transfer state on the 1-bit bus, which is what every SD card
+        // starts with ("The extended DAT lines (DAT1-DAT3) are input on
+        // power up. They start to operate as DAT lines after SET_BUS_WIDTH
+        // command", SD Phys 9.10 §3.7.1, Table 3-1 note 2) — so it is
+        // recorded and reported, and the driver carries on 1-bit.
+        BUS_4BIT.store(false, Ordering::Relaxed);
+        let wide = if compat() { WideBus::Compat } else { self.enable_wide_bus() };
+        WIDE_BUS.store(wide as u32, Ordering::Relaxed);
         self.ready.store(true, Ordering::Release);
         Ok(())
+    }
+
+    /// Read the card's SCR with `ACMD51 SEND_SCR` — one 8-byte block, card
+    /// to host (SD Phys 9.10 §5.6, §4.7.4), by the PIO read sequence of
+    /// SD-HC 3.00 §3.7.2.1 with a Block Size of 8.
+    fn read_scr(&self) -> Result<[u8; xfer::SCR_BYTES], BlockError> {
+        if !Self::wait_clear(STATUS, SR_DAT_INHIBIT, Phase::DatInhibit) {
+            return Err(BlockError::Timeout);
+        }
+        wr(BLKSIZECNT, xfer::blksizecnt(1, xfer::SCR_BYTES));
+        let status = self.app_command(SEND_SCR, 0)?;
+        if let Err(e) = check_r1(51, status, R1_ERROR_MASK) {
+            Self::recover_no_abort(Phase::ReadRdy);
+            return Err(e);
+        }
+        Self::wait_interrupt(INT_READ_RDY, Phase::ReadRdy)?;
+        let mut scr = [0u8; xfer::SCR_BYTES];
+        // Byte order of the 32-bit data port: little endian (SD-HC 3.00
+        // §1.7 (2)), so the first byte on the bus lands in bits 7:0.
+        for word in scr.chunks_exact_mut(4) {
+            word.copy_from_slice(&rd(DATA).to_le_bytes());
+        }
+        Self::wait_interrupt(INT_DATA_DONE, Phase::ReadDone)?;
+        Ok(scr)
+    }
+
+    /// Switch card and host to the 4-bit bus if the SCR allows it — the
+    /// "Changing Bus Width" sequence of SD-HC 3.00 §3.4 for an SD memory
+    /// card (steps 3 and 7 are SDIO-only):
+    ///
+    /// 1. `Card Interrupt Status Enable` off ([`INT_CARD`] in `IRPT_MASK`),
+    /// 4. `ACMD6 SET_BUS_WIDTH` with `'10'` (SD Phys 9.10 §4.7.4),
+    /// 5. Host Control 1 `Data Transfer Width` = 1 (SD-HC 3.00 §2.2.10),
+    /// 8. `Card Interrupt Status Enable` back on.
+    ///
+    /// The card must be in transfer state (after `CMD7`) and not locked
+    /// (§3.4: "if the card is locked, bus width cannot be changed") — a
+    /// locked or unwilling card answers `ACMD6` with an R1 error, and the
+    /// host bit is then left alone.
+    fn enable_wide_bus(&self) -> WideBus {
+        let scr = match self.read_scr() {
+            Ok(scr) => scr,
+            Err(_) => return WideBus::ScrFailed,
+        };
+        SCR_WIDTHS.store(xfer::scr_bus_widths(&scr) as u32, Ordering::Relaxed);
+        if !xfer::scr_supports_4bit(&scr) {
+            return WideBus::CardOneBit;
+        }
+        let mask = rd(IRPT_MASK);
+        wr(IRPT_MASK, mask & !INT_CARD); // (1)
+        let card = self
+            .app_command(SET_BUS_WIDTH, xfer::ACMD6_ARG_4BIT) // (4)
+            .and_then(|r1| check_r1(6, r1, R1_ERROR_MASK));
+        let result = if card.is_ok() {
+            wr(CONTROL0, rd(CONTROL0) | xfer::HC1_DATA_WIDTH_4BIT); // (5)
+            BUS_4BIT.store(true, Ordering::Relaxed);
+            WideBus::FourBit
+        } else {
+            WideBus::Acmd6Failed
+        };
+        wr(INTERRUPT, INT_CARD); // drop a card-interrupt glitch of the switch
+        wr(IRPT_MASK, mask); // (8)
+        result
     }
 
     /// The `ARG1` value that addresses block `lba` on this card.
@@ -1064,83 +1238,179 @@ impl Emmc {
         }
     }
 
-    /// Read one 512-byte block at `lba` into `buf` (PIO).
-    fn read_one(&self, lba: u64, buf: &mut [u8]) -> Result<(), BlockError> {
+    /// The R1 mask for the next data command of `blocks` sectors at `lba`.
+    ///
+    /// Normally the full Type-`E` set. Right after a `CMD18` that read the
+    /// card's last block, the spurious `OUT_OF_RANGE` of SD Phys 9.10
+    /// §4.3.3 may arrive "in the response of the next memory command"
+    /// (SD-HC 3.00 §3.7.1.2 Note 3) and is ignored there — once, and only
+    /// if this command itself stays inside the card, so a request that
+    /// really is out of range is still refused.
+    fn next_r1_mask(&self, lba: u64, blocks: usize) -> u32 {
+        let pending = OOR_PENDING.swap(false, Ordering::Relaxed);
+        let capacity = self.blocks.load(Ordering::Relaxed);
+        let inside = lba.checked_add(blocks as u64).is_some_and(|end| end <= capacity);
+        xfer::r1_mask(R1_ERROR_MASK, R1_OUT_OF_RANGE, pending && inside)
+    }
+
+    /// Read `buf.len() / 512` consecutive blocks at `lba` with **one**
+    /// command (PIO): `CMD17` for one block, `CMD18` + Block Count + Auto
+    /// CMD12 for more — SD-HC 3.00 §3.7.2.1 (Not using DMA), steps (1)-(8)
+    /// and (14)-(20). `buf` holds 1..=[`xfer::MAX_BLOCKS_PER_CMD`] sectors.
+    fn read_run(&self, lba: u64, buf: &mut [u8]) -> Result<(), BlockError> {
         if !self.ready.load(Ordering::Acquire) {
             return Err(BlockError::NotReady);
         }
+        let blocks = buf.len() / SECTOR_SIZE;
+        let multi = xfer::transfer_for(blocks, compat()) == Transfer::Multiple;
         if !Self::wait_clear(STATUS, SR_DAT_INHIBIT, Phase::DatInhibit) {
             return Err(BlockError::Timeout);
         }
         let addr = self.card_address(lba)?;
-        wr(BLKSIZECNT, (1 << 16) | SECTOR_SIZE as u32);
-        // The card answers CMD17 with R1 **before** the data phase, so a
-        // refusal (address past the end of the card, internal error) is
-        // visible here — and only here (finding 3). A refused command has
-        // no data phase: returning without aborting would leave the next
-        // wait to run its full budget for data that never comes.
-        let status = self.command(READ_SINGLE, addr)?;
-        if let Err(e) = check_r1(17, status) {
+        // (1)+(2) Block Size and Block Count.
+        wr(BLKSIZECNT, xfer::blksizecnt(blocks, SECTOR_SIZE));
+        let mask = self.next_r1_mask(lba, blocks);
+        // The card answers CMD17/CMD18 with R1 **before** the data phase,
+        // so a refusal (address past the end of the card, internal error)
+        // is visible here — and only here (finding 3). A refused command
+        // has no data phase: returning without aborting would leave the
+        // next wait to run its full budget for data that never comes.
+        let (cmdtm, index) = if multi { (READ_MULTIPLE, 18) } else { (READ_SINGLE, 17) };
+        let status = self.command(cmdtm, addr)?;
+        if let Err(e) = check_r1(index, status, mask) {
             Self::recover_no_abort(Phase::ReadRdy);
             return Err(e);
         }
-        Self::wait_interrupt(INT_READ_RDY, Phase::ReadRdy)?;
-        for word in buf.chunks_exact_mut(4) {
-            let w = rd(DATA);
-            word.copy_from_slice(&w.to_le_bytes());
+        // (14)-(17) Buffer Read Ready, then one block from the data port —
+        // per block. Little endian (SD-HC 3.00 §1.7 (2)).
+        for block in buf.chunks_exact_mut(SECTOR_SIZE) {
+            Self::wait_interrupt(INT_READ_RDY, Phase::ReadRdy)?;
+            for word in block.chunks_exact_mut(4) {
+                word.copy_from_slice(&rd(DATA).to_le_bytes());
+            }
         }
+        // (19)-(20) Transfer Complete — for CMD18 it also covers the Auto
+        // CMD12 (SD-HC 3.00 §3.7.1.2 Note 2).
         Self::wait_interrupt(INT_DATA_DONE, Phase::ReadDone)?;
+        if multi {
+            // The Auto CMD12 response is in REP[127:96] (SD-HC 3.00 §2.2.7,
+            // Table 2-12). A transfer that read the card's last block may
+            // carry a spurious OUT_OF_RANGE, here or in the next command
+            // (§3.7.1.2 Note 3, SD Phys 9.10 §4.3.3).
+            let last = xfer::ends_on_last_block(lba, blocks, self.blocks.load(Ordering::Relaxed));
+            check_r1(12, rd(RESP3), xfer::r1_mask(R1_ERROR_MASK, R1_OUT_OF_RANGE, last))?;
+            if last {
+                OOR_PENDING.store(true, Ordering::Relaxed);
+            }
+        }
         Ok(())
     }
 
-    /// Write one 512-byte block at `lba` from `buf` (PIO).
-    fn write_one(&self, lba: u64, buf: &[u8]) -> Result<(), BlockError> {
+    /// Write `buf.len() / 512` consecutive blocks at `lba` with **one**
+    /// command (PIO): `CMD24` for one block, `CMD25` + Block Count + Auto
+    /// CMD12 for more — SD-HC 3.00 §3.7.2.1, steps (1)-(13) and (18)-(20).
+    fn write_run(&self, lba: u64, buf: &[u8]) -> Result<(), BlockError> {
         if !self.ready.load(Ordering::Acquire) {
             return Err(BlockError::NotReady);
         }
+        let blocks = buf.len() / SECTOR_SIZE;
+        let multi = xfer::transfer_for(blocks, compat()) == Transfer::Multiple;
         if !Self::wait_clear(STATUS, SR_DAT_INHIBIT, Phase::DatInhibit) {
             return Err(BlockError::Timeout);
         }
         let addr = self.card_address(lba)?;
-        wr(BLKSIZECNT, (1 << 16) | SECTOR_SIZE as u32);
-        // Same as the read side: CMD24's R1 arrives before the data phase.
-        // This is the check whose absence let a write past the end of the
-        // card report success (audit finding 3, driven).
-        let status = self.command(WRITE_SINGLE, addr)?;
-        if let Err(e) = check_r1(24, status) {
+        wr(BLKSIZECNT, xfer::blksizecnt(blocks, SECTOR_SIZE));
+        let mask = self.next_r1_mask(lba, blocks);
+        // Same as the read side: CMD24/CMD25's R1 arrives before the data
+        // phase. This is the check whose absence let a write past the end
+        // of the card report success (audit finding 3, driven).
+        let (cmdtm, index) = if multi { (WRITE_MULTIPLE, 25) } else { (WRITE_SINGLE, 24) };
+        let status = self.command(cmdtm, addr)?;
+        if let Err(e) = check_r1(index, status, mask) {
             Self::recover_no_abort(Phase::WriteRdy);
             return Err(e);
         }
-        Self::wait_interrupt(INT_WRITE_RDY, Phase::WriteRdy)?;
-        for word in buf.chunks_exact(4) {
-            wr(DATA, u32::from_le_bytes([word[0], word[1], word[2], word[3]]));
+        // (10)-(13) Buffer Write Ready, then one block into the data port —
+        // per block. Between blocks of a CMD25 this wait also covers the
+        // card's busy at the block gap (Phase::WriteRdy's limit).
+        for block in buf.chunks_exact(SECTOR_SIZE) {
+            Self::wait_interrupt(INT_WRITE_RDY, Phase::WriteRdy)?;
+            for word in block.chunks_exact(4) {
+                wr(DATA, u32::from_le_bytes([word[0], word[1], word[2], word[3]]));
+            }
         }
+        // (19)-(20) Transfer Complete: the last block is programmed and the
+        // busy released (SD-HC 3.00 §2.2.17 bit 1) — for CMD25 after the
+        // Auto CMD12 (§3.7.1.2 Note 2).
         Self::wait_interrupt(INT_DATA_DONE, Phase::WriteDone)?;
+        if multi {
+            // The card's verdict on the whole write, reported with the Auto
+            // CMD12 response (SD-HC 3.00 §2.2.7 Table 2-12).
+            check_r1(12, rd(RESP3), R1_ERROR_MASK)?;
+        }
         Ok(())
     }
 }
+
+/// Outcome of the 4-bit switch at init, for the boot report.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(u32)]
+enum WideBus {
+    /// Not attempted: `emmc=compat`.
+    Compat = 0,
+    /// Card and host are on the 4-bit bus.
+    FourBit = 1,
+    /// The SCR does not list the 4-bit bus.
+    CardOneBit = 2,
+    /// `ACMD51 SEND_SCR` failed — stays 1-bit.
+    ScrFailed = 3,
+    /// `ACMD6` failed or was refused — stays 1-bit.
+    Acmd6Failed = 4,
+}
+
+/// [`WideBus`] of the last init, as `u32`.
+static WIDE_BUS: AtomicU32 = AtomicU32::new(WideBus::Compat as u32);
 
 impl BlockDevice for Emmc {
     fn block_count(&self) -> u64 {
         self.blocks.load(Ordering::Relaxed)
     }
 
+    /// The whole request goes to the card in as few commands as the Block
+    /// Count register allows (FS08): chunks of up to 65535 sectors, each
+    /// one `CMD18` (or `CMD17` for a single sector). `emmc=compat`: one
+    /// `CMD17` per sector.
     fn read_blocks(&self, lba: u64, buf: &mut [u8]) -> Result<(), BlockError> {
         if !buf.len().is_multiple_of(SECTOR_SIZE) {
             return Err(BlockError::Unsupported);
         }
-        for (i, sector) in buf.chunks_exact_mut(SECTOR_SIZE).enumerate() {
-            self.read_one(lba + i as u64, sector)?;
+        let compat = compat();
+        let mut at = lba;
+        let mut rest = buf;
+        while !rest.is_empty() {
+            let n = xfer::next_chunk(rest.len() / SECTOR_SIZE, compat);
+            let (run, tail) = rest.split_at_mut(n * SECTOR_SIZE);
+            self.read_run(at, run)?;
+            at += n as u64;
+            rest = tail;
         }
         Ok(())
     }
 
+    /// Like [`Emmc::read_blocks`], with `CMD25`/`CMD24`.
     fn write_blocks(&self, lba: u64, buf: &[u8]) -> Result<(), BlockError> {
         if !buf.len().is_multiple_of(SECTOR_SIZE) {
             return Err(BlockError::Unsupported);
         }
-        for (i, sector) in buf.chunks_exact(SECTOR_SIZE).enumerate() {
-            self.write_one(lba + i as u64, sector)?;
+        let compat = compat();
+        let mut at = lba;
+        let mut rest = buf;
+        while !rest.is_empty() {
+            let n = xfer::next_chunk(rest.len() / SECTOR_SIZE, compat);
+            let (run, tail) = rest.split_at(n * SECTOR_SIZE);
+            self.write_run(at, run)?;
+            at += n as u64;
+            rest = tail;
         }
         Ok(())
     }
@@ -1235,6 +1505,23 @@ fn report_controller() {
         rate(super::mailbox::CLOCK_ID_EMMC2),
     );
 
+    // FS08: which transfer path this boot uses, and why.
+    let wide = WIDE_BUS.load(Ordering::Relaxed);
+    crate::kprintln!(
+        "[emmc] FS08 mode: {} — bus {}-bit ({}, SCR SD_BUS_WIDTHS=0x{:x}), CONTROL0[1] Data Transfer Width={}",
+        if compat() { "emmc=compat (CMD17/CMD24 per sector)" } else { "multi-block (CMD18/CMD25 + Auto CMD12)" },
+        if BUS_4BIT.load(Ordering::Relaxed) { 4 } else { 1 },
+        match wide {
+            0 => "not attempted, emmc=compat",
+            1 => "ACMD6 ok",
+            2 => "card lists no 4-bit",
+            3 => "ACMD51 SEND_SCR failed",
+            _ => "ACMD6 failed",
+        },
+        SCR_WIDTHS.load(Ordering::Relaxed),
+        (c0 >> 1) & 1,
+    );
+
     // Whatever the identification itself ran into, once (the per-failure
     // console lines are off until here — see `note_failure`). On a machine
     // where the first probed base has no card this is where its expected
@@ -1320,7 +1607,7 @@ mod tests {
         assert_eq!(Phase::ReadDone.limit_ms(), READ_MS);
         assert_eq!(Phase::CmdDone.limit_ms(), CTRL_MS);
         assert_eq!(Phase::CmdInhibit.limit_ms(), CTRL_MS);
-        assert_eq!(Phase::WriteRdy.limit_ms(), CTRL_MS);
+        assert_eq!(Phase::WriteRdy.limit_ms(), WRITE_BUSY_MS);
         // The write budget must exceed the 500 ms the specification allows
         // the card for the last busy of a write.
         assert!(WRITE_BUSY_MS > 500);
