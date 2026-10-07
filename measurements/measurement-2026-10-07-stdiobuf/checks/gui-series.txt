@@ -1,0 +1,94 @@
+=== before-zvw
+run before-zvw: rc=0
+read commands (CMD17+CMD18)   2644
+blocks read  (sdcard_read_block)  8317
+== fsck_msdos -n s1
+Warning: 98 files, 124194 KiB free (62097 clusters)
+== fsck_msdos -n s2
+Warning: 15 files, 107864 KiB free (53932 clusters)
+exceptions in serial: 0
+=== before-zv-samples
+run before-zv-samples: rc=0
+read commands (CMD17+CMD18)   754
+blocks read  (sdcard_read_block)  4332
+== fsck_msdos -n s1
+Warning: 94 files, 126464 KiB free (63232 clusters)
+== fsck_msdos -n s2
+Warning: 15 files, 107864 KiB free (53932 clusters)
+exceptions in serial: 0
+=== before-qedw
+run before-qedw: rc=0
+read commands (CMD17+CMD18)   286
+blocks read  (sdcard_read_block)  1222
+HOSTCHECK: PASS
+== fsck_msdos -n s1
+Warning: 98 files, 126456 KiB free (63228 clusters)
+== fsck_msdos -n s2
+Warning: 15 files, 107864 KiB free (53932 clusters)
+exceptions in serial: 0
+=== before-teraw
+run before-teraw: rc=0
+read commands (CMD17+CMD18)   284
+blocks read  (sdcard_read_block)  1713
+HOSTCHECK: PASS
+== fsck_msdos -n s1
+Warning: 103 files, 125786 KiB free (62893 clusters)
+== fsck_msdos -n s2
+Warning: 15 files, 107864 KiB free (53932 clusters)
+exceptions in serial: 0
+=== before-evb-acc
+run before-evb-acc: rc=0
+read commands (CMD17+CMD18)   151
+blocks read  (sdcard_read_block)  733
+== fsck_msdos -n s1
+Warning: 101 files, 126050 KiB free (63025 clusters)
+== fsck_msdos -n s2
+Warning: 15 files, 107864 KiB free (53932 clusters)
+exceptions in serial: 0
+=== after-zvw
+run after-zvw: rc=0
+read commands (CMD17+CMD18)   566
+blocks read  (sdcard_read_block)  8319
+== fsck_msdos -n s1
+Warning: 98 files, 124126 KiB free (62063 clusters)
+== fsck_msdos -n s2
+Warning: 15 files, 107864 KiB free (53932 clusters)
+exceptions in serial: 0
+=== after-zv-samples
+run after-zv-samples: rc=0
+read commands (CMD17+CMD18)   752
+blocks read  (sdcard_read_block)  4332
+== fsck_msdos -n s1
+Warning: 94 files, 126396 KiB free (63198 clusters)
+== fsck_msdos -n s2
+Warning: 15 files, 107864 KiB free (53932 clusters)
+exceptions in serial: 0
+=== after-qedw
+run after-qedw: rc=0
+read commands (CMD17+CMD18)   286
+blocks read  (sdcard_read_block)  1222
+HOSTCHECK: PASS
+== fsck_msdos -n s1
+Warning: 98 files, 126388 KiB free (63194 clusters)
+== fsck_msdos -n s2
+Warning: 15 files, 107864 KiB free (53932 clusters)
+exceptions in serial: 0
+=== after-teraw
+run after-teraw: rc=0
+read commands (CMD17+CMD18)   284
+blocks read  (sdcard_read_block)  1713
+HOSTCHECK: PASS
+== fsck_msdos -n s1
+Warning: 103 files, 125718 KiB free (62859 clusters)
+== fsck_msdos -n s2
+Warning: 15 files, 107864 KiB free (53932 clusters)
+exceptions in serial: 0
+=== after-evb-acc
+run after-evb-acc: rc=0
+read commands (CMD17+CMD18)   152
+blocks read  (sdcard_read_block)  734
+== fsck_msdos -n s1
+Warning: 101 files, 125982 KiB free (62991 clusters)
+== fsck_msdos -n s2
+Warning: 15 files, 107864 KiB free (53932 clusters)
+exceptions in serial: 0

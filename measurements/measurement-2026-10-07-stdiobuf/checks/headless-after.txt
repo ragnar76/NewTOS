@@ -1,0 +1,13 @@
+run after-api: rc=0
+== fsck_msdos -n s1
+Warning: 84 files, 57534 KiB free (28767 clusters)
+TOTAL      106   0     5     
+run after-s2all: rc=0
+== fsck_msdos -n s1
+Warning: 83 files, 57548 KiB free (28774 clusters)
+  FAIL ARGV= arrived
+  FAIL an argument with blanks arrived
+  FAIL child read its environment (rc) got=0x00000001 want=0x00000042
+MEM03: FAIL
+[S2ALL] C:\ENVPAR.NAP -> 0x00000001  FAIL
+S2ALL: FAIL 0x00000001

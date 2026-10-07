@@ -1,0 +1,245 @@
+measurement-2026-10-07-stdiobuf -- TASK/FS08 part 4 (user decision
+2026-10-07: "a larger buffer is no problem, we have more memory than a real
+Atari"): a larger stdio buffer for regular files. Toolchain only (SDK libc);
+kernel and tos-api UNCHANGED. Developer self-evidence; the Tester's verdict is
+separate.
+
+Date 2026-10-07, branch desk-rebuild, HEAD f14942c plus this change
+(uncommitted; tracked edits in method/stdiobuf-change.diff, new files listed
+below). QEMU 11 raspi4b, -append "serial=on memprot=on" (APITEST/S2ALL:
+"serial=on", memprot on = default), one QEMU at a time, only our own pid
+killed (host has no `timeout`). No SD card, Pi or TT touched; nothing copied
+to any card (real cards were mounted during the run -- BOOT/NEWTOS1-3 and the
+TT card; tools/make-sd-image.sh was only run after checking that no
+/Volumes/NEWTOS existed, its D: is resolved by device). Scratch (kernels,
+cards, traces, builds of the variants) in the session scratchpad, deleted at
+the end; every run card was an APFS clone (cp -c) of one base card per
+content, deleted after the run, sha256 in checks/.
+
+INPUT
+  measurements/measurement-2026-10-07-fs08-pi-after/FSBENCH.LOG (real Pi 4,
+  kernel ac17deae): L3 stdio fread(1 KiB) 7569 ms = 1352 KiB/s vs one whole
+  Fread 875.1 ms = 11701 KiB/s on the 10-MiB file.
+
+CAUSE (source, mintlib 0.60.1 as built by sdk/libc/build-libc.sh)
+  stdio/stdio_init.c:72-77  __stdio_init_stream: stream->__bufsize =
+                            statb.st_blksize (from __do_fstat)
+  stdio/internals.c:55-90   init_stream: malloc(__bufsize), halving down to
+                            MIN_BUFSIZE 128 if that fails, else unbuffered
+  stdio/internals.c:393-   fillbuf reads __bufsize bytes per refill; after an
+                            fseek the next fread below __bufsize refills a
+                            whole buffer (fseek.c discards the buffer;
+                            fread.c reads directly only when to_read >=
+                            __bufsize)
+  sdk/libc/newtos-arch/do_fstat.c:60 (HEAD)  st_blksize = BUFSIZ = 1024 for
+                            every handle -> one 1-KiB Fread per 1 KiB.
+  Other st_blksize readers: sysd-stdio.c:205-221 __stdio_text_write (chunk =
+  min(st_blksize, 8192) bytes on the stack via alloca), unix/fpathconf.c
+  (_PC_PIPE_BUF). BUFSIZ itself is also used by setbuf() (setbuf.c:27, the
+  caller's own buffer), memstream, init_stream's fallback when __bufsize = 0
+  -- none of these changes. stat()/__quickstat keeps 1024 (overlay
+  quickstat.c:90/248; it sizes no buffer).
+
+CHANGE
+  sdk/libc/newtos-arch/do_fstat.c  st_blksize = NEWTOS_FILE_BLKSIZE (32 KiB)
+      for a GEMDOS file handle (fd >= 6 = NUMSTD) whose Fseek(SEEK_END)
+      succeeded; BUFSIZ (1024) for everything else -- console fds 0..2
+      (still S_IFCHR, line-buffered), standard handles 3..5, negative BIOS
+      device handles, a handle Fseek refuses. Header comment = named deviation
+      with the reason and the measurement.
+  docs/sdk/07-mintlib-limits.md  §2 table row + new subsection "stdio buffer
+      size of a regular file: 32 KiB (named deviation, TASK/FS08 part 4)":
+      why, why 32 not 64, the cost table (memory, random access, text mode,
+      LDG modules, fpathconf).
+  sdk/examples/fsbench.c  L3 page header prints the st_blksize fstat()
+      reports for the first L3 file (read after its timed loop, outside every
+      timed region) instead of the fixed text "default BUFSIZ", so the Pi
+      photo shows which libc the bench ran with.
+  NEW sdk/libc/tests/fstat-host.sh + fstat-host.c + fstat-host-fs.c +
+      fstat-host-gemdos.h: host harness (25 checks): the shim + isatty.c +
+      mintlib's OWN stdio/stdio_init.c; regular files 6/7/8 -> st_blksize
+      32768, stream buffer 32768, position restored; console 0..2 -> 1024,
+      line-buffered, seek removed; 3 (seekable), -1 (device answering
+      Fseek 0), 9 (EIHNDL) -> 1024. Wired into sdk/run-host-tests.sh.
+
+SIZE CHOICE (method/build-variants.sh, link-doom-variants.sh, run-fsb.sh,
+run-timed.sh, prep-doom.sh, pi-model.py -> checks/explore/, checks/pi-model.txt)
+  Variants: HEAD's libc.a with ONLY arch__do_fstat.o replaced by the changed
+  shim at 16/32/64 KiB (the 1-KiB variant is HEAD's archive; FSBENCH linked
+  with it is byte-identical to the Pi package's 2362d3fb..., DOOM relinked
+  with it byte-identical to the tree's DOOM.NAP 4f32fcac...).
+  (a) FSBENCH L3 only (scratch copy of fsbench.c with run_l1/run_l2 removed;
+      an empty variant measures boot + frame: 67 read commands, 254 blocks).
+      L3 payload 2 passes x 23 406 592 B = 45 716 KiB, all CRC ok, D: unchanged,
+      fsck clean:
+        buffer  read commands  minus frame  per KiB   blocks read
+         1 KiB      45 966       45 899      1.004      91 873
+        16 KiB       3 114        3 047      0.067      91 873
+        32 KiB       1 688        1 621      0.035      91 873
+        64 KiB         972          905      0.020      91 873
+      QEMU time for L3 hardly moves (10 MiB 2.30 -> 2.13..2.27 s): QEMU models
+      no command latency; it is the command count that the Pi pays for.
+      ("summary: 20 bad" in these logs = the L2 rows that did not run.)
+  (b) Pi model (pi-model.py; constants fitted from the real Pi's L2 4-KiB and
+      64-KiB rows: 0.533 ms per Fread command, 870 ms streaming per 10 MiB;
+      the 1-KiB stdio run costs 0.654 ms per fill -> range):
+        10 MiB via fread(1 KiB):  1 KiB 6.3..7.6 s (measured 7.57 s)
+                                 16 KiB 1.21..1.29 s   68..72 % of whole-file
+                                 32 KiB 1.04..1.08 s   81..84 %
+                                 64 KiB 0.96..0.98 s   90..92 %
+  (c) The cost of a bigger buffer: random access. DOOM reads every lump with
+      fseek + fread (Applications/doomgeneric w_file_stdc.c W_StdC_Read). Same
+      DOOM objects, 90 s headless (boot, #Z DOOM, demo), SD trace:
+        1 KiB  2 603 cmds    5 919 blocks ( 3.0 MB)  Pi model ~1.64 s I/O
+       16 KiB  4 229        29 224        (15.0 MB)           ~3.50 s
+       32 KiB  4 269        55 452        (28.4 MB)           ~4.63 s
+       64 KiB  4 295       107 664        (55.1 MB)           ~6.86 s
+      Screendumps at 90 s: all four in the demo, no exception.
+  CHOSEN: 32 KiB -- the smallest size within ~0.1 s per 10 MiB of 64 KiB
+  (1.04..1.08 vs 0.96..0.98 s; 16 KiB loses another ~0.2 s), at little more
+  than half of 64 KiB's DOOM penalty (+3.0 s instead of +5.2 s per 90 s on
+  the model). The lead suggested 64 KiB; the DOOM measurement is why it is
+  not. One constant (do_fstat.c NEWTOS_FILE_BLKSIZE + the test's
+  WANT_FILE_BLKSIZE) if the user decides otherwise.
+
+MEMORY FINDINGS (source + the runs below)
+  * Per open FILE: one malloc(32768) at the stream's first transfer (not at
+    fopen), freed by fclose (fclose.c:16-18). If malloc fails, init_stream
+    halves down to 128 bytes, then runs unbuffered -- no error, no crash.
+  * Upper bound: GEMDOS has 16 open files system-wide
+    (tos-api/src/bdos/fs/file.rs OPEN_FILES 16) -> stdio buffers <= 512 KiB
+    in total, whatever the programs do.
+  * Programs: QED options.c opens at most 2..3 config files at once (fd, tf;
+    text mode) -> <= 96 KiB transient; its text load/save uses Fopen/Fread
+    directly (file.c). TeraDesk's file layer is its own XFILE over
+    Fread/Fwrite (xfilesys.c x_fopen) -- stdio only for an optional log
+    file; the copy trace is identical before/after (284 cmds, 1713 blocks).
+    zView: one stream per picture being decoded (JPG/PNG/GIF codecs) plus
+    prefs.c zview.inf; DOOM: one permanent stream (the WAD), 32 KiB of its
+    malloc arena (its zone is 6 MiB). WinDom (LDGDEMO) reads its config with
+    fopen("r") -> transient 32 KiB.
+  * Default malloc of a program/accessory goes to GEMDOS Malloc (_split_mem,
+    sdk/libc/newtos-arch/heap_init.c), so the buffer does not come out of a
+    small TPA; an accessory's malloc is GEMDOS Malloc too (_acc_main path).
+    SYSACC.NAC is built WITHOUT libc (sdk/build.sh: crt0 + app only) --
+    unaffected, not rebuilt for the card.
+  * LDG modules link libshare's malloc (16 KiB static block, then sbrk ->
+    ldg_Malloc in the CALLER's context; an empty hunk is returned with
+    ldg_Free, libshare malloc.c:271-289). A codec's fopen happens in
+    reader_init, i.e. in zView's context: its 32 KiB is an ldg_Malloc
+    (> 16 KiB static block) owned by zView and given back at fclose. The
+    module's exit-time streams are the console handles 1/2 -> still 1024
+    -> the LDG-M3-B2 scenario (sdk/libshare/tests/libshare-host.sh) is
+    unchanged and still passes. zView with BIG.JPG and the 15 samples, and
+    LDGDEMO (EX_LIB.NLD + POPUP.NLD) below run identically.
+  * Text-mode writes: __stdio_text_write's alloca grows from 1 KiB to 8 KiB
+    (capped at 8192); default stack 64 KiB (MINKEEP), zView 512 KiB.
+
+REBUILD (method/build-all.sh = vforkt-fix's with output/log dirs as
+parameters; plus build-zview.sh, build-ldg-demo.sh, build-ldg-client.sh,
+build-fsbench.sh, build-libc.sh for libtest/clocktest/setjmptst/argvtest)
+  lib_ensure cascade from libc/newtos-arch/do_fstat.c: libc, gemlib, cflib,
+  libm, windom, ldg, libshare, zlib, libpng, libjpeg, giflib, libexif rebuilt,
+  0 failures (compile counts as recorded). libc.a 71d5d3a7... -> 3ab8ca54...;
+  of its 630 members ONLY arch__do_fstat.o differs (same order); a second
+  build-libc.sh run gives the same 3ab8ca54.... Every libc-linked program
+  differs (QED, TeraDesk, DOOM, CoreMark x2, APITEST, ZVIEW.NAP + 10 codecs,
+  EX_LIB/LDGTEST/LDGDEMO/POPUP, FSBENCH, S2 probes); ZVIEW.RSC equal. DOOM's
+  loadable image equals the 32-KiB exploration link (only .symtab/.strtab
+  differ). Hashes: checks/hashes.txt.
+
+STATIC CHECKS
+  SDK host tests: 18 passed / 0 failed / 0 skipped (baseline 17/0/0; +1 =
+    fstat-host) -- checks/sdk-host-tests.txt.
+  fstat-host against HEAD's shim (DO_FSTAT_SRC=git show f14942c:...):
+    6 of 25 FAIL (the six regular-file buffer checks) -- checks/fstat-host-red-
+    HEAD-f14942c.txt; with the change 25/25 -- checks/fstat-host-green.txt.
+  do_fstat.c and fsbench.c compile clean with -Wall -Wextra (target flags).
+  No Rust touched (git diff: docs/sdk, sdk/ only) -> cargo/clippy/host-test
+  counts not re-run; the board-rpi4 release kernel of the unchanged tree was
+  built for the runs (kernel8.img d6b3f9c2..., checks/hashes.txt).
+
+QEMU RUNS (kernel8.img = HEAD's kernel; injector kernels method/make-inj.sh
+k-kinj-{zvw,qedw,teraw,zv-samples,evb-acc}; k-kinj-evb-acc is byte-identical
+to measurement-2026-10-07-zview02's kinj-evb-acc.img 20c4e523...)
+  FSBENCH full (method/run-fsb.sh, base-after.img, SD trace):
+                           before (Pi package FSBENCH  after (FSBENCH.NCP of
+                           2362d3fb..., HEAD libc)     this tree, new libc)
+    read commands          195 769                     151 492  (-44 277 = L3)
+    blocks read            548 939                     548 939
+    100 reads CRC          ok                          ok
+    D:\FSBENCH vs SHA256SUMS 10/10                     10/10
+    fsck C: D:             clean                       clean
+    L3 page header         "default BUFSIZ"            "st_blksize 32768"
+    (before = exactly fat-curcl's "after" counts: 195 769 / 548 939)
+  GUI regression (method/gui-stdio.sh, before = base-before.img with HEAD's
+  program builds, after = base-after.img with the rebuilt ones; memprot on;
+  card host check, fsck, trace):
+    run          read cmds before -> after  host check  fsck   dumps vs before
+    zvw  zView opens C:\PHOTO\BIG.JPG (2 273 801 B), 1932x2576x24 shown
+                 2 644 -> 566 (blocks 8 317/8 319)   --        clean  5/5 identical
+    zvs  zView browser, C:\ZVIEW\SAMPLES: 15 thumbnails (all codecs)
+                 754 -> 752                           --        clean  3/4 identical *
+    qedw QED new, save as, edit, save, quit
+                 286 -> 286                           PASS      clean  10/10 identical
+    teraw TeraDesk copy DUMPVDI.NAP + COREMARK folder
+                 284 -> 284                           PASS      clean  3/7 identical *
+    ldg  LDGDEMO: Alt+C alert, long + short click on Compute (alerts over the
+         POPUP.NLD background path), typing, Close -> desktop
+                 151 -> 152                           --        clean  10/10 identical
+    * the differing dumps differ ONLY in C:\ root size figures (TeraDesk
+      "bytes used", zView size labels): the libc test programs in C:\ were
+      rebuilt and have other sizes on base-after.img
+      (checks/gui-screendumps-before-vs-after.txt, bounding boxes there).
+    0 [EXC]/PANIC/"Memory violation" in all serial logs.
+  APITEST (after): TOTAL 106/0/5 (= fat-curcl); fsck clean.
+  S2ALL (after): FAIL 0x00000001 -- ONLY ENVPAR (MEM03): ENVKID reads its raw
+    p_env and misses "ARGV=" and the blank argument. PRE-EXISTING, not this
+    change: with the S2 probes relinked against HEAD's libc
+    (LIBC_A=libc-1k, base-s2all-head.img, serial/head-s2all-serial.log) the
+    identical failure. Since PORT09 mintlib's start-up cuts an ARGV= string
+    in place (docs/sdk/07-mintlib-limits.md §5 "environ"), so the
+    vforkt-fix probe's expectation is stale; fat-curcl's PASS used probes
+    built 2026-10-06 before PORT09's libc. All other S2ALL parts ok
+    (PFLAGS1/2, P34, P567, TSR, OWN, VFORK).
+
+PI PACKAGE  bin/card/ mirrors the card (C:), bin/SHA256SUMS (paths relative
+  to card/), bin/LIESMICH.TXT (German). Binaries gitignored (.gitignore),
+  regenerable from the tree. NOT copied to any card. Kernel unchanged.
+    Apps\QED\QED.NAP, Apps\TERADESK\DESKTOP.NAP, Apps\COREMARK\CORE.NCP +
+    COREVAL.NCP, Apps\DOOM\DOOM.NAP, Apps\ZVIEW\ZVIEW.NAP + CODECS\*.NLD (10),
+    AUTO\FSBENCH.NC (parked; rename to .NCP to run).
+  ACC\SYSACC.NAC: not included -- built without libc, unchanged by this task.
+  Not staged (not known to be on the card): LDGDEMO tree, LDGTEST.NCP,
+    EX_LIB.NLD, APITEST.NCP, TESTGEM/CHAINTST (rebuilt in the tree).
+  Expected on the Pi (model, 10 MiB L3): 7.6 s -> ~1.05 s; L1/L2 unchanged;
+  DOOM start/level loads a few seconds longer (see (c)).
+
+OPEN
+  * Real-Pi confirmation of the model (L3 and DOOM load time) -- lead/user.
+  * DOOM: its random-access pattern pays for any default buffer above 1 KiB;
+    the remedy is in the port (setvbuf on the WAD stream, or reading lumps
+    with Fread) -- doomgeneric is a non-Atari port and may be optimised, but
+    not part of this task. Untouched.
+  * S2ALL ENVPAR/ENVKID probe expectation vs PORT09 (above) -- method probe,
+    pre-existing, untouched.
+  * The 1-KiB stdio L3 on the Pi cost 0.654 ms per fill against 0.533 ms per
+    Fread in L2; the model brackets with both.
+
+METHOD FILES
+  new: build-variants.sh, link-doom-variants.sh, run-fsb.sh, run-timed.sh,
+    prep-doom.sh, gui-stdio.sh, pi-model.py, stdiobuf-change.diff (tracked
+    edits only; the four new fstat-host files are in sdk/libc/tests/)
+  copied from measurement-2026-10-07-fat-curcl/method, changes named in their
+    headers: prep-card.sh ($BASE, kinds zvs + ldg), run-gui.sh (TRACE=1);
+    unchanged: trace-counts.py, qmp_on_marker.py (orig. fsbench run),
+    make-inj.sh, apply-injector-m3.py, desk-arm-m3.py, gen_script.py,
+    drive-m3.py, card-check.py, gen-pattern.py, desk/, newdesk-template.inf,
+    runs-headless.sh, zvw.actions, qedw.actions, teraw.actions
+  copied from measurement-2026-10-07-zview02/method unchanged: qmp_timed.py,
+    zv-samples.actions, evb-acc.actions
+  copied from measurement-2026-10-06-vforkt-fix/method: build-all.sh
+    ($PROBE_BIN/$BUILD_LOGS), seed-card.sh ($PROBE_BIN), build-s2-tests.sh
+    ($LIBC_A); unchanged: build-probes.sh, build-mprot.sh, build-e10.sh,
+    build-oldexec.sh, crt0-pre0d.S, newtos-pre0d.ld, tests/, TERADESK.INF
+  SHA256SUMS: every file of this run except itself and bin/card/.

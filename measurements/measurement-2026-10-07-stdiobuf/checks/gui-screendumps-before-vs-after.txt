@@ -1,0 +1,81 @@
+identical evb-acc-END_CLOSED.png
+identical evb-acc-end.png
+identical evb-acc-S00_WINDOW.png
+identical evb-acc-S01_INFO_ALERT_KBD.png
+identical evb-acc-S02_ALERT_GONE.png
+identical evb-acc-S03_INFO_ALERT_LONGPRESS.png
+identical evb-acc-S04_ALERT_GONE2.png
+identical evb-acc-S05_SHORTCLICK.png
+identical evb-acc-S05B_ALERT_GONE3.png
+identical evb-acc-S06_VALUE_TYPED.png
+identical qedw-END.png
+identical qedw-Q00_UP.png
+identical qedw-Q01_NEW.png
+identical qedw-Q02_TYPED.png
+identical qedw-Q03_FSEL.png
+identical qedw-Q04_NAME.png
+identical qedw-Q05_SAVED.png
+identical qedw-Q06_EDITED.png
+identical qedw-Q07_SAVED_AGAIN.png
+identical qedw-Q08_QUIT.png
+DIFFER    teraw-END.png
+identical teraw-T00_UP.png
+DIFFER    teraw-T01_C_OPEN.png
+identical teraw-T02_COPY_CONFIRM.png
+DIFFER    teraw-T03_COPIED.png
+DIFFER    teraw-T04_FOLDERCOPY_CONFIRM.png
+DIFFER    teraw-T05_FOLDER_COPIED.png
+identical zv-samples-END.png
+DIFFER    zv-samples-Z02_BROWSER.png
+identical zv-samples-Z06_ZVIEW_DIR.png
+identical zv-samples-Z07_SAMPLES.png
+identical zvw-END.png
+identical zvw-S00.png
+identical zvw-S01.png
+identical zvw-S02.png
+identical zvw-S03.png
+
+The DIFFER dumps differ only in a C:\ root listing: TeraDesk's window
+info line 'NNN bytes used in' (bbox 321,169-359,181: 821567 -> 891815) and
+zView's browser size labels (bbox 242,469-473,476: argvtest.nap 8.8 -> 41.9 KB,
+clocktst.ncp 92.4 -> 95.1 KB) -- the root files LIBTEST/CLOCKTST/SETJMPT/ARGVTEST
+were rebuilt against the new libc and have other sizes on base-after.img.
+
+2c092b4a2ca6e49ecb8ca8fb47e7a410927c593defe6ed13101ca0a42a58b9e8  after-api-end.png
+383a584d1d7ee1d01c86ca082949f1c1b335196e62327c9ab1f9323a6fc6b545  after-evb-acc-END_CLOSED.png
+383a584d1d7ee1d01c86ca082949f1c1b335196e62327c9ab1f9323a6fc6b545  after-evb-acc-end.png
+528887c033b3c13bdaa4db3589ee5c919bc7974345270a09f4e65efb57eab80a  after-evb-acc-S00_WINDOW.png
+6a86eb370049f20f8837195488588c06a245c08f455c3940cd715e0e9116a1b5  after-evb-acc-S01_INFO_ALERT_KBD.png
+528887c033b3c13bdaa4db3589ee5c919bc7974345270a09f4e65efb57eab80a  after-evb-acc-S02_ALERT_GONE.png
+423946a968e414c452e60c9849a25b82cfdebdee3e678e4539a00c874a6aaf66  after-evb-acc-S03_INFO_ALERT_LONGPRESS.png
+521cbc2ef75b343bde4b8ebd543f77b89003fa71e050eeedc2efb80f5b37a501  after-evb-acc-S04_ALERT_GONE2.png
+423946a968e414c452e60c9849a25b82cfdebdee3e678e4539a00c874a6aaf66  after-evb-acc-S05_SHORTCLICK.png
+521cbc2ef75b343bde4b8ebd543f77b89003fa71e050eeedc2efb80f5b37a501  after-evb-acc-S05B_ALERT_GONE3.png
+d23dcb9b2fb633fb1ff0936c73b60fcfb9892675693cbae048569c26706cf6c2  after-evb-acc-S06_VALUE_TYPED.png
+af2ac392da9f301b979af38a55cade731d28a419769fccc614b74b6ebcab2479  after-qedw-END.png
+1ee51811fca791b7df1737798c2b60f7a47ddb0c81867bf8aa2c954bd7293ad8  after-qedw-Q00_UP.png
+71a601205e97fa2159c22eef22cbbf5dda3e1417fdf186aa098fec430dcbc529  after-qedw-Q01_NEW.png
+dd40bd6b772bdba1b10b671b06e833711c44be91ba30476497be038f29956f5f  after-qedw-Q02_TYPED.png
+d2a48b7d3c68e8504b483fe5f71120905a91b2950972399c4ca9de76262b1b2a  after-qedw-Q03_FSEL.png
+8ba2bf896c5a8170574bc8d23f23df3cc8b0c8f636d0ca04c25c5b63b2f7f3b6  after-qedw-Q04_NAME.png
+f2ef3c23a3a42df662c0caa91c1a792c609d482c77b267e52afd2a313b29f47d  after-qedw-Q05_SAVED.png
+7943f677faff2d103d0b5f64a17e9456005ce94a9dc06359f2c0fff600d35b91  after-qedw-Q06_EDITED.png
+95a172aa6573a62cb20a91156833be048eed22d680004bd3ad8d8ef19d17e4a8  after-qedw-Q07_SAVED_AGAIN.png
+af2ac392da9f301b979af38a55cade731d28a419769fccc614b74b6ebcab2479  after-qedw-Q08_QUIT.png
+0e6f770497da100b6707ff8ac1a79f24f30272a0e371bc368d9b10f56a2c324b  after-s2all-end.png
+e62f8f91658e9b2354b109ed5963b8a6d10866cd139483be61285d8d452b0bf0  after-teraw-END.png
+e3c9c490217768e9ec3f53532a3bee510957584f3cdb6df8e40ab180bb561f03  after-teraw-T00_UP.png
+aa9d24901810e74f2c5dcf9da7364169d4c62b948773638a1b18cc1954e5b1e4  after-teraw-T01_C_OPEN.png
+e16d28d9795acdad1aea5e7190d5dfd8445f9d723027089b6638fffe47c0b293  after-teraw-T02_COPY_CONFIRM.png
+9a37e33f1bace3efefd8d0cbc4716eca816a284447a6e2c704f476afad33ebf3  after-teraw-T03_COPIED.png
+ffb465a2ce0e69e39a1c819f16751f586b63afb683c077441150c1ab5f84fbd8  after-teraw-T04_FOLDERCOPY_CONFIRM.png
+04796f71b210cb3ccc9fbbfd8ce5d0a2b7e3843ac826a18758994b813367569b  after-teraw-T05_FOLDER_COPIED.png
+96635353a9af5adf42fb09b5048a1b07ede68e1139230cdecf6f7475aca665ff  after-zv-samples-END.png
+3783c0c357a007a1e4fe9f716162204af1cb4826258c70e7ae89723f3e7f26eb  after-zv-samples-Z02_BROWSER.png
+44ce0364a4ce0ebaa5f0f3b360b8904febc4e4a8db41d747f522cdae7b4f6947  after-zv-samples-Z06_ZVIEW_DIR.png
+9bd2f532faacbf331b94ef53f8805acbad19160beb923b497c1641e73d983446  after-zv-samples-Z07_SAMPLES.png
+7ef5bb711f926b87428edeb2fa69f2c98e9304374a4a2084c68e6d5f897b9e2d  after-zvw-END.png
+7ef5bb711f926b87428edeb2fa69f2c98e9304374a4a2084c68e6d5f897b9e2d  after-zvw-S00.png
+7ef5bb711f926b87428edeb2fa69f2c98e9304374a4a2084c68e6d5f897b9e2d  after-zvw-S01.png
+7ef5bb711f926b87428edeb2fa69f2c98e9304374a4a2084c68e6d5f897b9e2d  after-zvw-S02.png
+7ef5bb711f926b87428edeb2fa69f2c98e9304374a4a2084c68e6d5f897b9e2d  after-zvw-S03.png

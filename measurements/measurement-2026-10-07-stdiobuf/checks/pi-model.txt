@@ -1,0 +1,15 @@
+sequential 10 MiB through stdio, fread(1 KiB) loop (Pi model)
+  buffer  fills    ms (C_lo..C_hi)          KiB/s   of whole-file 875 ms
+     1 K  10240     6328..7567       1353..1618          12..14  %
+    16 K    640     1211..1289       7947..8455          68..72  %
+    32 K    320     1041..1079       9488..9841          81..84  %
+    64 K    160      955..975       10506..10719         90..92  %
+measured on the Pi: 1 KiB 7569 ms (1352 KiB/s), one Fread 875.1 ms (11701 KiB/s)
+
+traced runs: SD I/O time on the Pi model (whole run incl. boot)
+  doom 90 s, 1 KiB (HEAD libc)         2603 cmds    5919 blocks (   3.0 MB)  ~ 1.64 s
+  doom 90 s, 16 KiB                    4229 cmds   29224 blocks (  15.0 MB)  ~ 3.50 s
+  doom 90 s, 32 KiB (this change)      4269 cmds   55452 blocks (  28.4 MB)  ~ 4.63 s
+  doom 90 s, 64 KiB                    4295 cmds  107664 blocks (  55.1 MB)  ~ 6.86 s
+  zvw BIG.JPG run, before              2644 cmds    8317 blocks (   4.3 MB)  ~ 1.76 s
+  zvw BIG.JPG run, after                566 cmds    8319 blocks (   4.3 MB)  ~ 0.66 s

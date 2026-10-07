@@ -1,0 +1,74 @@
+==== FSBENCH (TASK/FS08) -- read path, layer by layer, D:\FSBENCH ====
+kernel: GEMDOS Sversion 3000, OSHEADER os_version 4.04 os_date 10072026
+        CPU clock 700 MHz; build rev: boot screen only
+clock: _hz_200 5 ms, edge sync + spin interpolation (CNTVCT_EL0 off at EL0)
+       spins/tick 414873 (323923..530966), empty measurement 0.000..1.719 ms
+D: BPB recsiz 512 clsiz 4 clsizb 2048 datrec 545 numcl 65368 flags 1
+L1 BIOS Lrwabs(read, D:) from sector 545 (512 B units, no GEMDOS/FAT/cache)
+class      bytes pass  sec/call  calls         ms    KB/s   ms/call
+10K        10240 cold         1      0      0.000       0     0.000
+10K        10240 cold       128      0      0.000       0     0.000
+100K      102400 cold         1      0      0.000       0     0.000
+100K      102400 cold       128      0      0.000       0     0.000
+1M       1048576 cold         1      0      0.000       0     0.000
+1M       1048576 cold       128      0      0.000       0     0.000
+10M     10485760 cold         1      0      0.000       0     0.000
+10M     10485760 cold       128      0      0.000       0     0.000
+10K        10240 warm         1      0      0.000       0     0.000
+10K        10240 warm       128      0      0.000       0     0.000
+100K      102400 warm         1      0      0.000       0     0.000
+100K      102400 warm       128      0      0.000       0     0.000
+1M       1048576 warm         1      0      0.000       0     0.000
+1M       1048576 warm       128      0      0.000       0     0.000
+10M     10485760 warm         1      0      0.000       0     0.000
+10M     10485760 warm       128      0      0.000       0     0.000
+L2 GEMDOS cold  (ms; Fopen/Fclose of the 512 B round; KB/s below)
+file          size Fsfirst  Fopen Fclose |   512 B    4 KB   64 KB   whole crc
+K010_1.DAT     10240 WRONG SIZE 0 (manifest 10240) -- not read
+K010_2.DAT     10240 WRONG SIZE 0 (manifest 10240) -- not read
+K010_3.DAT     10240 WRONG SIZE 0 (manifest 10240) -- not read
+K100_1.DAT    102400 WRONG SIZE 0 (manifest 102400) -- not read
+K100_2.DAT    102400 WRONG SIZE 0 (manifest 102400) -- not read
+K100_3.DAT    102400 WRONG SIZE 0 (manifest 102400) -- not read
+M001_1.DAT   1048576 WRONG SIZE 0 (manifest 1048576) -- not read
+M001_2.DAT   1048576 WRONG SIZE 0 (manifest 1048576) -- not read
+M010_1.DAT  10485760 WRONG SIZE 0 (manifest 10485760) -- not read
+M010_2.DAT  10485760 WRONG SIZE 0 (manifest 10485760) -- not read
+L2 GEMDOS warm  (ms; Fopen/Fclose of the 512 B round; KB/s below)
+file          size Fsfirst  Fopen Fclose |   512 B    4 KB   64 KB   whole crc
+K010_1.DAT     10240 WRONG SIZE 0 (manifest 10240) -- not read
+K010_2.DAT     10240 WRONG SIZE 0 (manifest 10240) -- not read
+K010_3.DAT     10240 WRONG SIZE 0 (manifest 10240) -- not read
+K100_1.DAT    102400 WRONG SIZE 0 (manifest 102400) -- not read
+K100_2.DAT    102400 WRONG SIZE 0 (manifest 102400) -- not read
+K100_3.DAT    102400 WRONG SIZE 0 (manifest 102400) -- not read
+M001_1.DAT   1048576 WRONG SIZE 0 (manifest 1048576) -- not read
+M001_2.DAT   1048576 WRONG SIZE 0 (manifest 1048576) -- not read
+M010_1.DAT  10485760 WRONG SIZE 0 (manifest 10485760) -- not read
+M010_2.DAT  10485760 WRONG SIZE 0 (manifest 10485760) -- not read
+L3 stdio fopen(rb) / fread(buf,1,1024) / fclose  (ms; default BUFSIZ)
+file           size pass   fopen     fread    KB/s freads fclose  crc
+K010_1.DAT     10240 cold fopen failed
+K010_2.DAT     10240 cold fopen failed
+K010_3.DAT     10240 cold fopen failed
+K100_1.DAT    102400 cold fopen failed
+K100_2.DAT    102400 cold fopen failed
+K100_3.DAT    102400 cold fopen failed
+M001_1.DAT   1048576 cold fopen failed
+M001_2.DAT   1048576 cold fopen failed
+M010_1.DAT  10485760 cold fopen failed
+M010_2.DAT  10485760 cold fopen failed
+K010_1.DAT     10240 warm fopen failed
+K010_2.DAT     10240 warm fopen failed
+K010_3.DAT     10240 warm fopen failed
+K100_1.DAT    102400 warm fopen failed
+K100_2.DAT    102400 warm fopen failed
+K100_3.DAT    102400 warm fopen failed
+M001_1.DAT   1048576 warm fopen failed
+M001_2.DAT   1048576 warm fopen failed
+M010_1.DAT  10485760 warm fopen failed
+M010_2.DAT  10485760 warm fopen failed
+summary: 0 reads crc ok, 20 bad, 20 missing/failed (L2+L3, both passes)
+==== FSBENCH end ====
+# L2 detail: pass file chunk Fopen Fread Fclose (ms) Freads bytes err crc
+

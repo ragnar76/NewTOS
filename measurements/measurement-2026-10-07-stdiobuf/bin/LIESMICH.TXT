@@ -1,0 +1,45 @@
+FS08 Teil 4 -- groesserer stdio-Puffer: neu gebaute Programme fuer die Karte
+==========================================================================
+
+Was sich aendert
+  Die libc (mintlib) gibt einer geoeffneten DATEI jetzt einen stdio-Puffer
+  von 32 KiB statt 1 KiB (sdk/libc/newtos-arch/do_fstat.c). Programme, die
+  mit fopen/fread lesen (zView und seine Codecs, QED-Konfiguration, DOOM ...),
+  machen damit fuer 32 KiB EINEN Fread statt 32. Konsole und Geraete bleiben
+  bei 1 KiB. Der Kernel ist UNVERAENDERT -- kernel8.img bleibt, wie er ist.
+
+Was auf die Karte gehoert (nur auf Ansage kopieren)
+  Das Verzeichnis card/ bildet die Karte (C:) ab. Jede Datei ersetzt die
+  gleichnamige Datei auf der Karte:
+
+    card/Apps/QED/QED.NAP            -> C:\Apps\QED\QED.NAP
+    card/Apps/TERADESK/DESKTOP.NAP   -> C:\Apps\TERADESK\DESKTOP.NAP
+    card/Apps/COREMARK/CORE.NCP      -> C:\Apps\COREMARK\CORE.NCP
+    card/Apps/COREMARK/COREVAL.NCP   -> C:\Apps\COREMARK\COREVAL.NCP
+    card/Apps/DOOM/DOOM.NAP          -> C:\Apps\DOOM\DOOM.NAP
+    card/Apps/ZVIEW/ZVIEW.NAP        -> C:\Apps\ZVIEW\ZVIEW.NAP
+    card/Apps/ZVIEW/CODECS/*.NLD     -> C:\Apps\ZVIEW\CODECS\  (alle 10)
+    card/AUTO/FSBENCH.NC             -> C:\AUTO\FSBENCH.NC   (geparkt)
+
+  Die Pruefsummen stehen in SHA256SUMS (Pfade relativ zu card/).
+  Resource-Dateien (QED.RSC, DESKTOP.RSC, ZVIEW.RSC, Icons) aendern sich
+  nicht. C:\ACC\SYSACC.NAC aendert sich NICHT: es wird ohne libc gebaut.
+
+Gegenmessung mit FSBENCH (wie am 7.10.)
+  1. C:\AUTO\FSBENCH.NC in FSBENCH.NCP umbenennen, booten, warten.
+  2. Jede Seite fotografieren. Seite 4 (L3 stdio) zeigt jetzt in der
+     Kopfzeile "st_blksize 32768" -- steht dort 1024, laeuft noch die alte
+     FSBENCH.
+  3. C:\FSBENCH.LOG zurueckschicken, danach FSBENCH.NCP wieder in
+     FSBENCH.NC umbenennen.
+
+  Erwartung (Modell aus der Pi-Messung vom 7.10., 10-MB-Datei, L3):
+    vorher  1 KiB  ~7,6 s  (1352 KB/s, gemessen)
+    jetzt  32 KiB  ~1,05 s (~9800 KB/s, Modell)
+  L1 und L2 duerfen sich nicht aendern (sie benutzen kein stdio).
+
+Worauf achten
+  - zView: grosse JPEGs sollten deutlich schneller laden.
+  - DOOM: liest jeden Lump mit fseek + fread; mit dem groesseren Puffer
+    liest es mehr Bytes von der Karte. Bitte auf laengere Ladezeiten beim
+    Start und beim Levelwechsel achten (Modell: einige Sekunden mehr).

@@ -151,6 +151,15 @@ report system-host $rc "mintlib tree absent or host not LP64"
 [ $rc -eq 0 ] || [ $rc -eq 77 ] || sed 's/^/      /' "$WORK/quickstat-host.log"
 report quickstat-host $rc "mintlib tree absent or host not LP64"
 
+# fstat-host (FS08 part 4, user decision 2026-10-07): newtos-arch/do_fstat.c
+# gives a regular file (GEMDOS handle >= 6) st_blksize 32 KiB, so mintlib's
+# own stdio/stdio_init.c picks a 32 KiB stream buffer; the console (fds 0-2),
+# the other standard handles and BIOS devices keep BUFSIZ (1024). With the
+# previous shim 6 of 25 fail.
+"$SDK/libc/tests/fstat-host.sh" > "$WORK/fstat-host.log" 2>&1; rc=$?
+[ $rc -eq 0 ] || [ $rc -eq 77 ] || sed 's/^/      /' "$WORK/fstat-host.log"
+report fstat-host $rc "mintlib tree absent or host not LP64"
+
 # waith-host (PORT-WAITH): the overlaid include/sys/wait.h -- WIFEXITED/
 # WEXITSTATUS/WIFSIGNALED/WTERMSIG/WCOREDUMP/WIFSTOPPED/WSTOPSIG and the BSD
 # `union wait' members on known status words, then through mintlib's own

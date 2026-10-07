@@ -1,0 +1,3 @@
+# Rebuilt program binaries for the card (regenerable from the tree;
+# sha256 in bin/SHA256SUMS). Not tracked.
+/bin/card/

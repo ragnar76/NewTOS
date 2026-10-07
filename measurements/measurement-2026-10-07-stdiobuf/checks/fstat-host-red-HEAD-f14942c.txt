@@ -1,0 +1,27 @@
+do_fstat.c under test: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/b705aa1b-c171-48ba-ac49-a9f08dec4fa1/scratchpad/do_fstat-head.c
+PASS  mintlib BUFSIZ is 1024 (include/stdio.h:243)
+PASS  fd 6: S_IFREG, st_size 10485760 (got 10485760)
+FAIL  fd 6: st_blksize 32768 (got 1024)
+PASS  fd 6: position 3495253 restored after fstat (got 3495253)
+FAIL  fd 6: stdio buffer 32768, full buffering, seekable (got 1024, linebuf 0, seek 1)
+PASS  fd 7: S_IFREG, st_size 0 (got 0)
+FAIL  fd 7: st_blksize 32768 (got 1024)
+PASS  fd 7: position 0 restored after fstat (got 0)
+FAIL  fd 7: stdio buffer 32768, full buffering, seekable (got 1024, linebuf 0, seek 1)
+PASS  fd 8: S_IFREG, st_size 300003 (got 300003)
+FAIL  fd 8: st_blksize 32768 (got 1024)
+PASS  fd 8: position 100001 restored after fstat (got 100001)
+FAIL  fd 8: stdio buffer 32768, full buffering, seekable (got 1024, linebuf 0, seek 1)
+PASS  fd 0 (console): st_blksize BUFSIZ 1024 (got 1024), S_IFCHR
+PASS  fd 0 (console): stdio buffer 1024, line-buffered, no seek (got 1024, linebuf 1, seek 0)
+PASS  fd 1 (console): st_blksize BUFSIZ 1024 (got 1024), S_IFCHR
+PASS  fd 1 (console): stdio buffer 1024, line-buffered, no seek (got 1024, linebuf 1, seek 0)
+PASS  fd 2 (console): st_blksize BUFSIZ 1024 (got 1024), S_IFCHR
+PASS  fd 2 (console): stdio buffer 1024, line-buffered, no seek (got 1024, linebuf 1, seek 0)
+PASS  fd 3 (standard handle, seekable): st_blksize BUFSIZ 1024 (got 1024)
+PASS  fd 3 (standard handle, seekable): stdio buffer 1024 (got 1024)
+PASS  fd -1 (BIOS device): st_blksize BUFSIZ 1024 (got 1024)
+PASS  fd -1 (BIOS device): stdio buffer 1024 (got 1024)
+PASS  fd 9 (not open): st_blksize BUFSIZ 1024 (got 1024)
+PASS  fd 9 (not open): stdio buffer 1024 (got 1024)
+fstat-host: 25 checks, 6 failed

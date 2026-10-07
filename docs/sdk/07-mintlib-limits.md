@@ -45,12 +45,49 @@ tail that has no TOS analogue is dropped.
 
 | mintlib file | Shim | What is different |
 |--------------|------|-------------------|
-| `mintlib/do_fstat.c` | `do_fstat.c` | fills `st_mode` (`S_IFCHR\|0600` for fd 0–2, `S_IFREG\|0644` otherwise), an honest `st_size` via `Fseek`, `st_blksize = BUFSIZ`, `st_blocks`, `st_nlink = 1`; **times and owner stay zero** (`:1-30`) |
+| `mintlib/do_fstat.c` | `do_fstat.c` | fills `st_mode` (`S_IFCHR\|0600` for fd 0–2, `S_IFREG\|0644` otherwise), an honest `st_size` via `Fseek`, `st_blksize` (**32 KiB for a file handle ≥ 6, `BUFSIZ` = 1024 otherwise** — named deviation, see below), `st_blocks`, `st_nlink = 1`; **times and owner stay zero** (`:1-30`) |
 | `mintlib/do_stat.c` | `do_stat.c` | `__sys_stat` = the `Fstat64` trap; `__do_stat` = `__quickstat` (mode/size/uid/gid honest, **no timestamps**) (`:1-27`, `:42-56`) |
 | `mintlib/isatty.c` | `isatty.c` | `isatty(fd)` is `fd >= 0 && fd <= 2`; also carries `__open_stat[]` (`:1-16`) |
 | `unix/ioctl.c` | `ioctl.c` | forwards to `Fcntl(fd, arg, request)`; the m68k tty line-discipline path is gone (`:1-16`) |
 | `unix/access.c` | `access.c` | checks the owner `rwx` bits from `__quickstat` only; no group/passwd database (`:1-19`) |
 | ~~`mintlib/thread.c`~~ | builds since TASK/PROC01 from `sdk/libc/overlay/mintlib/thread.c` (LP64 casts for the 32-bit basepage fields, plus one fix: `tfork` frees the saved `Pexec(PE_CBASEPAGE)` environment instead of `b->p_env`, §8) | `tfork`, `__waitval`, `__waittime` — `vfork`'s TOS branch, `wait4` |
+
+### stdio buffer size of a regular file: 32 KiB (named deviation, TASK/FS08 part 4)
+
+mintlib's stdio gives a stream the buffer size `st_blksize` reports
+(`stdio/stdio_init.c:72-77`, allocated in `internals.c` `init_stream`). mintlib's
+own TOS branch reports 1024 (`mintlib/do_fstat.c:150`, `quickstat.c:90/248`),
+and so did our shim (`BUFSIZ`). **Since 2026-10-07 (user decision: "a larger
+buffer is no problem, we have more memory than a real Atari") the shim reports
+32 KiB for a GEMDOS file handle (≥ 6) whose size `Fseek` could read**; the
+console (fds 0–2, line-buffered as before), the other standard handles 3–5 and
+negative (BIOS device) handles keep 1024. `stat()` (`__quickstat`) still says
+1024 — only the open-stream path sizes buffers. A program that wants another
+size calls `setvbuf()`. Host-checked by `sdk/libc/tests/fstat-host.sh`
+(through mintlib's own `stdio_init.c`).
+
+Why: on the real Pi 4 every 1-KiB `fread` on a file became one 1-KiB `Fread`,
+i.e. one SD command: 1.35 MB/s against 11.7 MB/s for one large `Fread`
+(`measurements/measurement-2026-10-07-fs08-pi-after/`). Why 32 KiB and not 64
+(`measurements/measurement-2026-10-07-stdiobuf/RUNINFO.TXT`): with the Pi's
+measured cost (~0.53 ms per `Fread` command, ~11.7 MiB/s streaming) a 10-MiB
+sequential read costs ≈ 1.21 s at 16 KiB, 1.05 s at 32 KiB, 0.96 s at 64 KiB
+(0.88 s for one whole-file `Fread`, 7.6 s at 1 KiB) — but every `fseek`
+discards the buffer and the next `fread` below the buffer size refills a whole
+buffer. DOOM reads every lump with `fseek` + `fread` (doomgeneric
+`w_file_stdc.c`): in the same 90 s of QEMU it read 3.0 MB at 1 KiB, 15 MB at
+16, 28 MB at 32 and 55 MB at 64 KiB (≈ +1.9 / +3.0 / +5.2 s on the Pi model).
+32 KiB is the smallest size within ~0.1 s per 10 MiB of 64 KiB.
+
+Costs to know when porting:
+
+| What | Effect |
+|------|--------|
+| memory | one `malloc` of 32 KiB per open file stream, at its first transfer, freed at `fclose`; if that much is not free, mintlib halves the request down to 128 bytes and finally runs unbuffered (`internals.c:63-80`) — no failure, only a smaller buffer. GEMDOS allows 16 open files system-wide (`tos-api/src/bdos/fs/file.rs` `OPEN_FILES`), so stdio buffers cannot exceed 512 KiB in total |
+| random access | a `fread` smaller than the buffer after an `fseek` reads up to 32 KiB (see DOOM above); a program that seeks a lot and reads little should `setvbuf()` a small buffer |
+| text mode | a stream opened without `"b"` writes through `__stdio_text_write` in chunks of `min(st_blksize, 8192)` bytes on the **stack** (`sysd-stdio.c:205-221`, `alloca`): 8 KiB now instead of 1 KiB, well inside the 64 KiB default stack; reads ask for `bufsize - 1` bytes per `Fread` |
+| LDG modules | a module's `malloc` is libshare's (16 KiB static block, then `ldg_Malloc` in the caller's context, empty hunks returned with `ldg_Free`): a codec's `fopen` (JPG, PNG, GIF) gets its 32 KiB through `ldg_Malloc` and gives it back at `fclose`. The exit-time console streams of a module stay at 1024 (`sdk/libshare/tests/libshare-host.sh`) |
+| `fpathconf(fd, _PC_PIPE_BUF)` | returns `st_blksize`, i.e. 32768 for a file (`unix/fpathconf.c:24-32`) |
 
 ## 3. mintlib assembly that is never assembled
 

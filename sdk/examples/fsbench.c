@@ -20,7 +20,11 @@
  *   L2 GEMDOS per file: Fsfirst; then four rounds of Fopen / Fread loop /
  *             Fclose with 512 B, 4 KiB, 64 KiB and one whole-file Fread.
  *   L3 stdio  per file: fopen("rb") / fread(buf, 1, 1024) loop / fclose --
- *             the zView pattern (mintlib stdio, st_blksize = BUFSIZ = 1024).
+ *             the zView pattern (mintlib stdio; the stream buffer is
+ *             st_blksize: 1024 = BUFSIZ until FS08 part 4, 32 KiB since,
+ *             sdk/libc/newtos-arch/do_fstat.c). The page shows the value
+ *             fstat() reports for the first file, read after its timed
+ *             fread loop.
  *
  * Every Fread / fread lands in one file-sized buffer at the running offset,
  * so the CRC-32 is computed AFTER the timed region, not inside it.
@@ -52,6 +56,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/stat.h>
 
 #include "fsbench-manifest.h"
 
@@ -256,6 +261,7 @@ struct l3r {
 	int crcok;
 };
 static struct l3r L3[2][FSB_NFILES];
+static long l3_blksize = -1;	/* fstat st_blksize of the first L3 file */
 
 static unsigned char *buf;
 static long bufsz;
@@ -401,6 +407,12 @@ static void run_l3(int pass)
 				break;
 		}
 		x->ns_rd = tstop();
+		if (l3_blksize < 0) {
+			/* outside every timed region: the buffer size stdio chose */
+			struct stat st;
+			if (fstat(fileno(fp), &st) == 0)
+				l3_blksize = (long)st.st_blksize;
+		}
 		tstart();
 		fclose(fp);
 		x->ns_cl = tstop();
@@ -551,7 +563,8 @@ static void report_l3(void)
 	char a[16], b[16], c[16];
 	int p, f;
 
-	pg(3, "L3 stdio fopen(rb) / fread(buf,1,1024) / fclose  (ms; default BUFSIZ)\r\n");
+	pg(3, "L3 stdio fopen(rb) / fread(buf,1,1024) / fclose  (ms; st_blksize %ld)\r\n",
+	   l3_blksize);
 	pg(3, "file           size pass   fopen     fread    KB/s freads fclose  crc\r\n");
 	for (p = 0; p < 2; p++)
 		for (f = 0; f < FSB_NFILES; f++) {
