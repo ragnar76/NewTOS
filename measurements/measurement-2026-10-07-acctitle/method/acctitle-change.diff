@@ -1,0 +1,353 @@
+diff --git a/docs/api/aes/accessories.md b/docs/api/aes/accessories.md
+index f20d998..f60bf51 100644
+--- a/docs/api/aes/accessories.md
++++ b/docs/api/aes/accessories.md
+@@ -769,13 +769,30 @@ caller's pointer (`gemmnlib.c:806`) and the renderer dereferences it later; one
+ address space makes that safe. Here it is an EL0 VA of the accessory's TPA,
+ dereferenced at EL1 under the *desktop's* `TTBR0` when the drop-down draws —
+ measured as a data abort (`FAR=0x1610`) on the first hover over *Desk*. NewTOS
+-copies the string at registration, into `menu.rs`'s `Accs::copies`, and
++copies the string at registration, into `menu.rs`'s `TITLES` page, and
+ splices the copy's address in. The observable difference is narrow and
+ permissive: EmuTOS requires the caller to keep the string alive and NewTOS
+ does not, and a title edited *in place* after registration shows at the next
+ `menu_register`/`menu_bar` rather than at the next repaint. Titles are capped
+ at 32 bytes (EmuTOS has no cap because it copies nothing).
+ 
++What the copy must **not** change is who can read it (TASK/ACCTITLE,
++2026-10-07). On EmuTOS the string `menu_fixup` writes into an application's
++Desk drop-down is ordinary memory the application reads like its own, and
++applications do read it: WinDom's `menu_exec_cmd`
++(`sdk/windom/windom-1.21.3/src/menu_execcmd.c`) `strstr`s every entry from the
++Desk box on, for every unhandled key. With the copy in kernel memory that read
++was a permission fault at EL0 (zView, F10/Esc, real Pi 4). So the copies live
++in a page of their own (`TitlePage`, page-aligned, nothing else in it) that is
++published **read-only to every process at VA = PA** on first use
++(`usermem::expose`, `PROT_PR`, ADR-023 — the pattern of the PPARENT stand-in
++page and of `Getmpb`), and `menu_fixup` links the address the tree's reader
++can follow: the **published user address** into an application's tree, the
++kernel address into the kernel desktop's own tree (read by kernel code only —
++the per-reader choice `wind_get(WF_SCREEN)` makes). A program can read but not
++write a title; on EmuTOS it could also overwrite one, which no program is
++known to do.
++
+ **(b) A scheduler switch saves `v0..v31`, FPCR and FPSR.** EmuTOS's `switchto`
+ saves `d0-a5/a6/usp/sp` (`gemasm.S:169-194`) — its whole ABI-relevant register
+ set. NewTOS's `ExceptionFrame` carried only the GPRs, which was enough while
+@@ -814,13 +831,14 @@ of starting a second, unreachable copy.
+ 
+ ### 9.4 Not done, and why
+ 
+-* **Accessory titles in an *application's* menu bar.** `menu_fixup` runs on
+-  every `menu_bar(tree, 1)`, so an application's own Desk box is spliced the
+-  same way — but the copied title lives in kernel memory, and an app-owned
+-  tree resolves every address through the app's mapping (`ObjTree::app_owned`,
+-  A97), where a kernel VA has no translation. The entry is then simply not
+-  drawn (`spec_none`), never a fault. A shared read-only title page mapped
+-  into every process is the fix; it is a new ticket, not this batch.
++* ~~**Accessory titles in an *application's* menu bar.**~~ Done in
++  TASK/ACCTITLE (2026-10-07), see §9.3 (a). Until then the copied title lived
++  in kernel memory: the AES drew the entry empty (an app-owned tree resolves
++  every address through the app's mapping, `ObjTree::app_owned`, A97), and —
++  contrary to the "never a fault" this note used to claim — the *application*
++  faulted as soon as it read the entry itself (WinDom `menu_exec_cmd`, zView
++  on the real Pi 4). The shared read-only title page named here as the fix is
++  what landed.
+ * **The `NUM_ACCS` budget across a `menu_register` from a non-accessory.** Any
+   AES client may call `menu_register` and take a slot, exactly as in EmuTOS.
+ * **Accessory windows.** `sysacc.c` uses `form_alert`; an accessory that opens
+diff --git a/docs/api/aes/menu.md b/docs/api/aes/menu.md
+index e3e0cde..1110254 100644
+--- a/docs/api/aes/menu.md
++++ b/docs/api/aes/menu.md
+@@ -971,7 +971,13 @@ are `1` / `0` / slot-id / `-1` only.
+ 6. **`menu_register` stores the caller's string pointer, not a copy.**
+    `g_acctitle[slot] = pstr` "like Atari TOS" (`gemmnlib.c:806`) — the title
+    string must outlive the registration. The return is the slot index (0..5),
+-   which is the DA's *menu id* used later to route `AC_OPEN`.
++   which is the DA's *menu id* used later to route `AC_OPEN`. `menu_fixup`
++   then writes that pointer into the installed tree's Desk entries
++   (`gemmnlib.c:118`), where the **application** reads it like any other
++   entry of its own menu (WinDom's `menu_exec_cmd` `strstr`s them). NewTOS
++   binding: the title is copied, and the application's tree gets the copy's
++   address in a page published read-only to every process —
++   `docs/api/aes/accessories.md` §9.3 (a) (TASK/ACCTITLE).
+ 7. **`MN_SELECTED` carries the menu-tree pointer in `msg[5..7]`** in the
+    default build. Without `CONF_WITH_MENU_EXTENSION` those three words are 0
+    (`gemctrl.c:347-368`). Selecting a desk-accessory entry sends **`AC_OPEN`
+diff --git a/tos-api/src/aes/menu.rs b/tos-api/src/aes/menu.rs
+index 438eb64..dd80bab 100644
+--- a/tos-api/src/aes/menu.rs
++++ b/tos-api/src/aes/menu.rs
+@@ -231,7 +231,7 @@ pub(super) fn reinit() {
+         (*ACCS.title.get()).fill(0);
+         (*ACCS.owner.get()).fill(usize::MAX);
+         (*ACCS.display.get()).fill(-1);
+-        (*ACCS.copies.get()) = [[0; ACC_TITLE_LEN]; NUM_ACCS];
++        (*TITLES.0.get()).0 = [[0; ACC_TITLE_LEN]; NUM_ACCS];
+         DAFIRST.store(NIL, Ordering::Relaxed);
+         // `mn_cleanup`'s `dos_free(gl_submenu); gl_submenu = NULL;`
+         // (gemmnlib.c:751-756).
+@@ -1158,30 +1158,43 @@ struct Accs {
+     /// `acc_display[]` — display slot → menu id, rebuilt by
+     /// [`build_menuid_lookup`] after every registration.
+     display: UnsafeCell<[i16; NUM_ACCS]>,
+-    /// **A kernel-side copy of each title string** — the one place NewTOS
+-    /// cannot do what `gemmnlib.c:806` does.
+-    ///
+-    /// EmuTOS stores the accessory's pointer and the menu renderer
+-    /// dereferences it later: one address space, always valid. Here the
+-    /// pointer is an **EL0 VA of the accessory's own TPA**, and the renderer
+-    /// runs at EL1 under whatever `TTBR0` the *current* client has — the
+-    /// desktop's, during whose drop-down the entry is drawn. Writing that VA
+-    /// into the desktop's tree faulted the AES outright (measured: data abort,
+-    /// `FAR = 0x1610`, on the first hover over *Desk*), which is the A97 class
+-    /// of defect exactly.
+-    ///
+-    /// So the string is copied here, at registration, while the accessory *is*
+-    /// the current process and the read is safe, and [`menu_fixup`] writes the
+-    /// **copy's** address into the placeholder's `ob_spec`. The observable
+-    /// difference is narrow and in the permissive direction: EmuTOS requires
+-    /// the caller to keep the string alive for the life of the registration
+-    /// (`docs/api/aes/menu.md` note 6) and NewTOS does not, and a caller that
+-    /// *edits* its title in place after registering sees the change only at
+-    /// its next `menu_register`/`menu_bar` (where the copy is refreshed)
+-    /// rather than at the next repaint. No accessory does either.
+-    copies: UnsafeCell<[[u8; ACC_TITLE_LEN]; NUM_ACCS]>,
+ }
+ 
++// **A kernel-side copy of each title string** — the one place NewTOS cannot
++// do what `gemmnlib.c:806` does.
++//
++// EmuTOS stores the accessory's pointer and the menu renderer dereferences it
++// later: one address space, always valid. Here the pointer is an **EL0 VA of
++// the accessory's own TPA**, and the renderer runs at EL1 under whatever
++// `TTBR0` the *current* client has — the desktop's, during whose drop-down
++// the entry is drawn. Writing that VA into the desktop's tree faulted the AES
++// outright (measured: data abort, `FAR = 0x1610`, on the first hover over
++// *Desk*), which is the A97 class of defect exactly.
++//
++// So the string is copied, at registration, while the accessory *is* the
++// current process and the read is safe, and [`menu_fixup`] writes the
++// **copy's** address into the placeholder's `ob_spec`. The observable
++// difference is narrow and in the permissive direction: EmuTOS requires the
++// caller to keep the string alive for the life of the registration
++// (`docs/api/aes/menu.md` note 6) and NewTOS does not, and a caller that
++// *edits* its title in place after registering sees the change only at its
++// next `menu_register`/`menu_bar` (where the copy is refreshed) rather than
++// at the next repaint. No accessory does either.
++//
++// **The copies are readable by every program** (TASK/ACCTITLE). On EmuTOS the
++// string `menu_fixup` links into an application's Desk drop-down is ordinary
++// memory the application reads like its own — and applications do: WinDom's
++// `menu_exec_cmd` `strstr`s every Desk entry on each unhandled key
++// (`sdk/windom/windom-1.21.3/src/menu_execcmd.c`), as does any program that
++// walks its menu for shortcuts. A kernel high-half address there is a
++// permission fault at EL0 (zView on the real Pi 4, 2026-10-07). The copies
++// therefore live in a page of their own that is published read-only to every
++// process at VA = PA (`usermem::expose`, `PROT_PR`, ADR-023 — the pattern of
++// `bdos::process::standin`), and an application's tree gets the **user
++// address** of its copy; the kernel desktop's own tree, read by kernel code
++// only, keeps the kernel address (the per-reader choice `Getmpb` and
++// `wind_get(WF_SCREEN)` make).
++
+ /// Bytes reserved per copied accessory title, NUL included. The *Desk*
+ /// drop-down is [`MIN_DESKMENU_WIDTH`]-ish characters wide and classic
+ /// accessory titles are far shorter (`" NewTOS System"` is 14); EmuTOS has no
+@@ -1190,24 +1203,41 @@ struct Accs {
+ ///
+ /// [`MIN_DESKMENU_WIDTH`]: crate::aes::menu
+ const ACC_TITLE_LEN: usize = 32;
++
++/// The page the copied titles live in — **nothing else**, because the whole
++/// page becomes readable to every process when it is published.
++#[repr(C, align(4096))]
++struct TitlePage([[u8; ACC_TITLE_LEN]; NUM_ACCS]);
++
++const _: () = assert!(core::mem::size_of::<TitlePage>() == 4096);
++
++struct TitleCell(UnsafeCell<TitlePage>);
++// SAFETY: single boot CPU only touches the AES.
++unsafe impl Sync for TitleCell {}
++
++/// The copied titles, one [`ACC_TITLE_LEN`] row per registry slot.
++static TITLES: TitleCell = TitleCell(UnsafeCell::new(TitlePage([[0; ACC_TITLE_LEN]; NUM_ACCS])));
++
++/// The user address [`TITLES`] is published at, `0` until the first
++/// publication ([`titles_user_va`]). A publication is permanent.
++static TITLES_USER_VA: AtomicU64 = AtomicU64::new(0);
++
+ // SAFETY: single boot CPU only touches the AES.
+ unsafe impl Sync for Accs {}
+ static ACCS: Accs = Accs {
+     title: UnsafeCell::new([0; NUM_ACCS]),
+     owner: UnsafeCell::new([usize::MAX; NUM_ACCS]),
+     display: UnsafeCell::new([-1; NUM_ACCS]),
+-    copies: UnsafeCell::new([[0; ACC_TITLE_LEN]; NUM_ACCS]),
+ };
+ 
+ /// Copy the NUL-terminated title string at the caller VA `pstr` into slot
+-/// `idx`'s entry of [`Accs::copies`] and return the copy's (kernel) address —
+-/// see that field for why a copy exists at all. Called from
+-/// [`menu_register`]; the string is read in the caller's `space` (ARCH03
+-/// 3a), and `Err` — fault recorded, slot `idx` left empty — when the program
+-/// cannot read it.
+-fn copy_title(space: crate::uaccess::Space, idx: usize, pstr: u64) -> Result<u64, crate::uaccess::UserFault> {
++/// `idx`'s row of [`TITLES`] — see there for why a copy exists at all.
++/// Called from [`menu_register`]; the string is read in the caller's `space`
++/// (ARCH03 3a), and `Err` — fault recorded, slot `idx` left empty — when the
++/// program cannot read it.
++fn copy_title(space: crate::uaccess::Space, idx: usize, pstr: u64) -> Result<(), crate::uaccess::UserFault> {
+     // SAFETY: single-CPU AES; exclusive owner of the registry.
+-    let dst = unsafe { &mut (*ACCS.copies.get())[idx] };
++    let dst = unsafe { &mut (*TITLES.0.get()).0[idx] };
+     dst.fill(0);
+     if pstr != 0 {
+         // The last byte stays 0: the copy is always NUL-terminated, however
+@@ -1218,13 +1248,52 @@ fn copy_title(space: crate::uaccess::Space, idx: usize, pstr: u64) -> Result<u64
+             return Err(e);
+         }
+     }
+-    Ok(dst.as_ptr() as u64)
++    Ok(())
+ }
+ 
+ /// The kernel address of slot `idx`'s copied title.
+-fn title_copy_addr(idx: usize) -> u64 {
+-    // SAFETY: single-CPU AES; exclusive owner of the registry.
+-    unsafe { (*ACCS.copies.get())[idx].as_ptr() as u64 }
++fn title_copy_kva(idx: usize) -> u64 {
++    TITLES.0.get() as u64 + (idx * ACC_TITLE_LEN) as u64
++}
++
++/// The user address of [`TITLES`], publishing the page read-only to every
++/// process at VA = PA on first use (`usermem::expose`, `PROT_PR`, ADR-023).
++/// `None` when the publication fails (the user tables are full) — no program
++/// could then read a title.
++fn titles_user_va() -> Option<u64> {
++    let va = TITLES_USER_VA.load(Ordering::Relaxed);
++    if va != 0 {
++        return Some(va);
++    }
++    let kva = TITLES.0.get() as *const u8;
++    #[cfg(all(target_arch = "aarch64", target_os = "none"))]
++    // SAFETY: AES trap or boot context (the BDOS lock, single CPU); the page
++    // is a `'static`, page-aligned kernel object that holds nothing but the
++    // title copies and is never freed. `expose` answers the same address for
++    // every process; the slot only matters for an uncached publication.
++    let published = unsafe {
++        crate::bdos::process::usermem::expose(0, kva, core::mem::size_of::<TitlePage>(), tos_types::ProtMode::Pr)
++    };
++    // On the host user memory is host memory (`usermem::resolve_kva`): there
++    // are no user tables to enter the page into.
++    #[cfg(not(all(target_arch = "aarch64", target_os = "none")))]
++    let published = Some(crate::bdos::process::kva_to_user_va(kva as u64));
++    if let Some(va) = published {
++        TITLES_USER_VA.store(va, Ordering::Relaxed);
++    }
++    published
++}
++
++/// The `ob_spec` [`menu_fixup`] links for slot `idx` into a tree read through
++/// `t`: the kernel address for a kernel-built tree (the kernel desktop's bar,
++/// read by kernel code only), the published user address for an
++/// application's tree, which the application reads itself. `0` (the empty
++/// string to the drawer) if the page could not be published.
++fn title_spec(t: ObjTree, idx: usize) -> u64 {
++    if t.kernel_built() {
++        return title_copy_kva(idx);
++    }
++    titles_user_va().map_or(0, |base| base + (idx * ACC_TITLE_LEN) as u64)
+ }
+ 
+ /// `gl_dafirst` (`aes/gemmnlib.c:68`) — the object index of the **first**
+@@ -1363,9 +1432,9 @@ pub(super) fn menu_fixup() {
+                 break; // "should not happen" (:117)
+             }
+             // `tree[ob].ob_spec = (LONG)D.g_acctitle[st++];` (`:118`) — with
+-            // the **copy's** address, not the accessory's own pointer (see
+-            // `Accs::copies`).
+-            t.set_raw_spec(ob, title_copy_addr(st));
++            // the **copy's** address, not the accessory's own pointer, and the
++            // one the tree's reader can follow (see [`TITLES`]).
++            t.set_raw_spec(ob, title_spec(t, st));
+             st += 1;
+         }
+         height += hchar;
+@@ -3128,3 +3197,76 @@ mod popup_wait_tests {
+         assert!(own(), "left as found: the application owns the mouse, no bar");
+     }
+ }
++
++#[cfg(test)]
++mod acc_title_tests {
++    //! TASK/ACCTITLE — the desk-accessory titles `menu_fixup` links into a
++    //! menu tree must be readable by whoever reads that tree. On EmuTOS the
++    //! string is ordinary memory an application reads like its own (WinDom's
++    //! `menu_exec_cmd` `strstr`s every Desk entry); here the copies live in a
++    //! page of their own that is published read-only to every process, an
++    //! application's tree gets that page's user address and the kernel
++    //! desktop's tree the kernel address.
++    use super::*;
++    use crate::bdos::process::{kva_to_user_va, usermem};
++
++    /// The NUL-terminated string at `p` (bounded by one title row).
++    fn cstr_at(p: u64) -> &'static [u8] {
++        // SAFETY: `p` names a row of `TITLES`, which is always NUL-terminated
++        // within `ACC_TITLE_LEN` (the copy reserves the last byte).
++        unsafe {
++            let s = core::slice::from_raw_parts(p as *const u8, ACC_TITLE_LEN);
++            &s[..s.iter().position(|&c| c == 0).unwrap()]
++        }
++    }
++
++    #[test]
++    fn titles_own_their_page_and_each_reader_gets_an_address_it_can_follow() {
++        // The page invariant `usermem::expose` requires: page-aligned, one
++        // page, nothing but the copies in it.
++        assert_eq!(core::mem::align_of::<TitlePage>(), 4096);
++        assert_eq!(core::mem::size_of::<TitlePage>(), 4096);
++        assert_eq!(TITLES.0.get() as u64 % 4096, 0);
++
++        static TITLE: &[u8] = b"  Probe Accessory\0";
++        assert!(copy_title(crate::uaccess::Space::Kernel, 1, TITLE.as_ptr() as u64).is_ok());
++
++        let objs = [Object {
++            ob_next: NIL,
++            ob_head: NIL,
++            ob_tail: NIL,
++            ob_type: 0,
++            ob_flags: 0,
++            ob_state: 0,
++            ob_spec: 0,
++            ob_x: 0,
++            ob_y: 0,
++            ob_width: 0,
++            ob_height: 0,
++        }];
++
++        // The kernel desktop's tree (`mntree_accessor` with no owner slot):
++        // the kernel address of the copy.
++        let k = title_spec(ObjTree::lp64(objs.as_ptr()), 1);
++        assert_eq!(k, TITLES.0.get() as u64 + ACC_TITLE_LEN as u64);
++        assert_eq!(cstr_at(k), b"  Probe Accessory");
++
++        // An application's tree: the user address of the published page —
++        // the one the publication recorded, the copy's own VA = PA name —
++        // and that address resolves to the copy for the AES reading the tree
++        // through its owner (`usermem::resolve_kva`, A97).
++        let a = title_spec(ObjTree::app_at(objs.as_ptr(), Abi::Lp64), 1);
++        let base = TITLES_USER_VA.load(Ordering::Relaxed);
++        assert_ne!(base, 0, "the page is published on first use for an application tree");
++        assert_eq!(a, base + ACC_TITLE_LEN as u64);
++        assert_eq!(a, kva_to_user_va(title_copy_kva(1)));
++        let kv = usermem::resolve_kva(0, a).expect("the published title resolves");
++        assert_eq!(cstr_at(kv), b"  Probe Accessory");
++
++        // A second application tree reuses the publication.
++        assert_eq!(title_spec(ObjTree::app_at(objs.as_ptr(), Abi::Ilp32), 0), base);
++
++        assert!(copy_title(crate::uaccess::Space::Kernel, 1, 0).is_ok());
++        assert_eq!(cstr_at(k), b"");
++    }
++}

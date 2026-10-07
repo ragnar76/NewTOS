@@ -1,0 +1,20 @@
+# TASK/ACCTITLE regression, TeraDesk (#Z C:\Apps\TERADESK\DESKTOP.NAP) with the card's
+# two accessories registered: hover "Desk" (26,9) -> the application's Desk
+# drop-down, which menu_fixup filled with the accessory entries (their
+# ob_spec = the published title page); click the first accessory entry
+# (60,66) -> AC_OPEN -> SYSACC's form_alert; Return closes it.
+# Ticks hz_200 after the injector arms = the first EL0 program, here the
+# first accessory (session start), so the application is given 3600 ticks.
+100 parkbr
+3600 mark T00_UP
+3700 move 26 9
+4100 mark T01_DESK_OPEN
+4200 move 60 66
+4400 down
+4403 up
+5400 mark T02_ACC_OPENED
+5600 key 1C
+5606 key 9C
+6200 mark T03_ALERT_CLOSED
+6300 parkbr
+6600 mark END

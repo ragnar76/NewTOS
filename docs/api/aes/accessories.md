@@ -769,12 +769,29 @@ caller's pointer (`gemmnlib.c:806`) and the renderer dereferences it later; one
 address space makes that safe. Here it is an EL0 VA of the accessory's TPA,
 dereferenced at EL1 under the *desktop's* `TTBR0` when the drop-down draws —
 measured as a data abort (`FAR=0x1610`) on the first hover over *Desk*. NewTOS
-copies the string at registration, into `menu.rs`'s `Accs::copies`, and
+copies the string at registration, into `menu.rs`'s `TITLES` page, and
 splices the copy's address in. The observable difference is narrow and
 permissive: EmuTOS requires the caller to keep the string alive and NewTOS
 does not, and a title edited *in place* after registration shows at the next
 `menu_register`/`menu_bar` rather than at the next repaint. Titles are capped
 at 32 bytes (EmuTOS has no cap because it copies nothing).
+
+What the copy must **not** change is who can read it (TASK/ACCTITLE,
+2026-10-07). On EmuTOS the string `menu_fixup` writes into an application's
+Desk drop-down is ordinary memory the application reads like its own, and
+applications do read it: WinDom's `menu_exec_cmd`
+(`sdk/windom/windom-1.21.3/src/menu_execcmd.c`) `strstr`s every entry from the
+Desk box on, for every unhandled key. With the copy in kernel memory that read
+was a permission fault at EL0 (zView, F10/Esc, real Pi 4). So the copies live
+in a page of their own (`TitlePage`, page-aligned, nothing else in it) that is
+published **read-only to every process at VA = PA** on first use
+(`usermem::expose`, `PROT_PR`, ADR-023 — the pattern of the PPARENT stand-in
+page and of `Getmpb`), and `menu_fixup` links the address the tree's reader
+can follow: the **published user address** into an application's tree, the
+kernel address into the kernel desktop's own tree (read by kernel code only —
+the per-reader choice `wind_get(WF_SCREEN)` makes). A program can read but not
+write a title; on EmuTOS it could also overwrite one, which no program is
+known to do.
 
 **(b) A scheduler switch saves `v0..v31`, FPCR and FPSR.** EmuTOS's `switchto`
 saves `d0-a5/a6/usp/sp` (`gemasm.S:169-194`) — its whole ABI-relevant register
@@ -814,13 +831,14 @@ of starting a second, unreachable copy.
 
 ### 9.4 Not done, and why
 
-* **Accessory titles in an *application's* menu bar.** `menu_fixup` runs on
-  every `menu_bar(tree, 1)`, so an application's own Desk box is spliced the
-  same way — but the copied title lives in kernel memory, and an app-owned
-  tree resolves every address through the app's mapping (`ObjTree::app_owned`,
-  A97), where a kernel VA has no translation. The entry is then simply not
-  drawn (`spec_none`), never a fault. A shared read-only title page mapped
-  into every process is the fix; it is a new ticket, not this batch.
+* ~~**Accessory titles in an *application's* menu bar.**~~ Done in
+  TASK/ACCTITLE (2026-10-07), see §9.3 (a). Until then the copied title lived
+  in kernel memory: the AES drew the entry empty (an app-owned tree resolves
+  every address through the app's mapping, `ObjTree::app_owned`, A97), and —
+  contrary to the "never a fault" this note used to claim — the *application*
+  faulted as soon as it read the entry itself (WinDom `menu_exec_cmd`, zView
+  on the real Pi 4). The shared read-only title page named here as the fix is
+  what landed.
 * **The `NUM_ACCS` budget across a `menu_register` from a non-accessory.** Any
   AES client may call `menu_register` and take a slot, exactly as in EmuTOS.
 * **Accessory windows.** `sysacc.c` uses `form_alert`; an accessory that opens

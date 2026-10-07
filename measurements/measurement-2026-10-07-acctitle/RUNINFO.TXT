@@ -1,0 +1,176 @@
+measurement-2026-10-07-acctitle -- TASK/ACCTITLE: the desk-accessory titles
+the AES links into an application's Desk drop-down must be readable by that
+application. Developer self-evidence; the Tester's verdict is separate.
+
+Date 2026-10-07, branch desk-rebuild, HEAD 3895575 plus this change,
+uncommitted (method/acctitle-change.diff). QEMU raspi4b, -append serial=on
+(+ memprot=strict where named), memprot default on, one QEMU at a time, host
+macOS. No SD card, Pi or TT touched. Scratch (kernels, cards, target dirs) in
+the session scratchpad; hashes in checks/kernels-sha256.txt.
+
+THE DEFECT (user, real Pi 4, 2026-10-07; release kernel of HEAD, ZVIEW.NAP
+sha256 9c6497ad..., C:\ACC\SYSACC.NAC loaded; JPEG loaded, full screen, Esc)
+  "Memory violation: hardware memory, read (permission fault, level 2)"
+  esr=9200000e addr=ffff000000193af0 pc=text+0x489a4
+  x0=x22=ffff000000193af0 lr x30=0x1cafd64 (text+0x1cd64)
+  basepage=01c92000 text=01c93000
+
+RESULT IN ONE LINE
+  Red reproduced in QEMU (same esr, same addr ffff000000193af0 on the HEAD
+  release kernel, same pc text+0x489a4 / lr text+0x1cd64 in zView); after
+  the fix the accessory entries of an application's menu carry a user
+  address of a page published read-only to every process, the probe reads
+  them, zView survives F10 / Esc / Esc / F10 / Esc under memprot on and
+  strict, and TeraDesk/QED now SHOW the accessory titles (HEAD drew the
+  entries empty).
+
+CHAIN (verified)
+  symbols (llvm-nm, HEAD release kernel and ZVIEW.NAP 9c6497ad):
+    ffff000000193af0 size 0x130 = tos_api::aes::menu::ACCS (rustc put the
+      `copies` field first: +0x00 = slot 0's title copy, +0x20 = slot 1's)
+    ZVIEW.NAP: strstr at file VA 0x4999c (text+0x489a4 = strstr+8, text at
+      file VA 0x1000), menu_exec_cmd at 0x1dc24 (lr text+0x1cd64 = 0x1dd64)
+  WinDom menu_exec_cmd (sdk/windom/windom-1.21.3/src/menu_execcmd.c): for
+    every key not handled elsewhere, starting with titre = entre = 3 (the
+    Desk title/box), strstr(ObjcString(menu, entre), cmd) for each entry --
+    i.e. it reads the accessory entries' ob_spec strings at EL0.
+  EmuTOS (pinned tree): mn_register stores the caller's pointer,
+    D.g_acctitle[openda] = pstr "save pointer, like Atari TOS"
+    (aes/gemmnlib.c:806); menu_fixup links it into the installed tree,
+    tree[ob].ob_spec = (LONG)D.g_acctitle[st++] (:118), called from mn_bar's
+    show path (:714) and mn_register (:808). The string is ordinary memory
+    the application reads freely.
+  NewTOS HEAD: menu_register copies the title into the kernel static ACCS
+    (A97: the accessory's own VA is not readable outside its trap), and
+    menu_fixup wrote the copy's KERNEL high-half address into every tree --
+    including an application's (tos-api/src/aes/menu.rs, HEAD :1368
+    t.set_raw_spec(ob, title_copy_addr(st))). EL0 read -> permission fault.
+    Side effect seen in this run: the AES itself drew those entries EMPTY in
+    every application menu (the owner-aware reader cannot resolve a kernel
+    VA in the app's mapping) -- docs/api/aes/accessories.md §9.4 had recorded
+    that as "not drawn, never a fault"; the fault is the application's read.
+
+CHANGE (method/acctitle-change.diff)
+  tos-api/src/aes/menu.rs
+    - title copies moved out of Accs into TITLES: #[repr(C, align(4096))]
+      TitlePage, one page, nothing else in it (const-asserted size 4096)
+    - titles_user_va(): publishes the page read-only to every process at
+      VA = PA on first use (usermem::expose, ProtMode::Pr, ADR-023 -- the
+      PPARENT stand-in pattern), cached in TITLES_USER_VA; host: identity
+    - title_spec(t, idx): menu_fixup links the kernel address into a
+      kernel-built tree (the kernel desktop's bar, read by kernel code only)
+      and the published user address into an application's tree (the
+      per-reader choice Getmpb and wind_get(WF_SCREEN) make); 0 if the
+      publication fails
+    - copy_title returns () (the caller never used the address), reinit
+      clears TITLES
+    - new host test acc_title_tests (1 test)
+  docs/api/aes/accessories.md §9.3 (a) (what the copy must not change: who
+    can read it), §9.4 (the "not done" bullet closed, its "never a fault"
+    claim corrected); docs/api/aes/menu.md note 6 (NewTOS binding).
+
+SWEEP (AES/VDI places that link a kernel pointer into app-visible data)
+  ob_spec writes into app trees: only menu_fixup (grep set_raw_spec/set_spec
+    in tos-api/src/aes, tos-api/src/vdi) -> fixed here.
+  wind_get: EmuTOS wm_get returns an address only for WF_SCREEN
+    (gemwmlib.c:1563); NewTOS window.rs WF_SCREEN already exposes per caller
+    (usermem::expose PROT_G for EL0, PA for EL1).
+  shel_envrn: AES-PD stand-in page (standin.rs, PPARENT) -- already exposed.
+  AES global array: ap_private = desktop root ob_spec VALUE (appl.rs:303),
+    ap_ptree/ap_rscmem name the app's own loaded blob (resource.rs) -- no
+    kernel pointer.
+  G_USERDEF PARMBLK: written to the process's page-0 scratch, user VA passed
+    (object.rs ob_user, PARMBLK_SCRATCH_VA) -- fine.
+  form_alert / form_error / fsel trees (form.rs:256,268; fsel.rs): kernel-
+    built, drawn by the kernel, never handed to the caller; fsel copies paths
+    into caller buffers.
+  AES built-in desktop tree DTNAME_TEXT (init.rs:332): kernel tree, not
+    returned by any call (EmuTOS wm_get has no WF_NEWDESK).
+  MN_SELECTED msg[5..7], menu_attach/menu_popup MENU.mn_tree: the app's own
+    trees.
+  VDI vex_* old vectors: user-VA tokens (just_rts_va / aes_wheel_va,
+    vdi/mouse.rs) -- code-pointer class, not this one; untouched.
+  -> no further site of this class in AES/VDI.
+
+QEMU PROBE (method/acctprobe.c + build-acctprobe.sh -> ACCPROBE.NAP,
+method/acct-runs.sh probe-on|probe-strict; #Z C:\ACCPROBE.NAP)
+  A conforming menu bar in the probe's own memory, menu_bar(tree,1), print
+  every Desk entry's ob_spec, then read each string at EL0 (strlen/strstr).
+  HEAD (kernel8-head.img), on + strict: entries 9/10 ob_spec =
+    0xffff000000193af0 / 0xffff000000193b10; reading entry 9 -> Bus Error,
+    esr 9200000e, addr ffff000000193af0, "Memory violation: hardware memory,
+    read (permission fault, level 2)" (serial/head-probe-*-serial.log)
+  fix (kernel8-fix.img), on + strict: ob_spec = 0x1aa000 / 0x1aa020 (user
+    VA = PA of the title page), both read " NewTOS System", probe rc=0
+    (serial/fix-probe-*-serial.log)
+
+ZVIEW (product ZVIEW.NAP 9c6497ad..., as on the Pi; method/zview.actions,
+injector kernels from method/make-inj.sh; ZVLAUNCH #Z with T.JPG)
+  F10 (zView "Full Screen F10", dispatched through menu_exec_cmd), Esc,
+  Esc in the window, F10, Esc.
+  HEAD, on + strict: the first F10 -> the user's crash, register for
+    register: pc text+0x489a4, lr x30 text+0x1cd64, x0 = x22 = the ACCS
+    copy (ffff000000191af0 in the injector build), esr 9200000e, permission
+    fault level 2 (serial/head-zview-*-serial.log, screendumps/head-zview-*-
+    crash1.png)
+  fix, on + strict: no crash line; S00 window, S01 full screen (black,
+    picture centred), S02 back with menu bar, S03 Esc in window, S04 full
+    screen again, END back (screendumps/fix-zview-*)
+
+REGRESSION (memprot on; cards = make-sd-image base with both accessories)
+  desk  EmuDESK: Desk drop-down lists "NewTOS System" twice; click -> the
+        SYSACC alert (ARM clock / CPU temp); Return closes it. fix vs HEAD:
+        D01/D02/END byte-identical; D00/D03 differ only in the mouse pointer
+        (the parkbr sweep was still moving at the dump)
+  tera  TeraDesk (#Z): T01 Desk drop-down -- HEAD two EMPTY accessory
+        entries, fix "NewTOS System" x2 (the intended effect); click opens
+        the alert, Return closes it; T02/T03/END identical to HEAD, T00
+        differs only in the pointer position
+  qed   QED (#Z): Q01 same as TeraDesk (HEAD empty, fix with titles);
+        Q00/Q02/Q03/END identical to HEAD
+  ldg   LDGDEMO (WinDom client, K1 script shifted +2000 ticks): rc=0, all 10
+        dumps byte-identical to measurement-2026-10-07-k1 acc-on-*
+  api   APITEST (#Z): TOTAL 106/0/5 (= baseline)
+
+HOST TEST RED/GREEN
+  acc_title_tests::titles_own_their_page_and_each_reader_gets_an_address_it_
+  can_follow pins the page invariant expose needs (align/size 4096, page
+  holds only the copies), the per-reader address choice, the recorded
+  publication and that the app address resolves (usermem::resolve_kva) to
+  the copy. It does not compile against HEAD (no TITLES/title_spec); on the
+  host a user VA equals the kernel VA (kva_to_user_va is the identity), so
+  the behavioural red/green is the QEMU probe above, not this test.
+
+STATIC CHECKS (method/checks.sh final -> checks/final-*)
+  host tests 1176/0/1 (baseline 1175/0/1, +1 new)
+  release builds rpi4 + qemu-virt (fresh): warnings tos-api 64 / kernel 94
+    (= baseline), 0 errors
+  clippy rpi4 / qemu-virt: tos-api 76 / kernel 125 (= baseline); menu.rs 10
+    hits = HEAD's 10 (all pre-existing, none in the changed lines)
+  desk drift probe 31 (= baseline); SDK host tests 16/0/0 (= baseline)
+  Note: checks.sh's kernel8-final.img (xtask, shared target) and
+  kernel8-fix.img (cargo, scratch target) differ in sha256 although built
+  from the same sources (different build driver / target dir); the runs used
+  kernel8-fix.img and the make-inj.sh kernels.
+
+NOT DONE / OPEN
+  - Real Pi 4: not run (workers take no HW actions). The user's exact path
+    (full screen via the toolbar/menu with the mouse, then Esc) differs from
+    the F10 path driven here only in how full screen is entered; both end in
+    menu_exec_cmd's Desk scan.
+  - qemu-virt not booted (build + clippy only; it has no accessories/AES
+    session with a framebuffer).
+  - A program can read but no longer write an accessory title (EmuTOS: it is
+    the accessory's own memory). No program known to write it.
+
+method/ FILES
+  this run: acctprobe.c, build-acctprobe.sh (from zview-m4's
+    build-zvlaunch.sh, output path as argument), acct-runs.sh, make-inj.sh
+    (from k1's make-kernels.sh: source tree + prefix as arguments),
+    zview.actions, desk.actions, tera.actions, qed.actions, ldg.actions
+    (k1's evb-acc.actions +2000 ticks), acctitle-change.diff
+  copied unchanged from measurement-2026-10-07-k1/method: qmp_timed.py,
+    newdesk-template.inf, run-rpi4.sh, run-rpi4-drive-m3.sh, drive-m3.py,
+    gen_script.py, apply-injector-m3.py, desk-arm-m3.py; checks.sh (header
+    comment line only)
+  SHA256SUMS: every file of this run except itself.

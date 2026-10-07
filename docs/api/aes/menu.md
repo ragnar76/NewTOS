@@ -971,7 +971,13 @@ are `1` / `0` / slot-id / `-1` only.
 6. **`menu_register` stores the caller's string pointer, not a copy.**
    `g_acctitle[slot] = pstr` "like Atari TOS" (`gemmnlib.c:806`) — the title
    string must outlive the registration. The return is the slot index (0..5),
-   which is the DA's *menu id* used later to route `AC_OPEN`.
+   which is the DA's *menu id* used later to route `AC_OPEN`. `menu_fixup`
+   then writes that pointer into the installed tree's Desk entries
+   (`gemmnlib.c:118`), where the **application** reads it like any other
+   entry of its own menu (WinDom's `menu_exec_cmd` `strstr`s them). NewTOS
+   binding: the title is copied, and the application's tree gets the copy's
+   address in a page published read-only to every process —
+   `docs/api/aes/accessories.md` §9.3 (a) (TASK/ACCTITLE).
 7. **`MN_SELECTED` carries the menu-tree pointer in `msg[5..7]`** in the
    default build. Without `CONF_WITH_MENU_EXTENSION` those three words are 0
    (`gemctrl.c:347-368`). Selecting a desk-accessory entry sends **`AC_OPEN`

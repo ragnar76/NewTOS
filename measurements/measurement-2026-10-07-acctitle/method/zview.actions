@@ -1,0 +1,24 @@
+# TASK/ACCTITLE zView acceptance: the user's real-Pi sequence (JPEG loaded,
+# full screen, Esc) with SYSACC.NAC + SYSACC2.NAC registered. zView is started
+# by ZVLAUNCH (#Z) with C:\ZVIEW\SAMPLES\T.JPG. The injector clock arms at the
+# first EL0 program, here the first accessory (session start).
+# IKBD: F10 44 (zView "Full Screen  F10" -- reached through WinDom's
+# menu_exec_cmd, which strstr()s every Desk entry first), Esc 01; break = make|0x80.
+# A key follows a MARK by >= 0.6 s (drive-m3 dumps 0.5 s after the MARK).
+100 parkbr
+4000 mark S00_WINDOW
+4300 key 44
+4306 key C4
+5000 mark S01_FULLSCREEN
+5600 key 01
+5606 key 81
+6400 mark S02_ESC_BACK
+6700 key 01
+6706 key 81
+7300 mark S03_ESC_IN_WINDOW
+7700 key 44
+7706 key C4
+8500 mark S04_FULLSCREEN2
+9000 key 01
+9006 key 81
+9800 mark END
