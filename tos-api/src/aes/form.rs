@@ -414,7 +414,7 @@ fn modal_loop(
         if cur & 0x01 != 0 && prev_btn & 0x01 == 0 {
             // `fm_do`'s `ev_multi` returned `MU_BUTTON` on this press
             // (`aes/gemfmlib.c:312-317`); its `ev_rets` consumed it.
-            let _ = super::input::ev_rets();
+            super::input::ev_consume();
             let (mx, my) = crate::vdi::mouse_position();
             let hit = object::hit_test_t(t, 0, 16, mx, my);
             if hit >= first_btn && hit < first_btn + numbut {
@@ -594,6 +594,9 @@ fn run_form(tree: *mut Object, start_fld: i16) -> i16 {
     let mut idx = 0i16;
     let mut cont = true;
     let mut prev = crate::vdi::mouse_buttons();
+    // The AES identity whose button wait `fm_do`'s `ev_multi` parks — the
+    // caller's own (`form_do` runs in the calling process).
+    let me = super::appl::current_identity();
 
     while cont {
         // Position the cursor on the selected editing field (EDINIT). ob_edit
@@ -606,11 +609,25 @@ fn run_form(tree: *mut Object, start_fld: i16) -> i16 {
             }
         }
 
+        // `fm_do` waits in `ev_multi(MU_KEYBD | MU_BUTTON, …, 0x0002ff01L,
+        // …)` (`aes/gemfmlib.c:312-317`): up to two left clicks. Its button
+        // wait is armed like any other (`abutton`, `aes/geminput.c:545-565`)
+        // — which raises `gl_bpend`, so a press in the dialog opens the
+        // button-delay window and a TOUCHEXIT object can be told a double
+        // click (below). Re-armed whenever the previous one is gone.
+        super::input::b_delay_poll();
+        if !super::input::bwait_armed(me) {
+            let _ = super::input::abutton(me, super::input::button(), 0x0002, 0xff, 0x01);
+        }
+
         // ── keyboard event ─────────────────────────────────────────────
         if let Some(w) = h.console_try_read_key() {
             // `fm_do`'s `ev_multi` returned `MU_KEYBD` (`aes/gemfmlib.c:
-            // 312-317`); its `ev_rets` (`aes/gemevlib.c:268`) clears the
-            // pending button transitions.
+            // 312-317`): its `acancel` took the button wait off
+            // (`aes/gemevlib.c:264`) and its `ev_rets` (`:268`) clears the
+            // pending button transitions. The window, if one is open, keeps
+            // running.
+            super::input::acancel(me);
             let _ = super::input::ev_rets();
             let thechar = w as i16; // scancode << 8 | ascii (EV_KRET)
             // fm_keybd handles RETURN/ARROW navigation; a residual character is
@@ -630,29 +647,43 @@ fn run_form(tree: *mut Object, start_fld: i16) -> i16 {
             let (mx, my) = crate::vdi::mouse_position();
             // SAFETY: valid tree (GEM contract).
             let hit = unsafe { object::hit_test(tp, 0, MAX_DEPTH, mx, my) };
+            // The click count only matters for a TOUCHEXIT object (fm_button
+            // ORs 0x8000 on a double click); only there does the loop wait for
+            // the button-delay window to close and take the count `post_button`
+            // completed `fm_do`'s wait with (`aes/geminput.c:155-171,463-483`).
+            // Ordinary objects keep their immediate response — EmuTOS's
+            // `ev_multi` would return them after the window too — and get 1.
+            let touchexit = hit != NIL && ob_fs(tp, hit).1 & TOUCHEXIT != 0;
+            let clks = if touchexit {
+                loop {
+                    super::input::b_delay_poll();
+                    if let Some(c) = super::input::bwait_take(me) {
+                        break c;
+                    }
+                    // The window is closed and did not complete our wait (it
+                    // was never opened, or the gesture went to another owner).
+                    if !super::input::bdely_pending() {
+                        break 1;
+                    }
+                    h.pump_input();
+                }
+            } else {
+                1
+            };
+            // `fm_do`'s `ev_multi` returned `MU_BUTTON` on this press
+            // (`aes/gemfmlib.c:312-317`), after its click window; its
+            // `ev_rets` consumed what was published up to then. A window still
+            // open is closed first, so the press this loop acts on is not
+            // published later to the application (`input::ev_consume`). The
+            // returned wait is gone; the next pass arms a new one.
+            super::input::ev_consume();
+            super::input::acancel(me);
             if hit == NIL {
                 // Click into empty space: ring the bell and select no object
                 // (EmuTOS fm_do, gemfmlib.c:332-335 `Bconout(2, 0x07)`).
                 crate::bios::chardev::bconout_handle(2, 0x07);
                 next_obj = 0;
             } else {
-                // The click count only matters for a TOUCHEXIT object (fm_button
-                // ORs 0x8000 on a double click); resolve single-vs-double only
-                // there, within the double-click window (EmuTOS fm_do waits on
-                // ev_multi `0x0002ff01L` = up to 2 left clicks). Ordinary buttons
-                // keep their immediate response — EmuTOS gets the count for free
-                // from the continuous mouse driver; we resolve it on demand.
-                let (_, flags) = ob_fs(tp, hit);
-                let clks = if flags & TOUCHEXIT != 0 {
-                    super::event::count_form_clicks(h)
-                } else {
-                    1
-                };
-                // `fm_do`'s `ev_multi` returned `MU_BUTTON` on this press —
-                // after its click window, when it counted one
-                // (`aes/gemfmlib.c:312-317`); its `ev_rets` consumed what was
-                // published up to then.
-                let _ = super::input::ev_rets();
                 let (c, no) = fm_button(tree, hit, clks);
                 cont = c;
                 next_obj = no;
@@ -667,6 +698,9 @@ fn run_form(tree: *mut Object, start_fld: i16) -> i16 {
         prev = cur;
         h.pump_input();
     }
+
+    // The last `ev_multi`'s `acancel`: no button wait outlives the dialog.
+    super::input::acancel(me);
 
     // Give up screen and mouse ownership (EmuTOS `fm_own(FALSE)`, gemfmlib.c:349):
     // restore the parked menu tree and release the window-tree screen lock. This
@@ -1066,7 +1100,7 @@ fn wait_up() {
         }
         // `ev_button(1, 0x00001, 0x0000, rets)` (`aes/gemfmlib.c:256`) ends
         // in `ev_rets`, which consumes the release.
-        let _ = super::input::ev_rets();
+        super::input::ev_consume();
     }
 }
 

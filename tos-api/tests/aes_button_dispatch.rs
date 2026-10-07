@@ -16,9 +16,10 @@
 //! ```
 //!
 //! and `xe_button_state()` is a bare `graf_mkstate`
-//! (`sdk/apps/teradesk/library/xdialog/xdevent.c:251-258`). The double-click
-//! event is delivered while the *second* press is still held, so that spin
-//! always runs at least one turn.
+//! (`sdk/apps/teradesk/library/xdialog/xdevent.c:251-258`). When the
+//! double-click event is delivered while the *second* press is still held —
+//! it is held past the button-delay window, whose close delivers the gesture
+//! (`b_delay`, `aes/geminput.c:155-171`) — that spin runs at least one turn.
 //!
 //! **Why it must terminate.** In EmuTOS every AES call ends in a dispatch:
 //! `super()` runs the opcode switch and falls through to `dsptch()`
@@ -420,15 +421,25 @@ fn install(host: &'static ScriptHost) {
 /// is a clean double click.
 #[test]
 fn double_click_spin_on_graf_mkstate_terminates() {
+    // ZVIEW02: one empty packet first, so the click arrives while TeraDesk is
+    // already waiting — its `evnt_multi`'s entry pump takes the empty packet,
+    // the 2-click wait is armed (`abutton` → `gl_bpend++`,
+    // `aes/geminput.c:559-561`) and the press then opens the button-delay
+    // window (`b_click`, `:133-140`). The double click is delivered when that
+    // window closes (`b_delay`, `:155-171`), 11 AES ticks (220 ms) after the
+    // first press; the second press is held past that so it is still down at
+    // the delivery — the case that makes TeraDesk's spin run.
     let mut script = vec![
+        Packet { dx: 0, dy: 0, buttons: 0 }, // the wait is armed
         Packet { dx: 0, dy: 0, buttons: 1 }, // press 1
         Packet { dx: 0, dy: 0, buttons: 0 }, // release 1
         Packet { dx: 0, dy: 0, buttons: 1 }, // press 2  → the double click
     ];
-    // The release of the second press arrives a few polls into the spin. Pad
-    // with repeats of the same level so the packet queue is not the thing that
-    // ends the spin — only the button byte reaching 0 can.
-    for _ in 0..4 {
+    // The release of the second press arrives after the window has closed,
+    // some polls into the spin. Pad with repeats of the same level so the
+    // packet queue is not the thing that ends the spin — only the button byte
+    // reaching 0 can.
+    for _ in 0..300 {
         script.push(Packet { dx: 0, dy: 0, buttons: 1 });
     }
     script.push(Packet { dx: 0, dy: 0, buttons: 0 }); // release 2

@@ -1,0 +1,28 @@
+# EmuDESK regression (in-kernel desktop, no #Z, NEWDESK.INF without open
+# windows = newdesk-evb-desk.inf, the DESK50 run-A layout): double-click the
+# C drive icon (38,30) -> C:\ window; double-click the folder at (95,100) in
+# it (the APPS folder at that slot); hover the "View" title (135,9) ->
+# drop-down; click "Show as text" (170,44) -> the window lists as text.
+# Ticks hz_200 after "[desk] desktop up" (desk-arm-m3.py).
+100 parkbr
+400 mark A_IDLE
+600 move 38 30
+800 down
+803 up
+808 down
+811 up
+2200 mark B_DRIVE_OPEN
+2400 move 95 100
+2600 down
+2603 up
+2608 down
+2611 up
+4000 mark C_FOLDER_OPEN
+4200 move 135 9
+4600 mark D_VIEW_OPEN
+4700 move 170 44
+4900 down
+4903 up
+5800 mark E_MENU_CLICKED
+6000 parkbr
+6400 mark END

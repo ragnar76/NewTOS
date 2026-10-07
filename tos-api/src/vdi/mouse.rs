@@ -15,7 +15,9 @@ use super::backend::{ClipRect, RasterBackend};
 use super::vwk::validate_color_index;
 use super::Vdipb;
 
-const TICKCAL_MS: i16 = 20; // ms per timer-C tick (matches BIOS Tickcal)
+/// ms per timer-C tick (matches BIOS `Tickcal`) — what `vex_timv` reports and
+/// the AES takes as `gl_ticktime` (`aes/geminit.c:704`).
+pub(crate) const TICKCAL_MS: i16 = 20;
 
 // ── live mouse state (fed by the input subsystem when present) ──
 static GCURX: AtomicI16 = AtomicI16::new(0);

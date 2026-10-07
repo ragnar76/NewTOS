@@ -1,0 +1,191 @@
+measurement-2026-10-07-zview02 -- TASK/ZVIEW02 (double click on a folder
+tile in zView's browser only selects) together with TASK/A111 point 1 (click
+counting differs from EmuTOS: no +3 ticks per click, count reported before the
+window's end). A111 point 2 (objc_edit caret height/XOR) NOT done -- it lives
+in object.rs, outside the files of this change. Developer self-evidence; the
+Tester's verdict is separate.
+
+Date 2026-10-07, branch desk-rebuild, HEAD b3f642d plus this change,
+uncommitted (method/zview02-change.diff). QEMU raspi4b, -append serial=on,
+memprot default (on; LDGDEMO also strict), one QEMU at a time, host macOS.
+No SD card, Pi or TT touched. Scratch (kernels, cards, target dirs, QEMU
+sockets) in the session scratchpad, deleted at the end.
+
+RESULT IN ONE LINE
+  NewTOS cut the double-click window at the application's MU_TIMER: zView
+  polls evnt_multi with a 20-ms timer, count_clicks was capped at that
+  deadline and returned one click per press. EmuTOS runs the window on the AES
+  tick, independently of any call, extends it by 3 ticks per click and
+  publishes the gesture only when it closes, to the wait parked at that
+  moment. Rebuilt 1:1 (b_click/b_delay/post_button/abutton/acancel,
+  gl_bpend); zView now opens folders on both double-click styles.
+
+CAUSE (trace, method/apply-trace-zv02.py on a scratch copy of HEAD)
+  serial/before-trace-serial.log, zView double click on the "zview" tile
+  (press 3 ticks, gap 5, press 3; hz_200 ticks of 5 ms):
+    [zv02] count_clicks hz 9337..9338 max 2 cap_ms_left 5 -> got 1
+    [zv02] evnt_multi hz 9334..9338 flags 0x33 bclk 0x102 bmask 3 bstate 0
+           -> fired 0x22 mx 470 my 318 EV_MB 1 EV_BRET 1
+    [zv02] count_clicks hz 9345..9347 max 2 cap_ms_left 15 -> got 1
+    [zv02] evnt_multi ... -> fired 0x22 ... EV_MB 1 EV_BRET 1
+  i.e. each press returned MU_BUTTON|MU_TIMER with ONE click: the window
+  had 5 resp. 15 ms left (the 20-ms MU_TIMER deadline, event.rs count_clicks
+  `cap`), so zView's `nb_click == 2 && evnt.mbut == 1`
+  (catalog/catalog_mouse.c:132) never held. Same for the held variant
+  (cap_ms_left 17/18 -> got 1).
+  EmuTOS for the same input (source, not a run):
+    zView arms evnt_multi(MU_BUTTON 0x0102/3/0 + MU_TIMER 20) -> abutton
+    parks it, gl_bpend++ (geminput.c:545-565); the timer ends the call,
+    acancel takes the wait off WITHOUT gl_bpend-- (gemasync.c:96-114,
+    217-243) -> gl_bpend stays > 0. The press: b_click opens the window
+    (gl_bclick=1, gl_bdesired=1, gl_bdely=gl_dclick=220/20=11 ticks,
+    geminput.c:133-140) and publishes nothing; timer returns meanwhile report
+    button=0. Second press: gl_bclick=2, gl_bdely+=3 (:119-123). b_delay(1)
+    per AES tick (gemdosif.S:389-411) closes it after 14 ticks:
+    bchange(1,2) [+ bchange(0,1) if released] (:155-171) -> post_button
+    completes zView's parked wait with min(2,2)=2 (:463-483); ev_rets gives
+    pr_button=1 (two transitions) or the live 1 (held) (gemevlib.c:42-58).
+    -> MU_BUTTON, EV_BRET 2, EV_MB 1: the folder opens.
+
+FIX (tos-api; spec docs/api/aes/event.md first)
+  input.rs  gl_bdely as a tick count + lazy b_delay_poll()/b_delay(amnt)
+      against the host clock in 20-ms ticks (TICKCAL_MS), called at every
+      mouse packet (b_click, mchange) and at the head of every wait pass;
+      b_click opens/counts/extends the window as EmuTOS (+3 ticks per click,
+      publishes nothing while open); gl_bpend; per-identity parked button
+      wait (abutton / bwait_armed / bwait_take / acancel); post_button from
+      bchange (owner only, min(numclicks, clicks), gl_bpend-- , scheduler
+      wake); set_mown posts button as EmuTOS; downorup moved here from
+      event.rs; ev_consume() = forced close + ev_rets for AES-internal waits
+      that return on a button; CTL_PRESS latch = ctlmgr's loop wait
+      (0x0001ff01) completed by post_button(ctl_pd, ...).
+  event.rs  evnt_button = abutton + parked wait (returns 1 at once if the
+      level already matches, else the post_button count); evnt_multi quick
+      check (pr_mclick / mclick), then abutton if nothing quick-fired,
+      later passes only bwait_take; acancel at every exit; count_clicks,
+      wait_until, count_form_clicks, bclicks removed; gl_dclick().
+  form.rs   run_form arms fm_do's 0x0002ff01 wait per pass, acancel on a
+      key, TOUCHEXIT takes the post_button count after the window,
+      ev_consume on the press, acancel at exit.
+  window.rs intercept: level OR CTL_PRESS latch (a short frame click a window
+      published as press+release together must still reach the Control
+      Manager); press/release consumers -> ev_consume.
+  menu.rs   track: ev_consume before ct_mouse(FALSE); pop-up press and
+      wait_button_up -> ev_consume.  graf.rs, fsel.rs: press/release
+      consumers -> ev_consume.  trace.rs: doc only.  vdi/mouse.rs:
+      TICKCAL_MS pub(crate).
+
+HOST TESTS (tos-api/tests/aes_ev_rets_state_at_event.rs, +4)
+  timer_poll_loop_double_click_reports_two_clicks_button_down
+  timer_poll_loop_double_click_second_press_held
+  window_extends_three_ticks_per_click_and_reports_at_its_end
+  evnt_button_double_click_returns_two_at_window_end
+  Against HEAD (checks/red-before-HEAD-b3f642d.txt): the four new ones RED
+  (zView loop: one return with EV_BRET 1; held: EV_BRET 1; three-click:
+  bret 3 at t0+301; evnt_button: delivered at +43 ms). The existing
+  evnt_button_reports_button_down is red there only as a cascade of the
+  preceding failure (green when run alone, last lines of that file).
+  After: 11/11.
+  Harness preconditions changed (no assertion weakened):
+   - aes_ev_rets_state_at_event.rs queue_click: one empty packet first, so
+     the click arrives while the wait is armed (as on the board); the
+     between-calls case idles PAST_WINDOW so the window has published.
+   - aes_button_dispatch.rs: same leading packet; the second press held 300
+     ms (past the window) so it is still down at delivery, which is what the
+     test's spin needs.
+   - aes_a105_frame_remnants.rs: frame presses held 240 ms before the "held"
+     snapshot -- the Control Manager acts on a press only after the window
+     the application's 2-click wait made it open (EmuTOS).
+   - aes_a89_a92_menu_event_neighbours.rs A92b: 300-ms timer instead of a
+     0-ms poll (gl_bpend may be raised by earlier cases of the binary).
+  Full suite x4 and 10 click-related binaries x5 shuffled orders: all green.
+
+STATIC CHECKS (method/checks.sh final -> checks/final-*)
+  host tests 1205/0/1 (baseline 1201/0/1, +4 new)
+  release builds rpi4 + qemu-virt: tos-api 64 / kernel 94 (= baseline)
+  clippy rpi4 / qemu-virt: tos-api 76 / kernel 125 (= baseline; input.rs and
+    event.rs 0, form 8, fsel 5, menu 10, window 11 = aes-evbutton's counts)
+  desk drift probe 31 (= baseline); SDK host tests 17/0/0 (= baseline)
+  tos-api also builds with --features aes-trace.
+
+QEMU RUNS (raspi4b, serial=on; kernels method/make-kernels.sh, injector
+  method/apply-injector-m3.py; zView card = tools/make-sd-image.sh <S>/base.img
+  64 with the current dist ZVIEW.NAP cebb3b1b..., per run a cp -c clone;
+  regression cards = seed-card.sh/seed-card-a4.sh; every run copy deleted)
+  ACCEPTANCE zv-dclick.actions (File > Browser, double click "zview" tile with
+  two SHORT clicks 3/5/3 ticks, double click "samples" with the second press
+  HELD 72 ticks):
+    before-trace-* (HEAD kernel + trace): Z06/Z07 still C:\ with the tile
+      selected -- the defect.
+    after-trace-*  (fixed kernel + trace): Z06_ZVIEW_DIR = C:\zview\
+      (codecs, icons, samples, zview.nap, zview.rsc); Z07_SAMPLES =
+      C:\zview\samples\ with the thumbnails (t.gif ... t8.bmp). Trace:
+      evnt_multi -> fired 0x2 EV_MB 1 EV_BRET 2, twice. Z02 identical to
+      before; Z06/Z07/END differ (intended).
+  REGRESSION, each script on a HEAD kernel (head-*) and the fixed kernel,
+  same cards, compared byte for byte (method/shotcmp.py):
+    desk     EmuDESK drive C double click, folder double click, View menu
+             "Show as text"                         6/6 identical
+    desk3a   ARCH03 stage 3a (folder double click, closer, select, Ctrl-I
+             dialog + typing, rename, Alt-C)         9/9 identical
+    tera     TeraDesk single click selects, double click opens drive
+                                                     4/4 identical
+    qed      QED menu Datei > Neuer Text              4/4 identical
+    acc-on / acc-strict  LDGDEMO (WinDom) incl. the 30-ms short click
+                                                   10/10 + 10/10 identical
+    zvb      zView browser: single click selects a tile, tree expander
+             (zview01's zv-browser.actions)           7/7 identical
+    api      APITEST TOTAL 106/0/5; both dumps identical to
+             measurement-2026-10-07-zview01's (whose kernel is HEAD's: the
+             head injector kernels here are byte-identical to zview01's)
+  No panic/exception in any serial log.
+  Observation: in the after-trace run the gesture came 48..51 hz_200 ticks
+  (240..255 ms) after the first press, the host tests measure 260..280 ms of
+  monotonic_millis -- hz_200 (timer IRQ) and monotonic_millis (CNTPCT) are
+  different clocks in QEMU; the window runs on monotonic_millis.
+
+NOT DONE / OPEN
+  - A111 point 2 (curfld caret: y-3, gl_hchar+6 rows, XOR, gemobed.c:198-216)
+    -- object.rs, not part of this change set.
+  - graf_mkstate reports the raw VDI button, EmuTOS `button`
+    (gemgrlib.c:458-464); while a window holds a press back they differ.
+    Pre-existing, named in event.md, not changed.
+  - The internal fm_do/fsel/menu/form_alert loops still act on the raw
+    press at once (EmuTOS: one window later); they close the window
+    themselves (ev_consume) so the press is not delivered twice.
+  - Real Pi not run (no HW actions by workers).
+
+IMAGES (scratch, deleted; sha256)
+  base.img (zView card)        267b42ac461ab9858b67f41f61eedbad5949210c2acdc14dfb19f5ba43587b17
+  kernel8-evb.img = kernel8-final.img (fixed, release rpi4)
+                               056875912bfe556e8cf949212d01455e63d2900d500cd3908df5599ffc0f0da1
+  kernel-virt-final.img        f8bfe5e1a819c89ce9ce8fac8db1dad7942ba110c259ce258688f05eea63563e
+  kinj-zv-dclick.img (+trace)  69d40ee571fb65205b5df20f618d38b7c0962f36b026bbb0c056a5957be29482
+  head-kinj-zv-dclick.img      ec2f4976746974ec59f6db94c389f0ec7e8c7a5600911263cd382b1f1375b1e5
+  kinj-zv-browser.img          9d5bb7098d7fad21c0fbd4e3269b736285c988380ae2116cf376d781e893112c
+  head-kinj-zv-browser.img     0e433fcb559e86d77f63f99010cf8edf8603aa336e5213dd965b1ab5d5e7f7e4
+  kinj-evb-acc.img             20c4e52360e4b51ff7014f55919befeb3b93e8a406b932c63802bd2c0a6d8445
+  head-kinj-evb-acc.img        738b2860b33232d7f298e8b2fdd61af796563d9634ac02a15983b54323faa764
+  kinj-evb-desk.img            38db6a0c36a282e2849a27b73c29cd1416c97befdc13d5df5d52c36519c53eb6
+  head-kinj-evb-desk.img       895defedafac68a6f2f20e9650f0daac1845f9b4cedb3a27165b0588fee298e6
+  kinj-evb-desk3a.img          52605791992556b18da9201b93d565d551743a1a9daa0b577a7060083315df3b
+  head-kinj-evb-desk3a.img     0db6166eebb224af0f263932c5909faa8bd90162c95427d6dc0e9b83198e51b3
+  kinj-evb-qed.img             c11be9c0d0d0bc488f92403655d4d6b2da3a1654fd721d70867bc8bb7dd58bf4
+  head-kinj-evb-qed.img        9bdd2a6a76e966d412a5849c5d8208793ac5eccc0caddd98bd6dda8facd6ca37
+  kinj-evb-tera.img            b28c8c05281188ed49dc22f1ead7b2ae3340fd5530720c401f3bdab6e1ee7b18
+  head-kinj-evb-tera.img       184a26618e82cdcc98eb31512e95bbfb7cb4e0614dbe33e656089f83d418389c
+  ZVIEW.NAP (dist, unchanged)  cebb3b1b6924e01cfed2e0f21138575fe325b30e6090fe4b34f676acc4d86475
+
+METHOD FILES
+  new: apply-trace-zv02.py (scratch trace ring + injector drain),
+    zv-dclick.actions, zview02-change.diff
+  copied from measurement-2026-10-07-zview01/method, changes named in the
+    headers: make-kernels.sh (TRACE=1, restores event.rs/mod.rs per build),
+    run-rpi4-drive-m3.sh + run-rpi4.sh (socket dir under SOCKROOT = the
+    scratch root, relative socket names; cp -c), evb-runs.sh (accept honours
+    KP); unchanged: apply-injector-m3.py, gen_script.py, drive-m3.py,
+    qmp_timed.py, desk-arm-m3.py, seed-card.sh, zv01-runs.sh, checks.sh,
+    evb-*.actions, zv-browser.actions, zv-samples.actions,
+    newdesk-*.inf, TERADESK.INF
+  copied from measurement-2026-10-06-aes-evbutton/method: desk3a/,
+    evb-desk3a.actions, seed-card-a4.sh, shotcmp.py

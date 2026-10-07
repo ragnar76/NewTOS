@@ -483,7 +483,7 @@ mod imp {
     ///   evaluations (`mb_or` / `mb_and` / `passes`), and
     /// * did the pointer move while the wait ran, and by how much per step
     ///   (`travel` / `moves` / `max_step`) — separately for the whole call and
-    ///   for the **double-click window** inside `count_clicks` (`win_*`),
+    ///   for the passes of a wait while a **double-click window** is open (`win_*`),
     ///   which is the interval EmuTOS `mchange` (`aes/geminput.c:360-370`)
     ///   cancels on a >±2 move.
     ///
@@ -638,7 +638,8 @@ mod imp {
 
     /// One sample of the live input state: the mouse button byte and the
     /// pointer position, folded into the per-call accumulators. `in_window`
-    /// selects the double-click-window set (`count_clicks`) over the general
+    /// selects the double-click-window set (a wait pass while the window is
+    /// open, `input::bdely_pending`) over the general
     /// wait set. See [`Eval`] for why this is not atomic.
     #[inline(always)]
     fn sample(in_window: bool) {
@@ -684,8 +685,8 @@ mod imp {
         sample(false);
     }
 
-    /// One poll inside the **double-click window** (`count_clicks` →
-    /// `wait_until`) — the interval in which a second press still counts as
+    /// One poll of an `evnt_button`/`evnt_multi` wait while a **double-click
+    /// window** is open (`input::bdely_pending`) — the interval in which a second press still counts as
     /// part of the first gesture, and the interval EmuTOS `mchange`
     /// (`aes/geminput.c:360-370`) cancels when the pointer moves more than
     /// ±2. Recorded separately so the window can be seen opening and closing
@@ -1261,8 +1262,8 @@ pub(super) fn note_eval() {
     imp::note_eval()
 }
 
-/// Record one poll inside the **double-click window** (`count_clicks` →
-/// `wait_until`). Kept apart from [`note_eval`] so the trace can show whether
+/// Record one poll of an `evnt_button`/`evnt_multi` wait while a
+/// **double-click window** is open (`input::bdely_pending`). Kept apart from [`note_eval`] so the trace can show whether
 /// the pointer moved while that window stood open, and by how much per step —
 /// the measurement against EmuTOS `mchange` (`aes/geminput.c:360-370`), which
 /// cancels a pending button wait on a move of more than ±2.

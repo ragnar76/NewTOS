@@ -1480,14 +1480,38 @@ fn a_move_queued_before_the_call_counts_for_the_arm_time_position() {
 /// Same drain, for `button`: a press queued but not pumped, `evnt_multi(wait
 /// for a press | MU_TIMER 0)` while the app owns the mouse (desktop, no
 /// track) → the quick check (`downorup(button, buparm)`, `gemevlib.c:196`)
-/// sees the press after `forker()`: `MU_BUTTON` fires with the timer.
+/// sees the press after `forker()`: `MU_BUTTON` fires.
+///
+/// ZVIEW02: the wait carries a 300-ms timer instead of a 0-ms poll. Whether the
+/// press is published by the head drain depends on `gl_bpend`, which earlier
+/// cases of this binary leave raised (a multi-click wait taken off by
+/// `acancel` does not lower it, `aes/gemasync.c:96-114,217-243`): then the
+/// press opens the button-delay window and is published only when it closes
+/// (`b_click`/`b_delay`, `aes/geminput.c:133-140,155-171`), 220 ms later —
+/// still within the timer, still `MU_BUTTON` with the button down. With
+/// `gl_bpend == 0` the quick check takes it at once; sampling the arm-time
+/// level *before* the drain would then leave the wait parked behind a press
+/// already published (no `post_button` reaches it) and only the timer would
+/// fire.
 #[test]
 fn a_press_queued_before_the_call_counts_for_the_arm_time_level() {
     let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
     let (host, mut pb, _tree) = fresh();
 
     host.push(pkt(0, 0, 1)); // queued, not pumped
-    let (fired, _mx, _my, mb, bret) = evnt_multi_poll(&mut pb, MU_BUTTON, (0, 0, 0, 0, 0));
+    let (fired, _mx, _my, mb, bret) = {
+        let mut buf = Box::new([0i16; 8]);
+        pb.intin.fill(0);
+        pb.intin[0] = MU_BUTTON | MU_TIMER;
+        pb.intin[1] = 0x0102; // wait for a press (TeraDesk's bflag/clicks)
+        pb.intin[2] = 3;
+        pb.intin[3] = 0;
+        pb.intin[14] = 300;
+        pb.addrin[0] = buf.as_mut_ptr() as u64;
+        pb.call(25, 16, 7, 1);
+        pb.addrin[0] = 0;
+        (pb.intout[0], pb.intout[1], pb.intout[2], pb.intout[3], pb.intout[6])
+    };
     eprintln!("a92b: fired={fired:#06x} mb={mb} bret={bret}");
     assert_eq!(mb & 1, 1, "the queued press was applied by the call");
     assert_eq!(

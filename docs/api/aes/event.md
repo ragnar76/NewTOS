@@ -313,17 +313,95 @@ WinDom handles a click only when `evnt.mbut & 1`
 window) every normal click on a WinDom form was dropped.
 
 **NewTOS mapping** (`tos-api/src/aes/input.rs`, `event.rs`). `b_click`,
-`bchange`, `ev_rets` and the window close are reproduced with EmuTOS's state
-(`gl_btrue`, `gl_bdesired`, `gl_bclick`, `mclick`, `mtrans`, `pr_*`). One
-structural difference, same result: our Event Manager opens the click window
-in `count_clicks` *after* it has seen the press, so the opening press is
-published at once with a count of 1 and the window's close only sets its real
-count (`mclick = gl_bclick`) and publishes the true state if it differs — the
-same two transitions in the same order. The AES-internal waits listed above
-call `ev_rets` at the point their EmuTOS counterpart's `ev_*` returns
-(the press or key in `fm_do`/fsel/`form_alert`, the release in the
-`gr_stilldn` loops and `ev_button` up-waits, the end of the menu track, the
-press on a frame gadget or an untopped window in the Control Manager).
+`bchange`, `b_delay`, `post_button`, `abutton`, `ev_rets` are reproduced with
+EmuTOS's state (`gl_btrue`, `gl_bdesired`, `gl_bclick`, `gl_bdely`,
+`gl_bpend`, `mclick`, `mtrans`, `pr_*`, one parked button wait per AES
+identity); see "The double-click window" below for how the window is timed
+(ZVIEW02, 2026-10-07 — until then the window was opened by the waiting call
+after the press, the press published at once, and the count cut short by a
+`MU_TIMER`). The AES-internal waits listed above consume the transitions at
+the point their EmuTOS counterpart's `ev_*` returns (the press or key in
+`fm_do`/fsel/`form_alert`, the release in the `gr_stilldn` loops and
+`ev_button` up-waits, the end of the menu track, the press on a frame gadget
+or an untopped window in the Control Manager); where they return on a
+*button*, a window still open is closed first (`input::ev_consume`), because
+their EmuTOS counterparts block on the published `button` and cannot return
+before the window has closed.
+
+### The double-click window (`gl_bdely` / `gl_bpend`) — contract (ZVIEW02 / A111, 2026-10-07)
+
+The *values* are contract (which call returns `MU_BUTTON`, its `EV_BRET` and
+`EV_MB`, and when); the globals are reference. How EmuTOS produces them:
+
+* **Who opens a window.** `abutton` (`aes/geminput.c:545-565`), the arm of
+  every `MU_BUTTON` wait (`ev_button`, `ev_multi` when its quick checks found
+  nothing), answers at once with **one** click if `downorup(button, buparm)`
+  already holds (`azombie(e, 1)`, ownership-blind); otherwise it parks the
+  wait on the caller's `c_bsleep` list and, for a request of more than one
+  click (`LOBYTE(HIWORD(buparm)) > 1`), increments `gl_bpend`.
+  `post_button` decrements it when it completes such a wait (`:477-479`);
+  **`acancel` does not** — `takeoff` only unlinks the block
+  (`aes/gemasync.c:96-114,217-243`). An application whose multi-click wait is
+  ever ended by another event (a `MU_TIMER`, a message, a key) therefore
+  leaves `gl_bpend > 0` for the rest of the session, and from then on *every*
+  press opens a window. `gl_bpend` is not reset by an AES restart
+  (`aes/geminit.c:661-664` resets only `gl_btrue`/`gl_bdesired`/`gl_bdely`/
+  `gl_bclick`).
+* **Opening and counting.** `b_click` (`:110-147`): with no window open, a
+  press while `gl_bpend != 0` sets `gl_bclick = 1; gl_bdesired = state;
+  gl_bdely = gl_dclick` and publishes **nothing**; with a window open, a change
+  *into* `gl_bdesired` does `gl_bclick++; gl_bdely += 3` — every further click
+  extends the window by **three ticks**, it does not get a window of its own.
+  Any other change is published at once (`forkq(bchange, (state, 1))`).
+* **Timing.** `gl_dclick = gl_dcrates[gl_dcindex] / gl_ticktime`
+  (`ev_dclick`, `aes/gemevlib.c:300-309`): ticks of `gl_ticktime` = the
+  VDI's `Tickcal`, 20 ms — 11 ticks at the default index 3 (220 ms), 22/16/13/8
+  for indices 0/1/2/4. The AES timer handler calls `b_delay(1)` on every tick
+  (`aes/gemdosif.S:389-411`), **independently of any application call**.
+* **Closing.** When `gl_bdely` reaches 0 — by the countdown, or at once by a
+  pointer move of more than ±2 (`mchange` → `b_delay(gl_bdely)`, `:365-368`)
+  — `b_delay` publishes `bchange(gl_bdesired, gl_bclick)` and, if the button
+  has left that state since, `bchange(gl_btrue, 1)` (`:155-171`).
+  `bchange` → `post_button(gl_mowner, new, clicks)` completes every parked
+  wait of the mouse owner that `new` satisfies, with `min(clicks of the
+  transition, clicks requested)` (`:463-483`).
+* **Consequences — the contract.**
+  1. A double click is reported by the wait that is parked **when the window
+     closes**, with `EV_BRET = 2`. A `MU_TIMER` that ends a call while the
+     window is open does not end the window: that call returns `MU_TIMER`
+     alone, with `EV_MB = 0` (the press is not published yet), and a later
+     call gets the gesture. (zView polls with a 20-ms timer and opens a folder
+     only on `nb_click == 2 && evnt.mbut == 1`,
+     `catalog/catalog_mouse.c:132`.)
+  2. `EV_MB` of that return is `pr_button` = down when the second release fell
+     inside the window (two transitions), the live state — down — when the
+     second press is held past it (one transition).
+  3. A third press after the extended window (`gl_dclick + 3` ticks after the
+     first press for a double click) starts a new gesture.
+  4. A press while `gl_bpend > 0` is invisible to `button` (and so to
+     `graf_mkstate`, `gr_mkstate`, `aes/gemgrlib.c:458-464`) until its window
+     closes: every click, also a single one and also one on a window frame or
+     for a one-click waiter, is delivered one window late.
+  5. The quick check reports `mclick`/`pr_mclick` unbounded by the request
+     (`aes/gemevlib.c:190-198`); only `post_button` bounds the count.
+
+**NewTOS mapping.** `input::b_click`/`b_delay`/`post_button`/`abutton`/
+`acancel` are the EmuTOS functions; there is no timer interrupt in the AES,
+so the countdown is evaluated lazily against the host clock in whole 20-ms
+ticks (`input::b_delay_poll`) at every mouse packet (`b_click`, `mchange`)
+and at the head of every Event Manager pass — the same transitions in the same
+order. `post_button` walks the parked waits of every application identity
+while the application owns the mouse (`own_mouse`, single-app), and wakes
+them through the scheduler's input class. The Control Manager runs inline
+(below); its loop wait (`ctlmgr`'s `ev_multi(…, 0x0001ff01L, …)`,
+`aes/gemctrl.c:456-462`) is a latch that `post_button` sets when it completes
+a left press for `ctl_pd` outside a menu track, so a short click on a frame
+gadget whose press and release a window published together is still handled
+(`window::intercept`). Not reproduced (pre-existing, outside ZVIEW02):
+`graf_mkstate` reports the raw VDI button byte, not `button`, so during an
+open window it shows the press that consequence 4 hides; and the internal
+`fm_do`/fsel/menu loops act on the raw press at once instead of one window
+later (they close the window themselves, see `ev_consume` above).
 
 ### NewTOS deviation — the application does not run while a drop-down is open (A91, 2026-09-23)
 
@@ -607,10 +685,20 @@ dispatcher's unsupported-opcode → `-1` path (see [`_dispatcher.md`](./_dispatc
   the next `evnt_multi(MU_BUTTON|MU_TIMER, 0x0102, 3, 0)` with a 0-ms timer
   reports `MU_BUTTON` with `EV_BRET = pr_mclick = 1` and `EV_MB = 1`
   (`gemevlib.c:190-194`).
+- **Double click across a timer poll (ZVIEW02):** a loop of
+  `evnt_multi(MU_MESAG|MU_TIMER|MU_KEYBD|MU_BUTTON, 0x0102, 3, 0, 20 ms)`
+  over press 15 ms / release 25 ms / press 15 ms returns `MU_TIMER` alone with
+  `EV_MB = 0` while the window is open, then once `MU_BUTTON` with
+  `EV_BRET = 2`, `EV_MB = 1`; with the second press held 360 ms the same
+  return comes while the button is still down (`geminput.c:110-171,463-483`).
+- **Window extension (A111):** a 3-click wait (`0x0003, 1, 1`) with presses
+  at t0, t0+100 ms and t0+300 ms returns `EV_BRET = 2` at t0+260..280 ms —
+  11 + 3 ticks of 20 ms (`geminput.c:121-122`, `gemevlib.c:300-309`).
 - **`evnt_button` double-click:** with `int_in[0] = 2` (clicks=2, enter),
   `int_in[1] = 1` (mask=left), `int_in[2] = 1` (state=down), two presses inside
   the current click window (`gl_dcrates[gl_dcindex]` ms) return `2` in
-  `int_out[0]`; a second press *after* the window returns `1`
+  `int_out[0]` when the window closes; a second press *after* the window
+  returns `1`
   (`geminput.c:114-147,340-357`).
 - **`evnt_mouse` enter vs leave:** `int_in[0]=0` over a rect fires when the
   cursor moves **inside** it; `int_in[0]=1` fires when it moves **outside** —

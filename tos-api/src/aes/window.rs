@@ -4983,7 +4983,7 @@ fn watchbox(r: Grect, ch: u16, ink: Ink, backend: &dyn RasterBackend) -> bool {
         if crate::vdi::mouse_buttons() & 0x01 == 0 {
             // `gr_watchbox` ends on `gr_stilldn`'s `ev_multi` returning the
             // release (`aes/gemgrlib.c:62-70,352`), whose `ev_rets` consumes it.
-            let _ = super::input::ev_rets();
+            super::input::ev_consume();
             break;
         }
         h.pump_input();
@@ -5007,7 +5007,7 @@ fn gr_stilldn(x: i16, y: i16, h: &'static dyn Host) -> bool {
         if crate::vdi::mouse_buttons() & 0x01 == 0 {
             // The `ev_multi` returning `MU_BUTTON` ran `ev_rets`
             // (`aes/gemevlib.c:268`): the release is consumed here.
-            let _ = super::input::ev_rets();
+            super::input::ev_consume();
             return false;
         }
         let (mx, my) = crate::vdi::mouse_position();
@@ -5296,7 +5296,7 @@ fn drag_elevator(w: &mut Window, vert: bool, backend: &dyn RasterBackend) -> i16
             // `gr_slidebox` → `gr_dragbox` → `gr_wait` → `gr_stilldn`
             // (`aes/gemgrlib.c:182,262,451`): its `ev_multi` returning the
             // release ran `ev_rets`, which consumes it.
-            let _ = super::input::ev_rets();
+            super::input::ev_consume();
             break;
         }
         h.pump_input();
@@ -5423,7 +5423,14 @@ pub fn intercept() {
     // two differ only after `ct_msgup`'s HOTCLOSE exit faked the button up
     // (`aes/gemctrl.c:92`): that press has been acted on and must not be
     // taken for a new one while it is still held.
-    if super::input::button() & 0x01 == 0 {
+    //
+    // Beside the level, `ctlmgr`'s wait is completed by a published press
+    // (`post_button(ctl_pd, …)`, `aes/geminput.c:463-483`) even when its
+    // release was published with it — a short click a button-delay window
+    // held back (`b_delay`, `:155-171`). That press is latched by the input
+    // layer and taken here once ([`super::input::ctl_press_take`]).
+    let latched = super::input::ctl_press_take();
+    if super::input::button() & 0x01 == 0 && !latched {
         return;
     }
     let (mx, my) = crate::vdi::mouse_position();
@@ -5474,7 +5481,7 @@ pub fn intercept() {
     if handle != get_top() {
         // `ctlmgr`'s `ev_multi` returned on this press (`aes/gemctrl.c:456-
         // 462`); its `ev_rets` consumed the transition (`aes/gemevlib.c:268`).
-        let _ = super::input::ev_rets();
+        super::input::ev_consume();
         let old_top = get_top();
         msg[0] = WM_TOPPED;
         wait_release();
@@ -5502,7 +5509,7 @@ pub fn intercept() {
     // consumed the transition (`aes/gemevlib.c:268`). A press in the work area
     // (`Gadget::None`) belongs to the application and is left for it.
     if !matches!(gad, Gadget::None) {
-        let _ = super::input::ev_rets();
+        super::input::ev_consume();
     }
     match gad {
         Gadget::Closer => {

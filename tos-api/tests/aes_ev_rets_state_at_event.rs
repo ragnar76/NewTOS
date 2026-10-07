@@ -466,6 +466,15 @@ fn drain(host: &'static ScriptHost, pb: &mut Aespb) {
     }
 }
 
+/// The application is busy for `n` ms: `n` empty packets, one
+/// `graf_mkstate` each.
+fn idle(host: &'static ScriptHost, pb: &mut Aespb, n: usize) {
+    for _ in 0..n {
+        host.push(Packet { dx: 0, dy: 0, buttons: 0 });
+    }
+    drain(host, pb);
+}
+
 /// Walk the pointer to `(tx, ty)`, buttons up.
 fn move_to(host: &'static ScriptHost, pb: &mut Aespb, tx: i16, ty: i16) {
     drain(host, pb);
@@ -499,21 +508,39 @@ fn fresh() -> (&'static ScriptHost, Aespb) {
 /// `evnt_multi(flags, clicks, mask, state)` with a 0-ms timer (only used when
 /// `flags` has `MU_TIMER`). Returns `(fired, EV_MX, EV_MY, EV_MB, EV_BRET)`.
 fn evnt_multi(pb: &mut Aespb, flags: i16, clicks: i16, mask: i16, state: i16) -> (i16, i16, i16, i16, i16) {
+    evnt_multi_t(pb, flags, clicks, mask, state, 0)
+}
+
+/// [`evnt_multi`] with a `ms`-millisecond `MU_TIMER` (`int_in[14]`/`[15]`).
+fn evnt_multi_t(pb: &mut Aespb, flags: i16, clicks: i16, mask: i16, state: i16, ms: u16) -> (i16, i16, i16, i16, i16) {
     let mut buf = Box::new([0i16; 8]);
     pb.intin.fill(0);
     pb.intin[0] = flags;
     pb.intin[1] = clicks;
     pb.intin[2] = mask;
     pb.intin[3] = state;
+    pb.intin[14] = ms as i16;
     pb.addrin[0] = buf.as_mut_ptr() as u64;
     pb.call(25, 16, 7, 1);
     pb.addrin[0] = 0;
     (pb.intout[0], pb.intout[1], pb.intout[2], pb.intout[3], pb.intout[6])
 }
 
-/// Queue a short click at the current position: press, `hold` packets held,
-/// release, then `PAST_WINDOW` empty packets so the window can close.
+/// Queue a short click at the current position: one empty packet, press,
+/// `hold` packets held, release. The script then runs dry, so the window can
+/// close on the idle pumps that follow.
+///
+/// The leading empty packet makes the click arrive **while the application is
+/// waiting**: `evnt_multi`'s entry pump (`chkkbd(); forker();`,
+/// `aes/gemevlib.c:169-170`) consumes it, the wait is armed (`abutton`,
+/// raising `gl_bpend` for a multi-click request, `aes/geminput.c:559-561`),
+/// and only then does the press reach `b_click` — which opens the delay
+/// window because a waiter wants more than one click (`:133-140`). A press
+/// that reaches the AES *before* any multi-click wait was ever armed is
+/// published at once (`:141-142`) — a different case, not the one these
+/// tests are about.
 fn queue_click(host: &'static ScriptHost, hold: usize) {
+    host.push(Packet { dx: 0, dy: 0, buttons: 0 });
     host.push(Packet { dx: 0, dy: 0, buttons: 1 });
     for _ in 0..hold {
         host.push(Packet { dx: 0, dy: 0, buttons: 1 });
@@ -609,6 +636,10 @@ fn click_between_calls_is_delivered_from_the_record() {
     move_to(host, &mut pb, 250, 260);
     queue_click(host, 1);
     drain(host, &mut pb); // the app is busy: graf_mkstate only
+    // … and stays busy past the click window, so whatever window the press
+    // opened (`gl_bpend` left raised by earlier cancelled waits) has closed
+    // and published press and release before the next call.
+    idle(host, &mut pb, PAST_WINDOW);
     assert_eq!(tos_api::vdi::mouse_buttons() & 1, 0);
     let (fired, mx, my, mb, bret) = evnt_multi(&mut pb, MU_BUTTON | MU_TIMER, 0x0102, 3, 0);
     eprintln!("busy click: fired={fired:#06x} mx={mx} my={my} mb={mb:#x} bret={bret}");
@@ -657,6 +688,152 @@ fn release_consumed_by_graf_wait_is_not_reported_again() {
     assert_eq!(tos_api::vdi::mouse_buttons() & 1, 0);
     let (fired, ..) = evnt_multi(&mut pb, MU_BUTTON | MU_TIMER, 1, 1, 1);
     assert_eq!(fired, MU_TIMER, "the press+release was graf_rubberbox's; fired = {fired:#06x}");
+}
+
+// ── ZVIEW02 / A111 (1): the double-click window runs on the AES tick ───────
+
+/// Push `n` packets with the button state `b`.
+fn hold(host: &'static ScriptHost, b: u8, n: usize) {
+    for _ in 0..n {
+        host.push(Packet { dx: 0, dy: 0, buttons: b });
+    }
+}
+
+/// zView's main loop (`EvntWindom(MU_MESAG|MU_TIMER|MU_KEYBD|MU_BUTTON)`,
+/// `sdk/zview/z-tools-04805b7/zview/main.c:168`, with `evnt.bclick = 258,
+/// bmask = 3, bstate = 0` and `TimerInit(20)`, `:138-143`): `evnt_multi`
+/// with a 20-ms timer, again and again, until `MU_BUTTON` comes. Returns every
+/// `(fired, EV_MB, EV_BRET)` up to and including the one with `MU_BUTTON`.
+fn zview_loop(pb: &mut Aespb) -> Vec<(i16, i16, i16)> {
+    let mut out = Vec::new();
+    for _ in 0..200 {
+        let (fired, _, _, mb, bret) =
+            evnt_multi_t(pb, MU_MESAG | MU_TIMER | MU_KEYBD | MU_BUTTON, 0x0102, 3, 0, 20);
+        out.push((fired, mb, bret));
+        if fired & MU_BUTTON != 0 {
+            break;
+        }
+    }
+    out
+}
+
+/// **ZVIEW02.** A double click on a folder tile: press 15 ms, release 25 ms,
+/// press 15 ms (the QEMU injector's 3/5/3 hz_200 ticks) — while the
+/// application polls with a 20-ms timer. In EmuTOS the button-delay window is
+/// counted down by the AES tick (`b_delay(1)` from `tikcod`,
+/// `aes/gemdosif.S:389-411`), not by the waiting call: the timer returns in
+/// between report nothing of the withheld press, and the gesture is published
+/// when the window closes — `bchange(1, 2)`, `bchange(0, 1)`
+/// (`aes/geminput.c:155-171`) — so the wait comes back with **two clicks and
+/// `EV_MB` = down** (`pr_button`), what zView needs to open the folder
+/// (`nb_click == 2 && evnt.mbut == 1`, `catalog/catalog_mouse.c:132`).
+#[test]
+fn timer_poll_loop_double_click_reports_two_clicks_button_down() {
+    let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let (host, mut pb) = fresh();
+    move_to(host, &mut pb, 470, 318);
+    hold(host, 0, 1);
+    hold(host, 1, 15);
+    hold(host, 0, 25);
+    hold(host, 1, 15);
+    hold(host, 0, 1);
+    let rets = zview_loop(&mut pb);
+    eprintln!("zView loop, short double click: {rets:?}");
+    let (last, before) = rets.split_last().unwrap();
+    assert_eq!(last.0 & MU_BUTTON, MU_BUTTON, "the double click must come back as MU_BUTTON");
+    assert_eq!(last.2, 2, "EV_BRET: two clicks, not one per press (the window is not cut by MU_TIMER)");
+    assert_eq!(last.1 & 1, 1, "EV_MB = the press (pr_button): released inside the window");
+    assert!(before.len() >= 5, "the timer keeps firing while the window is open: {} returns", before.len());
+    for &(fired, mb, _) in before {
+        assert_eq!((fired, mb & 1), (MU_TIMER, 0), "a withheld press is not reported before the window closes");
+    }
+    let (fired2, ..) = evnt_multi(&mut pb, MU_BUTTON | MU_TIMER, 0x0102, 3, 0);
+    assert_eq!(fired2, MU_TIMER, "the gesture is delivered once; fired = {fired2:#06x}");
+}
+
+/// The same double click with the **second press held 360 ms** — past the
+/// window (the injector's 72-tick variant). The window publishes only the
+/// press, `bchange(gl_bdesired, 2)`, the button being still down
+/// (`gl_bdesired == gl_btrue`, `aes/geminput.c:166-169`): one transition,
+/// so the event reports the live state — down — with two clicks, while the
+/// button is still held.
+#[test]
+fn timer_poll_loop_double_click_second_press_held() {
+    let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let (host, mut pb) = fresh();
+    move_to(host, &mut pb, 470, 110);
+    hold(host, 0, 1);
+    hold(host, 1, 15);
+    hold(host, 0, 25);
+    hold(host, 1, 360);
+    let rets = zview_loop(&mut pb);
+    eprintln!("zView loop, held double click: {rets:?}");
+    let last = *rets.last().unwrap();
+    assert_eq!((last.0 & MU_BUTTON, last.2, last.1 & 1), (MU_BUTTON, 2, 1));
+    assert_eq!(tos_api::vdi::mouse_buttons() & 1, 1, "delivered at the window's close, the press still held");
+    host.clear();
+    host.push(Packet { dx: 0, dy: 0, buttons: 0 });
+    drain(host, &mut pb);
+}
+
+/// **A111 (1).** The window is `gl_dclick` ticks (220 ms / 20 ms = 11 at the
+/// default index 3, `ev_dclick`, `aes/gemevlib.c:300-309`) from the opening
+/// press, **plus three ticks per further click** (`gl_bdely += 3`,
+/// `aes/geminput.c:121-122`) — not a fresh full window per click — and the
+/// count is reported only when it closes. A wait for three clicks gets a
+/// second press 100 ms after the first (window now 14 ticks, 260..280 ms) and
+/// a third at 300 ms: outside, so the answer is **2**, delivered 260..280 ms
+/// after the first press. With a full window per click the third press would
+/// have counted (100 + 220 = 320 ms).
+#[test]
+fn window_extends_three_ticks_per_click_and_reports_at_its_end() {
+    let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let (host, mut pb) = fresh();
+    hold(host, 0, 1);
+    hold(host, 1, 10); // press at t0 (the 2nd pump of the call)
+    hold(host, 0, 90);
+    hold(host, 1, 10); // second press at t0 + 100
+    hold(host, 0, 190);
+    hold(host, 1, 10); // third press at t0 + 300
+    hold(host, 0, 1);
+    let c0 = host.clock.load(Ordering::Relaxed);
+    let (fired, _, _, mb, bret) = evnt_multi(&mut pb, MU_BUTTON, 0x0003, 1, 1);
+    let at = host.clock.load(Ordering::Relaxed) - (c0 + 2);
+    eprintln!("three-click wait: fired={fired:#06x} mb={mb:#x} bret={bret} delivered at t0+{at} ms");
+    assert_eq!(fired, MU_BUTTON);
+    assert_eq!(bret, 2, "the third press (t0+300) is outside the extended window (t0+260..280)");
+    assert_eq!(mb & 1, 1, "EV_MB = the press: the release was published with it");
+    assert!((255..=285).contains(&at), "reported at the window's end, t0+{at} ms");
+    // The third press is a gesture of its own: published at once (no waiter
+    // wants more than one click now), and seen by the next wait.
+    drain(host, &mut pb);
+    idle(host, &mut pb, PAST_WINDOW);
+}
+
+/// `evnt_button` (`ev_button`, `aes/gemevlib.c:84-94`) for two clicks: a
+/// double click inside the window returns **2**, delivered when the window
+/// closes (`post_button` → `min(2, 2)`, `aes/geminput.c:463-483`), with
+/// `EV_MB` = down.
+#[test]
+fn evnt_button_double_click_returns_two_at_window_end() {
+    let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let (host, mut pb) = fresh();
+    hold(host, 0, 1);
+    hold(host, 1, 15);
+    hold(host, 0, 25);
+    hold(host, 1, 15);
+    hold(host, 0, 1);
+    let c0 = host.clock.load(Ordering::Relaxed);
+    pb.intin.fill(0);
+    pb.intin[0] = 2;
+    pb.intin[1] = 1;
+    pb.intin[2] = 1;
+    pb.call(21, 3, 5, 0);
+    let at = host.clock.load(Ordering::Relaxed) - c0;
+    let (ret, mb) = (pb.intout[0], pb.intout[3]);
+    eprintln!("evnt_button double: ret={ret} mb={mb:#x} at +{at} ms");
+    assert_eq!((ret, mb & 1), (2, 1));
+    assert!(at >= 200, "delivered at the window's end (14 ticks after the press), +{at} ms");
 }
 
 // ── O1: the objc_edit caret ────────────────────────────────────────────────

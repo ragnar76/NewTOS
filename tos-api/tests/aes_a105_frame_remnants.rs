@@ -769,6 +769,18 @@ fn arm_gap(host: &ScriptHost) {
     host.push(pkt(0, 0, 0));
 }
 
+/// Packets (1 ms each) a press is held so that the button-delay window it
+/// opened has closed: 11 AES ticks of 20 ms (`gl_dclick` at the default
+/// index 3, `aes/gemevlib.c:300-309`) plus the tick phase, with margin.
+const HOLD_PAST_WINDOW: usize = 240;
+
+/// `n` idle packets with the left button held.
+fn hold_down(host: &ScriptHost, n: usize) {
+    for _ in 0..n {
+        host.push(pkt(0, 0, 1));
+    }
+}
+
 /// An idle packet, button **held**, that snapshots the screen under `index`
 /// first — the screen as the AES left it after the previous packet.
 const fn snap_held(index: usize) -> Packet {
@@ -1026,8 +1038,11 @@ fn pressed_closer(host: &'static ScriptHost, pb: &mut Aespb) -> (Vec<u32>, i16, 
     drain_messages(pb);
     arm_gap(host);
     host.push(pkt(0, 0, 1)); // press on the closer
-    host.push(pkt(0, 0, 1));
-    host.push(pkt(0, 0, 1));
+    // Held past the button-delay window: the application's 2-click wait
+    // (`gl_bpend`) makes the press open it, and the Control Manager's wait is
+    // completed only when it closes (`b_click`/`b_delay`,
+    // `aes/geminput.c:133-140,155-171`), 11 AES ticks = 220 ms later.
+    hold_down(host, HOLD_PAST_WINDOW);
     host.push(snap_held(0)); // the screen while gr_watchbox shows it SELECTED
     host.push(pkt(0, 0, 1));
     host.push(pkt(0, 0, 0)); // release inside
@@ -1169,6 +1184,7 @@ fn press_frame(host: &'static ScriptHost, pb: &mut Aespb, x: i16, y: i16) -> (Ve
     arm_gap(host);
     host.push(snap(0)); // before the press
     host.push(pkt(0, 0, 1)); // press
+    hold_down(host, HOLD_PAST_WINDOW); // see `pressed_closer`
     host.push(snap_held(1)); // while it is held
     host.push(pkt(0, 0, 1));
     host.push(pkt(0, 0, 0)); // release

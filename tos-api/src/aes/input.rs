@@ -15,13 +15,27 @@
 //! [`crate::vdi::feed_relative`], which calls [`b_click`] and [`mchange`] at the
 //! same two points and with the same arguments.
 //!
-//! **What is *not* reproduced, and why.** EmuTOS's `bchange`/`b_delay` deliver
-//! the button change through the fork queue into a per-process event-block list
-//! (`post_button`, `:463-483`); our Event Manager polls the live VDI button byte
-//! instead, so the delivery half has no counterpart. What *is* observable
-//! through that difference — which process may act on the sampled level, how
-//! long a click window stays open, and the button state an event *reports* —
-//! is exactly what this module keeps.
+//! **How the delivery half is reproduced.** EmuTOS's `bchange`/`b_delay`
+//! deliver a button change through the fork queue into the per-process
+//! event-block lists: `post_button` (`:463-483`) walks the mouse owner's
+//! `c_bsleep` list and completes every wait the new state satisfies. Our
+//! Event Manager has no fork queue, but it keeps that list: one button wait
+//! per AES identity ([`abutton`], [`acancel`], [`bwait_take`]), completed by
+//! [`post_button`] from inside [`bchange`] — so a sleeping `MU_BUTTON` wait is
+//! satisfied by a *published transition*, never by sampling the level, and
+//! the click count it returns is the one the transition carried.
+//!
+//! **The button-delay window runs on the AES tick, not in a caller.** EmuTOS
+//! opens it in `b_click` on a press while any waiter asks for more than one
+//! click (`gl_bpend`), counts it down by one per AES timer tick (`b_delay(1)`
+//! from `tikcod`, `aes/gemdosif.S:389-411`; one tick = `gl_ticktime` = the
+//! VDI's `Tickcal`, 20 ms), extends it by three ticks for every further click
+//! (`gl_bdely += 3`, `:121-122`) and publishes the gesture only when it
+//! closes. Here the countdown is evaluated lazily against the host clock in
+//! whole 20 ms ticks ([`b_delay_poll`]) at every point that can observe it —
+//! each mouse packet ([`b_click`], [`mchange`]) and each read of the state —
+//! which yields the same transitions in the same order as the interrupt-side
+//! countdown.
 //!
 //! **The state at the event (`mtrans`/`pr_*`).** `bchange` records, for every
 //! button transition it publishes, the state *before* it — `pr_button`,
@@ -32,7 +46,7 @@
 //! click whose release lands inside the double-click window is published as
 //! two transitions at once when the window closes (`b_delay`,
 //! `aes/geminput.c:155-171`), so its event reports the button **down**. That
-//! is [`bchange`], [`ev_rets`] and the window close [`b_expire`] here; see
+//! is [`bchange`], [`ev_rets`] and the window close [`b_delay`] here; see
 //! `docs/api/aes/event.md` "The button state an event reports".
 //!
 //! **The Control Manager's two locks over the mouse.** Beside `gl_mowner` this
@@ -52,7 +66,9 @@
 //! only from the IKBD decode path), so plain `Relaxed` atomics suffice, matching
 //! the rest of the AES state.
 
-use core::sync::atomic::{AtomicBool, AtomicI16, AtomicU8, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicI16, AtomicI32, AtomicU32, AtomicU64, AtomicU8, Ordering};
+
+use super::pd::NUM_PDS;
 
 /// EmuTOS `MB_DOWN` (`aes/geminput.c:46`) — the left button, the only state
 /// that moves mouse ownership.
@@ -103,13 +119,48 @@ static GL_CTMOWN: AtomicBool = AtomicBool::new(false);
 /// [`ct_msgup_busy`] the first time it sees the button up.
 static CT_MSGUP: AtomicBool = AtomicBool::new(false);
 
-/// EmuTOS `gl_bdely != 0` — a button-delay window is open: the interval in
-/// which a further click still joins the current gesture
-/// (`aes/geminput.c:59-60`). EmuTOS counts it down in ticks; our Event Manager
-/// holds the deadline in `count_clicks`, so the shared state is just "open",
-/// and both ways it closes — the countdown and the forced expiry `mchange`
-/// performs with `b_delay(gl_bdely)` — are [`b_expire`] clearing it.
-static GL_BDELY: AtomicBool = AtomicBool::new(false);
+/// EmuTOS `gl_bdely` — the ticks left before the open button-delay window
+/// closes (`aes/geminput.c:59-60`); 0 = no window open. Set to `gl_dclick` by
+/// the press that opens it, `+= 3` per further click (`:121-122`), counted
+/// down by [`b_delay`].
+static GL_BDELY: AtomicI16 = AtomicI16::new(0);
+
+/// The AES tick ([`now_tick`]) up to which [`GL_BDELY`] has been counted down
+/// — the lazy stand-in for EmuTOS calling `b_delay(1)` on every timer tick.
+static LAST_TICK: AtomicU64 = AtomicU64::new(0);
+
+/// EmuTOS `gl_bpend` (`aes/geminput.c:64-65`) — "number of pending events
+/// desiring more than a single click". `abutton` increments it when it parks a
+/// wait for more than one click (`:559-561`); `post_button` decrements it when
+/// it completes one (`:477-479`). A wait that `acancel` takes off unsatisfied
+/// (`takeoff`, `aes/gemasync.c:96-114,217-243`) does **not** decrement it, so
+/// every application whose multi-click wait is ever ended by another event (a
+/// timer, a message, a key) leaves it above zero for the rest of the session —
+/// and from then on every press opens the delay window. Not touched by an AES
+/// restart: `run_accs_and_desktop` resets the four window variables, not this
+/// one (`aes/geminit.c:661-664`).
+static GL_BPEND: AtomicI16 = AtomicI16::new(0);
+
+/// The per-identity `c_bsleep` list: the one `MU_BUTTON` wait an AES identity
+/// can have parked (`abutton`, `aes/geminput.c:545-565`). [`BW_IDLE`] = none,
+/// [`BW_ARMED`] = parked and unsatisfied, a value `>= 0` = completed by
+/// [`post_button`] with that click count (`evremove(e, …)` → `azombie`), not
+/// yet collected.
+static BWAIT: [AtomicI32; NUM_PDS] = [const { AtomicI32::new(BW_IDLE) }; NUM_PDS];
+/// The parked wait's `buparm`: the clicks WORD in the high half, mask and
+/// state in the low half (`combine_cms`, `aes/gemevlib.h:34-48`).
+static BWAIT_PARM: [AtomicU32; NUM_PDS] = [const { AtomicU32::new(0) }; NUM_PDS];
+const BW_IDLE: i32 = -1;
+const BW_ARMED: i32 = -2;
+
+/// The Control Manager's loop wait (`ctlmgr`'s `ev_multi(MU_BUTTON, …,
+/// 0x0001ff01L)`, `aes/gemctrl.c:456-462`) has been completed by a published
+/// press while it owned the mouse (`post_button(ctl_pd, …)`) and not yet acted
+/// on. Its inline stand-in [`window::intercept`](super::window::intercept)
+/// otherwise tests the level of `button`, which misses a click whose press and
+/// release a button-delay window published together. Taken by
+/// [`ctl_press_take`]; dropped by [`ev_consume`] and [`reinit`].
+static CTL_PRESS: AtomicBool = AtomicBool::new(false);
 
 /// EmuTOS `gl_btrue` — the true (physical) button state as `b_click` last saw
 /// it (`aes/geminput.c:144-145`). Equal to [`BUTTON`] except while a
@@ -166,10 +217,16 @@ static PR_YRAT: AtomicI16 = AtomicI16::new(0);
 /// The window's `gl_btrue`/`gl_bdesired`/`gl_bclick` are the same
 /// `geminit.c:661-664` set; `mclick`, `mtrans` and the `pr_*` record go back
 /// to their power-up zero with `xrat`/`yrat`, so no transition of the ended
-/// session is reported by the next one's first event.
+/// session is reported by the next one's first event. Every parked button
+/// wait ([`BWAIT`]) belonged to a process of the ended session and is taken
+/// off; [`GL_BPEND`] is left as it is (see there).
 pub(super) fn reinit() {
     BUTTON.store(0, Ordering::Relaxed);
-    GL_BDELY.store(false, Ordering::Relaxed);
+    GL_BDELY.store(0, Ordering::Relaxed);
+    for w in BWAIT.iter() {
+        w.store(BW_IDLE, Ordering::Relaxed);
+    }
+    CTL_PRESS.store(false, Ordering::Relaxed);
     GL_BTRUE.store(0, Ordering::Relaxed);
     GL_BDESIRED.store(0, Ordering::Relaxed);
     GL_BCLICK.store(0, Ordering::Relaxed);
@@ -194,39 +251,98 @@ pub(super) fn reinit() {
 /// `new` is the new button bitmask in VDI convention (bit 0 = left), the `d0`
 /// the VDI passes to `user_but` (`vdi/vdi_asm.S:270-284`). Like `b_click` this
 /// ignores anything that is not a change of the **true** state `gl_btrue`
-/// (`:113`). While a button-delay window is open the change is only counted —
-/// an entry into the window's desired state increments `gl_bclick`
-/// (`:117-123`) — and published when the window closes ([`b_expire`]);
-/// otherwise it is published at once, `forkq(bchange, MAKE_ULONG(state, 1))`
-/// (`:141-142`), here a direct [`bchange`] call.
+/// (`:113`). Three cases, EmuTOS's:
 ///
-/// EmuTOS opens the window *in* `b_click`, on the press itself, when a waiter
-/// asks for more than one click (`if (gl_bpend && state)`, `:133-140`), and
-/// publishes that press only when the window closes. Our Event Manager has
-/// seen the press by the time it opens the window ([`b_arm`] from
-/// `event::count_clicks`), so here the press is published at once with a
-/// count of 1 and the window's close only corrects that count and publishes
-/// the true state if it differs — the same two `bchange`s, in the same order,
-/// that EmuTOS's `b_delay` forks (`:160-170`).
+/// * **a window is open** (`gl_bdely`): the change is only counted — an entry
+///   into the window's desired state increments `gl_bclick` and extends the
+///   window by three ticks, `gl_bdely += 3` (`:117-123`); nothing is
+///   published until the window closes ([`b_delay`]);
+/// * **a press while some waiter asks for more than one click**
+///   (`if (gl_bpend && state)`, `:133-140`): the press opens the window —
+///   `gl_bclick = 1; gl_bdesired = state; gl_bdely = gl_dclick` — and is
+///   *not* published yet;
+/// * **otherwise** it is published at once, `forkq(bchange,
+///   MAKE_ULONG(state, 1))` (`:141-142`), here a direct [`bchange`] call.
+///
+/// The countdown is brought up to date first ([`b_delay_poll`]): a window
+/// whose last tick has passed is closed before this change is looked at, as
+/// the timer interrupt would have closed it.
 pub(crate) fn b_click(new: u8) {
+    b_delay_poll();
     // "ignore it unless it represents a change" (aes/geminput.c:112-113)
     if new == GL_BTRUE.load(Ordering::Relaxed) {
         return;
     }
-    if GL_BDELY.load(Ordering::Relaxed) {
+    if GL_BDELY.load(Ordering::Relaxed) != 0 {
         // "if the change is into the desired state, increment cnt"
-        // (aes/geminput.c:119-123). The `gl_bdely += 3` extension has no
-        // counterpart: `event::count_clicks` gives each further click its own
-        // full window.
+        // (aes/geminput.c:119-123)
         if new == GL_BDESIRED.load(Ordering::Relaxed) {
             GL_BCLICK.fetch_add(1, Ordering::Relaxed);
+            GL_BDELY.fetch_add(3, Ordering::Relaxed);
         }
+    } else if GL_BPEND.load(Ordering::Relaxed) != 0 && new != 0 {
+        // "start click cnt at 1, establish desired state and set wait flag"
+        // (aes/geminput.c:135-140)
+        GL_BCLICK.store(1, Ordering::Relaxed);
+        GL_BDESIRED.store(new, Ordering::Relaxed);
+        GL_BDELY.store(super::event::gl_dclick(), Ordering::Relaxed);
     } else {
         let (x, y) = crate::vdi::mouse_position();
         bchange(new, 1, x, y);
     }
     // "update true state of the mouse" (aes/geminput.c:144-145)
     GL_BTRUE.store(new, Ordering::Relaxed);
+}
+
+/// The AES tick now: the host clock in whole `gl_ticktime` periods (20 ms,
+/// the VDI's `Tickcal` that `gsx_tick` returns, `aes/geminit.c:704`;
+/// [`crate::vdi::mouse::TICKCAL_MS`]). `None` without a host.
+fn now_tick() -> Option<u64> {
+    crate::host::host().map(|h| h.monotonic_millis() / crate::vdi::mouse::TICKCAL_MS as u64)
+}
+
+/// Bring the button-delay countdown up to the current tick: EmuTOS calls
+/// `b_delay(1)` from its timer handler on every AES tick
+/// (`aes/gemdosif.S:406-408`); here the ticks that passed since the last call
+/// are applied in one [`b_delay`]. Called before anything reads or changes the
+/// button state, so the window closes — and its transitions are published —
+/// before any later event is looked at, exactly where the interrupt would have
+/// put it.
+pub(super) fn b_delay_poll() {
+    let Some(t) = now_tick() else {
+        return;
+    };
+    let last = LAST_TICK.swap(t, Ordering::Relaxed);
+    let elapsed = t.saturating_sub(last);
+    if elapsed > 0 {
+        let (x, y) = crate::vdi::mouse_position();
+        b_delay(elapsed.min(i16::MAX as u64) as i16, x, y);
+    }
+}
+
+/// EmuTOS `b_delay(amnt)` (`aes/geminput.c:155-171`): count an open window
+/// down by `amnt` ticks; when it reaches zero publish the gesture —
+/// `bchange(gl_bdesired, gl_bclick)`, and `bchange(gl_btrue, 1)` as well if
+/// the button has since left that state (`:160-170`). `(x, y)` is the AES's
+/// pointer position when the forks run (`bchange` reads `xrat`/`yrat`): the
+/// VDI cursor for the tick countdown, the new position for `mchange`'s forced
+/// close (its forks run after it, see [`mchange`]). (EmuTOS's guard against a full fork ring, `fpcnt +
+/// forkq_calls <= NFORKS`, has no counterpart: there is no ring to fill.)
+fn b_delay(amnt: i16, x: i16, y: i16) {
+    let d = GL_BDELY.load(Ordering::Relaxed);
+    if d == 0 {
+        return;
+    }
+    let d = d.saturating_sub(amnt).max(0);
+    GL_BDELY.store(d, Ordering::Relaxed);
+    if d == 0 {
+        let desired = GL_BDESIRED.load(Ordering::Relaxed);
+        bchange(desired, GL_BCLICK.load(Ordering::Relaxed), x, y);
+        let btrue = GL_BTRUE.load(Ordering::Relaxed);
+        if btrue != desired {
+            bchange(btrue, 1, x, y);
+        }
+    }
 }
 
 /// EmuTOS `bchange` (`aes/geminput.c:329-345`) — publish one button
@@ -272,6 +388,82 @@ fn bchange(new: u8, clicks: i16, x: i16, y: i16) {
     PR_YRAT.store(y, Ordering::Relaxed);
     BUTTON.store(new, Ordering::Relaxed);
     MCLICK.store(clicks, Ordering::Relaxed);
+    // `post_button(gl_mowner, button, clicks);` (aes/geminput.c:344)
+    post_button(new, clicks);
+}
+
+/// EmuTOS `post_button(gl_mowner, new, numclicks)` (`aes/geminput.c:463-483`)
+/// — complete every parked button wait of the mouse owner that `new`
+/// satisfies (`downorup(new, e->e_parm)`), with `(numclicks > clicks) ?
+/// clicks : numclicks` as its result, the clicks being the wait's own
+/// `LOBYTE(HIWORD(e_parm))`; a completed wait for more than one click
+/// decrements `gl_bpend` (`:477-479`).
+///
+/// Only the owner's list is walked: with the Control Manager owning the mouse
+/// (`gl_mowner == ctl_pd`) no application wait is completed. At single-app
+/// "the owner" is every application identity with a parked wait — the same
+/// approximation [`own_mouse`] makes. A completed waiter is woken through the
+/// scheduler's input class, as `evremove` → `azombie` makes the process
+/// runnable.
+fn post_button(new: u8, numclicks: i16) {
+    if !GL_MOWNER_APP.load(Ordering::Relaxed) {
+        // The owner is `ctl_pd`. Outside a menu track (whose own `mn_do` waits
+        // are the ones parked then, `aes/gemmnlib.c:597`) that is the Control
+        // Manager's loop wait, `ev_multi(…, 0x0001ff01L, …)` — one click, left
+        // button down (`aes/gemctrl.c:456-462`). Latch the press for its
+        // inline stand-in, [`window::intercept`](super::window::intercept).
+        if !GL_CTMOWN.load(Ordering::Relaxed) && downorup(new, 0x0001, 0xff, 0x01) {
+            CTL_PRESS.store(true, Ordering::Relaxed);
+        }
+        return;
+    }
+    let mut woke = false;
+    for (w, parm) in BWAIT.iter().zip(BWAIT_PARM.iter()) {
+        if w.load(Ordering::Relaxed) != BW_ARMED {
+            continue;
+        }
+        let p = parm.load(Ordering::Relaxed);
+        let bflgclks = (p >> 16) as u16 as i16;
+        if downorup(new, bflgclks, (p >> 8) as u8, p as u8) {
+            let clicks = i16::from(bflgclks as u8);
+            if clicks > 1 {
+                GL_BPEND.fetch_sub(1, Ordering::Relaxed);
+            }
+            w.store(i32::from(if numclicks > clicks { clicks } else { numclicks }), Ordering::Relaxed);
+            woke = true;
+        }
+    }
+    if woke {
+        crate::bdos::process::sched::wake(crate::bdos::process::sched::wait_input());
+    }
+}
+
+/// The button-wait predicate — EmuTOS `downorup` (`aes/geminput.c:348-357`).
+///
+/// `bflgclks` is the **clicks WORD** the caller passed (`B_CLICKS` /
+/// `MB_CLICKS`), which `combine_cms` packs as the high WORD of the `buparm`
+/// LONG (`aes/gemevlib.h:34-48`). It carries two fields: the low byte is the
+/// number of clicks to wait for, the **high byte is `bflag`**, the sense bit.
+/// `downorup` reads it as `flag = (buparm >> 24) & 0xff`, i.e. exactly that
+/// high byte, and returns
+///
+/// ```text
+/// (((mask & (val ^ new)) == 0) != flag)
+/// ```
+///
+/// With `flag = 0` the caller waits to **enter** the masked state, with
+/// `flag = 1` to **leave** it (`ev_button`, `aes/gemevlib.c:74-81`). TeraDesk's
+/// main loop asks with `clicks = 0x0102` (`sdk/apps/teradesk/main.c:1589`), so
+/// `flag = 1`, `mask = 3`, `state = 0`: "tell me when a button **is
+/// pressed**" — the inverse of the plain level match.
+///
+/// The comparison is EmuTOS's literal one: a 0/1 condition compared against the
+/// whole flag byte, so a `flag` above 1 makes the predicate constantly true,
+/// exactly as it does in C.
+pub(super) fn downorup(new: u8, bflgclks: i16, mask: u8, val: u8) -> bool {
+    let flag = (bflgclks >> 8) & 0x00ff;
+    let cond = i16::from((mask & (val ^ new)) == 0);
+    cond != flag
 }
 
 /// `user_mot` — the AES's motion handler, EmuTOS `mchange`
@@ -299,12 +491,16 @@ fn bchange(new: u8, clicks: i16, x: i16, y: i16) {
 // is worth.
 #[allow(clippy::manual_range_contains)]
 pub(crate) fn mchange(rx: i16, ry: i16) {
+    // The ticks that passed before this packet close a window first, at the
+    // old position (the timer interrupt would have run before it).
+    b_delay_poll();
     let dx = XRAT.load(Ordering::Relaxed) - rx;
     let dy = YRAT.load(Ordering::Relaxed) - ry;
     // `b_delay(gl_bdely)` forks the window's `bchange`s; they run after this
     // `mchange` has finished (the fork ring is FIFO), so they see the new
     // `xrat`/`yrat` — hence the expiry is applied at the end, below.
-    let expire = bdely_pending() && (dx > 2 || dx < -2 || dy > 2 || dy < -2);
+    let bdely = GL_BDELY.load(Ordering::Relaxed);
+    let expire = bdely != 0 && (dx > 2 || dx < -2 || dy > 2 || dy < -2);
 
     // "xrat, yrat hold true" (aes/geminput.c:371)
     XRAT.store(rx, Ordering::Relaxed);
@@ -321,7 +517,8 @@ pub(crate) fn mchange(rx: i16, ry: i16) {
     }
 
     if expire {
-        b_expire(rx, ry);
+        // `b_delay(gl_bdely)` (aes/geminput.c:365-368)
+        b_delay(bdely, rx, ry);
     }
 }
 
@@ -363,15 +560,19 @@ pub(super) fn ct_chgown(app: bool) {
     }
 }
 
-/// EmuTOS `set_mown(mp)` (`aes/geminput.c:220-235`): `if (!button) gl_cowner =
-/// gl_mowner = mp;` — "the mouse should only be transferred with the buttons
-/// in an up state" (`:216-217`); with a button held nothing changes. The
-/// `post_mouse`/`post_button` that follow in EmuTOS (`:231-233`) wake the new
-/// owner's parked waits; our Event Manager polls the live position and button
-/// against `own_mouse()` on every pass, so the hand-over itself is the wake.
+/// EmuTOS `set_mown(mp)` (`aes/geminput.c:220-235`): `if (!button) {
+/// gl_cowner = gl_mowner = mp; post_mouse(…); post_button(gl_mowner, button,
+/// 1); }` — "the mouse should only be transferred with the buttons in an up
+/// state" (`:216-217`); with a button held nothing changes. The
+/// `post_button` completes a parked button wait of the new owner that the
+/// (up) state satisfies ([`post_button`]); the `post_mouse` half is covered by
+/// the Event Manager re-testing its rectangles against `own_mouse()` on every
+/// pass.
 fn set_mown(app: bool) {
-    if BUTTON.load(Ordering::Relaxed) == 0 {
+    let button = BUTTON.load(Ordering::Relaxed);
+    if button == 0 {
         GL_MOWNER_APP.store(app, Ordering::Relaxed);
+        post_button(button, 1);
     }
 }
 
@@ -433,56 +634,114 @@ pub(super) fn ct_msgup_hotclose() {
 /// (`aes/geminput.c:49`); the level `ev_multi`'s quick check, `abutton` and
 /// the Control Manager's wait test read (`aes/gemevlib.c:185-200`,
 /// `aes/geminput.c:549`, `aes/gemctrl.c:100`). Equal to the raw VDI byte
-/// (`crate::vdi::mouse_buttons`) except after [`ct_msgup_hotclose`].
+/// (`crate::vdi::mouse_buttons`) except while a button-delay window holds a
+/// press back ([`b_click`]) and after [`ct_msgup_hotclose`].
 pub(super) fn button() -> u8 {
     BUTTON.load(Ordering::Relaxed)
 }
 
-/// Open the button-delay window — EmuTOS `gl_bclick = 1; gl_bdesired =
-/// state; gl_bdely = gl_dclick;` in `b_click` (`aes/geminput.c:135-140`).
-/// EmuTOS opens it only when someone is waiting for more than one click *and*
-/// the change is a press (`if (gl_bpend && state)`, `:133`); the caller
-/// applies both conditions. The desired state is the true state the press
-/// left, which [`b_click`] has already published (see there).
-pub(super) fn b_arm() {
-    GL_BDESIRED.store(GL_BTRUE.load(Ordering::Relaxed), Ordering::Relaxed);
-    GL_BCLICK.store(1, Ordering::Relaxed);
-    GL_BDELY.store(true, Ordering::Relaxed);
-}
-
-/// Close the button-delay window normally — the `gl_bdely` countdown reaching
-/// zero (`b_delay`, `aes/geminput.c:155-171`), here the counting loop finishing.
-/// A window that the pointer already closed ([`mchange`]) is not closed twice.
-pub(super) fn b_disarm() {
-    let (x, y) = crate::vdi::mouse_position();
-    b_expire(x, y);
+/// EmuTOS `mclick` — the click count of the last published transition
+/// (`aes/geminput.c:343`), what `ev_multi`'s quick check reports when the live
+/// `button` satisfies the wait (`prets[5] = mclick`, `aes/gemevlib.c:196-198`).
+pub(super) fn mclick() -> i16 {
+    MCLICK.load(Ordering::Relaxed)
 }
 
 /// Is a button-delay window open? EmuTOS `if (gl_bdely)`
 /// (`aes/geminput.c:117,366`).
 pub(super) fn bdely_pending() -> bool {
-    GL_BDELY.load(Ordering::Relaxed)
+    GL_BDELY.load(Ordering::Relaxed) != 0
 }
 
-/// The delay window closing — `b_delay` once `gl_bdely` reaches zero
-/// (`aes/geminput.c:155-171`), whether by the countdown ([`b_disarm`]) or by
-/// `mchange`'s `b_delay(gl_bdely)` (`:365-368`). EmuTOS then publishes
-/// `bchange(gl_bdesired, gl_bclick)` and, if the button no longer is in that
-/// state, `bchange(gl_btrue, 1)` (`:160-170`). The first of the two has
-/// already been published here with a count of 1 when the window opened
-/// ([`b_click`]), so it only gets its real count; the second is published as
-/// in EmuTOS. A click released inside the window therefore leaves two
-/// transitions behind — `mtrans > 1` with `pr_button` = the press — which is
-/// what [`ev_rets`] reports. `(x, y)` is the pointer position at the close.
-fn b_expire(x: i16, y: i16) {
-    if !GL_BDELY.swap(false, Ordering::Relaxed) {
-        return;
+/// EmuTOS `abutton(e, p)` (`aes/geminput.c:545-565`) — arm the button wait of
+/// AES identity `idx` (`iasync(MU_BUTTON, buparm)`, `aes/gemasync.c:154-156`).
+/// `level` is the AES `button` the arm tests: if it already satisfies
+/// `downorup` the wait completes at once with **one** click — `azombie(e, 1)`,
+/// "'nuff said", ownership-blind — and `Some(1)` is returned with nothing
+/// parked. Otherwise the wait is parked on the identity's list and, if it asks
+/// for more than one click, `gl_bpend` is incremented: from now on a press
+/// opens the delay window ([`b_click`]). It is completed only by
+/// [`post_button`] and collected with [`bwait_take`].
+pub(super) fn abutton(idx: usize, level: u8, bflgclks: i16, mask: u8, state: u8) -> Option<i16> {
+    if downorup(level, bflgclks, mask, state) {
+        return Some(1);
     }
-    MCLICK.store(GL_BCLICK.load(Ordering::Relaxed), Ordering::Relaxed);
-    let btrue = GL_BTRUE.load(Ordering::Relaxed);
-    if btrue != GL_BDESIRED.load(Ordering::Relaxed) {
-        bchange(btrue, 1, x, y);
+    let w = BWAIT.get(idx)?;
+    // `bclicks = LOBYTE(HIWORD(p)); if (bclicks > 1) gl_bpend++;` (:559-561)
+    if bflgclks & 0x00ff > 1 {
+        GL_BPEND.fetch_add(1, Ordering::Relaxed);
     }
+    let parm = (u32::from(bflgclks as u16) << 16) | (u32::from(mask) << 8) | u32::from(state);
+    BWAIT_PARM[idx].store(parm, Ordering::Relaxed);
+    w.store(BW_ARMED, Ordering::Relaxed);
+    None
+}
+
+/// Does identity `idx` have a button wait parked or completed but not yet
+/// collected? An Event Manager call that gave the CPU to a peer and is
+/// re-executed from the top (S2) finds its own wait still there and must not
+/// arm a second one — EmuTOS's process would simply still be asleep on it.
+pub(super) fn bwait_armed(idx: usize) -> bool {
+    BWAIT.get(idx).is_some_and(|w| w.load(Ordering::Relaxed) != BW_IDLE)
+}
+
+/// Collect a completed button wait of identity `idx`: `Some(clicks)` — the
+/// `apret(MU_BUTTON)` value, `aes/gemevlib.c:276-277` — and the wait is gone;
+/// `None` while it is still parked (or there is none).
+pub(super) fn bwait_take(idx: usize) -> Option<i16> {
+    let w = BWAIT.get(idx)?;
+    let v = w.load(Ordering::Relaxed);
+    if v < 0 {
+        return None;
+    }
+    w.store(BW_IDLE, Ordering::Relaxed);
+    Some(v as i16)
+}
+
+/// EmuTOS `acancel` for the button wait (`aes/gemasync.c:217-243`): take a
+/// parked wait of identity `idx` off unsatisfied. Through `takeoff`
+/// (`:96-114`) — which does **not** touch `gl_bpend`, so a cancelled
+/// multi-click wait leaves its increment behind ([`GL_BPEND`]). A completed
+/// wait that was not collected is dropped too: the call that armed it is
+/// over.
+pub(super) fn acancel(idx: usize) {
+    if let Some(w) = BWAIT.get(idx) {
+        w.store(BW_IDLE, Ordering::Relaxed);
+    }
+}
+
+/// An AES-internal wait returned on a button event — `fm_do`, `gr_stilldn`,
+/// `mn_do`, the pop-up, the Control Manager — and consumes it the way its
+/// EmuTOS `ev_multi`/`ev_button` does: [`ev_rets`] after the return.
+///
+/// Those EmuTOS waits block on the *published* `button`, so while a
+/// button-delay window is open they cannot return before it has closed and
+/// published the gesture to the mouse owner of that moment. Ours act on the
+/// raw VDI level as soon as it changes; so a window still open at this point
+/// is closed here — `b_delay(gl_bdely)`, the same forced close `mchange`
+/// applies (`aes/geminput.c:365-368`) — and its transitions are published
+/// under the current owner (the Control Manager inside a menu track or a
+/// frame gadget, the application in its own `form_do`) before `ev_rets`
+/// consumes them. Without it the press the AES has acted on would be
+/// published only later, when the application could take it for its own
+/// click. Key returns use plain [`ev_rets`]: EmuTOS leaves the window running
+/// across them.
+pub(super) fn ev_consume() {
+    b_delay_poll();
+    let d = GL_BDELY.load(Ordering::Relaxed);
+    if d != 0 {
+        let (x, y) = crate::vdi::mouse_position();
+        b_delay(d, x, y);
+    }
+    let _ = ev_rets();
+    CTL_PRESS.store(false, Ordering::Relaxed);
+}
+
+/// Take the Control Manager's latched press ([`CTL_PRESS`]): `true` once per
+/// press its loop wait was completed with — the `MU_BUTTON` return of
+/// `ctlmgr`'s `ev_multi` (`aes/gemctrl.c:456-470`).
+pub(super) fn ctl_press_take() -> bool {
+    CTL_PRESS.swap(false, Ordering::Relaxed)
 }
 
 /// EmuTOS `ev_rets` (`aes/gemevlib.c:42-58`), the mouse half: the pointer

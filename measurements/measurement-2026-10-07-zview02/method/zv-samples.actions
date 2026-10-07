@@ -1,0 +1,28 @@
+# ZVIEW01: as zv-browser.actions up to the browser on C:\, then double-click
+# the "zview" tile (third row, third column, 470,318) -> C:\ZVIEW (codecs,
+# icons, samples); double-click the third tile "samples" (470,110) ->
+# C:\ZVIEW\SAMPLES: thumbnails of the 15 sample pictures with their names.
+# The second press of each double click is HELD 72 ticks: zView opens a
+# folder only if evnt.mbut is still 1 for the double click
+# (catalog/catalog_mouse.c:132; with a 3-tick second press nothing opened,
+# first attempt of this run).
+100 parkbr
+3100 move 76 8
+3500 move 100 28
+3700 down
+3703 up
+6000 mark Z02_BROWSER
+6100 move 470 318
+6300 down
+6303 up
+6308 down
+6380 up
+8500 mark Z06_ZVIEW_DIR
+8600 move 470 110
+8800 down
+8803 up
+8808 down
+8880 up
+14000 mark Z07_SAMPLES
+14100 parkbr
+14400 mark END

@@ -1094,7 +1094,7 @@ fn modal(tree: *mut Object, backend: &dyn RasterBackend) -> i16 {
         if cur & 0x01 != 0 && prev & 0x01 == 0 {
             // `fm_do`'s `ev_multi` returned `MU_BUTTON` on this press; its
             // `ev_rets` (`aes/gemevlib.c:268`) consumed it.
-            let _ = super::input::ev_rets();
+            super::input::ev_consume();
             let (mx, my) = crate::vdi::mouse_position();
             let hit = object::hit_test_t(t, 0, MAX_DEPTH, mx, my);
             let now = h.monotonic_millis();

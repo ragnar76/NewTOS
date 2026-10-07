@@ -121,7 +121,7 @@ pub(super) fn gsx_xbox(x: i16, y: i16, w: i16, h: i16, backend: &dyn RasterBacke
 fn mouse_down() -> bool {
     let down = crate::vdi::mouse_buttons() & 0x01 != 0;
     if !down {
-        let _ = super::input::ev_rets();
+        super::input::ev_consume();
     }
     down
 }
