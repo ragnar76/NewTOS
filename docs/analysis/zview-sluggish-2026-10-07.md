@@ -71,6 +71,13 @@ Fix-Optionen (Developer, nach Pi-Messung priorisieren):
 3. `touch`/`sync` sammeln: innerhalb eines Pexec (alloc → set_mode → set_owner →
    install → launch) nur einmal am Trap-Ende synchronisieren statt in jedem Schritt.
 
+**Stand 2026-10-07 (MEMPROT-FAST):** Optionen 1 und 3 umgesetzt (Anwender-Auftrag
+„1+2“), Option 2 nicht. QEMU, gleicher hd-Lauf: memprot beim zView-Start 1331 →
+549 ms, Mausstillstand 1524 → 787 ms; Pexec 3/4 je 17–18 statt 47–52 ms, Pexec 5
+0 statt 5 ms, Mshrink 160 statt 242 ms (11×). Der Rest sind echte
+Deskriptoränderungen (die ~916-MB-TPA wechselt zweimal den Besitzer) — die nimmt
+erst Option 2 weg. `measurements/measurement-2026-10-07-memprot-fast/RUNINFO.TXT`.
+
 Pi entscheidet: Kosten pro Seite auf dem A72. Bei 10 ns/Seite wären es ~0,2 s, bei
 50 ns ~0,9 s Mausstillstand beim zView-Start (plus erneut bei jedem anderen Programm-
 oder LDG-Start).

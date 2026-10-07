@@ -1,0 +1,945 @@
+RB1
+NewTOS booting on qemu-virt
+Phase 02 reached.
+[mm] DTB at 0x0000000048000000
+[mm] firmware: no VideoCore mailbox on this board — device tree decides
+[mm] device tree: /memory first bank: 0x0000000040000000 + 285212672 bytes (272 MiB)
+[mm] memory map:
+[mm]   DRAM  : 0x0000000040000000..0x0000000051000000 (285212672 bytes) — source: device tree
+[mm]   kernel: 0x0000000040080000..0x00000000402f0000 (2555904 bytes)
+[mm]   ST-RAM: 0x0000000040400000..0x0000000040e00000 (10485760 bytes)
+[mm]   TT-RAM: 0x0000000041000000..0x0000000050617000 (258043904 bytes)
+[mm]   OSrsvd: 0x0000000050617000..0x0000000051000000 (10391552 bytes)
+[mm]     heap: 0x0000000050617000..0x0000000050817000 (2097152 bytes)
+[mm]     fb  : 0x0000000050817000..0x0000000051000000 (8294400 bytes)
+[mm]   MMIO 00: 0x0000000008000000..0x0000000008010000
+[mm]   MMIO 01: 0x0000000008010000..0x0000000008020000
+[mm]   MMIO 02: 0x0000000009000000..0x0000000009001000
+[mm]   MMIO 03: 0x0000000010000000..0x000000003eff0000
+[mm] MMU reinstalled (high-half via TTBR1, TTBR0 deferred to Phase 06).
+[mm] ASIDs ON: 16-bit (ID_AA64MMFR0_EL1.ASIDBits=0x2), 65535 per generation
+[mm] frames ST-RAM: total=2560 used=0 free=2560 (10485760 B free)
+[mm] frames TT-RAM: total=62999 used=0 free=62999 (258043904 B free)
+[mm] alloc ST-RAM frame -> 0x0000000040400000
+[mm] alloc TT-RAM frame -> 0x0000000041000000
+[mm] heap after init: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[mm] heap smoke OK
+[mm] heap after smoke: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[fb] ramfb up: 1920x1080
+[mm] memory protection ON (verify: every sync checked against a full recomputation): table arena 0x41000000+1431 tables
+[mm] BDOS pools: ST-RAM 0x40400000+10485760 TT-RAM 0x41597000+252182528
+[mm] user address space: pools mapped VA = PA (127 shared L3 tables, 4-KiB pages, rights per process)
+[mm] BDOS ST-RAM after init: total=10485760 free=10485760 used=0 largest_free=10485760 (free_mds=1 alloc_mds=0)
+[mm] BDOS TT-RAM after init: total=252182528 free=252182528 used=0 largest_free=252182528 (free_mds=1 alloc_mds=0)
+[bcache] FS09 block read cache: none (no block device on this board)
+[usb] PCIe ECAM at 0x4010000000 (size 0x10000000)
+[usb] xHCI at PCI 00:02.0 → BAR0 0x10000000 (size 0x4000)
+[usb] scratchpad buffers needed: 0
+[usb] dma addrs: dcbaap=0x40e47000 crcr=0x40e470c0 erstba=0x40e472c0 dcbaa0=0x0
+[usb] reg readback: ac64=1 csz=0 dcbaap_hw=0x40e47000
+[usb] xHCI up: 16 slots enabled, 8 root ports
+[usb] root ports powered (PPC=false)
+[usb] port 1: ccs=0 ped=0 pp=1 speed=0
+[usb] port 2: ccs=0 ped=0 pp=1 speed=0
+[usb] port 3: ccs=0 ped=0 pp=1 speed=0
+[usb] port 4: ccs=0 ped=0 pp=1 speed=0
+[usb] port 5: ccs=1 ped=0 pp=1 speed=3
+[usb] port 6: ccs=1 ped=0 pp=1 speed=3
+[usb] port 7: ccs=0 ped=0 pp=1 speed=0
+[usb] port 8: ccs=0 ped=0 pp=1 speed=0
+[usb] device slot 1 (root port 5 route 0x0 speed 3)
+[usb] device descriptor: bLength=18 type=1 bcdUSB=0200 class=0 maxpkt0=64 VID=0627 PID=0001
+[usb] HID iface 0 protocol 1 → int-IN ep 0x81 max 8 interval 7
+[usb] HID configured: slot 1 ep 0x81 dci 3 (keyboard)
+[usb] device slot 2 (root port 6 route 0x0 speed 3)
+[usb] device descriptor: bLength=18 type=1 bcdUSB=0200 class=0 maxpkt0=64 VID=0627 PID=0001
+[usb] HID iface 0 protocol 2 → int-IN ep 0x81 max 4 interval 7
+[usb] HID configured: slot 2 ep 0x81 dci 3 (mouse)
+[proc] stand-in PDs: initial_basepage 0x40266000, AES PD 0x40266100 (read-only to all)
+[c0c] launch C:\CRCHILD.NAP (no tail = case w), kernel parent
+[launch] EL0: slot 0 entry 0x41599000
+CRCHILD: case w starting
+[crash] slot 0 Bus Error esr=0x92000046 pc=0x41599130 far=Some(3735879680)
+
+
+Panic: Bus Error
+esr=92000046
+addr=00000000dead0000 sr=00000000 pc=0000000041599130
+Memory violation: hardware memory, write (translation fault, level 2)
+
+X0-3:   000000000000001a 0000000041598000 00000000000113e0 0000000050617000
+X4-7:   ffff00004019dc68 0000000000000008 0000000000000ff0 0000000000000340
+X8-11:  00000000dead0000 0000000012345678 ffff0000402ebb00 0000000000000000
+X12-15: ffff0000401b03a0 0000000000000001 0000000000000001 0000000000000002
+X16-19: ffff0000402d8168 0000000000000000 0000000000000000 0000000041598000
+X20-23: 00000000415993e0 00000000000113e0 0000000041599000 ffff00004019d368
+X24-27: 0000000041599000 ffff0000402d8560 ffff0000401869d8 ffff00004018c530
+X28-30: ffff0000401869d8 00000000415a93d0 0000000041599068
+ USP:   00000000415a93b0
+
+basepage=41598000
+text=41599000 data=41599310 bss=415993e0
+Crash at text+00000130
+
+*** Press any key to continue ***
+[crash] slot 0 key pressed, terminating with Pterm(-1)
+[memprot] verify: 4 checks, 318185 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 3 regions 372 pages 123222 rebuilds 1 fallbacks 0
+[launch] returned (program Pterm'd)
+[c0c] back in the boot path after CRCHILD, launch rc=0
+[launch] EL0: slot 0 entry 0x41599000
+CRASHTST: start
+[exec] preparing program (slot 1)
+[exec] launching
+CRCHILD: case w starting
+[crash] slot 1 Bus Error esr=0x92000046 pc=0x415ac130 far=Some(3735879680)
+
+
+Panic: Bus Error
+esr=92000046
+addr=00000000dead0000 sr=60000000 pc=00000000415ac130
+Memory violation: hardware memory, write (translation fault, level 2)
+
+X0-3:   000000000000001a 00000000415ab000 00000000000113e0 0000000000000000
+X4-7:   0000000000000000 0000000000000000 0000000000000000 0000000000000000
+X8-11:  00000000dead0000 0000000012345678 0000000000000000 0000000000000000
+X12-15: 0000000000000000 0000000000000000 0000000000000000 0000000000000000
+X16-19: 0000000000000000 0000000000000000 0000000000000000 00000000415ab000
+X20-23: 00000000415ac3e0 00000000000113e0 0000000000000000 0000000000000000
+X24-27: 0000000000000000 0000000000000000 0000000000000000 0000000000000000
+X28-30: 0000000000000000 00000000415bc3d0 00000000415ac068
+ USP:   00000000415bc3b0
+
+basepage=415ab000
+text=415ac000 data=415ac310 bss=415ac3e0
+Crash at text+00000130
+
+*** Press any key to continue ***
+[crash] slot 1 key pressed, terminating with Pterm(-1)
+[memprot] verify: 11 checks, 952625 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 9 regions 1238 pages 369857 rebuilds 3 fallbacks 0
+CRASHTST: case w rc=0x000000000000FFFF OK
+[exec] preparing program (slot 1)
+[exec] launching
+CRCHILD: case u starting
+[crash] slot 1 Illegal Instruction esr=0x02000000 pc=0x415ac0f0 far=None
+
+
+Panic: Illegal Instruction
+esr=02000000
+sr=60000000 pc=00000000415ac0f0
+
+X0-3:   000000000000001a 00000000415ab000 00000000000113e0 0000000000000000
+X4-7:   0000000000000000 0000000000000000 0000000000000000 0000000000000000
+X8-11:  0000000000000009 0000000000000075 0000000000000000 0000000000000000
+X12-15: 0000000000000000 0000000000000000 0000000000000000 0000000000000000
+X16-19: 0000000000000000 0000000000000000 0000000000000000 00000000415ab000
+X20-23: 00000000415ac3e0 00000000000113e0 0000000000000000 0000000000000000
+X24-27: 0000000000000000 0000000000000000 0000000000000000 0000000000000000
+X28-30: 0000000000000000 00000000415bc3d0 00000000415ac068
+ USP:   00000000415bc3b0
+
+basepage=415ab000
+text=415ac000 data=415ac310 bss=415ac3e0
+Crash at text+000000f0
+
+*** Press any key to continue ***
+[crash] slot 1 key pressed, terminating with Pterm(-1)
+[memprot] verify: 16 checks, 1397136 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 13 regions 1733 pages 493270 rebuilds 4 fallbacks 0
+CRASHTST: case u rc=0x000000000000FFFF OK
+[exec] preparing program (slot 1)
+[exec] launching
+CRCHILD: case x starting
+[crash] slot 1 Bus Error esr=0x8200000f pc=0x50817000 far=Some(1350660096)
+
+
+Panic: Bus Error
+esr=8200000f
+addr=0000000050817000 sr=60000000 pc=0000000050817000
+Memory violation: hardware memory, execute (permission fault, level 3)
+
+X0-3:   0000000050817000 00000000415ab000 00000000000113e0 0000000000000000
+X4-7:   0000000000000000 0000000000000000 0000000000000000 0000000000000000
+X8-11:  0000000000000002 0000000000000078 0000000000000000 0000000000000000
+X12-15: 0000000000000000 0000000000000000 0000000000000000 0000000000000000
+X16-19: 0000000000000000 0000000000000000 0000000000000000 00000000415ab000
+X20-23: 00000000415ac3e0 00000000000113e0 0000000000000000 0000000000000000
+X24-27: 0000000000000000 0000000000000000 0000000000000000 0000000000000000
+X28-30: 0000000000000000 00000000415bc3d0 00000000415ac1ec
+ USP:   00000000415bc3b0
+
+basepage=415ab000
+text=415ac000 data=415ac310 bss=415ac3e0
+
+*** Press any key to continue ***
+[crash] slot 1 key pressed, terminating with Pterm(-1)
+[memprot] verify: 21 checks, 1841647 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 17 regions 2228 pages 616683 rebuilds 5 fallbacks 0
+CRASHTST: case x rc=0x000000000000FFFF OK
+[exec] preparing program (slot 1)
+[exec] launching
+CRCHILD: case a starting
+[crash] slot 1 Address Error esr=0x8a000000 pc=0x415ac202 far=Some(1096466946)
+
+
+Panic: Address Error
+esr=8a000000
+addr=00000000415ac202 sr=60000000 pc=00000000415ac202
+
+X0-3:   000000000000001a 00000000415ab000 00000000000113e0 0000000000000000
+X4-7:   0000000000000000 0000000000000000 0000000000000000 0000000000000000
+X8-11:  00000000415ac202 0000000000000061 0000000000000000 0000000000000000
+X12-15: 0000000000000000 0000000000000000 0000000000000000 0000000000000000
+X16-19: 0000000000000000 0000000000000000 0000000000000000 00000000415ab000
+X20-23: 00000000415ac3e0 00000000000113e0 0000000000000000 0000000000000000
+X24-27: 0000000000000000 0000000000000000 0000000000000000 0000000000000000
+X28-30: 0000000000000000 00000000415bc3d0 00000000415ac1bc
+ USP:   00000000415bc3b0
+
+basepage=415ab000
+text=415ac000 data=415ac310 bss=415ac3e0
+Crash at text+00000202
+
+*** Press any key to continue ***
+[crash] slot 1 key pressed, terminating with Pterm(-1)
+[memprot] verify: 26 checks, 2286158 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 21 regions 2723 pages 740096 rebuilds 6 fallbacks 0
+CRASHTST: case a rc=0x000000000000FFFF OK
+[exec] preparing program (slot 1)
+[exec] launching
+CRCHILD: case c starting
+[crash] slot 1 Bus Error esr=0x96000006 pc=0xffff0000400dded8 far=Some(3735879680)
+
+
+Panic: Bus Error
+esr=96000006
+addr=00000000dead0000 sr=800003c5 pc=ffff0000400dded8
+Memory violation: hardware memory, read (translation fault, level 2)
+
+X0-3:   00000000dead0000 ffff0000402efb7c 00000000000113e0 0000000000000000
+X4-7:   0000000000000000 0000000000000000 0000000000000000 0000000000000000
+X8-11:  ffff00004014d780 0000000000000000 0000000000000000 0000000000000000
+X12-15: 00000000415bc3b0 0000000000000000 0000000000000000 0000000000000000
+X16-19: 0000000000000000 0000000000000000 0000000000000000 ffff00004014d665
+X20-23: 00000000dead0000 0000000000000000 00000000dead0000 ffff00004014d668
+X24-27: 0000000000000000 0000000000000000 0000000000000000 0000000000000000
+X28-30: 0000000000000000 ffff0000402efb80 ffff00004012a6f0
+ USP:   00000000415bc3b0
+
+basepage=415ab000
+text=415ac000 data=415ac310 bss=415ac3e0
+
+*** Press any key to continue ***
+[crash] slot 1 key pressed, terminating with Pterm(-1)
+[memprot] verify: 31 checks, 2730669 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 25 regions 3218 pages 863509 rebuilds 7 fallbacks 0
+CRASHTST: case c rc=0x000000000000FFFF OK
+[exec] preparing program (slot 1)
+[exec] launching
+CRCHILD: case p starting
+[crash] slot 1 Bus Error esr=0x96000006 pc=0xffff0000400ddfe0 far=Some(3735879680)
+
+
+Panic: Bus Error
+esr=96000006
+addr=00000000dead0000 sr=800003c5 pc=ffff0000400ddfe0
+Memory violation: hardware memory, read (translation fault, level 2)
+
+X0-3:   ffff0000402ef5f0 00000000dead0000 0000000000000080 0000000000000000
+X4-7:   0000000000000000 0000000000000000 0000000000000000 0000000000000000
+X8-11:  ffff0000402ef670 ffff0000402ef670 0000000000000080 0000000000000000
+X12-15: 0000000001010101 0000000000000000 0000000000000000 0000000000000000
+X16-19: 0000000000000000 0000000000000000 0000000000000000 ffff0000402efee0
+X20-23: ffff0000402efee8 00000000dead0000 00000000415ac290 0000000000000000
+X24-27: 0000000000000000 0000000000000000 0000000000000000 0000000000000000
+X28-30: 0000000000000000 ffff0000402efb60 ffff0000400d1b24
+ USP:   00000000415bc3b0
+
+basepage=415ab000
+text=415ac000 data=415ac310 bss=415ac3e0
+
+*** Press any key to continue ***
+[crash] slot 1 key pressed, terminating with Pterm(-1)
+[memprot] verify: 36 checks, 3175180 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 29 regions 3713 pages 986922 rebuilds 8 fallbacks 0
+CRASHTST: case p rc=0x000000000000FFFF OK
+[exec] preparing program (slot 1)
+[exec] launching
+CRCHILD: case o starting
+CRCHILD: clean exit
+[memprot] verify: 41 checks, 3619691 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 33 regions 4208 pages 1110335 rebuilds 9 fallbacks 0
+CRASHTST: case o rc=0x0000000000000000 OK
+CRASHTST: PASS
+[memprot] verify: 43 checks, 3747947 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 34 regions 4209 pages 1110335 rebuilds 9 fallbacks 0
+[launch] returned (program Pterm'd)
+[c0c] back in the boot path after CRASHTST, launch rc=0
+[launch] EL0: slot 0 entry 0x41599000
+UACC3A: start (no C:)
+[exec] preparing program (slot 1)
+[exec] launching
+UAKID: case c starting
+[crash] slot 1 Bus Error esr=0x96000006 pc=0xffff0000400dded8 far=Some(3735879680)
+
+
+Panic: Bus Error
+esr=96000006
+addr=00000000dead0000 sr=800003c5 pc=ffff0000400dded8
+Memory violation: hardware memory, read (translation fault, level 2)
+
+X0-3:   00000000dead0000 ffff0000402efb7c 0000000000000000 0000000000000000
+X4-7:   0000000000000000 0000000000000000 0000000000000000 0000000000000000
+X8-11:  ffff00004014d780 0000000000000000 0000000000000000 0000000000000000
+X12-15: 00000000415bd190 0000000000000000 0000000000000000 0000000000000000
+X16-19: 0000000000000000 0000000000000000 0000000000000000 ffff00004014d665
+X20-23: 00000000dead0000 0000000000000000 00000000dead0000 ffff00004014d668
+X24-27: 0000000000000000 0000000000000000 0000000000000000 0000000000000000
+X28-30: 0000000000000000 ffff0000402efb80 ffff00004012a6f0
+ USP:   00000000415bd190
+
+basepage=415ab000
+text=415ac000 data=415accf0 bss=415acf20
+
+*** Press any key to continue ***
+[crash] slot 1 key pressed, terminating with Pterm(-1)
+[memprot] verify: 50 checks, 4382387 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 40 regions 5075 pages 1356970 rebuilds 11 fallbacks 0
+UACC3A: case c rc=0x000000000000FFFF OK
+[exec] preparing program (slot 1)
+[exec] launching
+UAKID: case o starting
+[crash] slot 1 Bus Error esr=0x96000006 pc=0xffff0000400ddfe0 far=Some(3735879680)
+
+
+Panic: Bus Error
+esr=96000006
+addr=00000000dead0000 sr=800003c5 pc=ffff0000400ddfe0
+Memory violation: hardware memory, read (translation fault, level 2)
+
+X0-3:   ffff0000402ef824 00000000dead0000 0000000000000080 0000000000000000
+X4-7:   0000000000000000 0000000000000000 0000000000000000 0000000000000000
+X8-11:  00000000dead0000 0000000000000000 0000000000000004 ffff0000402ef8a4
+X12-15: 0000000001010101 0000000000000000 0000000000000000 0000000000000000
+X16-19: 0000000000000000 0000000000000000 0000000000000000 ffff0000402efc00
+X20-23: 0000000000000000 0000000056000001 00000000dead0000 0000000000000000
+X24-27: 0000000000000000 0000000000000000 0000000000000000 0000000000000000
+X28-30: 0000000000000000 ffff0000402efb60 ffff00004012cfc8
+ USP:   00000000415bd190
+
+basepage=415ab000
+text=415ac000 data=415accf0 bss=415acf20
+
+*** Press any key to continue ***
+[crash] slot 1 key pressed, terminating with Pterm(-1)
+[memprot] verify: 55 checks, 4826898 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 44 regions 5570 pages 1480383 rebuilds 12 fallbacks 0
+UACC3A: case o rc=0x000000000000FFFF OK
+[exec] preparing program (slot 1)
+[exec] launching
+UAKID: case n starting
+[crash] slot 1 Bus Error esr=0x96000006 pc=0xffff0000400ddfe0 far=Some(3735879680)
+
+
+Panic: Bus Error
+esr=96000006
+addr=00000000dead0000 sr=800003c5 pc=ffff0000400ddfe0
+Memory violation: hardware memory, read (translation fault, level 2)
+
+X0-3:   ffff0000402efa30 00000000dead0000 0000000000000080 0000000000000000
+X4-7:   0000000000000000 0000000000000000 0000000000000000 0000000000000000
+X8-11:  00000000dead0000 ffff0000402efab0 0000000000000080 0000000000000000
+X12-15: 0000000001010101 0000000000000050 0000000000000000 0000000000000000
+X16-19: 0000000000000000 0000000000000000 0000000000000000 ffff0000402efc00
+X20-23: ffff0000402ef9b0 000000000000000c 0000000000000000 0000000000000000
+X24-27: 0000000000000000 0000000000000000 0000000000000000 0000000000000000
+X28-30: 0000000000000000 ffff0000402efb60 ffff00004012efd0
+ USP:   00000000415bd190
+
+basepage=415ab000
+text=415ac000 data=415accf0 bss=415acf20
+
+*** Press any key to continue ***
+[crash] slot 1 key pressed, terminating with Pterm(-1)
+[memprot] verify: 60 checks, 5271409 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 48 regions 6065 pages 1603796 rebuilds 13 fallbacks 0
+UACC3A: case n rc=0x000000000000FFFF OK
+[exec] preparing program (slot 1)
+[exec] launching
+UAKID: case g starting
+[crash] slot 1 Bus Error esr=0x96000046 pc=0xffff0000400ddf18 far=Some(3735879680)
+
+
+Panic: Bus Error
+esr=96000046
+addr=00000000dead0000 sr=600003c5 pc=ffff0000400ddf18
+Memory violation: hardware memory, write (translation fault, level 2)
+
+X0-3:   00000000dead0000 0000000000000000 0000000000000000 0000000000000000
+X4-7:   0000000000000000 0000000000000000 0000000000000000 0000000000000000
+X8-11:  0000000000000000 0000000000000000 ffff0000401b0b38 0000000000000000
+X12-15: 00000000415bd190 0000000000000000 0000000000000000 0000000000000000
+X16-19: 0000000000000000 0000000000000000 0000000000000000 00000000dead0000
+X20-23: ffff0000402efc00 0000000056000001 ffff0000401b0b90 0000000000000000
+X24-27: 0000000000000000 0000000000000000 0000000000000000 0000000000000000
+X28-30: 0000000000000000 ffff0000402efb80 ffff00004013448c
+ USP:   00000000415bd190
+
+basepage=415ab000
+text=415ac000 data=415accf0 bss=415acf20
+
+*** Press any key to continue ***
+[crash] slot 1 key pressed, terminating with Pterm(-1)
+[memprot] verify: 65 checks, 5715920 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 52 regions 6560 pages 1727209 rebuilds 14 fallbacks 0
+UACC3A: case g rc=0x000000000000FFFF OK
+[exec] preparing program (slot 1)
+[exec] launching
+UAKID: case w starting
+[crash] slot 1 Bus Error esr=0x96000006 pc=0xffff0000400dded8 far=Some(3735879680)
+
+
+Panic: Bus Error
+esr=96000006
+addr=00000000dead0000 sr=200003c5 pc=ffff0000400dded8
+Memory violation: hardware memory, read (translation fault, level 2)
+
+X0-3:   00000000dead0000 ffff0000402efb9c 00000000dead0000 0000000000000000
+X4-7:   0000000000000000 0000000000000000 0000000000000000 0000000000000000
+X8-11:  0000000000000000 ffff00004014d780 0000000000000001 0000000000000000
+X12-15: 00000000415bd190 0000000000000000 0000000000000000 0000000000000000
+X16-19: 0000000000000000 0000000000000000 0000000000000000 0000000000000005
+X20-23: 00000000dead0000 ffff00004014d665 0000000000000005 ffff00004014d668
+X24-27: 0000000000000000 0000000000000000 0000000000000000 0000000000000000
+X28-30: 0000000000000000 ffff0000402efb80 ffff00004012d9bc
+ USP:   00000000415bd190
+
+basepage=415ab000
+text=415ac000 data=415accf0 bss=415acf20
+
+*** Press any key to continue ***
+[crash] slot 1 key pressed, terminating with Pterm(-1)
+[memprot] verify: 70 checks, 6160431 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 56 regions 7055 pages 1850622 rebuilds 15 fallbacks 0
+UACC3A: case w rc=0x000000000000FFFF OK
+UACC3A: case r rc=skipped (no disk)
+UACC3A: case W rc=skipped (no disk)
+UACC3A: case d rc=skipped (no disk)
+UACC3A: case f rc=skipped (no disk)
+UACC3A: case t rc=skipped (no disk)
+[exec] preparing program (slot 1)
+[exec] launching
+UAKID: case k starting
+[crash] slot 1 Bus Error esr=0x96000006 pc=0xffff0000400dded8 far=Some(3735879680)
+
+
+Panic: Bus Error
+esr=96000006
+addr=00000000dead0000 sr=800003c5 pc=ffff0000400dded8
+Memory violation: hardware memory, read (translation fault, level 2)
+
+X0-3:   00000000dead0000 ffff0000402efb58 0000000000000000 0000000000000000
+X4-7:   0000000000000000 0000000000000000 0000000000000000 0000000000000000
+X8-11:  ffff00004014d780 ffff00004016e158 0000000000000000 0000000000000000
+X12-15: 00000000415bd190 0000000000000000 0000000000000000 0000000000000000
+X16-19: 0000000000000000 0000000000000000 0000000000000000 00000000dead0000
+X20-23: ffff00004014d665 0000000056000001 0000000000000000 ffff00004014d668
+X24-27: 0000000000000000 0000000000000000 0000000000000000 0000000000000000
+X28-30: 0000000000000000 ffff0000402efb60 ffff00004012a3c8
+ USP:   00000000415bd190
+
+basepage=415ab000
+text=415ac000 data=415accf0 bss=415acf20
+
+*** Press any key to continue ***
+[crash] slot 1 key pressed, terminating with Pterm(-1)
+[memprot] verify: 75 checks, 6604942 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 60 regions 7550 pages 1974035 rebuilds 16 fallbacks 0
+UACC3A: case k rc=0x000000000000FFFF OK
+[exec] preparing program (slot 1)
+[exec] launching
+UAKID: case s starting
+[crash] slot 1 Bus Error esr=0x96000046 pc=0xffff0000400ddf30 far=Some(3735879680)
+
+
+Panic: Bus Error
+esr=96000046
+addr=00000000dead0000 sr=800003c5 pc=ffff0000400ddf30
+Memory violation: hardware memory, write (translation fault, level 2)
+
+X0-3:   00000000dead0000 0000000000000020 00000000dead0000 0000000000000000
+X4-7:   0000000000000000 0000000000000000 0000000000000000 0000000000000000
+X8-11:  0000000000000000 0000000000000020 0000000000000000 0000000000000000
+X12-15: 00000000415bd190 0000000000000000 0000000000000000 0000000000000000
+X16-19: 0000000000000000 0000000000000000 0000000000000000 00000000dead0000
+X20-23: 0000000000000000 0000000056000001 0000000000000008 0000000000000000
+X24-27: 0000000000000000 0000000000000000 0000000000000000 0000000000000000
+X28-30: 0000000000000000 ffff0000402efb70 ffff00004012b1a8
+ USP:   00000000415bd190
+
+basepage=415ab000
+text=415ac000 data=415accf0 bss=415acf20
+
+*** Press any key to continue ***
+[crash] slot 1 key pressed, terminating with Pterm(-1)
+[memprot] verify: 80 checks, 7049453 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 64 regions 8045 pages 2097448 rebuilds 17 fallbacks 0
+UACC3A: case s rc=0x000000000000FFFF OK
+[exec] preparing program (slot 1)
+[exec] launching
+UAKID: case m starting
+[crash] slot 1 Bus Error esr=0x96000046 pc=0xffff0000400ddf3c far=Some(3735879680)
+
+
+Panic: Bus Error
+esr=96000046
+addr=00000000dead0000 sr=800003c5 pc=ffff0000400ddf3c
+Memory violation: hardware memory, write (translation fault, level 2)
+
+X0-3:   00000000dead0000 0000000040206000 0000000000000018 0000000000000000
+X4-7:   0000000000000000 0000000000000002 0000000000000001 0000000000000002
+X8-11:  0000000000000000 ffff0000401b09b8 0000000000000001 000000004107f003
+X12-15: ffff000040269008 0000000000000007 000000000000000c 0000000000000002
+X16-19: 0000000000000002 0000000000000002 0000000000000001 ffff0000402efc00
+X20-23: 00000000dead0000 0000000040206000 00000000dead0000 0000000000000000
+X24-27: 0000000000000000 0000000000000000 0000000000000000 0000000000000000
+X28-30: 0000000000000000 ffff0000402efb60 ffff0000400e5328
+ USP:   00000000415bd190
+
+basepage=415ab000
+text=415ac000 data=415accf0 bss=415acf20
+
+*** Press any key to continue ***
+[crash] slot 1 key pressed, terminating with Pterm(-1)
+[memprot] verify: 85 checks, 7493964 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 68 regions 8540 pages 2220861 rebuilds 18 fallbacks 0
+UACC3A: case m rc=0x000000000000FFFF OK
+UACC3A: case b rc=skipped (no disk)
+[exec] preparing program (slot 1)
+[exec] launching
+UAKID: case P starting
+[crash] slot 1 Bus Error esr=0x96000006 pc=0xffff0000400ddee8 far=Some(3735879680)
+
+
+Panic: Bus Error
+esr=96000006
+addr=00000000dead0000 sr=800003c5 pc=ffff0000400ddee8
+Memory violation: hardware memory, read (translation fault, level 2)
+
+X0-3:   00000000dead0000 ffff0000402efb7c 0000000000000000 0000000000000000
+X4-7:   0000000000000000 0000000000000000 0000000000000000 0000000000000000
+X8-11:  0000000000000000 0000000000000006 0000000000000004 ffff00004016da20
+X12-15: ffff0000400e56c8 0000000000000079 0000000000000000 0000000000000000
+X16-19: 0000000000000000 0000000000000000 0000000000000000 00000000dead0000
+X20-23: 0000000000000000 000000005600000e 00000000dead0000 0000000000000000
+X24-27: 0000000000000000 0000000000000000 0000000000000000 0000000000000000
+X28-30: 0000000000000000 ffff0000402efb80 ffff000040128a50
+ USP:   00000000415bd190
+
+basepage=415ab000
+text=415ac000 data=415accf0 bss=415acf20
+
+*** Press any key to continue ***
+[crash] slot 1 key pressed, terminating with Pterm(-1)
+[memprot] verify: 90 checks, 7938475 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 72 regions 9035 pages 2344274 rebuilds 19 fallbacks 0
+UACC3A: case P rc=0x000000000000FFFF OK
+[exec] preparing program (slot 1)
+[exec] launching
+UAKID: case T starting
+[crash] slot 1 Bus Error esr=0x96000006 pc=0xffff0000400dded8 far=Some(3735879680)
+
+
+Panic: Bus Error
+esr=96000006
+addr=00000000dead0000 sr=800003c5 pc=ffff0000400dded8
+Memory violation: hardware memory, read (translation fault, level 2)
+
+X0-3:   00000000dead0000 ffff0000402efb24 0000000000000200 0000000000000001
+X4-7:   0000000000000000 0000000000000000 0000000000000000 0000000000000000
+X8-11:  ffff0000402efc00 0000000000000012 0000000000000010 ffff00004016da20
+X12-15: ffff0000400e54fc 0000000000000006 0000000000000000 0000000000000000
+X16-19: 0000000000000000 0000000000000000 0000000000000000 00000000dead0000
+X20-23: 00000000dead0200 00000000dead01ff 00000000000003c0 0000000001000000
+X24-27: 0000000000000000 0000000000000000 0000000000000000 0000000000000000
+X28-30: 0000000000000000 ffff0000402efb30 ffff0000400deecc
+ USP:   00000000415bd190
+
+basepage=415ab000
+text=415ac000 data=415accf0 bss=415acf20
+
+*** Press any key to continue ***
+[crash] slot 1 key pressed, terminating with Pterm(-1)
+[memprot] verify: 95 checks, 8382986 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 76 regions 9530 pages 2467687 rebuilds 20 fallbacks 0
+UACC3A: case T rc=0x000000000000FFFF OK
+[exec] preparing program (slot 1)
+[exec] launching
+UAKID: case K starting
+[crash] slot 1 Bus Error esr=0x96000006 pc=0xffff0000400ddf5c far=Some(3735879680)
+
+
+Panic: Bus Error
+esr=96000006
+addr=00000000dead0000 sr=200003c5 pc=ffff0000400ddf5c
+Memory violation: hardware memory, read (translation fault, level 2)
+
+X0-3:   ffff0000402ef99c 00000000dead0000 0000000000000080 0000000000000000
+X4-7:   0000000000000000 0000000000000000 0000000000000000 0000000000000000
+X8-11:  ffff0000402efa1c ffff0000402efa1c 0000000000000004 ffff0000402efa1c
+X12-15: 0000000001010101 0000000000000000 0000000000000000 0000000000000000
+X16-19: 0000000000000000 0000000000000000 0000000000000000 ffff00004014d665
+X20-23: 00000000dead0000 ffff00004014d668 ffff0000402efc00 0000000000000000
+X24-27: 0000000000000000 0000000000000000 0000000000000000 0000000000000000
+X28-30: 0000000000000000 ffff0000402efb80 ffff0000401283b8
+ USP:   00000000415bd190
+
+basepage=415ab000
+text=415ac000 data=415accf0 bss=415acf20
+
+*** Press any key to continue ***
+[crash] slot 1 key pressed, terminating with Pterm(-1)
+[memprot] verify: 100 checks, 8827497 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 80 regions 10025 pages 2591100 rebuilds 21 fallbacks 0
+UACC3A: case K rc=0x000000000000FFFF OK
+[exec] preparing program (slot 1)
+[exec] launching
+UAKID: case A starting
+[crash] slot 1 Bus Error esr=0x96000006 pc=0xffff0000400ddf08 far=Some(3735879680)
+
+
+Panic: Bus Error
+esr=96000006
+addr=00000000dead0000 sr=a00003c5 pc=ffff0000400ddf08
+Memory violation: hardware memory, read (translation fault, level 2)
+
+X0-3:   00000000dead0000 ffff0000401cf018 0000000000000000 ffff0000401cf110
+X4-7:   ffff0000402d8410 0000000000000000 0000000000000000 0000000000000000
+X8-11:  ffff0000401b0000 ffffffffffffffff 0438078000130000 00000000000005b0
+X12-15: 00000000000005b0 ffff0000401708a0 0000000000001101 0000000000000000
+X16-19: 0000000000000000 0000000000000000 0000000000000000 ffff0000401cf0c8
+X20-23: 0000000000000000 0000000000000000 00000000dead0000 0000000000000000
+X24-27: 0000000000000001 0000000000000000 0000000000000000 0000000000000000
+X28-30: 0000000000000000 ffff0000401cf060 ffff0000400e28c0
+ USP:   00000000415bd190
+
+basepage=415ab000
+text=415ac000 data=415accf0 bss=415acf20
+
+*** Press any key to continue ***
+[crash] slot 1 key pressed, terminating with Pterm(-1)
+[memprot] verify: 105 checks, 9272008 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 84 regions 10520 pages 2714513 rebuilds 22 fallbacks 0
+UACC3A: case A rc=0x000000000000FFFF OK
+[exec] preparing program (slot 1)
+[exec] launching
+UAKID: case I starting
+[crash] slot 1 Bus Error esr=0x96000006 pc=0xffff0000400ddee8 far=Some(3735879680)
+
+
+Panic: Bus Error
+esr=96000006
+addr=00000000dead0000 sr=600003c5 pc=ffff0000400ddee8
+Memory violation: hardware memory, read (translation fault, level 2)
+
+X0-3:   00000000dead0000 ffff0000401cf018 000000000000004e 0000000000000000
+X4-7:   ffff0000402d8410 0000000000000000 0000000000000000 0000000000000000
+X8-11:  0000000000000001 0000000000000001 0000000000000010 0000000000000000
+X12-15: 00000000415bd190 0000000000000000 0000000000000000 0000000000000000
+X16-19: 0000000000000000 0000000000000000 0000000000000000 ffff0000401cf0c8
+X20-23: 0000000000000000 0000000000000001 ffff0000415ad0f0 0000000000000000
+X24-27: 00000000415acf40 00000000dead0000 ffff0000401cefd0 00000000415acfb0
+X28-30: 00000000415ad130 ffff0000401cf060 ffff0000400e2968
+ USP:   00000000415bd190
+
+basepage=415ab000
+text=415ac000 data=415accf0 bss=415acf20
+
+*** Press any key to continue ***
+[crash] slot 1 key pressed, terminating with Pterm(-1)
+[memprot] verify: 110 checks, 9716519 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 88 regions 11015 pages 2837926 rebuilds 23 fallbacks 0
+UACC3A: case I rc=0x000000000000FFFF OK
+[exec] preparing program (slot 1)
+[exec] launching
+UAKID: case G starting
+[crash] slot 1 Bus Error esr=0x96000006 pc=0xffff0000400dded8 far=Some(3735879680)
+
+
+Panic: Bus Error
+esr=96000006
+addr=00000000dead0000 sr=200003c5 pc=ffff0000400dded8
+Memory violation: hardware memory, read (translation fault, level 2)
+
+X0-3:   00000000dead0000 ffff0000401cef44 000000000000001e 0000000000000001
+X4-7:   ffff0000402d8410 0000000000000000 0000000000000000 0000000000000000
+X8-11:  ffff0000400db1e8 ffff00004014d668 ffff0000401b0000 00000000000000c5
+X12-15: 00000000415bd190 0000000000000000 0000000000000000 0000000000000000
+X16-19: 0000000000000000 0000000000000000 0000000000000000 00000000dead0000
+X20-23: 00000000dead001e 00000000dead001d 00000000000003c0 0000000000000000
+X24-27: 00000000415acf40 00000000415ad0f0 0000000000000000 00000000415acfb0
+X28-30: 00000000415ad130 ffff0000401cef50 ffff0000400deecc
+ USP:   00000000415bd190
+
+basepage=415ab000
+text=415ac000 data=415accf0 bss=415acf20
+
+*** Press any key to continue ***
+[crash] slot 1 key pressed, terminating with Pterm(-1)
+[memprot] verify: 115 checks, 10161030 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 92 regions 11510 pages 2961339 rebuilds 24 fallbacks 0
+UACC3A: case G rc=0x000000000000FFFF OK
+[exec] preparing program (slot 1)
+[exec] launching
+UAKID: case F starting
+[crash] slot 1 Bus Error esr=0x96000006 pc=0xffff0000400ddf5c far=Some(3735879680)
+
+
+Panic: Bus Error
+esr=96000006
+addr=00000000dead0000 sr=600003c5 pc=ffff0000400ddf5c
+Memory violation: hardware memory, read (translation fault, level 2)
+
+X0-3:   ffff0000401cefb8 00000000dead0000 0000000000000008 0000000000000000
+X4-7:   ffff0000402d8410 0000000000000000 0000000000000000 0000000000000000
+X8-11:  0000000000000000 2020202020202020 ffff0000400e2ecc 00000000000000da
+X12-15: 00000000415bd190 0000000000000000 0000000000000000 0000000000000000
+X16-19: 0000000000000000 0000000000000000 0000000000000000 ffff0000401cf018
+X20-23: 0000000000000000 0000000000000000 ffff0000415ad0f0 0000000000000000
+X24-27: 00000000415acf40 0000000000000001 0000000000000000 00000000415acfb0
+X28-30: 00000000415ad130 ffff0000401cefa0 ffff0000400e79cc
+ USP:   00000000415bd190
+
+basepage=415ab000
+text=415ac000 data=415accf0 bss=415acf20
+
+*** Press any key to continue ***
+[crash] slot 1 key pressed, terminating with Pterm(-1)
+[memprot] verify: 120 checks, 10605541 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 96 regions 12005 pages 3084752 rebuilds 25 fallbacks 0
+UACC3A: case F rc=0x000000000000FFFF OK
+[exec] preparing program (slot 1)
+[exec] launching
+UAKID: case V starting
+[crash] slot 1 Bus Error esr=0x96000006 pc=0xffff0000400ddf08 far=Some(3735879680)
+
+
+Panic: Bus Error
+esr=96000006
+addr=00000000dead0000 sr=600003c5 pc=ffff0000400ddf08
+Memory violation: hardware memory, read (translation fault, level 2)
+
+X0-3:   00000000dead0000 ffff0000402efb30 0000000000000000 0000000000000000
+X4-7:   0000000000000000 0000000000000000 0000000000000000 0000000000000000
+X8-11:  0000000000000000 ffff00004019d368 0000000000000000 0000000000000000
+X12-15: 00000000415bd190 0000000000000000 0000000000000000 0000000000000000
+X16-19: 0000000000000000 0000000000000000 0000000000000000 0000000000000000
+X20-23: 0000000000000000 00000000dead0000 0000000000000073 0000000000000000
+X24-27: 0000000000000000 0000000000000000 0000000000000000 0000000000000000
+X28-30: 0000000000000000 ffff0000402efb70 ffff0000400e4590
+ USP:   00000000415bd190
+
+basepage=415ab000
+text=415ac000 data=415accf0 bss=415acf20
+
+*** Press any key to continue ***
+[crash] slot 1 key pressed, terminating with Pterm(-1)
+[memprot] verify: 125 checks, 11050052 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 100 regions 12500 pages 3208165 rebuilds 26 fallbacks 0
+UACC3A: case V rc=0x000000000000FFFF OK
+[exec] preparing program (slot 1)
+[exec] launching
+UAKID: case C starting
+[crash] slot 1 Bus Error esr=0x96000006 pc=0xffff0000400dded8 far=Some(3735879680)
+
+
+Panic: Bus Error
+esr=96000006
+addr=00000000dead0000 sr=600003c5 pc=ffff0000400dded8
+Memory violation: hardware memory, read (translation fault, level 2)
+
+X0-3:   00000000dead0000 ffff0000402efae4 000000000000000e 0000000000000001
+X4-7:   0000000000000000 0000000000000000 0000000000000000 0000000000000000
+X8-11:  0000000000000000 ffff00004019d368 0000000000000000 0000000000000000
+X12-15: 00000000415bd190 0000000000000000 0000000000000000 0000000000000000
+X16-19: 0000000000000000 0000000000000000 0000000000000000 00000000dead0000
+X20-23: 00000000dead000e 00000000dead000d 00000000000003c0 00000000415acfd0
+X24-27: 00000000415ad0b0 00000000415ad030 0000000000000000 0000000000000000
+X28-30: 0000000000000000 ffff0000402efaf0 ffff0000400deecc
+ USP:   00000000415bd190
+
+basepage=415ab000
+text=415ac000 data=415accf0 bss=415acf20
+
+*** Press any key to continue ***
+[crash] slot 1 key pressed, terminating with Pterm(-1)
+[memprot] verify: 130 checks, 11494563 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 104 regions 12995 pages 3331578 rebuilds 27 fallbacks 0
+UACC3A: case C rc=0x000000000000FFFF OK
+[exec] preparing program (slot 1)
+[exec] launching
+UAKID: case M starting
+[crash] slot 1 Bus Error esr=0x96000006 pc=0xffff0000400dded8 far=Some(3735879680)
+
+
+Panic: Bus Error
+esr=96000006
+addr=00000000dead0000 sr=200003c5 pc=ffff0000400dded8
+Memory violation: hardware memory, read (translation fault, level 2)
+
+X0-3:   00000000dead0000 ffff0000402ef514 0000000000000200 0000000000000001
+X4-7:   0000000000000000 0000000000000000 0000000000000000 0000000000000000
+X8-11:  00000000dead0000 0000000000000010 0000000000000020 0000000000000000
+X12-15: 00000000fffffff1 0000000000000010 0000000000000000 0000000000000010
+X16-19: 0000000000000010 0000000000000000 0000000000000001 00000000dead0000
+X20-23: 00000000dead0200 00000000dead01ff 00000000000003c0 ffff00004019bdb8
+X24-27: 0010001000000000 0000000000000003 0000001000100000 0000000000000000
+X28-30: 0000000000000010 ffff0000402ef520 ffff0000400deecc
+ USP:   00000000415bd190
+
+basepage=415ab000
+text=415ac000 data=415accf0 bss=415acf20
+
+*** Press any key to continue ***
+[crash] slot 1 key pressed, terminating with Pterm(-1)
+[memprot] verify: 135 checks, 11939074 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 108 regions 13490 pages 3454991 rebuilds 28 fallbacks 0
+UACC3A: case M rc=0x000000000000FFFF OK
+[exec] preparing program (slot 1)
+[exec] launching
+UAKID: case E starting
+[crash] slot 1 Bus Error esr=0x96000006 pc=0xffff0000400dded8 far=Some(3735879680)
+
+
+Panic: Bus Error
+esr=96000006
+addr=00000000dead0000 sr=600003c5 pc=ffff0000400dded8
+Memory violation: hardware memory, read (translation fault, level 2)
+
+X0-3:   00000000dead0000 ffff0000401cee14 0000000000000005 0000000000000001
+X4-7:   0000000000000002 0000000000000000 0000000000000000 0000000000000000
+X8-11:  ffff0000415ab000 ffff0000415ab000 0000000000013000 0000000000000000
+X12-15: 0000000000000000 0000000000000000 0000000000000000 0000000000000000
+X16-19: 0000000000000000 0000000000000000 0000000000000000 00000000dead0000
+X20-23: 00000000dead0005 00000000dead0004 00000000000003c0 ffff0000401cef50
+X24-27: 0000000000000000 0000000000000002 0000000000000001 0000000000000001
+X28-30: 0000000000000000 ffff0000401cee20 ffff0000400deecc
+ USP:   00000000415bd190
+
+basepage=415ab000
+text=415ac000 data=415accf0 bss=415acf20
+
+*** Press any key to continue ***
+[crash] slot 1 key pressed, terminating with Pterm(-1)
+[memprot] verify: 140 checks, 12383585 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 112 regions 13985 pages 3578404 rebuilds 29 fallbacks 0
+UACC3A: case E rc=0x000000000000FFFF OK
+[exec] preparing program (slot 1)
+[exec] launching
+UAKID: case X starting
+[crash] slot 1 Bus Error esr=0x96000006 pc=0xffff0000400dded8 far=Some(3735879680)
+
+
+Panic: Bus Error
+esr=96000006
+addr=00000000dead0000 sr=600003c5 pc=ffff0000400dded8
+Memory violation: hardware memory, read (translation fault, level 2)
+
+X0-3:   00000000dead0000 ffff0000401cef8c 00000000dead0000 0000000000000000
+X4-7:   ffff0000402d8410 0000000000000000 0000000000000000 0000000000000000
+X8-11:  0000000000000000 0000000000000000 0000000000013000 0000000000000000
+X12-15: 0000000000000000 0000000000000000 0000000000000000 0000000000000000
+X16-19: 0000000000000000 0000000000000000 0000000000000000 ffff0000401cf018
+X20-23: 00000000dead0000 00000000415acc28 0000000000000001 00000000415acec0
+X24-27: 0000000000000001 0000000000000000 ffff0000401cefd2 00000000415acfb0
+X28-30: 00000000415ad130 ffff0000401cef70 ffff0000400f534c
+ USP:   00000000415bd190
+
+basepage=415ab000
+text=415ac000 data=415accf0 bss=415acf20
+
+*** Press any key to continue ***
+[crash] slot 1 key pressed, terminating with Pterm(-1)
+[memprot] verify: 145 checks, 12828096 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 116 regions 14480 pages 3701817 rebuilds 30 fallbacks 0
+UACC3A: case X rc=0x000000000000FFFF OK
+[exec] preparing program (slot 1)
+[exec] launching
+UAKID: case . starting
+UAKID: clean exit
+[memprot] verify: 150 checks, 13272607 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 120 regions 14975 pages 3825230 rebuilds 31 fallbacks 0
+UACC3A: case . rc=0x0000000000000000 OK
+UACC3A: PASS
+[memprot] verify: 152 checks, 13400863 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 121 regions 14976 pages 3825230 rebuilds 31 fallbacks 0
+[launch] returned (program Pterm'd)
+[u3a] back in the boot path after UACC3A, launch rc=0
+[launch] EL0: slot 0 entry 0x41599000
+MPROT3B: start (expecting protection on, default)
+[exec] preparing program (slot 1)
+[exec] launching
+MPKID: read done
+[memprot] verify: 162 checks, 14228002 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 130 regions 15846 pages 4071860 rebuilds 33 fallbacks 0
+MPROT3B: case p child reads parent PROT_P got=0x00000000 want=0x00000000 OK
+[exec] preparing program (slot 1)
+[exec] launching
+MPKID: write done
+[memprot] verify: 167 checks, 14672513 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 134 regions 16342 pages 4195264 rebuilds 34 fallbacks 0
+MPROT3B: case P child writes parent PROT_P got=0x00000000 want=0x00000000 OK
+MPROT3B: case P   parent block afterwards got=0x4B494431 want=0x4B494431 OK
+[exec] preparing program (slot 1)
+[exec] launching
+MPKID: read+write done
+[memprot] verify: 172 checks, 15117024 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 138 regions 16838 pages 4318668 rebuilds 35 fallbacks 0
+MPROT3B: case g child reads+writes parent PROT_G got=0x00000000 want=0x00000000 OK
+MPROT3B: case g   parent block afterwards got=0x4B494431 want=0x4B494431 OK
+[exec] preparing program (slot 1)
+[exec] launching
+MPKID: read done
+[memprot] verify: 177 checks, 15561535 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 142 regions 17334 pages 4442072 rebuilds 36 fallbacks 0
+MPROT3B: case r child reads parent PROT_PR got=0x00000000 want=0x00000000 OK
+[exec] preparing program (slot 1)
+[exec] launching
+MPKID: write done
+[memprot] verify: 182 checks, 16006046 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 146 regions 17830 pages 4565476 rebuilds 37 fallbacks 0
+MPROT3B: case R child writes parent PROT_PR got=0x00000000 want=0x00000000 OK
+MPROT3B: case R   parent block afterwards got=0x4B494431 want=0x4B494431 OK
+[exec] preparing program (slot 1)
+[exec] launching
+MPKID: read+write done
+[memprot] verify: 188 checks, 16699179 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 151 regions 18327 pages 4688836 rebuilds 38 fallbacks 0
+MPROT3B: case t Pexec 4 thread reads+writes parent PROT_P got=0x00000000 want=0x00000000 OK
+MPROT3B: case t   parent block afterwards got=0x4B494431 want=0x4B494431 OK
+[exec] preparing program (slot 1)
+[exec] launching
+MPKID: freed, writing again
+[crash] slot 1 Bus Error esr=0x92000047 pc=0x415b0304 far=Some(1096552448)
+
+
+Panic: Bus Error
+esr=92000047
+addr=00000000415c1000 sr=60000000 pc=00000000415b0304
+Memory violation: free memory, write (translation fault, level 3)
+
+X0-3:   000000000000001d 00000000415af000 00000000000115a0 0000000000000000
+X4-7:   0000000000000000 0000000000000000 0000000000000000 0000000000000000
+X8-11:  0000000000000009 00000000415c1000 000000004b494431 0000000000000000
+X12-15: 00000000ffffffcf 0000000000000000 00000000fffffff9 00000000fffffff9
+X16-19: 0000000000000000 0000000000000000 0000000000000000 00000000415af000
+X20-23: 00000000415b05a0 00000000000115a0 0000000000000000 0000000000000000
+X24-27: 0000000000000000 0000000000000000 0000000000000000 0000000000000000
+X28-30: 0000000000000000 0000000000000000 00000000415b0068
+ USP:   00000000415c05a0
+
+basepage=415af000
+text=415b0000 data=415b04d0 bss=415b05a0
+Crash at text+00000304
+
+*** Press any key to continue ***
+[crash] slot 1 key pressed, terminating with Pterm(-1)
+[memprot] verify: 197 checks, 17400832 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 159 regions 18827 pages 4812262 rebuilds 39 fallbacks 0
+MPROT3B: case f write after Mfree got=0x0000FFFF want=0x0000FFFF OK
+MPROT3B: case . own PROT_P intact got=0x50415254 want=0x50415254 OK
+MPROT3B: case . own PROT_G intact got=0x50415254 want=0x50415254 OK
+MPROT3B: case . own PROT_PR intact got=0x50415254 want=0x50415254 OK
+[exec] preparing program (slot 1)
+[exec] launching
+[memprot] verify: 202 checks, 17845343 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 163 regions 19323 pages 4935666 rebuilds 40 fallbacks 0
+MPROT3B: case . clean child got=0x00000000 want=0x00000000 OK
+MPROT3B: PASS
+[memprot] verify: 204 checks, 17973599 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 164 regions 19326 pages 4935668 rebuilds 40 fallbacks 0
+[launch] returned (program Pterm'd)
+[m3b] back in the boot path after MPROT, launch rc=0
+[aes] gsx_malloc: screen buffer pa=0x41597000 len=4147200 (kernel-owned, WF_SCREEN)
+[launch] EL0: slot 0 entry 0x4198f000
+E10USR: start (expecting protection on, default)
+E10USR: case s own repaint: routine ran got=0x00000001 want=0x00000001 OK
+E10USR: case s   in this process got=0x4198E000 want=0x4198E000 OK
+[exec] preparing program (slot 1)
+[exec] launching
+E10KID: repainted
+[memprot] verify: 217 checks, 19059259 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 171 regions 20302 pages 5179455 rebuilds 42 fallbacks 0
+E10USR: child PD 0x419A2000, routine calls during the child 0x00000002
+E10USR: case d child exit got=0x00000000 want=0x00000000 OK
+E10USR: case d routine ran during the child got=0x00000001 want=0x00000001 OK
+E10USR: case d   in the child (os_run) got=0x419A2000 want=0x419A2000 OK
+E10USR: case d   pb_parm/pb_tree/pb_obj right got=0x00000000 want=0x00000000 OK
+[exec] preparing program (slot 1)
+[exec] launching
+E10KID: repainted
+E10KID: read done
+[memprot] verify: 227 checks, 19891072 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 176 regions 20911 pages 5301245 rebuilds 43 fallbacks 0
+E10USR: case r child reads parent PROT_P after the callouts got=0x00000000 want=0x00000000 OK
+E10USR: case . own private word intact got=0x50415254 want=0x50415254 OK
+E10USR: PASS

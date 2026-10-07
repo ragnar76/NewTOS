@@ -203,6 +203,9 @@ pub unsafe fn dispatch(
 ///
 /// Caller's BDOS-lock contract; see [`dispatch`].
 unsafe fn create(flags: u32, tail: &[u8], env: EnvSpec<'_>) -> Result<LoadedChild, PexecError> {
+    // Environment, TPA, mode, root: one change of rights (MEMPROT-FAST).
+    // SAFETY: BDOS lock held (caller contract); nothing here runs at EL0.
+    let _batch = unsafe { super::memprot::batch() };
     let slot_idx = allocate_slot().ok_or(PexecError::NoSlot)?;
     // SAFETY: the slot is freshly claimed; BDOS lock held.
     let img = match unsafe { create_basepage(slot_idx, flags, tail, env) } {
@@ -273,6 +276,11 @@ pub unsafe fn load(
             Some(FileImage::open(path).ok_or(PexecError::NotFound)?)
         }
     };
+    // Environment, TPA, mode, hand-over to the child, root: one change of
+    // rights, entered when this guard drops (MEMPROT-FAST). The loader
+    // writes the image through the kernel alias, never through user tables.
+    // SAFETY: BDOS lock held (caller contract).
+    let _batch = unsafe { super::memprot::batch() };
     let slot_idx = allocate_slot().ok_or(PexecError::NoSlot)?;
 
     // SAFETY: slot is freshly claimed; loader populates the slot's
@@ -351,6 +359,11 @@ pub unsafe fn load_go(path_bytes: &[u8]) -> Result<LoadedChild, PexecError> {
 /// Caller holds the BDOS giant lock.
 pub unsafe fn go(handle: u64, then_free: bool) -> Result<LoadedChild, PexecError> {
     use crate::bdos::mem::{region, traps};
+    // The ownership and memory-space changes below are one change of rights,
+    // entered when this guard drops (MEMPROT-FAST). Nothing here runs at EL0
+    // or touches user memory through the user tables.
+    // SAFETY: BDOS lock held (caller contract).
+    let _batch = unsafe { super::memprot::batch() };
     let slot_idx = resolve_handle(handle).ok_or(PexecError::BadHandle)?;
     let slot = &PROCESS_TABLE[slot_idx];
     // Only an owner of the PD may start it (FreeMiNT: `addr2mem(curproc,
@@ -407,7 +420,9 @@ pub unsafe fn go(handle: u64, then_free: bool) -> Result<LoadedChild, PexecError
     } else {
         me as *mut BasePage
     };
-    slot.space_pd.store(space_pd, Ordering::Release);
+    // SAFETY: BDOS lock held. Stores `space_pd` and enters what the new
+    // grouping changes in the rights (MEMPROT-FAST).
+    unsafe { super::memprot::set_space(slot_idx, space_pd) };
     slot.load_owner.store(core::ptr::null_mut(), Ordering::Release);
     Ok(LoadedChild {
         slot: slot_idx,

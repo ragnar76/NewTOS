@@ -1,0 +1,40 @@
+test a_child_inherits_its_parents_blocks_unless_strict ... ok
+test a_pexec4_thread_shares_its_callers_space ... ok
+test a_released_slot_gives_its_tables_back ... ok
+test crash_classification_names_what_was_hit ... ok
+test equal_rights_share_the_table_and_different_rights_copy_it ... ok
+test further_owners_get_and_lose_rights ... ok
+test malloc_takes_the_prgflags_mode_and_free_memory_is_nobodys ... ok
+test page_grain_with_protection_on ... ok
+test publications_reach_private_copies ... ok
+test resident_private_memory_becomes_global ... ok
+test rights_matrix_owner_and_others_for_every_mode ... ok
+test temporary_rights_for_a_foreign_callout ... ok
+test the_kernel_allocates_supervisor_memory ... ok
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+test a_batch_enters_the_net_change_once ... FAILED
+test a_private_allocation_touches_only_its_owners_tables ... FAILED
+test a_thread_joining_a_space_costs_only_the_new_holders ... FAILED
+test an_e10_grant_touches_only_the_owners_blocks ... FAILED
+test an_owner_change_touches_only_the_slots_it_concerns ... FAILED
+test an_unannounced_space_change_falls_back_and_stays_correct ... ok
+test children_inherit_cheaply_unless_strict ... FAILED
+test freeing_a_large_block_writes_no_descriptor_of_its_whole_regions ... FAILED
+test mshrink_recomputes_only_the_tail ... FAILED
+test page_zero_is_untouched_by_rights_changes ... ok
+test readable_and_global_blocks_reach_everybody ... ok
+test the_same_mode_or_an_equivalent_one_costs_nothing ... FAILED
+test the_verifier_finds_a_wrong_descriptor ... ok
+thread 'a_batch_enters_the_net_change_once' (11017731) panicked at tos-api/tests/memprot_fast.rs:237:9:
+thread 'a_private_allocation_touches_only_its_owners_tables' (11017732) panicked at tos-api/tests/memprot_fast.rs:168:5:
+work 4096 > 2048 (owner only)
+thread 'a_thread_joining_a_space_costs_only_the_new_holders' (11017733) panicked at tos-api/tests/memprot_fast.rs:265:5:
+thread 'an_e10_grant_touches_only_the_owners_blocks' (11017734) panicked at tos-api/tests/memprot_fast.rs:303:5:
+thread 'an_owner_change_touches_only_the_slots_it_concerns' (11017735) panicked at tos-api/tests/memprot_fast.rs:203:5:
+thread 'children_inherit_cheaply_unless_strict' (11017737) panicked at tos-api/tests/memprot_fast.rs:322:5:
+thread 'freeing_a_large_block_writes_no_descriptor_of_its_whole_regions' (11017738) panicked at tos-api/tests/memprot_fast.rs:366:5:
+thread 'mshrink_recomputes_only_the_tail' (11017739) panicked at tos-api/tests/memprot_fast.rs:186:5:
+work 2558 for a shrink (stage 3b: 4096)
+thread 'the_same_mode_or_an_equivalent_one_costs_nothing' (11017742) panicked at tos-api/tests/memprot_fast.rs:139:5:
+test result: FAILED. 4 passed; 9 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+error: test failed, to rerun pass `-p tos-api --test memprot_fast`

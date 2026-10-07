@@ -843,7 +843,7 @@ fn smoke_test_heap() {
 /// before this runs, so ST-RAM is contiguous-from-start and TT-RAM
 /// is contiguous-from-`heap_end`. Both runs satisfy
 /// `alloc_frames_contig`.
-fn bring_up_bdos_pools((protect, strict): (bool, bool)) {
+fn bring_up_bdos_pools((protect, strict, verify): (bool, bool, bool)) {
     use bios::machine::frames::{alloc_frames_contig, stats, Pool, FRAME_SIZE};
 
     // ARCH03 3b: the protection switch, before the pools exist (their grain
@@ -854,6 +854,10 @@ fn bring_up_bdos_pools((protect, strict): (bool, bool)) {
     // frames before the pools claim the rest.
     // SAFETY: boot CPU, before any pool exists.
     unsafe { tos_api::bdos::process::memprot::configure(protect, strict) };
+    // MEMPROT-FAST: `memprot=verify` checks every sync against a complete
+    // recomputation and reports differences on the serial line (off by
+    // default; a debugging and test aid, slow).
+    tos_api::bdos::process::memprot::set_verify(protect && verify, false);
     if protect {
         let mib2 = 2 * 1024 * 1024u64;
         let pool_bytes: u64 = [Pool::Stram, Pool::Ttram]
@@ -879,8 +883,9 @@ fn bring_up_bdos_pools((protect, strict): (bool, bool)) {
         // SAFETY: boot CPU; the frames are ours for good.
         unsafe { tos_api::bdos::process::mmu::set_table_arena(kva, count) };
         kprintln!(
-            "[mm] memory protection ON{}: table arena 0x{:08x}+{} tables",
+            "[mm] memory protection ON{}{}: table arena 0x{:08x}+{} tables",
             if strict { " (strict)" } else { "" },
+            if verify { " (verify: every sync checked against a full recomputation)" } else { "" },
             frame.pa(),
             count,
         );
@@ -939,13 +944,16 @@ fn bring_up_bdos_pools((protect, strict): (bool, bool)) {
 const PRIVATE_L3_BUDGET: usize = 64 * tos_api::bdos::process::MAX_PROCESSES;
 
 /// The memory-protection switch from the boot arguments (ARCH03 3b):
-/// `(on, strict)`. On unless `memprot=off`; strict with `memprot=strict`
+/// `(on, strict, verify)`. On unless `memprot=off`; strict with
+/// `memprot=strict`; the verification mode (MEMPROT-FAST) with
+/// `memprot=verify`
 /// (`bootargs::MEMPROT_OFF` / `MEMPROT_STRICT`).
-fn memprot_switch(dtb: Option<usize>) -> (bool, bool) {
-    boot_switch(dtb, (true, false), |args: &[u8]| {
+fn memprot_switch(dtb: Option<usize>) -> (bool, bool, bool) {
+    boot_switch(dtb, (true, false, false), |args: &[u8]| {
         (
             !bootargs::has_token(args, bootargs::MEMPROT_OFF),
             bootargs::has_token(args, bootargs::MEMPROT_STRICT),
+            bootargs::has_token(args, bootargs::MEMPROT_VERIFY),
         )
     })
 }

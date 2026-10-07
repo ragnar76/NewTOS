@@ -1,0 +1,235 @@
+measurement-2026-10-07-memprot-fast -- TASK/MEMPROT-FAST (user decision
+2026-10-07, "options 1+2" of the brief = fix options 1 (recompute only where
+rights change) and 3 (collect touch/sync per trap) of
+docs/analysis/zview-sluggish-2026-10-07.md §1; the 2-MiB block descriptors
+(option 2 there, "option 3" in the brief) are NOT part of it): the memory-protection
+resync recomputes only where and for whom rights change, and a compound
+operation enters its net change once. Developer self-evidence; the Tester's
+verdict is separate.
+
+Date 2026-10-07, branch desk-rebuild, HEAD 438e102 plus this change,
+uncommitted. QEMU 11 raspi4b (-append "serial=on ..."), virt for the virt
+runs, host macOS, one QEMU at a time, runs bounded by the drivers (no
+`timeout`). No SD card, Pi or TT touched. Scratch (trees, kernels, cards,
+sockets, target dirs) in the session scratchpad, deleted at the end; every
+card a cp -c clone or a seed-card.sh image, deleted after the run.
+
+RESULT IN ONE LINE
+  zView start (QEMU, 1920x1080, ten codecs): memprot sync 1331/1340 ms ->
+  549/557 ms, pointer frozen 1524/1568 -> 787/793 ms; Pexec 3/4 memprot
+  49-50/47-52 -> 17-18 ms each, Pexec 5 5-6 -> 0, Mshrink 242 -> 160 ms
+  (11x). The verification mode (every sync compared with an independent full
+  recomputation) found 0 differences in 164 runs (four modes); the series is
+  identical to ARCH03-4's apart from the known PORT10 card defect (rerun:
+  ALL PASS in all four modes); LDG/zView screendumps byte-identical to HEAD.
+
+DESIGN (tos-api/src/bdos/process/memprot.rs, module docs "Tables")
+  Rights stay COMPUTED, NOT UPDATED: an event only names the pages and the
+  slots whose descriptors may change; sync recomputes those from the pool
+  lists, owners, records and E10 grants (FreeMiNT mark_region shortcut,
+  references/freemint/sys/arch/mprot040.c:1102-1130).
+  * Dirty entry = range + slot mask + `shared` (non-owner pattern may change
+    -> every live slot) + `privates` (every slot holding a private L3 copy of
+    the region). Entries are merged only with equal mask/flags; full list ->
+    the two closest entries merge (superset = only more work).
+  * on_alloc: pages were free -> shared only for PROT_G/PROT_PR, holders only
+    if the mode gives owners access.  on_freed / on_released (Mshrink tail,
+    aligned-allocation slack): shared as above, holders via `privates` (a
+    slot whose view differed from the non-owner pattern has a private copy,
+    or kept the non-owner rights after a table shortfall).  set_mode: nothing
+    for the same mode or PROT_P<->PROT_S (identical descriptors); otherwise
+    shared/holders only where the owner/other flags change.
+    on_owner_change_by(loc, cookies): only the slots that reach the block
+    THROUGH the owner cookies that came/went (their memory space + E10
+    holders); nothing for PROT_G/PROT_I.  region.rs and set_owner pass the
+    cookies; the old on_owner_change(loc) stays as conservative path
+    (holders now + privates), used by on_resident's non-PROT_P branch.
+  * Structure changes as a per-block difference of holders before/after:
+    on_root_built (only the new root is rebuilt completely), set_space
+    (Pexec(4) joins a memory space; pexec::go stores space_pd through it),
+    on_slot_released (slots that reached the dying slot's blocks), E10
+    grant/revoke. on_launch only adds the E5 inherited blocks of the child.
+  * Safety: memprot remembers (root, basepage, space) per slot (SEEN); a
+    change that went past the announcing functions is caught at the next
+    sync and answered with a complete rebuild of every live slot (stage-3b
+    behaviour), counted as `fallbacks` (0 in every kernel run below; the
+    host test of an unannounced space change sees 1).
+  * memprot::batch(): Pexec load / go / create, Pterm's sweep, the aligned
+    allocations defer their syncs to the end of the guard; install_ttbr0 and
+    the trap end use sync_now (always). Nothing inside a batch runs at EL0 or
+    touches user memory through the user tables (loader writes via kernel
+    alias; audited: loader.rs, pexec.rs, pterm.rs, traps.rs paths).
+  * Refresh per region: blocks from one sorted snapshot per sync (binary
+    search), page loops only for the shared table (if `shared`) and for
+    visited slots that need a private copy; a slot that no longer needs one
+    drops it (drop_private, BBM, ASID-aware as before). Every changed leaf
+    still goes through mmu::set_leaf (TLB_DIRTY / owed per-VA invalidation
+    with ASIDs), table switches through make_private/drop_private (BBM) --
+    TLB maintenance unchanged.
+  * Verification mode: boot argument memprot=verify (kernel), set_verify
+    (host tests; panics there). After every sync with work, and after any
+    rights event even if it decided nothing changes, verify_now() recomputes
+    every pool page of the shared tables and of every live slot's view with
+    the stage-3b algorithm, written separately (own MD walk, rec_of,
+    further_owners, live_slot_of, group_masks), and checks private copies
+    exist exactly where a slot's rights differ (shortfall slots tolerated and
+    counted). Differences: "[memprot] VERIFY MISMATCH ..." at the trap end;
+    counters "[memprot] verify: ..." after each process end and every 256
+    checks.
+
+CODE (tracked, uncommitted)
+  tos-api/src/bdos/process/memprot.rs  as above (+ stats(), Stats,
+      VerifyReport, Mismatch(Kind), take_verify_report, verify_now, batch,
+      sync_now, set_space, on_released, on_owner_change_by, set_verify)
+  tos-api/src/bdos/process/mmu.rs      install_ttbr0 -> memprot::sync_now
+  tos-api/src/bdos/process/pexec.rs    batches in load/go/create; go stores
+                                       space_pd via memprot::set_space
+  tos-api/src/bdos/process/pterm.rs    batch around the owner sweep
+  tos-api/src/bdos/mem/traps.rs        set_owner -> on_owner_change_by;
+      Mshrink -> on_released(tail only); mxalloc_aligned/_largest: batch +
+      on_released for the slack
+  tos-api/src/bdos/mem/region.rs       prot_changed(addr, cookies)
+  kernel/src/bootargs.rs               MEMPROT_VERIFY "memprot=verify"
+  kernel/src/lib.rs                    memprot_switch -> (on, strict, verify)
+  kernel/src/arch/aarch64/exceptions.rs trap end: sync_now + verify report
+  tests: tos-api/tests/memprot_fast.rs (13, new); verification mode on
+      (panicking) in arch03_3b_memprot, arch03_3c_e10, arch03_3c_keep,
+      arch03_3c_table_shortfall
+  docs: arch03-implementation-plan.md (3b, MEMPROT-FAST bullet), STATUS.md,
+      TASK/MEMPROT-FAST.md + -STATUS-DONE.MD, zview-sluggish §1 note
+
+HOST TESTS
+  memprot_fast.rs: same mode / P<->S costs 0 descriptor work; a private
+  allocation touches only its owner's tables; Mshrink <= 512 descriptors
+  (tail edge region only); attach/detach/set_owner touch only the concerned
+  slots; a batch (allocate as caller, set mode, hand to child) syncs once and
+  gives the caller no copies; Pexec(4) space join costs only the new holders;
+  an unannounced space change falls back (fallbacks +1) and stays correct;
+  E10 grant/revoke touch only the owner's blocks; E5 inheritance only the
+  child, strict nothing; PROT_PR/PROT_G reach everybody and vanish on free;
+  freeing a large block writes no descriptor of its whole regions; page 0
+  unchanged by rights changes; the verifier finds a corrupted descriptor
+  (kind, slot, VA, expected, actual) and nothing once it is restored.
+  RED (checks/red-conservative-marking.txt, method/red-conservative.py on a
+  scratch copy: every event marks shared + all slots + privates, no
+  batching, no skip shortcuts = the stage-3b work): 9 of 13 memprot_fast
+  tests fail on their work bounds ("work 4096 > 2048 (owner only)", "work
+  2558 for a shrink"); every correctness assertion and the verification
+  mode stay green there and in arch03_3b_memprot.
+  Verifier negative control (shared tree, edited by hand and restored from a
+  copy): on_owner_change_by with an always-empty slot mask ->
+  arch03_3b_memprot further_owners_get_and_lose_rights panics in the
+  verifier: "memprot verify: Mismatch { kind: MissingPrivate, slot: Some(1),
+  va: 16777216, expected: 1, actual: 0 }" (before the fix of the fast path
+  the same sabotage was only caught by the test's own access assertion --
+  that is why rights events now also trigger a verification on the fast
+  path, `EVENT`).
+
+STATIC CHECKS (method/checks.sh mf -> checks/mf-*.txt)     baseline   now
+  host tests pass/fail/ignored                            1235/0/1   1248/0/1 (+13)
+  release warnings tos-api/kernel, rpi4 and qemu-virt     64/94      64/94
+  clippy tos-api/kernel, rpi4 and qemu-virt               76/125     76/125
+  desk drift probe                                        31         31
+  sdk/run-host-tests                                      18/0/0     18/0/0
+
+ZVIEW PROFILE (QEMU relative; method/zvprof_patch_fast.py = the ZVPROF patch
+of measurement-2026-10-07-zview-perf with the memprot anchors of the new
+code; that run's injector/drive/hd scenario and photos, unchanged; before =
+git archive HEAD 438e102, after = this tree; two runs each, interleaved
+after2/before2; checks/zvprof/*-PROFILE.TXT + *-SUMMARY.TXT)
+                                   before / before2      after / after2
+  seg 2 (zView start) EL1 work     1543 / 1585 ms         798 /  805 ms
+    of which memprot sync          1331 / 1340 ms         549 /  557 ms
+    pointer frozen (gap)           1524 / 1568 ms         787 /  793 ms
+  Pexec mode 3, memprot per call   49..50 ms              17..18 ms
+                total (10 calls)   724 / 764 ms           416 / 419 ms
+  Pexec mode 4, memprot per call   47..52 ms              17..18 ms
+  Pexec mode 5, memprot per call   5..6 ms                0 ms
+  Mshrink (11 calls) work          241.8 / 244.3 ms       160.0 / 159.1 ms
+  memprot whole run                1472 / 1477 ms         622 / 632 ms
+  What remains per codec (diag run, method: scratch prim counters, see
+  checks/zvprof/diag-*): mode 3 = zView's rights to the ~916 MB TPA it owns
+  after PE_LOAD (458 private L3 copies, ~235 000 descriptors), mode 4 = the
+  child's (attached as owner), Mshrink = both drop those copies again
+  (BBM per region). These are real descriptor changes under the
+  private-L3 model; the 2-MiB block descriptors (analysis option 2) are
+  what removes them.
+  Observation, not memprot: in both "after" builds evnt_multi "work" is
+  ~0.1 ms per return higher (0.40 -> 1.47 s over ~10 000 returns). It is
+  the busy wait of the AES wait loop (sleeps per return 7645 -> 7408, the
+  20-ms timer bounds the wall time); the diag kernel (same code + counters)
+  shows no memprot function inside evnt_multi (check_structure 0.15 us,
+  sync_now fast path ~0.4 us per call, 68 550 calls). vro_cpyfm 37 -> 78 ms
+  in after/after2 but 34 ms in the diag build: code layout under TCG.
+  Browsing segments (thumbnail gaps, EL0, Fread, clicks) unchanged.
+
+QEMU SERIES WITH THE VERIFICATION MODE (method/series-all.sh)
+  1. ARCH03-4 series (measurement-2026-10-06-arch03-4 method + programs,
+     copied to scratch; changes in method/series-adaptations.diff: scratch
+     sockets with relative names, cp -c, repo paths, mode.sh appends
+     memprot=verify) via series-mf.sh, modes on, off, strict, on-asid:
+     PPARENT/ENVRN, PPDESK, desktop, TeraDesk, QED, Doom, APITEST,
+     accessory, E9MEM/E9PLAIN, S2ALL (S2ALLS strict), PORT10, CRASHTST,
+     UACC3A, MPROT3B, E10USR, KBDVEC+EmuCON, TeraDesk->QED, EmuCON 9,
+     ATEXIT, ACCFREE, MDPROBE, desk3a, S2ALL on the crash kernel, VFORKT
+     alone, ASIDSTR/ASIDPERF/ASIDACC, virt crash/selftests/desktop/ASIDSTR.
+     checks/summary-mf-<mode>.txt vs measurement-2026-10-06-arch03-4
+     checks/summary-a4-<mode>.txt: identical in all four modes except PORT10
+     in off/strict (on/on-asid identical incl. the same failure): 1 of 44,
+     system("C:\P10\ONLYNCP ...") errno 66 = the card defect ARCH03-4
+     documents (ONLYNCP.NCP 0 bytes after the macOS FAT unmount).
+     rerun-port10.sh (card checked/rewritten): ALL PASS (44) in on, off,
+     strict, on-asid.
+  2. LDG/zView (measurement-2026-10-06-libshare method + programs, runner
+     scripts of zview02; method/ls-runs-mf.sh), modes on, strict, off,
+     on-asid: \AUTO\LDGTEST.NCP "ldgtest: ALL PASS (69 checks)" x4;
+     LDGDEMO + POPUP.NLD (m3b.actions, 15 marks to END_CLOSED) x4; LDGDEMO
+     acceptance (evb-acc.actions, 10 marks) x4; zView #Z start (ten codecs:
+     Pexec 5/3/4 + Mshrink each, zView menu bar at 60/120 s) x4.
+  Verification (checks/verify-summary.txt): 152 run logs of this change
+  (+12 HEAD baseline logs), 0 "VERIFY MISMATCH" lines; all 90 counter
+  lines report 0 mismatches, 0 tolerated shortfalls, 0 fallbacks (e.g.
+  S2ALL on: 177 checks / 49.1 M pages compared; UACC3A: 140 / 45.4 M; zView
+  start: 154 / 50.8 M). The 24 protection-on runs without a counter line
+  (desktop, TeraDesk, QED, Doom, accessory, desk3a, TeraDesk->QED, virt
+  desktop: no process ended, < 256 checks) would print every difference at
+  the trap end -- none; the 38 memprot=off logs have nothing to verify.
+  ASIDs: "ASIDs ON: 16-bit" in every on-asid log; ASIDSTR/ASIDPERF/ASIDACC
+  PASS as in ARCH03-4.
+  Screendumps (method/shots-vs-a4.sh -> checks/shots-a4-vs-mf-<mode>.txt,
+  sha256 in checks/series-screendumps.sha256): vs ARCH03-4 same/diff = on
+  44/64, off 43/60, strict 44/74, on-asid 44/64, none missing -- the
+  differing classes are ARCH03-4's own (crash reports with kernel/load
+  addresses: UACC3A, virt crash, MPROT, ASIDSTR; CRASHTST end dumps; Doom
+  timing; desk3a E/F/H file times; EmuCON 9 E9MEM line; strict S2ALL
+  crash/timeout dumps). Against HEAD 438e102 (same scripts,
+  baseline kernels from git archive HEAD, method/ls-runs-head.sh,
+  method/head-crash.sh): LDGDEMO popup 15/15, acceptance 10/10, zView 2/2,
+  LDGTEST 1/1 byte-identical in on and strict; crash kernel mode on:
+  CRASHTST 2/2, MPROT 2/2, E10 1/1 identical, UACC3A 26 crash screens differ
+  only in KERNEL addresses (pc/x8/x17-x30 in the kernel image; same fault,
+  same user registers) -- the kernel image is larger.
+
+PI PACKAGE (not copied to any card)
+  bin/kernel8.img  release board-rpi4, verify off unless memprot=verify,
+  sha256 13a5e906e516cf22c06d67783a3cb864dcfa8917d79f3bb191e2a33a1d42997b
+  (= the product kernel of every rpi4 run above); bin/LIESMICH.TXT (German:
+  zView start A/B with stopwatch, normal use, optional memprot=verify with a
+  serial cable).
+
+ONLY THE REAL PI 4 CAN CONFIRM
+  the zView-start time in seconds on the A72 (QEMU relative only), TLB
+  behaviour of the changed maintenance pattern on hardware (fewer, but the
+  same kinds of invalidations), ASIDs on hardware with the new pattern.
+
+FILES
+  method/  memprot-fast-change.diff (git diff of kernel/ tos-api/ + the new test)
+           checks.sh zvprof_patch_fast.py series-all.sh series-mf.sh
+           ls-runs-mf.sh ls-runs-head.sh head-crash.sh series-adaptations.diff
+           verify-summary.sh red-conservative.py shots-vs-a4.sh
+  serial/  series/ (part 1 + PORT10 reruns + HEAD crash baseline head-on-*),
+           ldg-zview/ (part 2, mf-* and HEAD baseline head-*), zvprof/
+  checks/  mf-* static checks, red-conservative-marking.txt, summary-*,
+           shots-*, verify-summary.txt, zvprof/, kernels-and-inputs.sha256
+  screendumps/ LDG/zView runs (mf-*, head-*), zvprof B03_ZVIEW before/after
+  bin/     kernel8.img (gitignored), LIESMICH.TXT

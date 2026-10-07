@@ -1,0 +1,100 @@
+RB2
+NewTOS booting on rpi4
+[serial] output on: boot arguments contain `serial=on`
+Phase 02 reached.
+[mm] DTB at 0x0000000000000100
+[mm] firmware: ARM memory bank 0: 0x0000000000000000 + 1006632960 bytes (960 MiB)
+[mm] firmware: VC memory: 0x000000003c000000 + 67108864 bytes (64 MiB)
+[mm] device tree: no usable /memory node (blob invalid or absent)
+[clock] ARM 700 -> 700 MHz (max 700, measured ?, SoC 25.0 C)
+[mm] memory map:
+[mm]   DRAM  : 0x0000000000000000..0x000000003c000000 (1006632960 bytes) — source: firmware
+[mm]   kernel: 0x0000000000080000..0x00000000002db000 (2469888 bytes)
+[mm]   ST-RAM: 0x0000000000400000..0x0000000000e00000 (10485760 bytes)
+[mm]   TT-RAM: 0x0000000001000000..0x0000000039e00000 (954204160 bytes)
+[mm]   OSrsvd: 0x0000000039e00000..0x000000003c000000 (35651584 bytes)
+[mm]     bcach: 0x0000000039e00000..0x000000003be00000 (33554432 bytes)
+[mm]     heap: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]   MMIO 00: 0x00000000fd500000..0x00000000fd510000
+[mm]   MMIO 01: 0x00000000fe000000..0x00000000ff000000
+[mm]   MMIO 02: 0x00000000ff800000..0x0000000100000000
+[mm] MMU reinstalled (high-half via TTBR1, TTBR0 deferred to Phase 06).
+[mm] frames ST-RAM: total=2560 used=0 free=2560 (10485760 B free)
+[mm] frames TT-RAM: total=232960 used=0 free=232960 (954204160 B free)
+[mm] alloc ST-RAM frame -> 0x0000000000400000
+[mm] alloc TT-RAM frame -> 0x0000000001000000
+[mm] heap after init: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[mm] heap smoke OK
+[mm] heap after smoke: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[fb] VideoCore display geometry detected: 640x480
+[fb] alpha mode = 2
+[fb] 640x480 pitch 2560 virtual height 960 -> 2 screen page(s), 2400 KiB
+[fb] VideoCore fb up: 640x480 stride 640px
+[mm] memory protection ON (strict) (verify: every sync checked against a full recomputation): table arena 0x01000000+2424 tables
+[mm] BDOS pools: ST-RAM 0x00400000+10485760 TT-RAM 0x01978000+944275456
+[mm] user address space: pools mapped VA = PA (456 shared L3 tables, 4-KiB pages, rights per process)
+[mm] BDOS ST-RAM after init: total=10485760 free=10485760 used=0 largest_free=10485760 (free_mds=1 alloc_mds=0)
+[mm] BDOS TT-RAM after init: total=944275456 free=944275456 used=0 largest_free=944275456 (free_mds=1 alloc_mds=0)
+[bcache] FS09 block read cache: 32768 KiB at 0x39e00000 (asked 32768 KiB, default), 61680 sectors of 512 B, linear-read share 5 % (default), write-through
+[emmc] SD card on controller @ 0xffff0000fe300000
+[emmc] M1 SLOTISR_VER=0x24020000 (SDHCI spec 0x02) CAPABILITIES=0x052134b4 (base 52 MHz)
+[emmc] M1 CONTROL0=0x00000f02 CONTROL1=0x000e0207 div=2 -> SDCLK ~13000000 Hz
+[emmc] M1 mailbox clock rate: EMMC(1)=50000000 Hz EMMC2(12)=700000000 Hz
+[emmc] FS08 mode: multi-block (CMD18/CMD25 + Auto CMD12) — bus 4-bit (ACMD6 ok, SCR SD_BUS_WIDTHS=0x5), CONTROL0[1] Data Transfer Width=1
+[emmc] M1 during identification: 2 error(s), 0 timeout(s), 2 recovery(ies) CTO=2
+[clock] seeded from kernel8.img: 2026-10-07 20:29:50
+[pcie] RC not present (no response at RC_BASE); USB disabled
+[proc] stand-in PDs: initial_basepage 0x00252000, AES PD 0x00252100 (read-only to all)
+[acc] loaded C:\ACC\SYSACC.NAC into slot 0 (entry 0x197a000)
+[acc] loaded C:\SYSACC2.NAC into slot 1 (entry 0x1980000)
+[acc] 2 file(s) found, 2 process(es) started
+[aes] gsx_malloc: screen buffer pa=0x01984000 len=614400 (kernel-owned, WF_SCREEN)
+[sched] switch -> slot 0
+[sched] running
+[sched] switch -> slot 1
+[sched] running
+[sched] switch -> kernel client
+[acc] all accessories have issued their message wait
+[shell] sh_ldapp: starting C:\ZVIEW\ZVIEW.NAP, sh_nextapp=2, sh_isgem=1
+[acc] launching with 2 accessory(s); AC_CLOSE seen by all: false
+[launch] EL0: slot 2 entry 0x1a3d000
+[memprot] verify: 19 checks, 5152056 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 17 regions 4547 pages 1387552 rebuilds 4 fallbacks 0
+[exec] preparing program (slot 3)
+[exec] launching
+[memprot] verify: 28 checks, 8648592 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 25 regions 6360 pages 1848943 rebuilds 5 fallbacks 0
+[memprot] verify: 33 checks, 9830792 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 29 regions 6828 pages 1851505 rebuilds 6 fallbacks 0
+[exec] preparing program (slot 3)
+[exec] launching
+[memprot] verify: 42 checks, 13327328 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 37 regions 8642 pages 2312983 rebuilds 7 fallbacks 0
+[memprot] verify: 47 checks, 14509528 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 41 regions 9110 pages 2315545 rebuilds 8 fallbacks 0
+[exec] preparing program (slot 3)
+[exec] launching
+[memprot] verify: 56 checks, 18006064 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 49 regions 10924 pages 2776666 rebuilds 9 fallbacks 0
+[memprot] verify: 61 checks, 19188264 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 53 regions 11392 pages 2779228 rebuilds 10 fallbacks 0
+[exec] preparing program (slot 3)
+[exec] launching
+[memprot] verify: 70 checks, 22689408 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 61 regions 13207 pages 3240977 rebuilds 11 fallbacks 0
+[memprot] verify: 75 checks, 23874168 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 65 regions 13675 pages 3243539 rebuilds 12 fallbacks 0
+[exec] preparing program (slot 3)
+[exec] launching
+[memprot] verify: 84 checks, 27375312 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 73 regions 15488 pages 3704635 rebuilds 13 fallbacks 0
+[memprot] verify: 89 checks, 28560072 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 77 regions 15956 pages 3707197 rebuilds 14 fallbacks 0
+[exec] preparing program (slot 3)
+[exec] launching
+[memprot] verify: 98 checks, 32061216 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 85 regions 17769 pages 4168522 rebuilds 15 fallbacks 0
+[memprot] verify: 103 checks, 33245976 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 89 regions 18237 pages 4171084 rebuilds 16 fallbacks 0
+[exec] preparing program (slot 3)
+[exec] launching
+[memprot] verify: 112 checks, 36747120 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 97 regions 20050 pages 4632270 rebuilds 17 fallbacks 0
+[memprot] verify: 117 checks, 37931880 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 101 regions 20518 pages 4634832 rebuilds 18 fallbacks 0
+[exec] preparing program (slot 3)
+[exec] launching
+[memprot] verify: 126 checks, 41433024 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 109 regions 22331 pages 5095875 rebuilds 19 fallbacks 0
+[memprot] verify: 131 checks, 42617784 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 113 regions 22799 pages 5098437 rebuilds 20 fallbacks 0
+[exec] preparing program (slot 3)
+[exec] launching
+[memprot] verify: 140 checks, 46118928 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 121 regions 24612 pages 5559330 rebuilds 21 fallbacks 0
+[memprot] verify: 145 checks, 47303688 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 125 regions 25080 pages 5561892 rebuilds 22 fallbacks 0
+[exec] preparing program (slot 3)
+[exec] launching
+[memprot] verify: 154 checks, 50804832 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 133 regions 26893 pages 6022642 rebuilds 23 fallbacks 0

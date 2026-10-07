@@ -49,6 +49,8 @@ fn lock() -> MutexGuard<'static, ()> {
         // SAFETY: once per binary, before the pools exist.
         unsafe {
             memprot::configure(true, false);
+            // MEMPROT-FAST: every sync is checked against a full recomputation.
+            memprot::set_verify(true, true);
             mmu::set_table_arena(arena.as_mut_ptr() as u64, ARENA_TABLES);
             tos_api::bdos::mem::init::init(ST_START, ST_LEN, TT_START, TT_LEN).expect("pools");
             mmu::map_pools().expect("the pools map");

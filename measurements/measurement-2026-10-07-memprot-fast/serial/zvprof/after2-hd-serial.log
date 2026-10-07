@@ -1,0 +1,1109 @@
+RB2
+NewTOS booting on rpi4
+[serial] output on: boot arguments contain `serial=on`
+Phase 02 reached.
+[mm] DTB at 0x0000000000000100
+[mm] firmware: ARM memory bank 0: 0x0000000000000000 + 1006632960 bytes (960 MiB)
+[mm] firmware: VC memory: 0x000000003c000000 + 67108864 bytes (64 MiB)
+[mm] device tree: no usable /memory node (blob invalid or absent)
+[clock] ARM 700 -> 700 MHz (max 700, measured ?, SoC 25.0 C)
+[mm] memory map:
+[mm]   DRAM  : 0x0000000000000000..0x000000003c000000 (1006632960 bytes) — source: firmware
+[mm]   kernel: 0x0000000000080000..0x0000000000346000 (2908160 bytes)
+[mm]   ST-RAM: 0x0000000000400000..0x0000000000e00000 (10485760 bytes)
+[mm]   TT-RAM: 0x0000000001000000..0x0000000039e00000 (954204160 bytes)
+[mm]   OSrsvd: 0x0000000039e00000..0x000000003c000000 (35651584 bytes)
+[mm]     bcach: 0x0000000039e00000..0x000000003be00000 (33554432 bytes)
+[mm]     heap: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]   MMIO 00: 0x00000000fd500000..0x00000000fd510000
+[mm]   MMIO 01: 0x00000000fe000000..0x00000000ff000000
+[mm]   MMIO 02: 0x00000000ff800000..0x0000000100000000
+[mm] MMU reinstalled (high-half via TTBR1, TTBR0 deferred to Phase 06).
+[mm] frames ST-RAM: total=2560 used=0 free=2560 (10485760 B free)
+[mm] frames TT-RAM: total=232960 used=0 free=232960 (954204160 B free)
+[mm] alloc ST-RAM frame -> 0x0000000000400000
+[mm] alloc TT-RAM frame -> 0x0000000001000000
+[mm] heap after init: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[mm] heap smoke OK
+[mm] heap after smoke: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[fb] VideoCore display geometry detected: 1920x1080
+[fb] alpha mode = 2
+[fb] 1920x1080 pitch 7680 virtual height 2160 -> 2 screen page(s), 16200 KiB
+[fb] VideoCore fb up: 1920x1080 stride 1920px
+[mm] memory protection ON: table arena 0x01000000+2424 tables
+[mm] BDOS pools: ST-RAM 0x00400000+10485760 TT-RAM 0x01978000+944275456
+[mm] user address space: pools mapped VA = PA (456 shared L3 tables, 4-KiB pages, rights per process)
+[mm] BDOS ST-RAM after init: total=10485760 free=10485760 used=0 largest_free=10485760 (free_mds=1 alloc_mds=0)
+[mm] BDOS TT-RAM after init: total=944275456 free=944275456 used=0 largest_free=944275456 (free_mds=1 alloc_mds=0)
+[bcache] FS09 block read cache: 32768 KiB at 0x39e00000 (asked 32768 KiB, default), 61680 sectors of 512 B, linear-read share 5 % (default), write-through
+[emmc] SD card on controller @ 0xffff0000fe300000
+[emmc] M1 SLOTISR_VER=0x24020000 (SDHCI spec 0x02) CAPABILITIES=0x052134b4 (base 52 MHz)
+[emmc] M1 CONTROL0=0x00000f02 CONTROL1=0x000e0207 div=2 -> SDCLK ~13000000 Hz
+[emmc] M1 mailbox clock rate: EMMC(1)=50000000 Hz EMMC2(12)=700000000 Hz
+[emmc] FS08 mode: multi-block (CMD18/CMD25 + Auto CMD12) — bus 4-bit (ACMD6 ok, SCR SD_BUS_WIDTHS=0x5), CONTROL0[1] Data Transfer Width=1
+[emmc] M1 during identification: 2 error(s), 0 timeout(s), 2 recovery(ies) CTO=2
+[clock] seeded from kernel8.img: 2026-10-07 20:29:50
+[pcie] RC not present (no response at RC_BASE); USB disabled
+[proc] stand-in PDs: initial_basepage 0x002bd000, AES PD 0x002bd100 (read-only to all)
+[acc] loaded C:\ACC\SYSACC.NAC into slot 0 (entry 0x197a000)
+[acc] loaded C:\SYSACC2.NAC into slot 1 (entry 0x1980000)
+[acc] 2 file(s) found, 2 process(es) started
+[aes] gsx_malloc: screen buffer pa=0x01984000 len=4147200 (kernel-owned, WF_SCREEN)
+[sched] switch -> slot 0
+[sched] running
+==== ZVPROF segment 1 : t=0..15130 ms since boot, span 15130 ms, closed by 2.5 s quiet ====
+CNTFRQ 62500000 Hz
+previous report write 0 ms (excluded from all numbers)
+time: EL0 0 ms (runs 1, longest 0 ms) | EL1 trap work 11 ms [gemdos 0 vdi 10 aes 0 bios 0 xbios 0 other 0] | EL1 waiting in traps 0 ms | rest (outside traps) 15118 ms
+irq since boot n=3017 t=10 ms | memprot sync (with work) n=8 t=64 ms max=24568 us, of which refresh n=9 t=64 ms over 1388328 pages | lost trap exits 0
+input pump n=26235253 | gaps without pump (pointer frozen) >100ms 0 >250ms 0 >500ms 0 >1s 0 >2s 0 | longest 2 ms | sum of gaps>100ms 0 ms
+clicks (press -> evnt_multi MU_BUTTON or MU_MESAG) n=0 avg 0 ms max 0 ms | <100 0 <200 0 <300 0 <500 0 <1000 0 >=1000 0
+evnt_multi returns: timer-only 0 button 0 message 0 key 0 mouse-rect 0 other 0
+pexec n=0 total 0 ms
+backend primitives (time includes nested clean):
+  fill_rect              n=310       px/bytes=2073909     6.0 ms
+  fill_pattern           n=77        px/bytes=16976       0.3 ms
+  abline                 n=6         px/bytes=0           0.5 ms
+  glyph                  n=391       px/bytes=0           1.3 ms
+  flush_rect             n=2         px/bytes=0           1.2 ms
+  dcache clean (bytes)   n=786       px/bytes=16897556    2.5 ms
+  put_device_pixel       n=256       px/bytes=256         0.0 ms
+  get_device_pixel       n=512       px/bytes=512         0.0 ms
+ops of this segment, sorted by EL1 work:
+  class  op    name               n        work_ms   wait_ms   maxwork_ms  memprot_ms  pixels   sleeps
+  vdi    0x003 v_clrwk            1              5.5        0.0         5.5         0.0  0        0
+  vdi    0x008 v_gtext            21             2.3        0.0         0.8         0.0  0        0
+  vdi    0x064 v_opnvwk           1              1.0        0.0         1.0         0.0  0        0
+  vdi    0x006 v_pline            6              0.7        0.0         0.2         0.0  0        0
+  vdi    0x072 vr_recfl           77             0.5        0.0         0.2         0.0  16976    0
+  gemdos 0x04d Pwait              1              0.5        0.0         0.5         0.0  0        0
+  other  0x000 fault/unknown      1              0.2        0.0         0.2         0.0  0        0
+  vdi    0x019 vsf_color          77             0.1        0.0         0.0         0.0  0        0
+  vdi    0x017 vsf_interior       77             0.1        0.0         0.0         0.0  0        0
+  vdi    0x027 vst_alignment      20             0.1        0.0         0.0         0.0  0        0
+  vdi    0x011 vsl_color          3              0.0        0.0         0.0         0.0  0        0
+  vdi    0x016 vst_color          21             0.0        0.0         0.0         0.0  0        0
+  vdi    0x020 vswr_mode          2              0.0        0.0         0.0         0.0  0        0
+  vdi    0x065 v_clsvwk           1              0.0        0.0         0.0         0.0  0        0
+events (0, lost 0):
+==== end segment 1 ====
+
+[m3] injector armed at hz_200 3024
+[sched] switch -> slot 1
+[sched] running
+[sched] switch -> kernel client
+[acc] all accessories have issued their message wait
+[shell] sh_ldapp: starting C:\ZVIEW\ZVIEW.NAP, sh_nextapp=2, sh_isgem=1
+[acc] launching with 2 accessory(s); AC_CLOSE seen by all: false
+[launch] EL0: slot 2 entry 0x1d9c000
+[exec] preparing program (slot 3)
+[exec] launching
+[exec] preparing program (slot 3)
+[exec] launching
+[exec] preparing program (slot 3)
+[exec] launching
+[exec] preparing program (slot 3)
+[exec] launching
+[exec] preparing program (slot 3)
+[exec] launching
+[exec] preparing program (slot 3)
+[exec] launching
+[exec] preparing program (slot 3)
+[exec] launching
+[exec] preparing program (slot 3)
+[exec] launching
+[exec] preparing program (slot 3)
+[exec] launching
+[exec] preparing program (slot 3)
+[exec] launching
+[m3] step 0 at +189 -> mouse (1086,666) mb=0
+[m3] step 1 at +189 -> mouse (1213,793) mb=0
+[m3] step 2 at +189 -> mouse (1340,920) mb=0
+[m3] step 3 at +190 -> mouse (1467,1047) mb=0
+[m3] step 4 at +190 -> mouse (1594,1079) mb=0
+[m3] step 5 at +190 -> mouse (1721,1079) mb=0
+[m3] step 6 at +190 -> mouse (1848,1079) mb=0
+[m3] step 7 at +190 -> mouse (1919,1079) mb=0
+[m3] step 8 at +190 -> mouse (1919,1079) mb=0
+[m3] step 9 at +190 -> mouse (1919,1079) mb=0
+[m3] step 10 at +190 -> mouse (1919,1079) mb=0
+[m3] step 11 at +190 -> mouse (1919,1079) mb=0
+[m3] step 12 at +190 -> mouse (1919,1079) mb=0
+[m3] step 13 at +190 -> mouse (1919,1079) mb=0
+[m3] step 14 at +190 -> mouse (1919,1079) mb=0
+[m3] step 15 at +190 -> mouse (1919,1079) mb=0
+==== ZVPROF segment 2 : t=15140..18586 ms since boot, span 3446 ms, closed by 2.5 s quiet ====
+previous report write 9 ms (excluded from all numbers)
+time: EL0 24 ms (runs 2084, longest 0 ms) | EL1 trap work 805 ms [gemdos 784 vdi 5 aes 14 bios 0 xbios 0 other 0] | EL1 waiting in traps 2476 ms | rest (outside traps) 140 ms
+irq since boot n=3580 t=13 ms | memprot sync (with work) n=172 t=557 ms max=23950 us, of which refresh n=199 t=554 ms over 12284362 pages | lost trap exits 0
+input pump n=2495574 | gaps without pump (pointer frozen) >100ms 2 >250ms 1 >500ms 1 >1s 0 >2s 0 | longest 793 ms | sum of gaps>100ms 922 ms
+clicks (press -> evnt_multi MU_BUTTON or MU_MESAG) n=0 avg 0 ms max 0 ms | <100 0 <200 0 <300 0 <500 0 <1000 0 >=1000 0
+evnt_multi returns: timer-only 124 button 0 message 0 key 0 mouse-rect 0 other 0
+pexec n=30 total 614 ms
+backend primitives (time includes nested clean):
+  fill_rect              n=2683      px/bytes=4262042     12.8 ms
+  abline                 n=258       px/bytes=0           0.1 ms
+  glyph                  n=35        px/bytes=0           0.1 ms
+  read_row565            n=260       px/bytes=260         0.1 ms
+  write_row565           n=2         px/bytes=2           0.0 ms
+  flush_rect             n=26        px/bytes=0           0.0 ms
+  dcache clean (bytes)   n=1853      px/bytes=17080664    2.5 ms
+  put_device_pixel       n=6144      px/bytes=6144        0.0 ms
+  get_device_pixel       n=6144      px/bytes=6144        0.0 ms
+ops of this segment, sorted by EL1 work:
+  class  op    name               n        work_ms   wait_ms   maxwork_ms  memprot_ms  pixels   sleeps
+  gemdos 0x04b Pexec              30           614.8        0.0       137.3       371.0  0        0
+  gemdos 0x04a Mshrink            11           159.1        0.0        15.7       158.9  0        0
+  aes    0x06e rsrc_load          1              7.7        0.0         7.7         0.0  0        0
+  gemdos 0x049 Mfree              40             4.9        0.0         0.8         2.4  0        0
+  vdi    0x06d vro_cpyfm          262            1.8        0.0         0.6         0.0  2        0
+  aes    0x019 evnt_multi         124            1.7     2475.9         0.1         0.0  4499     826159
+  gemdos 0x04c Pterm              10             1.7        0.0         0.7         0.3  0        0
+  aes    0x01e menu_bar           1              1.3        0.0         1.3         0.0  73313    0
+  gemdos 0x048 Malloc             14             1.2        0.0         0.3         0.7  0        0
+  vdi    0x06e vr_trnfm           256            1.0        0.0         0.3         0.0  0        0
+  gemdos 0x04e Fsfirst            5              0.7        0.0         0.5         0.0  0        0
+  aes    0x068 wind_get           127            0.6        0.0         0.1         0.0  0        0
+  vdi    0x006 v_pline            258            0.6        0.0         0.0         0.0  0        0
+  vdi    0x066 vq_extnd           4              0.6        0.0         0.3         0.0  0        0
+  vdi    0x00e vs_color           260            0.5        0.0         0.1         0.0  0        0
+  gemdos 0x04f Fsnext             12             0.5        0.0         0.1         0.0  0        0
+  aes    0x00a appl_init          3              0.5        0.0         0.4         0.0  0        0
+  vdi    0x011 vsl_color          257            0.4        0.0         0.0         0.0  0        0
+  aes    0x017 evnt_mesag         2              0.4        0.0         0.3         0.0  0        2
+  aes    0x06a wind_find          124            0.3        0.0         0.0         0.0  0        0
+  gemdos 0x044 Mxalloc            11             0.3        0.0         0.0         0.1  0        0
+  gemdos 0x03d Fopen              1              0.3        0.0         0.3         0.0  0        0
+  aes    0x04e graf_mouse         5              0.3        0.0         0.1         0.0  1059     0
+  aes    0x023 menu_register      2              0.2        0.0         0.2         0.0  0        0
+  aes    0x07c shel_find          1              0.2        0.0         0.2         0.0  0        0
+  aes    0x072 rsrc_obfix         24             0.2        0.0         0.1         0.0  0        0
+  gemdos 0x154 Ssystem            53             0.2        0.0         0.0         0.0  0        0
+  vdi    0x064 v_opnvwk           1              0.1        0.0         0.1         0.0  0        0
+  aes    0x07d shel_envrn         4              0.1        0.0         0.1         0.0  0        0
+  vdi    0x01a vq_color           2              0.1        0.0         0.1         0.0  0        0
+  aes    0x00d appl_find          4              0.1        0.0         0.1         0.0  0        0
+  aes    0x070 rsrc_gaddr         16             0.1        0.0         0.1         0.0  0        0
+  gemdos 0x047 Dgetpath           12             0.0        0.0         0.0         0.0  0        0
+  gemdos 0x03e Fclose             21             0.0        0.0         0.0         0.0  0        0
+  xbios  0x004 Getrez             1              0.0        0.0         0.0         0.0  0        0
+  vdi    0x013                    1              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x03f Fread              1              0.0        0.0         0.0         0.0  0        0
+  vdi    0x06c vsl_ends           3              0.0        0.0         0.0         0.0  0        0
+  vdi    0x081 vs_clip            2              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x02f Fgetdta            17             0.0        0.0         0.0         0.0  0        0
+  gemdos 0x03b Dsetpath           2              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x01a Fsetdta            34             0.0        0.0         0.0         0.0  0        0
+  gemdos 0x109                    10             0.0        0.0         0.0         0.0  0        0
+  aes    0x04d graf_handle        1              0.0        0.0         0.0         0.0  0        0
+  vdi    0x068 vsf_perimeter      1              0.0        0.0         0.0         0.0  0        0
+  vdi    0x06a vst_effects        1              0.0        0.0         0.0         0.0  0        0
+  vdi    0x010 vsl_width          3              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x15e                    11             0.0        0.0         0.0         0.0  0        0
+  gemdos 0x019 Dgetdrv            13             0.0        0.0         0.0         0.0  0        0
+  vdi    0x00f vsl_type           2              0.0        0.0         0.0         0.0  0        0
+  vdi    0x020 vswr_mode          2              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x030 Sversion           11             0.0        0.0         0.0         0.0  0        0
+  gemdos 0x00e Dsetdrv            3              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x14b                    4              0.0        0.0         0.0         0.0  0        0
+  other  0x000 fault/unknown      1              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x133                    2              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x128 Dopendir           1              0.0        0.0         0.0         0.0  0        0
+events (43, lost 0):
+ t=15296 PEXEC mode 5  total 0 ms: alloc 0 zero 0 (0 KB of TPA 0 KB) read 0 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 0 ms (us: 0 0 0 0 0 0 0)
+ t=15299 PEXEC mode 3 bmp.nld total 27 ms: alloc 0 zero 0 (69 KB of TPA 916860 KB) read 6 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 18 ms (us: 62 30 6499 16 5 24 52)
+ t=15327 PEXEC mode 4  total 18 ms: alloc 0 zero 0 (0 KB of TPA 0 KB) read 0 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 18 ms (us: 0 0 0 0 0 0 0)
+ t=15363 PTERM fn 0x4c
+ t=15364 PEXEC mode 5  total 0 ms: alloc 0 zero 0 (0 KB of TPA 0 KB) read 0 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 0 ms (us: 0 0 0 0 0 0 0)
+ t=15365 PEXEC mode 3 godpaint.nld total 24 ms: alloc 0 zero 0 (67 KB of TPA 916720 KB) read 4 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 17 ms (us: 14 25 4629 10 0 20 48)
+ t=15390 PEXEC mode 4  total 18 ms: alloc 0 zero 0 (0 KB of TPA 0 KB) read 0 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 18 ms (us: 0 0 0 0 0 0 0)
+ t=15424 PTERM fn 0x4c
+ t=15425 PEXEC mode 5  total 0 ms: alloc 0 zero 0 (0 KB of TPA 0 KB) read 0 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 0 ms (us: 0 0 0 0 0 0 0)
+ t=15426 PEXEC mode 3 png.nld total 77 ms: alloc 0 zero 0 (371 KB of TPA 916584 KB) read 55 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 18 ms (us: 14 134 55790 25 0 112 64)
+ t=15426 LONG gemdos 0x4b Pexec work=77 ms wait=0 ms px=0 memprot=18 ms sleeps=0
+ t=15503 PEXEC mode 4  total 18 ms: alloc 0 zero 0 (0 KB of TPA 0 KB) read 0 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 18 ms (us: 0 0 0 0 0 0 0)
+ t=15538 PTERM fn 0x4c
+ t=15539 PEXEC mode 5  total 0 ms: alloc 0 zero 0 (0 KB of TPA 0 KB) read 0 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 0 ms (us: 0 0 0 0 0 0 0)
+ t=15539 PEXEC mode 3 jpg.nld total 137 ms: alloc 0 zero 0 (653 KB of TPA 916144 KB) read 115 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 18 ms (us: 14 232 115808 195 2 196 72)
+ t=15539 LONG gemdos 0x4b Pexec work=137 ms wait=0 ms px=0 memprot=18 ms sleeps=0
+ t=15677 PEXEC mode 4  total 18 ms: alloc 0 zero 0 (0 KB of TPA 0 KB) read 0 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 18 ms (us: 0 0 0 0 0 0 0)
+ t=15712 PTERM fn 0x4c
+ t=15712 PEXEC mode 5  total 0 ms: alloc 0 zero 0 (0 KB of TPA 0 KB) read 0 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 0 ms (us: 0 0 0 0 0 0 0)
+ t=15713 PEXEC mode 3 neo.nld total 25 ms: alloc 0 zero 0 (67 KB of TPA 915420 KB) read 5 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 18 ms (us: 15 29 5098 10 1 20 54)
+ t=15738 PEXEC mode 4  total 18 ms: alloc 0 zero 0 (0 KB of TPA 0 KB) read 0 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 18 ms (us: 0 0 0 0 0 0 0)
+ t=15773 PTERM fn 0x4c
+ t=15774 PEXEC mode 5  total 0 ms: alloc 0 zero 0 (0 KB of TPA 0 KB) read 0 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 0 ms (us: 0 0 0 0 0 0 0)
+ t=15775 PEXEC mode 3 eureka.nld total 26 ms: alloc 0 zero 0 (69 KB of TPA 915284 KB) read 5 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 18 ms (us: 13 25 5474 8 0 21 54)
+ t=15801 PEXEC mode 4  total 18 ms: alloc 0 zero 0 (0 KB of TPA 0 KB) read 0 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 18 ms (us: 0 0 0 0 0 0 0)
+ t=15836 PTERM fn 0x4c
+ t=15836 PEXEC mode 5  total 0 ms: alloc 0 zero 0 (0 KB of TPA 0 KB) read 0 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 0 ms (us: 0 0 0 0 0 0 0)
+ t=15837 PEXEC mode 3 img.nld total 26 ms: alloc 0 zero 0 (72 KB of TPA 915144 KB) read 6 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 18 ms (us: 12 28 6147 8 0 22 57)
+ t=15863 PEXEC mode 4  total 18 ms: alloc 0 zero 0 (0 KB of TPA 0 KB) read 0 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 18 ms (us: 0 0 0 0 0 0 0)
+ t=15898 PTERM fn 0x4c
+ t=15899 PEXEC mode 5  total 0 ms: alloc 0 zero 0 (0 KB of TPA 0 KB) read 0 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 0 ms (us: 0 0 0 0 0 0 0)
+ t=15899 PEXEC mode 3 gif.nld total 27 ms: alloc 0 zero 0 (80 KB of TPA 915000 KB) read 7 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 18 ms (us: 14 28 7680 8 0 24 61)
+ t=15927 PEXEC mode 4  total 18 ms: alloc 0 zero 0 (0 KB of TPA 0 KB) read 0 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 18 ms (us: 0 0 0 0 0 0 0)
+ t=15962 PTERM fn 0x4c
+ t=15963 PEXEC mode 5  total 0 ms: alloc 0 zero 0 (0 KB of TPA 0 KB) read 0 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 0 ms (us: 0 0 0 0 0 0 0)
+ t=15963 PEXEC mode 3 degas.nld total 25 ms: alloc 0 zero 0 (68 KB of TPA 914848 KB) read 5 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 18 ms (us: 14 26 5452 7 0 21 64)
+ t=15989 PEXEC mode 4  total 18 ms: alloc 0 zero 0 (0 KB of TPA 0 KB) read 0 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 18 ms (us: 0 0 0 0 0 0 0)
+ t=16025 PTERM fn 0x4c
+ t=16025 PEXEC mode 5  total 0 ms: alloc 0 zero 0 (0 KB of TPA 0 KB) read 0 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 0 ms (us: 0 0 0 0 0 0 0)
+ t=16025 PEXEC mode 3 tga.nld total 25 ms: alloc 0 zero 0 (68 KB of TPA 914708 KB) read 5 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 18 ms (us: 12 30 5355 6 0 22 63)
+ t=16051 PEXEC mode 4  total 18 ms: alloc 0 zero 0 (0 KB of TPA 0 KB) read 0 reloc 0 basepage 0 icache 0 slot 0 memprot-sync 18 ms (us: 0 0 0 0 0 0 0)
+ t=16087 PTERM fn 0x4c
+ t=15295 GAP 793 ms without input pump: EL0 17 ms, EL1 work 777 ms, px 353, biggest trap gemdos 0x4b Pexec 137 ms
+==== end segment 2 ====
+
+[m3] step 16 at +3100 -> mouse (1792,952) mb=0
+[m3] step 17 at +3101 -> mouse (1665,825) mb=0
+[m3] step 18 at +3102 -> mouse (1538,698) mb=0
+[m3] step 19 at +3103 -> mouse (1411,571) mb=0
+[m3] step 20 at +3104 -> mouse (1284,444) mb=0
+[m3] step 21 at +3105 -> mouse (1157,317) mb=0
+[m3] step 22 at +3106 -> mouse (1030,190) mb=0
+[m3] step 23 at +3107 -> mouse (903,63) mb=0
+[m3] step 24 at +3108 -> mouse (776,8) mb=0
+[m3] step 25 at +3109 -> mouse (649,8) mb=0
+[m3] step 26 at +3110 -> mouse (522,8) mb=0
+[m3] step 27 at +3111 -> mouse (395,8) mb=0
+[m3] step 28 at +3112 -> mouse (268,8) mb=0
+[m3] step 29 at +3113 -> mouse (141,8) mb=0
+[m3] step 30 at +3114 -> mouse (76,8) mb=0
+[m3] step 31 at +3500 -> mouse (100,28) mb=0
+[m3] step 32 at +3700 -> mouse (100,28) mb=1
+[m3] step 33 at +3704 -> mouse (100,28) mb=0
+==== ZVPROF segment 3 : t=18602..36190 ms since boot, span 17588 ms, closed by 2.5 s quiet ====
+previous report write 15 ms (excluded from all numbers)
+time: EL0 14 ms (runs 3574, longest 1 ms) | EL1 trap work 131 ms [gemdos 11 vdi 24 aes 95 bios 0 xbios 0 other 0] | EL1 waiting in traps 17445 ms | rest (outside traps) 0 ms
+irq since boot n=7082 t=30 ms | memprot sync (with work) n=43 t=1 ms max=66 us, of which refresh n=26 t=0 ms over 350 pages | lost trap exits 0
+input pump n=16076131 | gaps without pump (pointer frozen) >100ms 0 >250ms 0 >500ms 0 >1s 0 >2s 0 | longest 26 ms | sum of gaps>100ms 0 ms
+clicks (press -> evnt_multi MU_BUTTON or MU_MESAG) n=1 avg 1 ms max 1 ms | <100 1 <200 0 <300 0 <500 0 <1000 0 >=1000 0
+evnt_multi returns: timer-only 730 button 0 message 2 key 0 mouse-rect 0 other 0
+pexec n=0 total 0 ms
+backend primitives (time includes nested clean):
+  fill_rect              n=2790      px/bytes=197658      2.6 ms
+  fill_pattern           n=33        px/bytes=2042422     19.0 ms
+  abline                 n=213       px/bytes=0           2.1 ms
+  glyph                  n=208       px/bytes=0           0.5 ms
+  blit_mono              n=573       px/bytes=21416       1.1 ms
+  read_row565            n=280       px/bytes=46592       0.2 ms
+  write_row565           n=1688      px/bytes=89088       1.4 ms
+  flush_rect             n=79        px/bytes=0           0.1 ms
+  dcache clean (bytes)   n=3894      px/bytes=9689772     2.2 ms
+  put_device_pixel       n=7168      px/bytes=7168        0.0 ms
+  get_device_pixel       n=7168      px/bytes=7168        0.0 ms
+ops of this segment, sorted by EL1 work:
+  class  op    name               n        work_ms   wait_ms   maxwork_ms  memprot_ms  pixels   sleeps
+  aes    0x019 evnt_multi         732           85.3    17444.7        14.1         0.0  142208   5333563
+  vdi    0x00b v_gdp              2             18.5        0.0        16.1         0.0  1920380  0
+  gemdos 0x03f Fread              6              7.8        0.0         3.7         0.0  0        0
+  aes    0x065 wind_open          1              3.8        0.0         3.8         0.0  142354   0
+  vdi    0x079 vrt_cpyfm          573            2.8        0.0         0.4         0.0  21416    0
+  aes    0x068 wind_get           741            2.3        0.2         0.0         0.0  0        0
+  aes    0x069 wind_set           4              1.4        0.1         1.2         0.0  45664    0
+  aes    0x06a wind_find          732            1.4        0.2         0.0         0.0  0        0
+  vdi    0x06d vro_cpyfm          49             1.4        0.0         0.0         0.0  42496    0
+  vdi    0x006 v_pline            46             1.3        0.0         0.1         0.0  0        0
+  gemdos 0x03d Fopen              6              0.6        0.0         0.3         0.0  0        0
+  aes    0x02a objc_draw          1              0.6        0.0         0.6         0.0  41712    0
+  gemdos 0x049 Mfree              9              0.5        0.0         0.1         0.4  0        0
+  gemdos 0x048 Malloc             11             0.3        0.0         0.0         0.3  0        0
+  vdi    0x009 v_fillarea         1              0.3        0.0         0.3         0.0  34       0
+  gemdos 0x04e Fsfirst            45             0.3        0.0         0.0         0.0  0        0
+  gemdos 0x044 Mxalloc            6              0.3        0.0         0.1         0.2  0        0
+  gemdos 0x11a Psigreturn         9              0.3        0.0         0.1         0.0  0        0
+  vdi    0x011 vsl_color          82             0.1        0.0         0.0         0.0  0        0
+  gemdos 0x01a Fsetdta            174            0.1        0.0         0.0         0.0  0        0
+  gemdos 0x04f Fsnext             42             0.1        0.0         0.0         0.0  0        0
+  aes    0x06c wind_calc          6              0.1        0.0         0.1         0.0  0        0
+  vdi    0x081 vs_clip            21             0.1        0.0         0.0         0.0  0        0
+  aes    0x020 menu_ienable       12             0.1        0.0         0.0         0.0  0        0
+  aes    0x064 wind_create        1              0.1        0.0         0.1         0.0  0        0
+  gemdos 0x042 Fseek              12             0.0        0.0         0.0         0.0  0        0
+  aes    0x021 menu_tnormal       1              0.0        0.0         0.0         0.0  1135     0
+  gemdos 0x02f Fgetdta            87             0.0        0.0         0.0         0.0  0        0
+  aes    0x06b wind_update        2              0.0        0.0         0.0         0.0  0        0
+  bios   0x00a Drvmap             1              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x154 Ssystem            36             0.0        0.0         0.0         0.0  0        0
+  aes    0x04e graf_mouse         2              0.0        0.0         0.0         0.0  353      0
+  vdi    0x064 v_opnvwk           1              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x14b                    43             0.0        0.0         0.0         0.0  0        0
+  gemdos 0x03b Dsetpath           3              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x03e Fclose             6              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x019 Dgetdrv            44             0.0        0.0         0.0         0.0  0        0
+  vdi    0x019 vsf_color          3              0.0        0.0         0.0         0.0  0        0
+  aes    0x070 rsrc_gaddr         4              0.0        0.0         0.0         0.0  0        0
+  vdi    0x068 vsf_perimeter      1              0.0        0.0         0.0         0.0  0        0
+  vdi    0x06c vsl_ends           1              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x047 Dgetpath           2              0.0        0.0         0.0         0.0  0        0
+  vdi    0x010 vsl_width          1              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x00e Dsetdrv            3              0.0        0.0         0.0         0.0  0        0
+  vdi    0x06a vst_effects        1              0.0        0.0         0.0         0.0  0        0
+  vdi    0x013                    1              0.0        0.0         0.0         0.0  0        0
+  aes    0x04d graf_handle        1              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x128 Dopendir           2              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x138                    1              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x114                    1              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x139                    1              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x13b                    1              0.0        0.0         0.0         0.0  0        0
+events (1, lost 0):
+ t=33640 CLICK press->evnt_multi return 1 ms clicks=0 fired=0x30
+==== end segment 3 ====
+
+[m3] MARK B02_BROWSER_C step 34 at +6000 mouse (100,28) mb=0
+[m3] step 35 at +6100 -> mouse (227,110) mb=0
+[m3] step 36 at +6101 -> mouse (354,110) mb=0
+[m3] step 37 at +6102 -> mouse (481,110) mb=0
+[m3] step 38 at +6103 -> mouse (608,110) mb=0
+[m3] step 39 at +6104 -> mouse (735,110) mb=0
+[m3] step 40 at +6105 -> mouse (862,110) mb=0
+[m3] step 41 at +6106 -> mouse (989,110) mb=0
+[m3] step 42 at +6107 -> mouse (1106,110) mb=0
+[m3] step 43 at +6300 -> mouse (1106,110) mb=1
+[m3] step 44 at +6303 -> mouse (1106,110) mb=0
+[m3] step 45 at +6308 -> mouse (1106,110) mb=1
+[m3] step 46 at +6311 -> mouse (1106,110) mb=0
+==== ZVPROF segment 4 : t=36197..49446 ms since boot, span 13249 ms, closed by 2.5 s quiet ====
+previous report write 7 ms (excluded from all numbers)
+time: EL0 5 ms (runs 2934, longest 0 ms) | EL1 trap work 133 ms [gemdos 0 vdi 20 aes 112 bios 0 xbios 0 other 0] | EL1 waiting in traps 13103 ms | rest (outside traps) 6 ms
+irq since boot n=9722 t=41 ms | memprot sync (with work) n=2 t=0 ms max=128 us, of which refresh n=1 t=0 ms over 28 pages | lost trap exits 0
+input pump n=14627455 | gaps without pump (pointer frozen) >100ms 0 >250ms 0 >500ms 0 >1s 0 >2s 0 | longest 37 ms | sum of gaps>100ms 0 ms
+clicks (press -> evnt_multi MU_BUTTON or MU_MESAG) n=1 avg 279 ms max 279 ms | <100 0 <200 0 <300 1 <500 0 <1000 0 >=1000 0
+evnt_multi returns: timer-only 660 button 1 message 0 key 0 mouse-rect 0 other 0
+pexec n=0 total 0 ms
+backend primitives (time includes nested clean):
+  fill_rect              n=1818      px/bytes=105998      2.5 ms
+  fill_pattern           n=25        px/bytes=3900787     17.4 ms
+  abline                 n=244       px/bytes=0           1.1 ms
+  glyph                  n=14        px/bytes=0           0.0 ms
+  blit_mono              n=625       px/bytes=23480       0.1 ms
+  write_row565           n=192       px/bytes=6144        0.1 ms
+  flush_rect             n=23        px/bytes=0           0.0 ms
+  dcache clean (bytes)   n=2082      px/bytes=7796500     1.7 ms
+  put_device_pixel       n=4352      px/bytes=4352        0.0 ms
+  get_device_pixel       n=4352      px/bytes=4352        0.0 ms
+ops of this segment, sorted by EL1 work:
+  class  op    name               n        work_ms   wait_ms   maxwork_ms  memprot_ms  pixels   sleeps
+  aes    0x019 evnt_multi         661          105.9    13103.4        38.3         0.0  4236     4872804
+  vdi    0x00b v_gdp              5             17.4        0.0        17.0         0.0  3841079  0
+  aes    0x069 wind_set           3              3.1        0.0         3.1         0.0  164227   0
+  vdi    0x079 vrt_cpyfm          625            1.7        0.0         0.0         0.0  23480    0
+  aes    0x068 wind_get           673            1.5        0.1         0.0         0.0  0        0
+  aes    0x06a wind_find          661            1.1        0.1         0.0         0.0  0        0
+  vdi    0x006 v_pline            58             0.6        0.0         0.0         0.0  0        0
+  vdi    0x06d vro_cpyfm          46             0.3        0.0         0.0         0.0  6144     0
+  aes    0x04e graf_mouse         6              0.2        0.0         0.0         0.0  1527     0
+  aes    0x02b objc_find          1              0.2        0.0         0.2         0.0  0        0
+  vdi    0x011 vsl_color          95             0.1        0.0         0.0         0.0  0        0
+  gemdos 0x049 Mfree              1              0.1        0.0         0.1         0.1  0        0
+  gemdos 0x04e Fsfirst            6              0.1        0.0         0.0         0.0  0        0
+  gemdos 0x03b Dsetpath           1              0.0        0.0         0.0         0.0  0        0
+  aes    0x04f graf_mkstate       1              0.0        0.0         0.0         0.0  0        0
+  vdi    0x081 vs_clip            4              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x04f Fsnext             7              0.0        0.0         0.0         0.0  0        0
+  vdi    0x009 v_fillarea         2              0.0        0.0         0.0         0.0  68       0
+  aes    0x06c wind_calc          8              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x019 Dgetdrv            6              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x01a Fsetdta            26             0.0        0.0         0.0         0.0  0        0
+  vdi    0x019 vsf_color          7              0.0        0.0         0.0         0.0  0        0
+  aes    0x06b wind_update        4              0.0        0.0         0.0         0.0  0        0
+  aes    0x020 menu_ienable       3              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x02f Fgetdta            13             0.0        0.0         0.0         0.0  0        0
+  aes    0x070 rsrc_gaddr         3              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x14b                    5              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x00e Dsetdrv            1              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x047 Dgetpath           1              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x128 Dopendir           1              0.0        0.0         0.0         0.0  0        0
+events (2, lost 0):
+ t=46277 LONG aes 0x19 evnt_multi work=38 ms wait=3 ms px=0 memprot=0 ms sleeps=1276
+ t=46640 CLICK press->evnt_multi return 279 ms clicks=2 fired=0x2
+==== end segment 4 ====
+
+[m3] MARK B03_ZVIEW step 47 at +9000 mouse (1106,110) mb=0
+[m3] step 48 at +9100 -> mouse (979,110) mb=0
+[m3] step 49 at +9101 -> mouse (852,110) mb=0
+[m3] step 50 at +9102 -> mouse (725,110) mb=0
+[m3] step 51 at +9103 -> mouse (598,110) mb=0
+[m3] step 52 at +9104 -> mouse (471,110) mb=0
+[m3] step 53 at +9105 -> mouse (470,110) mb=0
+[m3] step 54 at +9300 -> mouse (470,110) mb=1
+[m3] step 55 at +9303 -> mouse (470,110) mb=0
+[m3] step 56 at +9308 -> mouse (470,110) mb=1
+[m3] step 57 at +9311 -> mouse (470,110) mb=0
+==== ZVPROF segment 5 : t=49452..65832 ms since boot, span 16379 ms, closed by 2.5 s quiet ====
+previous report write 5 ms (excluded from all numbers)
+time: EL0 549 ms (runs 14212, longest 6 ms) | EL1 trap work 968 ms [gemdos 826 vdi 57 aes 84 bios 0 xbios 0 other 0] | EL1 waiting in traps 14864 ms | rest (outside traps) 0 ms
+irq since boot n=12904 t=54 ms | memprot sync (with work) n=118 t=5 ms max=124 us, of which refresh n=109 t=0 ms over 962 pages | lost trap exits 0
+input pump n=16576067 | gaps without pump (pointer frozen) >100ms 8 >250ms 0 >500ms 0 >1s 0 >2s 0 | longest 167 ms | sum of gaps>100ms 1296 ms
+clicks (press -> evnt_multi MU_BUTTON or MU_MESAG) n=1 avg 260 ms max 260 ms | <100 0 <200 0 <300 1 <500 0 <1000 0 >=1000 0
+evnt_multi returns: timer-only 745 button 1 message 0 key 0 mouse-rect 0 other 0
+pexec n=0 total 0 ms
+backend primitives (time includes nested clean):
+  fill_rect              n=6500      px/bytes=110680      3.4 ms
+  fill_pattern           n=206       px/bytes=48070158    20.0 ms
+  abline                 n=2710      px/bytes=0           7.9 ms
+  glyph                  n=22        px/bytes=0           0.0 ms
+  blit_mono              n=7604      px/bytes=337296      1.8 ms
+  write_row565           n=2052      px/bytes=130944      1.9 ms
+  flush_rect             n=84        px/bytes=0           0.1 ms
+  dcache clean (bytes)   n=8952      px/bytes=10858852    6.5 ms
+  put_device_pixel       n=9728      px/bytes=9728        0.0 ms
+  get_device_pixel       n=9728      px/bytes=9728        0.0 ms
+ops of this segment, sorted by EL1 work:
+  class  op    name               n        work_ms   wait_ms   maxwork_ms  memprot_ms  pixels   sleeps
+  gemdos 0x03f Fread              560          816.8        0.0         8.9         0.0  0        0
+  aes    0x019 evnt_multi         746           75.3    14863.4         0.2         0.0  3530     5525558
+  vdi    0x00b v_gdp              51            21.8        0.0        16.5         0.0  48009940 0
+  vdi    0x079 vrt_cpyfm          7604          21.1        0.0         0.1         0.0  337296   0
+  vdi    0x006 v_pline            732            7.2        0.0         0.0         0.0  0        0
+  vdi    0x06d vro_cpyfm          566            4.6        0.0         0.1         0.0  130944   0
+  gemdos 0x049 Mfree              55             4.1        0.0         0.1         3.2  0        0
+  aes    0x069 wind_set           26             2.8        0.0         2.7         0.0  164227   0
+  aes    0x04e graf_mouse         52             2.5        0.0         0.1         0.0  12291    0
+  vdi    0x011 vsl_color          1213           2.3        0.0         0.0         0.0  0        0
+  aes    0x068 wind_get           873            2.2        0.3         0.0         0.0  0        0
+  gemdos 0x044 Mxalloc            54             2.0        0.0         0.0         1.7  0        0
+  aes    0x06a wind_find          746            1.2        0.2         0.0         0.0  0        0
+  gemdos 0x04e Fsfirst            36             0.9        0.0         0.2         0.0  0        0
+  gemdos 0x03d Fopen              23             0.5        0.0         0.0         0.0  0        0
+  gemdos 0x042 Fseek              67             0.3        0.0         0.0         0.0  0        0
+  gemdos 0x04f Fsnext             25             0.3        0.0         0.1         0.0  0        0
+  gemdos 0x154 Ssystem            200            0.2        0.0         0.0         0.0  0        0
+  vdi    0x081 vs_clip            50             0.2        0.0         0.0         0.0  0        0
+  aes    0x06c wind_calc          77             0.2        0.0         0.0         0.0  0        0
+  vdi    0x009 v_fillarea         25             0.2        0.0         0.0         0.0  578      0
+  vdi    0x019 vsf_color          76             0.1        0.0         0.0         0.0  0        0
+  aes    0x06b wind_update        50             0.1        0.0         0.0         0.0  0        0
+  gemdos 0x03e Fclose             23             0.1        0.0         0.0         0.0  0        0
+  gemdos 0x01a Fsetdta            122            0.1        0.0         0.0         0.0  0        0
+  gemdos 0x03b Dsetpath           1              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x02f Fgetdta            61             0.0        0.0         0.0         0.0  0        0
+  gemdos 0x14b                    35             0.0        0.0         0.0         0.0  0        0
+  gemdos 0x019 Dgetdrv            36             0.0        0.0         0.0         0.0  0        0
+  aes    0x02b objc_find          1              0.0        0.0         0.0         0.0  0        0
+  aes    0x020 menu_ienable       3              0.0        0.0         0.0         0.0  0        0
+  aes    0x070 rsrc_gaddr         3              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x133                    6              0.0        0.0         0.0         0.0  0        0
+  aes    0x04f graf_mkstate       1              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x138                    3              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x047 Dgetpath           1              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x00e Dsetdrv            1              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x114                    3              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x139                    3              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x128 Dopendir           1              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x104 Fcntl              1              0.0        0.0         0.0         0.0  0        0
+events (8, lost 0):
+ t=61639 CLICK press->evnt_multi return 260 ms clicks=2 fired=0x2
+ t=62021 GAP 162 ms without input pump: EL0 62 ms, EL1 work 99 ms, px 0, biggest trap gemdos 0x3f Fread 8 ms
+ t=62186 GAP 167 ms without input pump: EL0 64 ms, EL1 work 103 ms, px 0, biggest trap gemdos 0x3f Fread 8 ms
+ t=62356 GAP 160 ms without input pump: EL0 63 ms, EL1 work 97 ms, px 0, biggest trap gemdos 0x3f Fread 8 ms
+ t=62519 GAP 167 ms without input pump: EL0 64 ms, EL1 work 103 ms, px 0, biggest trap gemdos 0x3f Fread 8 ms
+ t=62689 GAP 166 ms without input pump: EL0 65 ms, EL1 work 101 ms, px 0, biggest trap gemdos 0x3f Fread 7 ms
+ t=62858 GAP 157 ms without input pump: EL0 63 ms, EL1 work 93 ms, px 0, biggest trap gemdos 0x3f Fread 8 ms
+ t=63017 GAP 166 ms without input pump: EL0 65 ms, EL1 work 101 ms, px 0, biggest trap gemdos 0x3f Fread 8 ms
+==== end segment 5 ====
+
+[m3] MARK B04_SAMPLES step 58 at +16000 mouse (470,110) mb=0
+==== ZVPROF segment 6 : t=65839..96496 ms since boot, span 30657 ms, closed by 30 s limit ====
+previous report write 6 ms (excluded from all numbers)
+time: EL0 7 ms (runs 4593, longest 0 ms) | EL1 trap work 196 ms [gemdos 0 vdi 0 aes 196 bios 0 xbios 0 other 0] | EL1 waiting in traps 30448 ms | rest (outside traps) 5 ms
+irq since boot n=19028 t=79 ms | memprot sync (with work) n=7 t=0 ms max=5 us, of which refresh n=0 t=0 ms over 0 pages | lost trap exits 0
+input pump n=34590470 | gaps without pump (pointer frozen) >100ms 0 >250ms 0 >500ms 0 >1s 0 >2s 0 | longest 45 ms | sum of gaps>100ms 0 ms
+clicks (press -> evnt_multi MU_BUTTON or MU_MESAG) n=0 avg 0 ms max 0 ms | <100 0 <200 0 <300 0 <500 0 <1000 0 >=1000 0
+evnt_multi returns: timer-only 1531 button 0 message 0 key 0 mouse-rect 0 other 0
+pexec n=0 total 0 ms
+backend primitives (time includes nested clean):
+ops of this segment, sorted by EL1 work:
+  class  op    name               n        work_ms   wait_ms   maxwork_ms  memprot_ms  pixels   sleeps
+  aes    0x019 evnt_multi         1531         190.3    30447.6        45.6         0.0  0        11525949
+  aes    0x068 wind_get           1531           3.3        0.4         0.0         0.0  0        0
+  aes    0x06a wind_find          1531           2.5        0.4         0.0         0.0  0        0
+events (1, lost 0):
+ t=96139 LONG aes 0x19 evnt_multi work=45 ms wait=12 ms px=0 memprot=0 ms sleeps=4396
+==== end segment 6 ====
+
+[m3] step 59 at +16300 -> mouse (470,110) mb=1
+[m3] step 60 at +16303 -> mouse (470,110) mb=0
+[m3] step 61 at +16308 -> mouse (470,110) mb=1
+[m3] step 62 at +16311 -> mouse (470,110) mb=0
+==== ZVPROF segment 7 : t=96499..99427 ms since boot, span 2927 ms, closed by 2.5 s quiet ====
+previous report write 2 ms (excluded from all numbers)
+time: EL0 6 ms (runs 2545, longest 0 ms) | EL1 trap work 22 ms [gemdos 0 vdi 5 aes 15 bios 0 xbios 0 other 0] | EL1 waiting in traps 2917 ms | rest (outside traps) 0 ms
+irq since boot n=19614 t=81 ms | memprot sync (with work) n=5 t=0 ms max=78 us, of which refresh n=4 t=0 ms over 36 pages | lost trap exits 0
+input pump n=3022034 | gaps without pump (pointer frozen) >100ms 0 >250ms 0 >500ms 0 >1s 0 >2s 0 | longest 3 ms | sum of gaps>100ms 0 ms
+clicks (press -> evnt_multi MU_BUTTON or MU_MESAG) n=1 avg 278 ms max 278 ms | <100 0 <200 0 <300 1 <500 0 <1000 0 >=1000 0
+evnt_multi returns: timer-only 146 button 1 message 4 key 0 mouse-rect 0 other 0
+pexec n=0 total 0 ms
+backend primitives (time includes nested clean):
+  fill_rect              n=14769     px/bytes=204241      5.6 ms
+  fill_pattern           n=102       px/bytes=6471644     1.1 ms
+  abline                 n=979       px/bytes=0           1.6 ms
+  glyph                  n=328       px/bytes=0           0.2 ms
+  blit_mono              n=945       px/bytes=44976       0.1 ms
+  write_row565           n=192       px/bytes=7552        0.1 ms
+  flush_rect             n=81        px/bytes=0           0.0 ms
+  dcache clean (bytes)   n=15057     px/bytes=1759916     2.5 ms
+  put_device_pixel       n=18688     px/bytes=18688       0.0 ms
+  get_device_pixel       n=18688     px/bytes=18688       0.0 ms
+ops of this segment, sorted by EL1 work:
+  class  op    name               n        work_ms   wait_ms   maxwork_ms  memprot_ms  pixels   sleeps
+  aes    0x04e graf_mouse         115            5.0        0.0         0.0         0.0  26577    0
+  aes    0x065 wind_open          2              4.9        0.0         3.6         0.0  719281   0
+  vdi    0x079 vrt_cpyfm          945            2.5        0.0         0.0         0.0  44976    0
+  aes    0x019 evnt_multi         151            1.8     2916.9         0.1         0.0  1412     1013166
+  vdi    0x00b v_gdp              58             1.1        0.0         0.2         0.0  5794234  0
+  vdi    0x006 v_pline            91             0.8        0.0         0.0         0.0  0        0
+  aes    0x068 wind_get           365            0.8        0.1         0.0         0.0  0        0
+  aes    0x066 wind_close         1              0.7        0.0         0.7         0.0  124977   0
+  aes    0x02a objc_draw          9              0.7        0.0         0.5         0.0  15176    0
+  aes    0x069 wind_set           15             0.6        0.0         0.1         0.0  12882    0
+  vdi    0x06d vro_cpyfm          76             0.4        0.0         0.0         0.0  7552     0
+  aes    0x06a wind_find          151            0.2        0.0         0.0         0.0  0        0
+  vdi    0x081 vs_clip            127            0.2        0.0         0.0         0.0  0        0
+  vdi    0x011 vsl_color          148            0.2        0.0         0.0         0.0  0        0
+  gemdos 0x11a Psigreturn         28             0.1        0.0         0.0         0.0  0        0
+  aes    0x06b wind_update        106            0.1        0.0         0.0         0.0  0        0
+  aes    0x06c wind_calc          73             0.1        0.0         0.0         0.0  0        0
+  gemdos 0x049 Mfree              2              0.1        0.0         0.1         0.1  0        0
+  gemdos 0x044 Mxalloc            2              0.1        0.0         0.1         0.1  0        0
+  aes    0x00c appl_write         1              0.1        0.0         0.1         0.0  0        0
+  aes    0x02c objc_offset        3              0.1        0.0         0.1         0.0  0        0
+  aes    0x067 wind_delete        1              0.0        0.0         0.0         0.0  0        0
+  vdi    0x064 v_opnvwk           2              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x04e Fsfirst            1              0.0        0.0         0.0         0.0  0        0
+  aes    0x070 rsrc_gaddr         10             0.0        0.0         0.0         0.0  0        0
+  vdi    0x019 vsf_color          14             0.0        0.0         0.0         0.0  0        0
+  aes    0x064 wind_create        2              0.0        0.0         0.0         0.0  0        0
+  vdi    0x009 v_fillarea         3              0.0        0.0         0.0         0.0  34       0
+  aes    0x020 menu_ienable       7              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x03d Fopen              1              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x03f Fread              2              0.0        0.0         0.0         0.0  0        0
+  aes    0x02b objc_find          1              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x154 Ssystem            8              0.0        0.0         0.0         0.0  0        0
+  vdi    0x068 vsf_perimeter      2              0.0        0.0         0.0         0.0  0        0
+  vdi    0x06c vsl_ends           2              0.0        0.0         0.0         0.0  0        0
+  vdi    0x013                    2              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x03e Fclose             1              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x042 Fseek              4              0.0        0.0         0.0         0.0  0        0
+  vdi    0x06a vst_effects        2              0.0        0.0         0.0         0.0  0        0
+  vdi    0x010 vsl_width          2              0.0        0.0         0.0         0.0  0        0
+  aes    0x04d graf_handle        3              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x01a Fsetdta            2              0.0        0.0         0.0         0.0  0        0
+  vdi    0x065 v_clsvwk           1              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x02f Fgetdta            1              0.0        0.0         0.0         0.0  0        0
+  aes    0x04f graf_mkstate       1              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x14b                    1              0.0        0.0         0.0         0.0  0        0
+events (1, lost 0):
+ t=96641 CLICK press->evnt_multi return 278 ms clicks=2 fired=0x2
+==== end segment 7 ====
+
+[m3] MARK B05_TJPG step 63 at +19000 mouse (470,110) mb=0
+[m3] step 64 at +19100 -> mouse (597,237) mb=0
+[m3] step 65 at +19101 -> mouse (724,364) mb=0
+[m3] step 66 at +19102 -> mouse (851,472) mb=0
+[m3] step 67 at +19103 -> mouse (927,472) mb=0
+[m3] step 68 at +19300 -> mouse (927,472) mb=1
+[m3] step 69 at +19303 -> mouse (927,472) mb=0
+==== ZVPROF segment 8 : t=99435..114361 ms since boot, span 14926 ms, closed by 2.5 s quiet ====
+previous report write 8 ms (excluded from all numbers)
+time: EL0 5 ms (runs 2733, longest 0 ms) | EL1 trap work 110 ms [gemdos 0 vdi 22 aes 88 bios 0 xbios 0 other 0] | EL1 waiting in traps 14796 ms | rest (outside traps) 14 ms
+irq since boot n=22589 t=93 ms | memprot sync (with work) n=7 t=0 ms max=16 us, of which refresh n=0 t=0 ms over 0 pages | lost trap exits 0
+input pump n=16550689 | gaps without pump (pointer frozen) >100ms 0 >250ms 0 >500ms 0 >1s 0 >2s 0 | longest 23 ms | sum of gaps>100ms 0 ms
+clicks (press -> evnt_multi MU_BUTTON or MU_MESAG) n=1 avg 200 ms max 200 ms | <100 0 <200 0 <300 1 <500 0 <1000 0 >=1000 0
+evnt_multi returns: timer-only 742 button 0 message 4 key 0 mouse-rect 0 other 0
+pexec n=0 total 0 ms
+backend primitives (time includes nested clean):
+  fill_rect              n=841       px/bytes=147788      1.4 ms
+  fill_pattern           n=14        px/bytes=1980296     18.0 ms
+  abline                 n=150       px/bytes=0           1.0 ms
+  glyph                  n=24        px/bytes=0           0.0 ms
+  blit_mono              n=315       px/bytes=14992       0.6 ms
+  write_row565           n=1444      px/bytes=108928      1.6 ms
+  flush_rect             n=40        px/bytes=0           0.1 ms
+  dcache clean (bytes)   n=1382      px/bytes=9151496     1.7 ms
+  put_device_pixel       n=2048      px/bytes=2048        0.0 ms
+  get_device_pixel       n=2048      px/bytes=2048        0.0 ms
+ops of this segment, sorted by EL1 work:
+  class  op    name               n        work_ms   wait_ms   maxwork_ms  memprot_ms  pixels   sleeps
+  aes    0x019 evnt_multi         746           82.6    14795.9         0.4         0.0  3184     5510805
+  vdi    0x00b v_gdp              3             17.8        0.0        15.8         0.0  1920622  0
+  vdi    0x06d vro_cpyfm          32             2.4        0.0         0.1         0.0  108928   0
+  aes    0x066 wind_close         1              1.9        0.0         1.9         0.0  164227   0
+  aes    0x068 wind_get           755            1.7        0.2         0.0         0.0  0        0
+  vdi    0x079 vrt_cpyfm          315            1.5        0.0         0.1         0.0  14992    0
+  aes    0x06a wind_find          746            1.3        0.2         0.0         0.0  0        0
+  vdi    0x006 v_pline            30             0.7        0.0         0.0         0.0  0        0
+  aes    0x02a objc_draw          1              0.1        0.0         0.1         0.0  41712    0
+  vdi    0x011 vsl_color          49             0.0        0.0         0.0         0.0  0        0
+  gemdos 0x11a Psigreturn         9              0.0        0.0         0.0         0.0  0        0
+  aes    0x04e graf_mouse         2              0.0        0.0         0.0         0.0  353      0
+  vdi    0x081 vs_clip            21             0.0        0.0         0.0         0.0  0        0
+  aes    0x020 menu_ienable       4              0.0        0.0         0.0         0.0  0        0
+  vdi    0x009 v_fillarea         1              0.0        0.0         0.0         0.0  34       0
+  aes    0x02b objc_find          1              0.0        0.0         0.0         0.0  0        0
+  aes    0x069 wind_set           2              0.0        0.0         0.0         0.0  0        0
+  aes    0x00c appl_write         2              0.0        0.0         0.0         0.0  0        0
+  vdi    0x019 vsf_color          4              0.0        0.0         0.0         0.0  0        0
+  aes    0x06c wind_calc          4              0.0        0.0         0.0         0.0  0        0
+  vdi    0x065 v_clsvwk           1              0.0        0.0         0.0         0.0  0        0
+  aes    0x067 wind_delete        1              0.0        0.0         0.0         0.0  0        0
+  aes    0x070 rsrc_gaddr         1              0.0        0.0         0.0         0.0  0        0
+  aes    0x06b wind_update        2              0.0        0.0         0.0         0.0  0        0
+events (1, lost 0):
+ t=111639 CLICK press->evnt_multi return 200 ms clicks=0 fired=0x10
+==== end segment 8 ====
+
+[m3] MARK B06_TJPG_CLOSED step 70 at +20000 mouse (927,472) mb=0
+[m3] step 71 at +20100 -> mouse (800,345) mb=0
+[m3] step 72 at +20101 -> mouse (673,218) mb=0
+[m3] step 73 at +20102 -> mouse (546,214) mb=0
+[m3] step 74 at +20103 -> mouse (419,214) mb=0
+[m3] step 75 at +20104 -> mouse (292,214) mb=0
+[m3] step 76 at +20105 -> mouse (258,214) mb=0
+[m3] step 77 at +20300 -> mouse (258,214) mb=1
+[m3] step 78 at +20303 -> mouse (258,214) mb=0
+[m3] step 79 at +20308 -> mouse (258,214) mb=1
+[m3] step 80 at +20311 -> mouse (258,214) mb=0
+==== ZVPROF segment 9 : t=114366..119576 ms since boot, span 5210 ms, closed by 2.5 s quiet ====
+previous report write 5 ms (excluded from all numbers)
+time: EL0 80 ms (runs 3493, longest 0 ms) | EL1 trap work 91 ms [gemdos 1 vdi 51 aes 38 bios 0 xbios 0 other 0] | EL1 waiting in traps 5033 ms | rest (outside traps) 4 ms
+irq since boot n=23617 t=97 ms | memprot sync (with work) n=13 t=0 ms max=220 us, of which refresh n=9 t=0 ms over 1610 pages | lost trap exits 0
+input pump n=5407447 | gaps without pump (pointer frozen) >100ms 0 >250ms 0 >500ms 0 >1s 0 >2s 0 | longest 45 ms | sum of gaps>100ms 0 ms
+clicks (press -> evnt_multi MU_BUTTON or MU_MESAG) n=1 avg 279 ms max 279 ms | <100 0 <200 0 <300 1 <500 0 <1000 0 >=1000 0
+evnt_multi returns: timer-only 251 button 1 message 3 key 0 mouse-rect 0 other 0
+pexec n=0 total 0 ms
+backend primitives (time includes nested clean):
+  fill_rect              n=36779     px/bytes=526227      11.8 ms
+  fill_pattern           n=190       px/bytes=6457296     20.0 ms
+  abline                 n=1113      px/bytes=0           1.7 ms
+  glyph                  n=284       px/bytes=0           0.2 ms
+  blit_mono              n=630       px/bytes=29984       0.0 ms
+  write_row565           n=8016      px/bytes=1856584     22.2 ms
+  flush_rect             n=190       px/bytes=0           1.2 ms
+  dcache clean (bytes)   n=37850     px/bytes=19106996    7.0 ms
+  put_device_pixel       n=46080     px/bytes=46080       0.0 ms
+  get_device_pixel       n=46080     px/bytes=46080       0.0 ms
+ops of this segment, sorted by EL1 work:
+  class  op    name               n        work_ms   wait_ms   maxwork_ms  memprot_ms  pixels   sleeps
+  vdi    0x06d vro_cpyfm          54            29.1        0.0        28.7         0.0  1856584  0
+  vdi    0x00b v_gdp              157           18.9        0.0        16.6         0.0  5778878  0
+  aes    0x04e graf_mouse         313           14.5        0.1         0.1         0.0  73254    0
+  aes    0x019 evnt_multi         255           13.7     5032.6         0.2         0.0  3530     1800306
+  aes    0x065 wind_open          2              4.5        0.0         2.3         0.0  777067   0
+  aes    0x069 wind_set           18             2.3        0.0         0.5         0.0  247100   0
+  vdi    0x079 vrt_cpyfm          630            1.7        0.0         0.0         0.0  29984    0
+  aes    0x068 wind_get           738            1.6        0.2         0.0         0.0  0        0
+  vdi    0x081 vs_clip            323            0.7        0.0         0.0         0.0  0        0
+  vdi    0x006 v_pline            61             0.6        0.0         0.0         0.0  0        0
+  aes    0x06b wind_update        310            0.5        0.0         0.0         0.0  0        0
+  gemdos 0x03f Fread              14             0.5        0.0         0.0         0.0  0        0
+  aes    0x06a wind_find          255            0.4        0.0         0.0         0.0  0        0
+  aes    0x06c wind_calc          171            0.3        0.0         0.0         0.0  0        0
+  gemdos 0x049 Mfree              4              0.3        0.0         0.1         0.2  0        0
+  aes    0x02a objc_draw          2              0.2        0.0         0.1         0.0  51296    0
+  gemdos 0x048 Malloc             1              0.2        0.0         0.2         0.2  0        0
+  gemdos 0x044 Mxalloc            4              0.2        0.0         0.1         0.1  0        0
+  vdi    0x011 vsl_color          99             0.1        0.0         0.0         0.0  0        0
+  aes    0x066 wind_close         1              0.1        0.0         0.1         0.0  98444    0
+  gemdos 0x04e Fsfirst            1              0.0        0.0         0.0         0.0  0        0
+  vdi    0x064 v_opnvwk           2              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x11a Psigreturn         7              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x042 Fseek              4              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x03d Fopen              1              0.0        0.0         0.0         0.0  0        0
+  aes    0x070 rsrc_gaddr         10             0.0        0.0         0.0         0.0  0        0
+  vdi    0x009 v_fillarea         2              0.0        0.0         0.0         0.0  34       0
+  aes    0x020 menu_ienable       7              0.0        0.0         0.0         0.0  0        0
+  vdi    0x019 vsf_color          10             0.0        0.0         0.0         0.0  0        0
+  aes    0x02b objc_find          1              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x154 Ssystem            12             0.0        0.0         0.0         0.0  0        0
+  aes    0x00c appl_write         1              0.0        0.0         0.0         0.0  0        0
+  aes    0x064 wind_create        2              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x03e Fclose             1              0.0        0.0         0.0         0.0  0        0
+  vdi    0x06c vsl_ends           2              0.0        0.0         0.0         0.0  0        0
+  vdi    0x068 vsf_perimeter      2              0.0        0.0         0.0         0.0  0        0
+  vdi    0x010 vsl_width          2              0.0        0.0         0.0         0.0  0        0
+  vdi    0x013                    2              0.0        0.0         0.0         0.0  0        0
+  aes    0x067 wind_delete        1              0.0        0.0         0.0         0.0  0        0
+  vdi    0x06a vst_effects        2              0.0        0.0         0.0         0.0  0        0
+  aes    0x04d graf_handle        3              0.0        0.0         0.0         0.0  0        0
+  vdi    0x065 v_clsvwk           1              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x01a Fsetdta            2              0.0        0.0         0.0         0.0  0        0
+  aes    0x04f graf_mkstate       1              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x02f Fgetdta            1              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x14b                    1              0.0        0.0         0.0         0.0  0        0
+events (1, lost 0):
+ t=116640 CLICK press->evnt_multi return 279 ms clicks=2 fired=0x2
+==== end segment 9 ====
+
+[m3] MARK B07_X01 step 81 at +25000 mouse (258,214) mb=0
+[m3] step 82 at +25100 -> mouse (131,87) mb=0
+[m3] step 83 at +25101 -> mouse (11,30) mb=0
+[m3] step 84 at +25300 -> mouse (11,30) mb=1
+[m3] step 85 at +25303 -> mouse (11,30) mb=0
+==== ZVPROF segment 10 : t=119584..144365 ms since boot, span 24780 ms, closed by 2.5 s quiet ====
+previous report write 7 ms (excluded from all numbers)
+time: EL0 7 ms (runs 4188, longest 0 ms) | EL1 trap work 180 ms [gemdos 0 vdi 25 aes 155 bios 0 xbios 0 other 0] | EL1 waiting in traps 24603 ms | rest (outside traps) 0 ms
+irq since boot n=28523 t=117 ms | memprot sync (with work) n=8 t=0 ms max=26 us, of which refresh n=0 t=0 ms over 0 pages | lost trap exits 0
+input pump n=27513349 | gaps without pump (pointer frozen) >100ms 1 >250ms 0 >500ms 0 >1s 0 >2s 0 | longest 215 ms | sum of gaps>100ms 215 ms
+clicks (press -> evnt_multi MU_BUTTON or MU_MESAG) n=1 avg 200 ms max 200 ms | <100 0 <200 0 <300 1 <500 0 <1000 0 >=1000 0
+evnt_multi returns: timer-only 1227 button 0 message 4 key 0 mouse-rect 0 other 0
+pexec n=0 total 0 ms
+backend primitives (time includes nested clean):
+  fill_rect              n=647       px/bytes=147594      2.0 ms
+  fill_pattern           n=14        px/bytes=1980461     21.0 ms
+  abline                 n=150       px/bytes=0           1.1 ms
+  glyph                  n=24        px/bytes=0           0.1 ms
+  blit_mono              n=315       px/bytes=14992       0.6 ms
+  write_row565           n=1444      px/bytes=108928      1.6 ms
+  flush_rect             n=38        px/bytes=0           0.1 ms
+  dcache clean (bytes)   n=1186      px/bytes=9149452     2.2 ms
+  put_device_pixel       n=1536      px/bytes=1536        0.0 ms
+  get_device_pixel       n=1536      px/bytes=1536        0.0 ms
+ops of this segment, sorted by EL1 work:
+  class  op    name               n        work_ms   wait_ms   maxwork_ms  memprot_ms  pixels   sleeps
+  aes    0x019 evnt_multi         1231         146.8    24602.8         0.3         0.0  2478     9172931
+  vdi    0x00b v_gdp              3             20.1        0.0        15.6         0.0  1920787  0
+  aes    0x066 wind_close         1              3.4        0.0         3.4         0.0  164227   0
+  aes    0x068 wind_get           1240           2.6        0.3         0.0         0.0  0        0
+  vdi    0x06d vro_cpyfm          32             2.5        0.0         0.1         0.0  108928   0
+  aes    0x06a wind_find          1231           2.1        0.3         0.0         0.0  0        0
+  vdi    0x079 vrt_cpyfm          315            1.4        0.0         0.1         0.0  14992    0
+  vdi    0x006 v_pline            30             0.7        0.0         0.0         0.0  0        0
+  aes    0x02a objc_draw          1              0.2        0.0         0.2         0.0  41712    0
+  gemdos 0x11a Psigreturn         9              0.1        0.0         0.0         0.0  0        0
+  vdi    0x011 vsl_color          49             0.1        0.0         0.0         0.0  0        0
+  vdi    0x081 vs_clip            21             0.0        0.0         0.0         0.0  0        0
+  aes    0x04e graf_mouse         2              0.0        0.0         0.0         0.0  353      0
+  vdi    0x009 v_fillarea         1              0.0        0.0         0.0         0.0  34       0
+  aes    0x00c appl_write         2              0.0        0.0         0.0         0.0  0        0
+  vdi    0x019 vsf_color          4              0.0        0.0         0.0         0.0  0        0
+  aes    0x020 menu_ienable       4              0.0        0.0         0.0         0.0  0        0
+  aes    0x06c wind_calc          4              0.0        0.0         0.0         0.0  0        0
+  aes    0x02b objc_find          1              0.0        0.0         0.0         0.0  0        0
+  vdi    0x065 v_clsvwk           1              0.0        0.0         0.0         0.0  0        0
+  aes    0x067 wind_delete        1              0.0        0.0         0.0         0.0  0        0
+  aes    0x069 wind_set           2              0.0        0.0         0.0         0.0  0        0
+  aes    0x06b wind_update        2              0.0        0.0         0.0         0.0  0        0
+  aes    0x070 rsrc_gaddr         1              0.0        0.0         0.0         0.0  0        0
+events (2, lost 0):
+ t=141252 GAP 215 ms without input pump: EL0 0 ms, EL1 work 0 ms, px 0, biggest trap aes 0x6a wind_find 0 ms
+ t=141639 CLICK press->evnt_multi return 200 ms clicks=0 fired=0x10
+==== end segment 10 ====
+
+[m3] MARK B08_X01_CLOSED step 86 at +26500 mouse (11,30) mb=0
+[m3] step 87 at +26600 -> mouse (138,157) mb=0
+[m3] step 88 at +26601 -> mouse (265,214) mb=0
+[m3] step 89 at +26602 -> mouse (392,214) mb=0
+[m3] step 90 at +26603 -> mouse (519,214) mb=0
+[m3] step 91 at +26604 -> mouse (646,214) mb=0
+[m3] step 92 at +26605 -> mouse (682,214) mb=0
+[m3] step 93 at +26800 -> mouse (682,214) mb=1
+[m3] step 94 at +26803 -> mouse (682,214) mb=0
+[m3] step 95 at +26808 -> mouse (682,214) mb=1
+[m3] step 96 at +26811 -> mouse (682,214) mb=0
+==== ZVPROF segment 11 : t=144370..152078 ms since boot, span 7708 ms, closed by 2.5 s quiet ====
+previous report write 4 ms (excluded from all numbers)
+time: EL0 82 ms (runs 3868, longest 0 ms) | EL1 trap work 108 ms [gemdos 1 vdi 52 aes 54 bios 0 xbios 0 other 0] | EL1 waiting in traps 7524 ms | rest (outside traps) 0 ms
+irq since boot n=30048 t=124 ms | memprot sync (with work) n=13 t=0 ms max=84 us, of which refresh n=8 t=0 ms over 72 pages | lost trap exits 0
+input pump n=8254225 | gaps without pump (pointer frozen) >100ms 0 >250ms 0 >500ms 0 >1s 0 >2s 0 | longest 46 ms | sum of gaps>100ms 0 ms
+clicks (press -> evnt_multi MU_BUTTON or MU_MESAG) n=1 avg 278 ms max 278 ms | <100 0 <200 0 <300 1 <500 0 <1000 0 >=1000 0
+evnt_multi returns: timer-only 376 button 1 message 3 key 0 mouse-rect 0 other 0
+pexec n=0 total 0 ms
+backend primitives (time includes nested clean):
+  fill_rect              n=36779     px/bytes=526227      11.6 ms
+  fill_pattern           n=181       px/bytes=6457262     20.8 ms
+  abline                 n=1113      px/bytes=0           1.7 ms
+  glyph                  n=284       px/bytes=0           0.3 ms
+  blit_mono              n=630       px/bytes=29984       0.1 ms
+  write_row565           n=8040      px/bytes=1860424     22.8 ms
+  flush_rect             n=190       px/bytes=0           1.2 ms
+  dcache clean (bytes)   n=37849     px/bytes=19121892    7.0 ms
+  put_device_pixel       n=46080     px/bytes=46080       0.0 ms
+  get_device_pixel       n=46080     px/bytes=46080       0.0 ms
+ops of this segment, sorted by EL1 work:
+  class  op    name               n        work_ms   wait_ms   maxwork_ms  memprot_ms  pixels   sleeps
+  vdi    0x06d vro_cpyfm          54            29.7        0.0        29.2         0.0  1860424  0
+  aes    0x019 evnt_multi         380           29.1     7524.1         0.2         0.0  3530     2752995
+  vdi    0x00b v_gdp              157           19.6        0.0        17.4         0.0  5778878  0
+  aes    0x04e graf_mouse         313           14.3        0.1         0.1         0.0  73254    0
+  aes    0x065 wind_open          2              4.3        0.0         2.1         0.0  777067   0
+  aes    0x069 wind_set           18             2.3        0.0         0.5         0.0  247100   0
+  aes    0x068 wind_get           863            2.0        0.2         0.0         0.0  0        0
+  vdi    0x079 vrt_cpyfm          630            1.6        0.0         0.0         0.0  29984    0
+  vdi    0x081 vs_clip            323            0.6        0.0         0.0         0.0  0        0
+  aes    0x06a wind_find          380            0.6        0.0         0.0         0.0  0        0
+  vdi    0x006 v_pline            61             0.6        0.0         0.0         0.0  0        0
+  aes    0x06b wind_update        310            0.5        0.0         0.0         0.0  0        0
+  gemdos 0x03f Fread              15             0.5        0.0         0.0         0.0  0        0
+  gemdos 0x049 Mfree              4              0.4        0.0         0.1         0.3  0        0
+  aes    0x06c wind_calc          171            0.3        0.0         0.0         0.0  0        0
+  aes    0x02a objc_draw          2              0.2        0.0         0.1         0.0  51296    0
+  gemdos 0x044 Mxalloc            4              0.1        0.0         0.0         0.1  0        0
+  vdi    0x011 vsl_color          99             0.1        0.0         0.0         0.0  0        0
+  aes    0x066 wind_close         1              0.1        0.0         0.1         0.0  98444    0
+  vdi    0x064 v_opnvwk           2              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x04e Fsfirst            1              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x11a Psigreturn         7              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x042 Fseek              4              0.0        0.0         0.0         0.0  0        0
+  aes    0x070 rsrc_gaddr         10             0.0        0.0         0.0         0.0  0        0
+  aes    0x020 menu_ienable       7              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x03d Fopen              1              0.0        0.0         0.0         0.0  0        0
+  aes    0x00c appl_write         1              0.0        0.0         0.0         0.0  0        0
+  vdi    0x019 vsf_color          10             0.0        0.0         0.0         0.0  0        0
+  gemdos 0x154 Ssystem            12             0.0        0.0         0.0         0.0  0        0
+  aes    0x02b objc_find          1              0.0        0.0         0.0         0.0  0        0
+  aes    0x064 wind_create        2              0.0        0.0         0.0         0.0  0        0
+  vdi    0x009 v_fillarea         2              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x03e Fclose             1              0.0        0.0         0.0         0.0  0        0
+  vdi    0x06c vsl_ends           2              0.0        0.0         0.0         0.0  0        0
+  vdi    0x013                    2              0.0        0.0         0.0         0.0  0        0
+  vdi    0x068 vsf_perimeter      2              0.0        0.0         0.0         0.0  0        0
+  aes    0x067 wind_delete        1              0.0        0.0         0.0         0.0  0        0
+  vdi    0x010 vsl_width          2              0.0        0.0         0.0         0.0  0        0
+  vdi    0x06a vst_effects        2              0.0        0.0         0.0         0.0  0        0
+  aes    0x04d graf_handle        3              0.0        0.0         0.0         0.0  0        0
+  vdi    0x065 v_clsvwk           1              0.0        0.0         0.0         0.0  0        0
+  aes    0x04f graf_mkstate       1              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x02f Fgetdta            1              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x01a Fsetdta            2              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x14b                    1              0.0        0.0         0.0         0.0  0        0
+events (1, lost 0):
+ t=149141 CLICK press->evnt_multi return 278 ms clicks=2 fired=0x2
+==== end segment 11 ====
+
+[m3] MARK B09_X05 step 97 at +31000 mouse (682,214) mb=0
+[m3] step 98 at +31100 -> mouse (555,87) mb=0
+[m3] step 99 at +31101 -> mouse (428,30) mb=0
+[m3] step 100 at +31102 -> mouse (301,30) mb=0
+[m3] step 101 at +31103 -> mouse (174,30) mb=0
+[m3] step 102 at +31104 -> mouse (47,30) mb=0
+[m3] step 103 at +31105 -> mouse (11,30) mb=0
+[m3] step 104 at +31300 -> mouse (11,30) mb=1
+[m3] step 105 at +31303 -> mouse (11,30) mb=0
+==== ZVPROF segment 12 : t=152088..174381 ms since boot, span 22292 ms, closed by 2.5 s quiet ====
+previous report write 9 ms (excluded from all numbers)
+time: EL0 6 ms (runs 3801, longest 0 ms) | EL1 trap work 443 ms [gemdos 0 vdi 22 aes 420 bios 0 xbios 0 other 0] | EL1 waiting in traps 21828 ms | rest (outside traps) 15 ms
+irq since boot n=34443 t=141 ms | memprot sync (with work) n=6 t=0 ms max=16 us, of which refresh n=0 t=0 ms over 0 pages | lost trap exits 0
+input pump n=24595781 | gaps without pump (pointer frozen) >100ms 1 >250ms 1 >500ms 0 >1s 0 >2s 0 | longest 306 ms | sum of gaps>100ms 306 ms
+clicks (press -> evnt_multi MU_BUTTON or MU_MESAG) n=1 avg 219 ms max 219 ms | <100 0 <200 0 <300 1 <500 0 <1000 0 >=1000 0
+evnt_multi returns: timer-only 1098 button 0 message 4 key 0 mouse-rect 0 other 0
+pexec n=0 total 0 ms
+backend primitives (time includes nested clean):
+  fill_rect              n=1035      px/bytes=147982      1.4 ms
+  fill_pattern           n=14        px/bytes=1980461     18.5 ms
+  abline                 n=150       px/bytes=0           0.7 ms
+  glyph                  n=24        px/bytes=0           0.0 ms
+  blit_mono              n=315       px/bytes=14992       0.6 ms
+  write_row565           n=1444      px/bytes=108928      1.4 ms
+  flush_rect             n=42        px/bytes=0           0.1 ms
+  dcache clean (bytes)   n=1578      px/bytes=9155100     2.0 ms
+  put_device_pixel       n=2560      px/bytes=2560        0.0 ms
+  get_device_pixel       n=2560      px/bytes=2560        0.0 ms
+ops of this segment, sorted by EL1 work:
+  class  op    name               n        work_ms   wait_ms   maxwork_ms  memprot_ms  pixels   sleeps
+  aes    0x019 evnt_multi         1102         413.5    21827.3       307.2         0.0  3890     8191607
+  vdi    0x00b v_gdp              3             18.2        0.0        16.2         0.0  1920787  0
+  aes    0x068 wind_get           1111           2.4        0.3         0.0         0.0  0        0
+  vdi    0x06d vro_cpyfm          32             2.2        0.0         0.1         0.0  108928   0
+  aes    0x066 wind_close         1              1.8        0.0         1.8         0.0  164227   0
+  aes    0x06a wind_find          1102           1.8        0.3         0.0         0.0  0        0
+  vdi    0x079 vrt_cpyfm          315            1.4        0.0         0.1         0.0  14992    0
+  vdi    0x006 v_pline            30             0.5        0.0         0.0         0.0  0        0
+  aes    0x02a objc_draw          1              0.1        0.0         0.1         0.0  41712    0
+  vdi    0x011 vsl_color          49             0.0        0.0         0.0         0.0  0        0
+  gemdos 0x11a Psigreturn         9              0.0        0.0         0.0         0.0  0        0
+  aes    0x04e graf_mouse         2              0.0        0.0         0.0         0.0  353      0
+  vdi    0x081 vs_clip            21             0.0        0.0         0.0         0.0  0        0
+  vdi    0x019 vsf_color          4              0.0        0.0         0.0         0.0  0        0
+  vdi    0x009 v_fillarea         1              0.0        0.0         0.0         0.0  34       0
+  aes    0x020 menu_ienable       4              0.0        0.0         0.0         0.0  0        0
+  aes    0x02b objc_find          1              0.0        0.0         0.0         0.0  0        0
+  vdi    0x065 v_clsvwk           1              0.0        0.0         0.0         0.0  0        0
+  aes    0x00c appl_write         2              0.0        0.0         0.0         0.0  0        0
+  aes    0x069 wind_set           2              0.0        0.0         0.0         0.0  0        0
+  aes    0x067 wind_delete        1              0.0        0.0         0.0         0.0  0        0
+  aes    0x06c wind_calc          4              0.0        0.0         0.0         0.0  0        0
+  aes    0x070 rsrc_gaddr         1              0.0        0.0         0.0         0.0  0        0
+  aes    0x06b wind_update        2              0.0        0.0         0.0         0.0  0        0
+events (3, lost 0):
+ t=171273 GAP 306 ms without input pump: EL0 0 ms, EL1 work 0 ms, px 0, biggest trap aes 0x6a wind_find 0 ms
+ t=171258 LONG aes 0x19 evnt_multi work=307 ms wait=14 ms px=0 memprot=0 ms sleeps=5581
+ t=171641 CLICK press->evnt_multi return 219 ms clicks=0 fired=0x10
+==== end segment 12 ====
+
+[m3] MARK B10_X05_CLOSED step 106 at +32500 mouse (11,30) mb=0
+[m3] step 107 at +32600 -> mouse (138,52) mb=0
+[m3] step 108 at +32601 -> mouse (148,52) mb=0
+[m3] step 109 at +32800 -> mouse (148,52) mb=1
+[m3] step 110 at +32803 -> mouse (148,52) mb=0
+==== ZVPROF segment 13 : t=174386..181879 ms since boot, span 7493 ms, closed by 2.5 s quiet ====
+previous report write 4 ms (excluded from all numbers)
+time: EL0 3 ms (runs 1324, longest 0 ms) | EL1 trap work 56 ms [gemdos 0 vdi 16 aes 39 bios 0 xbios 0 other 0] | EL1 waiting in traps 7430 ms | rest (outside traps) 3 ms
+irq since boot n=35931 t=147 ms | memprot sync (with work) n=4 t=0 ms max=5 us, of which refresh n=0 t=0 ms over 0 pages | lost trap exits 0
+input pump n=8169041 | gaps without pump (pointer frozen) >100ms 0 >250ms 0 >500ms 0 >1s 0 >2s 0 | longest 43 ms | sum of gaps>100ms 0 ms
+clicks (press -> evnt_multi MU_BUTTON or MU_MESAG) n=1 avg 219 ms max 219 ms | <100 0 <200 0 <300 1 <500 0 <1000 0 >=1000 0
+evnt_multi returns: timer-only 372 button 1 message 1 key 0 mouse-rect 0 other 0
+pexec n=0 total 0 ms
+backend primitives (time includes nested clean):
+  fill_rect              n=1139      px/bytes=105319      1.4 ms
+  fill_pattern           n=14        px/bytes=1980494     15.8 ms
+  abline                 n=70        px/bytes=0           0.4 ms
+  glyph                  n=14        px/bytes=0           0.0 ms
+  blit_mono              n=52        px/bytes=2064        0.0 ms
+  write_row565           n=192       px/bytes=5632        0.1 ms
+  flush_rect             n=17        px/bytes=0           0.0 ms
+  dcache clean (bytes)   n=1290      px/bytes=7665484     1.5 ms
+  put_device_pixel       n=2560      px/bytes=2560        0.0 ms
+  get_device_pixel       n=2560      px/bytes=2560        0.0 ms
+ops of this segment, sorted by EL1 work:
+  class  op    name               n        work_ms   wait_ms   maxwork_ms  memprot_ms  pixels   sleeps
+  aes    0x019 evnt_multi         374           35.3     7429.8         0.2         0.0  1412     2721297
+  vdi    0x00b v_gdp              3             15.5        0.0        15.4         0.0  1920820  0
+  aes    0x069 wind_set           2              1.9        0.0         1.9         0.0  164227   0
+  aes    0x068 wind_get           385            0.9        0.1         0.0         0.0  0        0
+  aes    0x06a wind_find          374            0.6        0.1         0.0         0.0  0        0
+  aes    0x04e graf_mouse         8              0.3        0.0         0.0         0.0  1880     0
+  vdi    0x079 vrt_cpyfm          52             0.2        0.0         0.0         0.0  2064     0
+  vdi    0x006 v_pline            12             0.2        0.0         0.0         0.0  0        0
+  vdi    0x06d vro_cpyfm          8              0.2        0.0         0.0         0.0  5632     0
+  aes    0x02b objc_find          2              0.1        0.0         0.1         0.0  0        0
+  aes    0x02f objc_change        1              0.1        0.0         0.1         0.0  0        0
+  gemdos 0x04e Fsfirst            6              0.1        0.0         0.0         0.0  0        0
+  aes    0x02a objc_draw          1              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x03b Dsetpath           1              0.0        0.0         0.0         0.0  0        0
+  vdi    0x081 vs_clip            6              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x04f Fsnext             7              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x11a Psigreturn         2              0.0        0.0         0.0         0.0  0        0
+  vdi    0x011 vsl_color          13             0.0        0.0         0.0         0.0  0        0
+  gemdos 0x01a Fsetdta            26             0.0        0.0         0.0         0.0  0        0
+  vdi    0x009 v_fillarea         1              0.0        0.0         0.0         0.0  34       0
+  gemdos 0x02f Fgetdta            13             0.0        0.0         0.0         0.0  0        0
+  aes    0x06c wind_calc          5              0.0        0.0         0.0         0.0  0        0
+  vdi    0x019 vsf_color          4              0.0        0.0         0.0         0.0  0        0
+  aes    0x00c appl_write         1              0.0        0.0         0.0         0.0  0        0
+  aes    0x06b wind_update        2              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x019 Dgetdrv            6              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x14b                    5              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x047 Dgetpath           1              0.0        0.0         0.0         0.0  0        0
+  aes    0x04f graf_mkstate       1              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x00e Dsetdrv            1              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x128 Dopendir           1              0.0        0.0         0.0         0.0  0        0
+events (1, lost 0):
+ t=179140 CLICK press->evnt_multi return 219 ms clicks=1 fired=0x2
+==== end segment 13 ====
+
+[m3] MARK B11_PARENT step 111 at +35000 mouse (148,52) mb=0
+[m3] step 112 at +35100 -> mouse (275,110) mb=0
+[m3] step 113 at +35101 -> mouse (402,110) mb=0
+[m3] step 114 at +35102 -> mouse (470,110) mb=0
+[m3] step 115 at +35300 -> mouse (470,110) mb=1
+[m3] step 116 at +35303 -> mouse (470,110) mb=0
+[m3] step 117 at +35308 -> mouse (470,110) mb=1
+[m3] step 118 at +35311 -> mouse (470,110) mb=0
+==== ZVPROF segment 14 : t=181885..195014 ms since boot, span 13129 ms, closed by 2.5 s quiet ====
+previous report write 5 ms (excluded from all numbers)
+time: EL0 526 ms (runs 13750, longest 6 ms) | EL1 trap work 144 ms [gemdos 12 vdi 56 aes 75 bios 0 xbios 0 other 0] | EL1 waiting in traps 12460 ms | rest (outside traps) 0 ms
+irq since boot n=38547 t=158 ms | memprot sync (with work) n=112 t=5 ms max=87 us, of which refresh n=108 t=0 ms over 952 pages | lost trap exits 0
+input pump n=13959349 | gaps without pump (pointer frozen) >100ms 0 >250ms 0 >500ms 0 >1s 0 >2s 0 | longest 66 ms | sum of gaps>100ms 0 ms
+clicks (press -> evnt_multi MU_BUTTON or MU_MESAG) n=1 avg 279 ms max 279 ms | <100 0 <200 0 <300 1 <500 0 <1000 0 >=1000 0
+evnt_multi returns: timer-only 625 button 1 message 0 key 0 mouse-rect 0 other 0
+pexec n=0 total 0 ms
+backend primitives (time includes nested clean):
+  fill_rect              n=6306      px/bytes=110486      2.7 ms
+  fill_pattern           n=194       px/bytes=46149304    19.2 ms
+  abline                 n=2668      px/bytes=0           7.5 ms
+  glyph                  n=22        px/bytes=0           0.0 ms
+  blit_mono              n=7552      px/bytes=335232      1.7 ms
+  write_row565           n=2052      px/bytes=130432      1.7 ms
+  flush_rect             n=83        px/bytes=0           0.1 ms
+  dcache clean (bytes)   n=8714      px/bytes=10759980    6.3 ms
+  put_device_pixel       n=9216      px/bytes=9216        0.0 ms
+  get_device_pixel       n=9216      px/bytes=9216        0.0 ms
+ops of this segment, sorted by EL1 work:
+  class  op    name               n        work_ms   wait_ms   maxwork_ms  memprot_ms  pixels   sleeps
+  aes    0x019 evnt_multi         626           67.2    12459.5         0.2         0.0  2471     4653124
+  vdi    0x079 vrt_cpyfm          7552          21.1        0.0         0.0         0.0  335232   0
+  vdi    0x00b v_gdp              48            20.8        0.0        15.8         0.0  46089120 0
+  vdi    0x006 v_pline            720            7.1        0.0         0.0         0.0  0        0
+  vdi    0x06d vro_cpyfm          562            4.3        0.0         0.1         0.0  130432   0
+  gemdos 0x049 Mfree              54             4.3        0.0         0.1         3.4  0        0
+  gemdos 0x03f Fread              560            4.3        0.0         0.0         0.0  0        0
+  aes    0x04e graf_mouse         54             2.6        0.0         0.1         0.0  12644    0
+  vdi    0x011 vsl_color          1200           2.3        0.0         0.0         0.0  0        0
+  gemdos 0x044 Mxalloc            54             2.1        0.0         0.1         1.7  0        0
+  aes    0x069 wind_set           25             1.9        0.0         1.9         0.0  164227   0
+  aes    0x068 wind_get           752            1.8        0.2         0.0         0.0  0        0
+  aes    0x06a wind_find          626            1.0        0.1         0.0         0.0  0        0
+  gemdos 0x04e Fsfirst            36             0.6        0.0         0.0         0.0  0        0
+  gemdos 0x03d Fopen              23             0.5        0.0         0.0         0.0  0        0
+  gemdos 0x042 Fseek              67             0.2        0.0         0.0         0.0  0        0
+  gemdos 0x154 Ssystem            200            0.2        0.0         0.0         0.0  0        0
+  vdi    0x081 vs_clip            52             0.2        0.0         0.0         0.0  0        0
+  vdi    0x009 v_fillarea         24             0.2        0.0         0.0         0.0  544      0
+  aes    0x06c wind_calc          74             0.2        0.0         0.0         0.0  0        0
+  vdi    0x019 vsf_color          72             0.1        0.0         0.0         0.0  0        0
+  aes    0x06b wind_update        48             0.1        0.0         0.0         0.0  0        0
+  gemdos 0x03e Fclose             23             0.1        0.0         0.0         0.0  0        0
+  gemdos 0x01a Fsetdta            122            0.1        0.0         0.0         0.0  0        0
+  gemdos 0x04f Fsnext             25             0.0        0.0         0.0         0.0  0        0
+  gemdos 0x02f Fgetdta            61             0.0        0.0         0.0         0.0  0        0
+  gemdos 0x03b Dsetpath           1              0.0        0.0         0.0         0.0  0        0
+  aes    0x02a objc_draw          2              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x019 Dgetdrv            36             0.0        0.0         0.0         0.0  0        0
+  gemdos 0x14b                    35             0.0        0.0         0.0         0.0  0        0
+  aes    0x020 menu_ienable       3              0.0        0.0         0.0         0.0  0        0
+  aes    0x02b objc_find          1              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x11a Psigreturn         2              0.0        0.0         0.0         0.0  0        0
+  aes    0x070 rsrc_gaddr         3              0.0        0.0         0.0         0.0  0        0
+  aes    0x02c objc_offset        2              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x00e Dsetdrv            1              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x047 Dgetpath           1              0.0        0.0         0.0         0.0  0        0
+  aes    0x04f graf_mkstate       1              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x128 Dopendir           1              0.0        0.0         0.0         0.0  0        0
+  gemdos 0x104 Fcntl              1              0.0        0.0         0.0         0.0  0        0
+events (1, lost 0):
+ t=191640 CLICK press->evnt_multi return 279 ms clicks=2 fired=0x2
+==== end segment 14 ====
+
+[m3] MARK B12_SAMPLES_AGAIN step 119 at +42000 mouse (470,110) mb=0
+[m3] step 120 at +42100 -> mouse (597,237) mb=0
+[m3] step 121 at +42101 -> mouse (724,364) mb=0
+[m3] step 122 at +42102 -> mouse (851,491) mb=0
+[m3] step 123 at +42103 -> mouse (978,618) mb=0
+[m3] step 124 at +42104 -> mouse (1105,745) mb=0
+[m3] step 125 at +42105 -> mouse (1232,872) mb=0
+[m3] step 126 at +42106 -> mouse (1359,999) mb=0
+[m3] step 127 at +42107 -> mouse (1486,1079) mb=0
+[m3] step 128 at +42108 -> mouse (1613,1079) mb=0
+[m3] step 129 at +42109 -> mouse (1740,1079) mb=0
+[m3] step 130 at +42110 -> mouse (1867,1079) mb=0
+[m3] step 131 at +42111 -> mouse (1919,1079) mb=0
+[m3] step 132 at +42112 -> mouse (1919,1079) mb=0
+[m3] step 133 at +42113 -> mouse (1919,1079) mb=0
+[m3] step 134 at +42114 -> mouse (1919,1079) mb=0
+[m3] step 135 at +42115 -> mouse (1919,1079) mb=0
+==== ZVPROF segment 15 : t=195021..226666 ms since boot, span 31645 ms, closed by 30 s limit ====
+previous report write 6 ms (excluded from all numbers)
+time: EL0 8 ms (runs 4746, longest 0 ms) | EL1 trap work 226 ms [gemdos 0 vdi 0 aes 226 bios 0 xbios 0 other 0] | EL1 waiting in traps 31424 ms | rest (outside traps) 0 ms
+irq since boot n=44868 t=183 ms | memprot sync (with work) n=13 t=0 ms max=26 us, of which refresh n=0 t=0 ms over 0 pages | lost trap exits 0
+input pump n=35890220 | gaps without pump (pointer frozen) >100ms 0 >250ms 0 >500ms 0 >1s 0 >2s 0 | longest 45 ms | sum of gaps>100ms 0 ms
+clicks (press -> evnt_multi MU_BUTTON or MU_MESAG) n=0 avg 0 ms max 0 ms | <100 0 <200 0 <300 0 <500 0 <1000 0 >=1000 0
+evnt_multi returns: timer-only 1582 button 0 message 0 key 0 mouse-rect 0 other 0
+pexec n=0 total 0 ms
+backend primitives (time includes nested clean):
+  fill_rect              n=1552      px/bytes=692         0.2 ms
+  flush_rect             n=16        px/bytes=0           0.0 ms
+  dcache clean (bytes)   n=708       px/bytes=11232       0.1 ms
+  put_device_pixel       n=4096      px/bytes=4096        0.0 ms
+  get_device_pixel       n=4096      px/bytes=4096        0.0 ms
+ops of this segment, sorted by EL1 work:
+  class  op    name               n        work_ms   wait_ms   maxwork_ms  memprot_ms  pixels   sleeps
+  aes    0x019 evnt_multi         1582         220.2    31423.3        45.3         0.0  4788     11965892
+  aes    0x068 wind_get           1582           3.6        0.4         0.0         0.0  0        0
+  aes    0x06a wind_find          1582           2.7        0.4         0.0         0.0  0        0
+events (1, lost 0):
+ t=226321 LONG aes 0x19 evnt_multi work=45 ms wait=0 ms px=0 memprot=0 ms sleeps=35
+==== end segment 15 ====
+
+[m3] MARK END step 136 at +42400 mouse (1919,1079) mb=0

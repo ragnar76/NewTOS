@@ -31,6 +31,13 @@ pub const MEMPROT_OFF: &[u8] = b"memprot=off";
 /// child no longer keeps access to its parent's private memory.
 pub const MEMPROT_STRICT: &[u8] = b"memprot=strict";
 
+/// The token that switches the memory-protection verification mode on
+/// (MEMPROT-FAST): after every table sync the incrementally maintained
+/// tables are compared with a complete recomputation, differences go to the
+/// serial line. Combines with `memprot=strict` (a second token); without
+/// effect under `memprot=off`. Slow — a debugging and test aid.
+pub const MEMPROT_VERIFY: &[u8] = b"memprot=verify";
+
 /// The token that switches per-process ASIDs on (ARCH03 stage 4,
 /// `docs/analysis/arch03-implementation-plan.md` Stufe 4, E12): every root
 /// is installed with an ASID of its own and an address-space switch drops no
@@ -131,6 +138,8 @@ mod tests {
         assert!(!has_token(b"serial=on memprot=offx", MEMPROT_OFF));
         assert!(has_token(b"memprot=strict\n", MEMPROT_STRICT));
         assert!(!has_token(b"memprot=off", MEMPROT_STRICT));
+        assert!(has_token(b"serial=on memprot=strict memprot=verify", MEMPROT_VERIFY));
+        assert!(!has_token(b"memprot=verifyx", MEMPROT_VERIFY));
     }
 
     #[test]

@@ -196,6 +196,11 @@ unsafe fn terminate_inner(reserve: bool) -> Result<PtermResume, PtermError> {
     // SAFETY: BDOS lock held; `bp` is the dying process's live basepage.
     unsafe { crate::bdos::fs::file::close_process_files(bp) };
 
+    // The sweep and the release of unstarted children are one change of
+    // rights, entered when this guard drops (MEMPROT-FAST): nothing in
+    // between runs at EL0 or touches user memory through the user tables.
+    // SAFETY: caller holds the BDOS giant lock.
+    let batch = unsafe { super::memprot::batch() };
     // Sweep both BDOS pools for blocks owned by this process: free
     // them (`Pterm`) or reserve them as resident (`Ptermres`).
     // SAFETY: caller holds the BDOS giant lock; `bp` is a valid
@@ -212,6 +217,7 @@ unsafe fn terminate_inner(reserve: bool) -> Result<PtermResume, PtermError> {
     // their slots go with it — on `Ptermres` too: their memory stays
     // resident with the rest, but no process is left that could start them.
     super::pexec::release_unstarted_of(bp);
+    drop(batch);
 
     // EmuTOS `xterm` (bdos/proc.c:609): `run = run->p_parent`. On
     // child termination the **parent** becomes the running process

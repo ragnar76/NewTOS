@@ -433,6 +433,10 @@ pub unsafe fn mxalloc_aligned(amount: Long, mode: i16, align: Long) -> Long {
     let Some(want) = amount.checked_add(align) else {
         return 0;
     };
+    // The allocation and the slack given back are one change of rights
+    // (MEMPROT-FAST): entered once, when this guard drops.
+    // SAFETY: caller holds the BDOS lock; nothing here runs at EL0.
+    let _batch = unsafe { crate::bdos::process::memprot::batch() };
     // SAFETY: caller holds the BDOS lock.
     let raw = unsafe { mxalloc(want, mode) };
     if raw == 0 {
@@ -475,11 +479,13 @@ pub unsafe fn mxalloc_aligned(amount: Long, mode: i16, align: Long) -> Long {
     }
     // ARCH03 3b: the record follows the block to its aligned start; the
     // slack given back on either side is invalid for everybody again.
-    // SAFETY: caller holds the BDOS lock.
+    // SAFETY: caller holds the BDOS lock; `p` is the block, now at `base`.
     unsafe {
-        crate::bdos::process::memprot::rekey(raw as u32 as u64, base as u32 as u64);
-        crate::bdos::process::memprot::touch(raw as u32 as u64, (raw as u32 as u64) + raw_len as u32 as u64);
-        crate::bdos::process::memprot::sync();
+        let (r, b) = (raw as u32 as u64, base as u32 as u64);
+        let end = b + (*p).m_length as u32 as u64;
+        crate::bdos::process::memprot::rekey(r, b);
+        crate::bdos::process::memprot::on_released(b, r, b);
+        crate::bdos::process::memprot::on_released(b, end, r + raw_len as u32 as u64);
     }
     base
 }
@@ -533,6 +539,10 @@ pub unsafe fn mxalloc_largest(mode: i16, align: Long) -> Option<(Long, Long)> {
     if align <= 0 || align & (align - 1) != 0 {
         return None;
     }
+    // The allocation and its front slack are one change of rights
+    // (MEMPROT-FAST): entered once, when this guard drops.
+    // SAFETY: caller holds the BDOS lock; nothing here runs at EL0.
+    let _batch = unsafe { crate::bdos::process::memprot::batch() };
     let mpb = match mode {
         MX_STRAM => init::pmd(),
         MX_TTRAM => init::pmdalt(),
@@ -582,8 +592,7 @@ pub unsafe fn mxalloc_largest(mode: i16, align: Long) -> Option<(Long, Long)> {
         // SAFETY: caller holds the BDOS lock.
         unsafe {
             crate::bdos::process::memprot::rekey(raw as u32 as u64, base as u32 as u64);
-            crate::bdos::process::memprot::touch(raw as u32 as u64, base as u32 as u64);
-            crate::bdos::process::memprot::sync();
+            crate::bdos::process::memprot::on_released(base as u32 as u64, raw as u32 as u64, base as u32 as u64);
         }
     }
     // SAFETY: list invariant; `p` now starts at `base`.
@@ -700,8 +709,9 @@ pub unsafe fn set_owner(addr: Long, owner: *mut c_void) -> bool {
         if unsafe { (*p).m_start } == addr {
             // SAFETY: `p` is a live MD on `mp_mal`.
             unsafe {
+                let old = (*p).m_own;
                 (*p).m_own = owner;
-                crate::bdos::process::memprot::on_owner_change(addr as u32 as u64);
+                crate::bdos::process::memprot::on_owner_change_by(addr as u32 as u64, &[old, owner]);
             }
             return true;
         }
@@ -854,11 +864,12 @@ pub unsafe fn mshrink(_n: i16, blk: Long, len: Long) -> Long {
     let rc = unsafe { pool::shrinkit(p, mpb, len, &mut supply) };
     // The tail went back to the pool: invalid for everybody (ARCH03 3b, I8 —
     // FreeMiNT `shrink_region` marks it `PROT_I`, `sys/memory.c:1076,1097`).
-    // SAFETY: caller holds BDOS lock.
+    // Only the tail (MEMPROT-FAST): the part the block keeps is unchanged.
+    // SAFETY: caller holds BDOS lock; `p` is still the block at `blk`.
     unsafe {
         let b = blk as u32 as u64;
-        crate::bdos::process::memprot::touch(b, b + m_len as u32 as u64);
-        crate::bdos::process::memprot::sync();
+        let kept = (*p).m_length as u32 as u64;
+        crate::bdos::process::memprot::on_released(b, b + kept, b + m_len as u32 as u64);
     }
     if rc < 0 {
         ERROR

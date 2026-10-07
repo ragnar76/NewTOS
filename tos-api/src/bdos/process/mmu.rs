@@ -1497,7 +1497,7 @@ pub unsafe fn install_ttbr0(l0_pa: u64) {
     // Every root goes live with its rights up to date (ARCH03 3b): pending
     // protection changes are entered before the switch.
     // SAFETY: EL1 under the BDOS lock (the caller's single-CPU context).
-    unsafe { super::memprot::sync() };
+    unsafe { super::memprot::sync_now() };
     if asids_enabled() {
         // Stage 4: the root's own ASID, no invalidation (see `install_tagged`).
         // SAFETY: caller contract.

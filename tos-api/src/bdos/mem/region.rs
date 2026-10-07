@@ -259,19 +259,20 @@ pub unsafe fn attach(addr: Long, who: *mut c_void) -> Result<(), RegionError> {
     // The new owner's rights (ARCH03 3b, FreeMiNT `attach_region` →
     // `mark_proc_region(PROT_P)`, `sys/memory.c:539`).
     // SAFETY: lock held.
-    unsafe { prot_changed(addr) };
+    unsafe { prot_changed(addr, &[who]) };
     Ok(())
 }
 
-/// The owners of the block at `addr` changed: its rights follow
-/// ([`crate::bdos::process::memprot`]).
+/// The owners of the block at `addr` changed — `who` are the owner cookies
+/// that came or went: its rights follow for the slots that reach the block
+/// through them ([`crate::bdos::process::memprot::on_owner_change_by`]).
 ///
 /// # Safety
 ///
 /// BDOS giant lock held.
-unsafe fn prot_changed(addr: Long) {
+unsafe fn prot_changed(addr: Long, who: &[*mut c_void]) {
     // SAFETY: lock held.
-    unsafe { crate::bdos::process::memprot::on_owner_change(addr as u32 as u64) };
+    unsafe { crate::bdos::process::memprot::on_owner_change_by(addr as u32 as u64, who) };
 }
 
 /// Drop `who` from the block at `addr` — FreeMiNT `detach_region`: if it was
@@ -299,7 +300,7 @@ pub unsafe fn detach(addr: Long, who: *mut c_void) -> Result<Detached, RegionErr
                 *e = EMPTY;
             }
             // SAFETY: lock held.
-            unsafe { prot_changed(addr) };
+            unsafe { prot_changed(addr, &[who]) };
             return Ok(Detached::Kept);
         }
     }
@@ -317,7 +318,7 @@ pub unsafe fn detach(addr: Long, who: *mut c_void) -> Result<Detached, RegionErr
                 *e = EMPTY;
             }
             // SAFETY: lock held.
-            unsafe { prot_changed(addr) };
+            unsafe { prot_changed(addr, &[who]) };
             return Ok(Detached::Kept);
         }
     }
@@ -389,7 +390,7 @@ pub unsafe fn detach_all(who: *mut c_void) -> usize {
         }
         if changed {
             // SAFETY: lock held.
-            unsafe { prot_changed(loc) };
+            unsafe { prot_changed(loc, &[who]) };
         }
     }
     // Then every block it holds the tag of.
@@ -412,7 +413,7 @@ pub unsafe fn detach_all(who: *mut c_void) -> usize {
                     // SAFETY: `m` is on `mp_mal`; lock held.
                     unsafe {
                         (*m).m_own = traps::kernel_owner();
-                        prot_changed(start);
+                        prot_changed(start, &[who, traps::kernel_owner()]);
                     }
                 } else {
                     // SAFETY: lock held; `start` starts a block `who` owns.
@@ -454,7 +455,7 @@ pub unsafe fn keep_resident(who: *mut c_void) -> usize {
         }
         if changed {
             // SAFETY: lock held.
-            unsafe { prot_changed(loc) };
+            unsafe { prot_changed(loc, &[who, tsr]) };
         }
     }
     let mut kept = 0;
@@ -482,7 +483,7 @@ pub unsafe fn keep_resident(who: *mut c_void) -> usize {
                         // `sys/k_exit.c:320-336`, ARCH03 3b).
                         crate::bdos::process::memprot::on_resident((*m).m_start as u32 as u64);
                     } else {
-                        prot_changed((*m).m_start);
+                        prot_changed((*m).m_start, &[who, tsr]);
                     }
                 }
                 m = (*m).m_link;

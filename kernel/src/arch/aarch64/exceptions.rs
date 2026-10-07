@@ -212,8 +212,15 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
     // ARCH03 3b: whatever the call changed in memory ownership is in the
     // page tables before the caller (or whoever runs next) continues. A
     // no-op with protection off or nothing pending.
+    // `sync_now`: even if a batch were still open (MEMPROT-FAST), nothing
+    // runs at EL0 before the tables are in line.
     // SAFETY: trap context, single CPU, BDOS giant lock implicit.
-    unsafe { tos_api::bdos::process::memprot::sync() };
+    unsafe { tos_api::bdos::process::memprot::sync_now() };
+    // MEMPROT-FAST verification mode (`memprot=verify`): differences found by
+    // the full recomputation, and the counters after a process ended.
+    while let Some(r) = tos_api::bdos::process::memprot::take_verify_report() {
+        report_memprot_verify(r);
+    }
     // ARCH03 3c: a process whose rights could not get a private page table
     // (the arena is exhausted) keeps the non-owner rights there — it can lose
     // access, never gain any. Not silent: one serial line per process.
@@ -225,6 +232,34 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
             r.of_process,
             r.total,
         );
+    }
+}
+
+/// One serial line of the memory-protection verification mode
+/// (MEMPROT-FAST, boot argument `memprot=verify`).
+fn report_memprot_verify(r: tos_api::bdos::process::memprot::VerifyReport) {
+    use tos_api::bdos::process::memprot::VerifyReport;
+    match r {
+        VerifyReport::Mismatch(m) => crate::kprintln!(
+            "[memprot] VERIFY MISMATCH {:?} slot {} va 0x{:08x} expected 0x{:016x} table 0x{:016x}",
+            m.kind,
+            m.slot.map_or(-1, |s| s as i64),
+            m.va,
+            m.expected,
+            m.actual,
+        ),
+        VerifyReport::Stats(s) => crate::kprintln!(
+            "[memprot] verify: {} checks, {} pages compared, {} mismatches, {} tolerated shortfalls; syncs {} regions {} pages {} rebuilds {} fallbacks {}",
+            s.verified,
+            s.verified_pages,
+            s.mismatches,
+            s.tolerated,
+            s.syncs,
+            s.regions,
+            s.pages,
+            s.rebuilds,
+            s.fallbacks,
+        ),
     }
 }
 

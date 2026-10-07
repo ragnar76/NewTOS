@@ -1,0 +1,61 @@
+MEMPROT-FAST -- Kernel mit schnellerem Speicherschutz (2026-10-07)
+==================================================================
+
+Was ist das?
+  kernel8.img in diesem Ordner ist der normale NewTOS-Kernel (Zweig
+  desk-rebuild, Stand 438e102 plus die Aenderung MEMPROT-FAST, release,
+  board-rpi4). Ohne Messwerkzeug, ohne Pruefmodus.
+  sha256 kernel8.img:
+  13a5e906e516cf22c06d67783a3cb864dcfa8917d79f3bb191e2a33a1d42997b
+
+  Die Aenderung: Der Speicherschutz schrieb bei jedem Programmstart
+  (Pexec), Mshrink und Speicherwechsel die Seitentabellen der GANZEN
+  TPA neu (~900 MB). Jetzt nur noch dort und fuer die Prozesse, wo sich
+  die Rechte wirklich aendern, und bei einem Programmstart nur einmal am
+  Ende. In QEMU: Speicherschutz-Anteil beim zView-Start 1,33 s -> 0,55 s,
+  Maus beim zView-Start 1,52 s -> 0,79 s eingefroren. Was das auf der
+  Pi in Sekunden heisst, soll dieser Lauf zeigen.
+
+Einspielen
+  1. Auf der Karte (Boot-Partition) den vorhandenen kernel8.img in
+     kernel8.org umbenennen.
+  2. Diesen kernel8.img dorthin kopieren.
+  3. Karte in die Pi, einschalten.
+
+Ablauf (mit Stoppuhr)
+  A  zView-Start, neuer Kernel:
+     Desktop ist da. zView per Doppelklick starten. Stoppuhr:
+     Doppelklick bis die Menueleiste von zView da ist UND die Maus sich
+     wieder fluessig bewegt. zView beenden. Dreimal wiederholen, alle drei
+     Zeiten notieren.
+  B  Zum Vergleich derselbe Ablauf mit dem alten Kernel (kernel8.org
+     zurueck nach kernel8.img, neu starten), dreimal. Danach wieder den
+     neuen Kernel einspielen.
+  C  Mit dem neuen Kernel wie gewohnt arbeiten: EmuDESK (Ordner oeffnen,
+     Datei-Info), TeraDesk, QED (Text oeffnen/speichern), zView (Ordner
+     mit Bildern, ein Bild oeffnen und schliessen), Doom kurz, ein
+     Accessory oeffnen. Erwartet: alles wie mit dem alten Kernel, kein
+     Absturzbericht, keine Meldung "Memory violation".
+  D  Optional, fuer ein serielles Kabel: in cmdline.txt zusaetzlich
+     "memprot=verify" eintragen. Dann vergleicht der Kernel nach jeder
+     Tabellenaenderung alles mit einer Vollberechnung und meldet auf der
+     seriellen Leitung "[memprot] verify: ... 0 mismatches" bzw.
+     "[memprot] VERIFY MISMATCH ...". Das ist LANGSAM (nur zum Pruefen),
+     danach den Eintrag wieder entfernen. Ohne Kabel bringt D nichts.
+
+Zurueckgeben
+  - Die Zeiten aus A und B (je drei).
+  - Beobachtungen aus C: lief alles? Wenn nicht: welches Programm, welcher
+    Schritt, was stand auf dem Bildschirm (Foto genuegt).
+  - Falls D gemacht: das serielle Protokoll.
+
+Zurueck auf den alten Kernel
+  kernel8.img loeschen, kernel8.org wieder in kernel8.img umbenennen.
+
+Hinweise
+  - Der Speicherschutz selbst bleibt unveraendert streng (gleiche Rechte
+    wie vorher, in QEMU nach jeder Aenderung gegen eine Vollberechnung
+    geprueft, siehe RUNINFO.TXT dieses Laufs).
+  - Unveraendert bleibt: jeder Klick in zView wird erst nach dem
+    Doppelklick-Fenster gemeldet (~0,2 s, EmuTOS-treu, siehe
+    docs/analysis/zview-sluggish-2026-10-07.md Punkt 2).

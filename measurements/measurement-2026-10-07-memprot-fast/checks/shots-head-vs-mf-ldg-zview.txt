@@ -1,0 +1,8 @@
+head-on-popup- vs mf-on-popup-: same=15 diff=0 missing=0
+head-on-acc2- vs mf-on-acc2-: same=10 diff=0 missing=0
+head-on-zview- vs mf-on-zview-: same=2 diff=0 missing=0
+head-on-ldgauto- vs mf-on-ldgauto-: same=1 diff=0 missing=0
+head-strict-popup- vs mf-strict-popup-: same=15 diff=0 missing=0
+head-strict-acc2- vs mf-strict-acc2-: same=10 diff=0 missing=0
+head-strict-zview- vs mf-strict-zview-: same=2 diff=0 missing=0
+head-strict-ldgauto- vs mf-strict-ldgauto-: same=1 diff=0 missing=0

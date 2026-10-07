@@ -1,0 +1,303 @@
+# MEMPROT-FAST: the series ran from scratch copies of two committed method dirs.
+# (1) measurement-2026-10-06-arch03-4/method -> <S>/ser/method, programs from its bin/ (no kernels).
+#     Changes (diff -u original copy), everything else byte-identical:
+--- /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-arch03-4/method/asid-kernels.sh	2026-10-06 16:28:43
++++ <S>/ser/method/asid-kernels.sh	2026-10-07 20:34:19
+@@ -12,7 +12,7 @@
+ set -euo pipefail
+ L="${1:?label}"; R="${2:?scratch root}"
+ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+-M="$(cd "$HERE/../.." && pwd)"
++M="/Volumes/Daten/Development/PiRusTOS/measurements"
+ BIN="$HERE/../bin"
+ OC="$(rustc --print sysroot)/lib/rustlib/aarch64-apple-darwin/bin/llvm-objcopy"
+ mk() { sh "$HERE/make-scratch.sh" "$R/$1"; }
+--- /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-arch03-4/method/build-all.sh	2026-10-06 16:18:33
++++ <S>/ser/method/build-all.sh	2026-10-07 20:34:19
+@@ -7,7 +7,7 @@
+ # from build-oldexec.sh (the 0d recipe).
+ set -uo pipefail
+ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+-WS="$(cd "$HERE/../../.." && pwd)"
++WS="${WS:-/Volumes/Daten/Development/PiRusTOS}"
+ BIN="$HERE/../bin"
+ cd "$WS"
+ ex() { sh sdk/build.sh "sdk/examples/$1" "$BIN/$2" > /dev/null || { echo "FAIL $2"; exit 1; }; echo "built $2"; }
+--- /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-arch03-4/method/build-asid.sh	2026-10-06 16:23:31
++++ <S>/ser/method/build-asid.sh	2026-10-07 20:34:19
+@@ -6,7 +6,7 @@
+ # more iterations -- for the product kernel and the switch-cost kernel).
+ set -euo pipefail
+ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+-WS="$(cd "$HERE/../../.." && pwd)"
++WS="${WS:-/Volumes/Daten/Development/PiRusTOS}"
+ OUT="${1:?outdir}"
+ W="$(mktemp -d "$OUT/w.XXXX")"
+ cp "$HERE/tests/asidcommon.h" "$W/"
+--- /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-arch03-4/method/build-e10.sh	2026-10-06 16:18:33
++++ <S>/ser/method/build-e10.sh	2026-10-07 20:34:19
+@@ -5,7 +5,7 @@
+ # E10USRS.NAP (memprot=strict), E10USRO.NAP (memprot=off).
+ set -euo pipefail
+ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+-WS="$(cd "$HERE/../../.." && pwd)"
++WS="${WS:-/Volumes/Daten/Development/PiRusTOS}"
+ OUT="${1:?outdir}"
+ W="$(mktemp -d "$OUT/w.XXXX")"
+ sh "$WS/sdk/build.sh" "$WS/sdk/examples/e10kid.c" "$OUT/E10KID.NAP" > "$W/kid.log" 2>&1 || { cat "$W/kid.log"; exit 1; }
+--- /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-arch03-4/method/build-mprot.sh	2026-10-06 16:18:33
++++ <S>/ser/method/build-mprot.sh	2026-10-07 20:34:19
+@@ -5,7 +5,7 @@
+ # default), MPROTS.NAP (memprot=strict), MPROTO.NAP (memprot=off).
+ set -euo pipefail
+ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+-WS="$(cd "$HERE/../../.." && pwd)"
++WS="${WS:-/Volumes/Daten/Development/PiRusTOS}"
+ OUT="${1:?outdir}"
+ W="$(mktemp -d "$OUT/w.XXXX")"
+ sh "$WS/sdk/build.sh" "$WS/sdk/examples/mpkid.c" "$OUT/MPKID.NAP" > "$W/mpkid.log" 2>&1 || { cat "$W/mpkid.log"; exit 1; }
+--- /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-arch03-4/method/build-oldexec.sh	2026-10-06 16:18:33
++++ <S>/ser/method/build-oldexec.sh	2026-10-07 20:34:19
+@@ -5,7 +5,7 @@
+ # pre-0d flags (-fno-pic, -no-pie). The 0d loader must refuse it with EPLFMT.
+ set -euo pipefail
+ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+-WS="$(cd "$HERE/../../.." && pwd)"
++WS="${WS:-/Volumes/Daten/Development/PiRusTOS}"
+ OUT="${1:?}"
+ W="$(mktemp -d "${TMPDIR:-/tmp}/oldexec.XXXXXX")"
+ CF=(-target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 -fno-stack-protector -fno-pic -fno-builtin -I"$WS/sdk/include")
+--- /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-arch03-4/method/build-probes.sh	2026-10-06 16:18:33
++++ <S>/ser/method/build-probes.sh	2026-10-07 20:34:19
+@@ -5,7 +5,7 @@
+ # list (UACC3A_CASES) to the sites converted so far; default: all.
+ set -euo pipefail
+ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+-WS="$(cd "$HERE/../../.." && pwd)"
++WS="${WS:-/Volumes/Daten/Development/PiRusTOS}"
+ OUT="${1:?outdir}"; CASES="${2:-}"
+ W="$(mktemp -d "$OUT/w.XXXX")"
+ sh "$WS/sdk/build.sh" "$WS/sdk/examples/uakid.c" "$OUT/UAKID.NAP" > "$W/uakid.log" 2>&1 || { cat "$W/uakid.log"; exit 1; }
+--- /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-arch03-4/method/build-s2-tests.sh	2026-10-06 16:18:33
++++ <S>/ser/method/build-s2-tests.sh	2026-10-07 20:34:19
+@@ -7,7 +7,7 @@
+ # The PRGFLAGS value goes into crt0's note (-DNEWTOS_PRGFLAGS, ARCH03 E8b).
+ set -uo pipefail
+ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+-WS="$(cd "$HERE/../../.." && pwd)"
++WS="${WS:-/Volumes/Daten/Development/PiRusTOS}"
+ SDK="$WS/sdk"
+ OUT="${1:?usage: build-s2-tests.sh <outdir>}"
+ GEM="$SDK/gemlib"; LIBC="$SDK/libc"; GEMTOP="$GEM/gemlib-0.44.0"
+--- /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-arch03-4/method/checks.sh	2026-10-06 16:18:33
++++ <S>/ser/method/checks.sh	2026-10-07 20:34:19
+@@ -6,7 +6,7 @@
+ set -uo pipefail
+ L="${1:?label}"
+ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+-WS="$(cd "$HERE/../../.." && pwd)"
++WS="${WS:-/Volumes/Daten/Development/PiRusTOS}"
+ OUT="$HERE/../checks"; mkdir -p "$OUT"
+ cd "$WS"
+ cargo test -p tos-api -p tos-types -p xtask --no-fail-fast > "$OUT/$L-host-tests.txt" 2>&1
+--- /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-arch03-4/method/make-scratch.sh	2026-10-06 16:18:33
++++ <S>/ser/method/make-scratch.sh	2026-10-07 20:34:19
+@@ -7,7 +7,7 @@
+ set -euo pipefail
+ D="${1:?}"
+ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+-WS="$(cd "$HERE/../../.." && pwd)"
++WS="${WS:-/Volumes/Daten/Development/PiRusTOS}"
+ mkdir -p "$D"
+ rsync -a --delete --exclude target --exclude .git --exclude measurements --exclude references \
+   --exclude Applications --exclude graphify-out --exclude hardware --exclude 'sd-card-backup-*' \
+--- /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-arch03-4/method/mode.sh	2026-10-06 16:31:47
++++ <S>/ser/method/mode.sh	2026-10-07 20:34:38
+@@ -11,9 +11,9 @@
+   *) echo "mode? $M"; exit 2;;
+ esac
+ case "$BASE" in
+-  on) P="";;
+-  off) P="memprot=off";;
+-  strict) P="memprot=strict";;
++  on) P="memprot=verify";;
++  off) P="memprot=off memprot=verify";;
++  strict) P="memprot=strict memprot=verify";;
+   *) echo "mode? $M"; exit 2;;
+ esac
+ AV="$(echo "$P $X" | xargs)"
+--- /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-arch03-4/method/rerun-uacc.sh	2026-10-06 16:18:33
++++ <S>/ser/method/rerun-uacc.sh	2026-10-07 20:34:19
+@@ -7,7 +7,7 @@
+ set -euo pipefail
+ L="${1:?label}"; K="${2:?kernel label}"; R="${3:?scratch root}"
+ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+-M="$(cd "$HERE/../.." && pwd)"
++M="/Volumes/Daten/Development/PiRusTOS/measurements"
+ BIN="$HERE/../bin"
+ OC="$(rustc --print sysroot)/lib/rustlib/aarch64-apple-darwin/bin/llvm-objcopy"
+ bash "$HERE/build-probes.sh" "$BIN" > "$HERE/../checks/$L-probes.txt" 2>&1
+--- /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-arch03-4/method/run-marks.sh	2026-10-06 16:18:33
++++ <S>/ser/method/run-marks.sh	2026-10-07 20:34:38
+@@ -5,7 +5,8 @@
+ KERNEL8="$1"; IMG="$2"; OUTDIR="$3"; TAG="$4"; TMO="$5"; shift 5
+ mkdir -p "$OUTDIR"
+ LOG="$OUTDIR/$TAG-serial.log"
+-SOCK="/private/tmp/claude-501/d3a-$TAG-$$.sock"
++SDIR="$(mktemp -d "${SOCKROOT:?socket dir}/m.XXXXXX")"   # MEMPROT-FAST: scratch, relative socket name
++cd "$SDIR"; SOCK=qmp.sock
+ rm -f "$LOG" "$SOCK"
+ qemu-system-aarch64 -M raspi4b -no-reboot -display none -append "${APPEND:-serial=on}" \
+   -serial file:"$LOG" -kernel "$KERNEL8" \
+@@ -16,6 +17,6 @@
+ RC=$?
+ for _ in $(seq 1 20); do kill -0 "$QPID" 2>/dev/null || break; sleep 0.5; done
+ kill -9 "$QPID" 2>/dev/null; wait "$QPID" 2>/dev/null
+-rm -f "$SOCK"
++cd /; rm -f "$SDIR/qmp.sock"; rmdir "$SDIR" 2>/dev/null
+ echo "run $TAG: rc=$RC log=$LOG"
+ exit $RC
+--- /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-arch03-4/method/run-rpi4-drive.sh	2026-10-06 16:18:33
++++ <S>/ser/method/run-rpi4-drive.sh	2026-10-07 20:34:38
+@@ -7,17 +7,18 @@
+ K="$1"; SD="$2"; TAG="$3"; shift 3
+ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ OUT="$HERE/../screendumps"
+-SDIR="$(mktemp -d /private/tmp/claude-501/a31.XXXXXX)"   # unix socket path < 104 B
++SDIR="$(mktemp -d "${SOCKROOT:?socket dir}/s.XXXXXX")"   # MEMPROT-FAST: scratch, relative socket names (path < 104 B)
++cd "$SDIR"
+ CARD="$(dirname "$SD")/run-$TAG.img"
+-cp "$SD" "$CARD"
++cp -c "$SD" "$CARD"
+ qemu-system-aarch64 -M raspi4b -no-reboot -display none -append "${APPEND:-serial=on}" \
+   -kernel "$K" -drive file="$CARD",if=sd,format=raw \
+-  -serial unix:"$SDIR/ser.sock",server=on,wait=on \
+-  -qmp unix:"$SDIR/qmp.sock",server=on,wait=off &
++  -serial unix:ser.sock,server=on,wait=on \
++  -qmp unix:qmp.sock,server=on,wait=off &
+ QPID=$!
+-python3 "$HERE/drive.py" "$SDIR/ser.sock" "$SDIR/qmp.sock" "$OUT" "$TAG" "$@"
++python3 "$HERE/drive.py" ser.sock qmp.sock "$OUT" "$TAG" "$@"
+ RC=$?
+ for _ in $(seq 1 20); do kill -0 "$QPID" 2>/dev/null || break; sleep 0.5; done
+ kill -9 "$QPID" 2>/dev/null; wait "$QPID" 2>/dev/null
+-rm -f "$SDIR/ser.sock" "$SDIR/qmp.sock"; rmdir "$SDIR" 2>/dev/null
++cd /; rm -f "$SDIR/ser.sock" "$SDIR/qmp.sock"; rmdir "$SDIR" 2>/dev/null
+ echo "run $TAG: rc=$RC"
+--- /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-arch03-4/method/run-rpi4.sh	2026-10-06 16:18:33
++++ <S>/ser/method/run-rpi4.sh	2026-10-07 20:34:38
+@@ -9,18 +9,19 @@
+ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ OUT="$HERE/../screendumps"; SER="$HERE/../serial"; mkdir -p "$OUT" "$SER"
+ LOG="$SER/$TAG-serial.log"
+-SDIR="$(mktemp -d /private/tmp/claude-501/a31.XXXXXX)"   # unix socket path < 104 B
++SDIR="$(mktemp -d "${SOCKROOT:?socket dir}/s.XXXXXX")"   # MEMPROT-FAST: scratch, relative socket names (path < 104 B)
++cd "$SDIR"
+ CARD="$(dirname "$SD")/run-$TAG.img"
+-cp "$SD" "$CARD"
++cp -c "$SD" "$CARD"
+ rm -f "$LOG"
+ qemu-system-aarch64 -M raspi4b -no-reboot -display none -append "${APPEND:-serial=on}" \
+   -kernel "$K" -drive file="$CARD",if=sd,format=raw \
+-  -serial file:"$LOG" -qmp unix:"$SDIR/qmp.sock",server=on,wait=off &
++  -serial file:"$LOG" -qmp unix:qmp.sock,server=on,wait=off &
+ QPID=$!
+ specs=(); for s in "$@"; do specs+=("${s%%:*}:$TAG-${s#*:}"); done
+-python3 "$HERE/qmp_timed.py" "$SDIR/qmp.sock" "$OUT" "${specs[@]}"
++python3 "$HERE/qmp_timed.py" qmp.sock "$OUT" "${specs[@]}"
+ RC=$?
+ for _ in $(seq 1 20); do kill -0 "$QPID" 2>/dev/null || break; sleep 0.5; done
+ kill -9 "$QPID" 2>/dev/null; wait "$QPID" 2>/dev/null
+-rm -f "$SDIR/qmp.sock"; rmdir "$SDIR" 2>/dev/null; rm -f "$CARD"
++cd /; rm -f "$SDIR/qmp.sock"; rmdir "$SDIR" 2>/dev/null; rm -f "$CARD"
+ echo "run $TAG: rc=$RC"
+--- /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-arch03-4/method/run-virt.sh	2026-10-06 16:18:33
++++ <S>/ser/method/run-virt.sh	2026-10-07 20:34:38
+@@ -7,16 +7,17 @@
+ K="$1"; TAG="$2"; shift 2
+ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ OUT="$HERE/../screendumps"
+-SDIR="$(mktemp -d /private/tmp/claude-501/a31.XXXXXX)"   # unix socket path < 104 B
++SDIR="$(mktemp -d "${SOCKROOT:?socket dir}/s.XXXXXX")"   # MEMPROT-FAST: scratch, relative socket names (path < 104 B)
++cd "$SDIR"
+ qemu-system-aarch64 -M virt,gic-version=2 -cpu cortex-a72 -m 272M \
+   -device ramfb -device qemu-xhci -device usb-kbd -device usb-mouse \
+   -display none -no-reboot -kernel "$K" ${APPEND:+-append "$APPEND"} \
+-  -serial unix:"$SDIR/ser.sock",server=on,wait=on \
+-  -qmp unix:"$SDIR/qmp.sock",server=on,wait=off &
++  -serial unix:ser.sock,server=on,wait=on \
++  -qmp unix:qmp.sock,server=on,wait=off &
+ QPID=$!
+-python3 "$HERE/drive.py" "$SDIR/ser.sock" "$SDIR/qmp.sock" "$OUT" "$TAG" "$@"
++python3 "$HERE/drive.py" ser.sock qmp.sock "$OUT" "$TAG" "$@"
+ RC=$?
+ for _ in $(seq 1 20); do kill -0 "$QPID" 2>/dev/null || break; sleep 0.5; done
+ kill -9 "$QPID" 2>/dev/null; wait "$QPID" 2>/dev/null
+-rm -f "$SDIR/ser.sock" "$SDIR/qmp.sock"; rmdir "$SDIR" 2>/dev/null
++cd /; rm -f "$SDIR/ser.sock" "$SDIR/qmp.sock"; rmdir "$SDIR" 2>/dev/null
+ echo "run $TAG: rc=$RC"
+--- /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-arch03-4/method/scratch-kernels.sh	2026-10-06 16:18:33
++++ <S>/ser/method/scratch-kernels.sh	2026-10-07 20:34:19
+@@ -13,7 +13,7 @@
+ set -euo pipefail
+ L="${1:?label}"; R="${2:?scratch root}"
+ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+-M="$(cd "$HERE/../.." && pwd)"
++M="/Volumes/Daten/Development/PiRusTOS/measurements"
+ BIN="$HERE/../bin"
+ OC="$(rustc --print sysroot)/lib/rustlib/aarch64-apple-darwin/bin/llvm-objcopy"
+ mk() { sh "$HERE/make-scratch.sh" "$R/$1"; }
+--- /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-arch03-4/method/seed-card.sh	2026-10-06 16:18:33
++++ <S>/ser/method/seed-card.sh	2026-10-07 20:34:19
+@@ -17,7 +17,7 @@
+ set -euo pipefail
+ IMG="${1:?}"; AUTO="${2:?}"
+ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+-WS="$(cd "$HERE/../../.." && pwd)"
++WS="${WS:-/Volumes/Daten/Development/PiRusTOS}"
+ BIN="$HERE/../bin"
+ rm -f "$IMG"
+ dd if=/dev/zero of="$IMG" bs=1m count=64 status=none
+
+# new: series-mf.sh (this method dir)
+
+# (2) measurement-2026-10-06-libshare/method -> <S>/ls/method, programs from its bin/;
+#     run-rpi4-drive-m3.sh drive-m3.py apply-injector-m3.py gen_script.py qmp_timed.py run-rpi4.sh
+#     replaced by the measurement-2026-10-07-zview02/method versions (scratch sockets, cp -c).
+#     Changes vs libshare:
+--- /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-libshare/method/make-kernels.sh	2026-10-06 23:47:56
++++ <S>/ls/method/make-kernels.sh	2026-10-07 20:35:54
+@@ -17,7 +17,7 @@
+ set -euo pipefail
+ S="${1:?scratch root}"
+ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+-WS="$(cd "$HERE/../../.." && pwd)"
++WS="${WS:-/Volumes/Daten/Development/PiRusTOS}"
+ OC="$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin/llvm-objcopy"
+ mkdir -p "$S"
+ git -C "$WS" rev-parse HEAD > "$S/kernel-base.txt"
+@@ -38,10 +38,9 @@
+       --features board-rpi4 --release ) > "$S/kinj-$2.log" 2>&1 || { tail -30 "$S/kinj-$2.log"; exit 1; }
+   "$OC" -O binary "$S/target-inj/aarch64-unknown-none-softfloat/release/kernel" "$S/$2"
+ }
++# MEMPROT-FAST: only the two injector kernels of the series (popup, accept2).
+ build m3b kinj-m3b.img
+-build m3c kinj-m3c.img
+ build evb-acc kinj-evb-acc.img
+-build m3b kinj-ls-instr.img instr
+ cp "$WS/kernel/src/host_env.rs" "$K/kernel/src/host_env.rs"
+ cp "$WS/kernel/src/arch/aarch64/exceptions.rs" "$K/kernel/src/arch/aarch64/exceptions.rs"
+-shasum -a 256 "$S/kernel8-ls.img" "$S/kinj-m3b.img" "$S/kinj-m3c.img" "$S/kinj-evb-acc.img" "$S/kinj-ls-instr.img"
++shasum -a 256 "$S/kernel8-ls.img" "$S/kinj-m3b.img" "$S/kinj-evb-acc.img"
+--- /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-06-libshare/method/seed-card.sh	2026-10-06 23:31:24
++++ <S>/ls/method/seed-card.sh	2026-10-07 20:35:35
+@@ -17,7 +17,7 @@
+ set -euo pipefail
+ IMG="${1:?}"; AUTO="${2:?}"
+ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+-WS="$(cd "$HERE/../../.." && pwd)"
++WS="${WS:-/Volumes/Daten/Development/PiRusTOS}"
+ BIN="${BIN:-$HERE/../bin}"   # port09: BIN=<dir> seeds another program set (the pre-change probes)
+ rm -f "$IMG"
+ dd if=/dev/zero of="$IMG" bs=1m count=64 status=none
+# new: ls-runs-mf.sh (this method dir)

@@ -1,0 +1,378 @@
+RB1
+NewTOS booting on qemu-virt
+Phase 02 reached.
+[mm] DTB at 0x0000000048000000
+[mm] firmware: no VideoCore mailbox on this board — device tree decides
+[mm] device tree: /memory first bank: 0x0000000040000000 + 285212672 bytes (272 MiB)
+[mm] memory map:
+[mm]   DRAM  : 0x0000000040000000..0x0000000051000000 (285212672 bytes) — source: device tree
+[mm]   kernel: 0x0000000040080000..0x00000000402dc000 (2473984 bytes)
+[mm]   ST-RAM: 0x0000000040400000..0x0000000040e00000 (10485760 bytes)
+[mm]   TT-RAM: 0x0000000041000000..0x0000000050617000 (258043904 bytes)
+[mm]   OSrsvd: 0x0000000050617000..0x0000000051000000 (10391552 bytes)
+[mm]     heap: 0x0000000050617000..0x0000000050817000 (2097152 bytes)
+[mm]     fb  : 0x0000000050817000..0x0000000051000000 (8294400 bytes)
+[mm]   MMIO 00: 0x0000000008000000..0x0000000008010000
+[mm]   MMIO 01: 0x0000000008010000..0x0000000008020000
+[mm]   MMIO 02: 0x0000000009000000..0x0000000009001000
+[mm]   MMIO 03: 0x0000000010000000..0x000000003eff0000
+[mm] MMU reinstalled (high-half via TTBR1, TTBR0 deferred to Phase 06).
+[mm] ASIDs ON: 16-bit (ID_AA64MMFR0_EL1.ASIDBits=0x2), 65535 per generation
+[mm] frames ST-RAM: total=2560 used=0 free=2560 (10485760 B free)
+[mm] frames TT-RAM: total=62999 used=0 free=62999 (258043904 B free)
+[mm] alloc ST-RAM frame -> 0x0000000040400000
+[mm] alloc TT-RAM frame -> 0x0000000041000000
+[mm] heap after init: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[mm] heap smoke OK
+[mm] heap after smoke: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[fb] ramfb up: 1920x1080
+[mm] memory protection ON (verify: every sync checked against a full recomputation): table arena 0x41000000+1431 tables
+[mm] BDOS pools: ST-RAM 0x40400000+10485760 TT-RAM 0x41597000+252182528
+[mm] user address space: pools mapped VA = PA (127 shared L3 tables, 4-KiB pages, rights per process)
+[mm] BDOS ST-RAM after init: total=10485760 free=10485760 used=0 largest_free=10485760 (free_mds=1 alloc_mds=0)
+[mm] BDOS TT-RAM after init: total=252182528 free=252182528 used=0 largest_free=252182528 (free_mds=1 alloc_mds=0)
+[bcache] FS09 block read cache: none (no block device on this board)
+[usb] PCIe ECAM at 0x4010000000 (size 0x10000000)
+[usb] xHCI at PCI 00:02.0 → BAR0 0x10000000 (size 0x4000)
+[usb] scratchpad buffers needed: 0
+[usb] dma addrs: dcbaap=0x40e47000 crcr=0x40e470c0 erstba=0x40e472c0 dcbaa0=0x0
+[usb] reg readback: ac64=1 csz=0 dcbaap_hw=0x40e47000
+[usb] xHCI up: 16 slots enabled, 8 root ports
+[usb] root ports powered (PPC=false)
+[usb] port 1: ccs=0 ped=0 pp=1 speed=0
+[usb] port 2: ccs=0 ped=0 pp=1 speed=0
+[usb] port 3: ccs=0 ped=0 pp=1 speed=0
+[usb] port 4: ccs=0 ped=0 pp=1 speed=0
+[usb] port 5: ccs=1 ped=0 pp=1 speed=3
+[usb] port 6: ccs=1 ped=0 pp=1 speed=3
+[usb] port 7: ccs=0 ped=0 pp=1 speed=0
+[usb] port 8: ccs=0 ped=0 pp=1 speed=0
+[usb] device slot 1 (root port 5 route 0x0 speed 3)
+[usb] device descriptor: bLength=18 type=1 bcdUSB=0200 class=0 maxpkt0=64 VID=0627 PID=0001
+[usb] HID iface 0 protocol 1 → int-IN ep 0x81 max 8 interval 7
+[usb] HID configured: slot 1 ep 0x81 dci 3 (keyboard)
+[usb] device slot 2 (root port 6 route 0x0 speed 3)
+[usb] device descriptor: bLength=18 type=1 bcdUSB=0200 class=0 maxpkt0=64 VID=0627 PID=0001
+[usb] HID iface 0 protocol 2 → int-IN ep 0x81 max 4 interval 7
+[usb] HID configured: slot 2 ep 0x81 dci 3 (mouse)
+[proc] stand-in PDs: initial_basepage 0x40252000, AES PD 0x40252100 (read-only to all)
+[launch] EL0: slot 0 entry 0x41599000
+ASIDSTR: start (part C expects protection on/strict)
+ASIDSTR: A begin n=32
+[exec] preparing program (slot 1)
+[exec] launching
+[exec] preparing program (slot 2)
+[exec] launching
+[memprot] verify: 10 checks, 950905 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 9 regions 1360 pages 370013 rebuilds 3 fallbacks 0
+[memprot] verify: 12 checks, 1079476 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 10 regions 1361 pages 370051 rebuilds 3 fallbacks 0
+[exec] preparing program (slot 1)
+[exec] launching
+[exec] preparing program (slot 2)
+[exec] launching
+[memprot] verify: 20 checks, 1840452 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 17 regions 2350 pages 616843 rebuilds 5 fallbacks 0
+[memprot] verify: 22 checks, 1969023 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 18 regions 2351 pages 616881 rebuilds 5 fallbacks 0
+[exec] preparing program (slot 1)
+[exec] launching
+[exec] preparing program (slot 2)
+[exec] launching
+[memprot] verify: 30 checks, 2729999 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 25 regions 3340 pages 863673 rebuilds 7 fallbacks 0
+[memprot] verify: 32 checks, 2858570 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 26 regions 3341 pages 863711 rebuilds 7 fallbacks 0
+[exec] preparing program (slot 1)
+[exec] launching
+[exec] preparing program (slot 2)
+[exec] launching
+[memprot] verify: 40 checks, 3619546 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 33 regions 4330 pages 1110503 rebuilds 9 fallbacks 0
+[memprot] verify: 42 checks, 3748117 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 34 regions 4331 pages 1110541 rebuilds 9 fallbacks 0
+[exec] preparing program (slot 1)
+[exec] launching
+[exec] preparing program (slot 2)
+[exec] launching
+[memprot] verify: 50 checks, 4509093 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 41 regions 5320 pages 1357333 rebuilds 11 fallbacks 0
+[memprot] verify: 52 checks, 4637664 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 42 regions 5321 pages 1357371 rebuilds 11 fallbacks 0
+[exec] preparing program (slot 1)
+[exec] launching
+[exec] preparing program (slot 2)
+[exec] launching
+[memprot] verify: 60 checks, 5398640 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 49 regions 6310 pages 1604163 rebuilds 13 fallbacks 0
+[memprot] verify: 62 checks, 5527211 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 50 regions 6311 pages 1604201 rebuilds 13 fallbacks 0
+[exec] preparing program (slot 1)
+[exec] launching
+[exec] preparing program (slot 2)
+[exec] launching
+[memprot] verify: 70 checks, 6288187 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 57 regions 7300 pages 1850993 rebuilds 15 fallbacks 0
+[memprot] verify: 72 checks, 6416758 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 58 regions 7301 pages 1851031 rebuilds 15 fallbacks 0
+[exec] preparing program (slot 1)
+[exec] launching
+[exec] preparing program (slot 2)
+[exec] launching
+[memprot] verify: 80 checks, 7177734 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 65 regions 8290 pages 2097823 rebuilds 17 fallbacks 0
+[memprot] verify: 82 checks, 7306305 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 66 regions 8291 pages 2097861 rebuilds 17 fallbacks 0
+[exec] preparing program (slot 1)
+[exec] launching
+[exec] preparing program (slot 2)
+[exec] launching
+[memprot] verify: 90 checks, 8067281 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 73 regions 9280 pages 2344653 rebuilds 19 fallbacks 0
+[memprot] verify: 92 checks, 8195852 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 74 regions 9281 pages 2344691 rebuilds 19 fallbacks 0
+[exec] preparing program (slot 1)
+[exec] launching
+[exec] preparing program (slot 2)
+[exec] launching
+[memprot] verify: 100 checks, 8956828 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 81 regions 10270 pages 2591483 rebuilds 21 fallbacks 0
+[memprot] verify: 102 checks, 9085399 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 82 regions 10271 pages 2591521 rebuilds 21 fallbacks 0
+[exec] preparing program (slot 1)
+[exec] launching
+[exec] preparing program (slot 2)
+[exec] launching
+[memprot] verify: 110 checks, 9846375 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 89 regions 11260 pages 2838313 rebuilds 23 fallbacks 0
+[memprot] verify: 112 checks, 9974946 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 90 regions 11261 pages 2838351 rebuilds 23 fallbacks 0
+[exec] preparing program (slot 1)
+[exec] launching
+[exec] preparing program (slot 2)
+[exec] launching
+[memprot] verify: 120 checks, 10735922 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 97 regions 12250 pages 3085143 rebuilds 25 fallbacks 0
+[memprot] verify: 122 checks, 10864493 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 98 regions 12251 pages 3085181 rebuilds 25 fallbacks 0
+[exec] preparing program (slot 1)
+[exec] launching
+[exec] preparing program (slot 2)
+[exec] launching
+[memprot] verify: 130 checks, 11625469 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 105 regions 13240 pages 3331973 rebuilds 27 fallbacks 0
+[memprot] verify: 132 checks, 11754040 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 106 regions 13241 pages 3332011 rebuilds 27 fallbacks 0
+[exec] preparing program (slot 1)
+[exec] launching
+[exec] preparing program (slot 2)
+[exec] launching
+[memprot] verify: 140 checks, 12515016 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 113 regions 14230 pages 3578803 rebuilds 29 fallbacks 0
+[memprot] verify: 142 checks, 12643587 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 114 regions 14231 pages 3578841 rebuilds 29 fallbacks 0
+[exec] preparing program (slot 1)
+[exec] launching
+[exec] preparing program (slot 2)
+[exec] launching
+[memprot] verify: 150 checks, 13404563 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 121 regions 15220 pages 3825633 rebuilds 31 fallbacks 0
+[memprot] verify: 152 checks, 13533134 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 122 regions 15221 pages 3825671 rebuilds 31 fallbacks 0
+[exec] preparing program (slot 1)
+[exec] launching
+[exec] preparing program (slot 2)
+[exec] launching
+[memprot] verify: 160 checks, 14294110 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 129 regions 16210 pages 4072463 rebuilds 33 fallbacks 0
+[swcost] installs=64 restores=64 restore_ticks=10375 install_ticks=2572749 cntfrq=62500000 asid gen=1 rollovers=0 assigned=33 limit=65536
+[memprot] verify: 162 checks, 14422681 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 130 regions 16211 pages 4072501 rebuilds 33 fallbacks 0
+[exec] preparing program (slot 1)
+[exec] launching
+[exec] preparing program (slot 2)
+[exec] launching
+[memprot] verify: 170 checks, 15183657 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 137 regions 17200 pages 4319293 rebuilds 35 fallbacks 0
+[memprot] verify: 172 checks, 15312228 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 138 regions 17201 pages 4319331 rebuilds 35 fallbacks 0
+[exec] preparing program (slot 1)
+[exec] launching
+[exec] preparing program (slot 2)
+[exec] launching
+[memprot] verify: 180 checks, 16073204 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 145 regions 18190 pages 4566123 rebuilds 37 fallbacks 0
+[memprot] verify: 182 checks, 16201775 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 146 regions 18191 pages 4566161 rebuilds 37 fallbacks 0
+[exec] preparing program (slot 1)
+[exec] launching
+[exec] preparing program (slot 2)
+[exec] launching
+[memprot] verify: 190 checks, 16962751 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 153 regions 19180 pages 4812953 rebuilds 39 fallbacks 0
+[memprot] verify: 192 checks, 17091322 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 154 regions 19181 pages 4812991 rebuilds 39 fallbacks 0
+[exec] preparing program (slot 1)
+[exec] launching
+[exec] preparing program (slot 2)
+[exec] launching
+[memprot] verify: 200 checks, 17852298 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 161 regions 20170 pages 5059783 rebuilds 41 fallbacks 0
+[memprot] verify: 202 checks, 17980869 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 162 regions 20171 pages 5059821 rebuilds 41 fallbacks 0
+[exec] preparing program (slot 1)
+[exec] launching
+[exec] preparing program (slot 2)
+[exec] launching
+[memprot] verify: 210 checks, 18741845 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 169 regions 21160 pages 5306613 rebuilds 43 fallbacks 0
+[memprot] verify: 212 checks, 18870416 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 170 regions 21161 pages 5306651 rebuilds 43 fallbacks 0
+[exec] preparing program (slot 1)
+[exec] launching
+[exec] preparing program (slot 2)
+[exec] launching
+[memprot] verify: 220 checks, 19631392 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 177 regions 22150 pages 5553443 rebuilds 45 fallbacks 0
+[memprot] verify: 222 checks, 19759963 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 178 regions 22151 pages 5553481 rebuilds 45 fallbacks 0
+[exec] preparing program (slot 1)
+[exec] launching
+[exec] preparing program (slot 2)
+[exec] launching
+[memprot] verify: 230 checks, 20520939 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 185 regions 23140 pages 5800273 rebuilds 47 fallbacks 0
+[memprot] verify: 232 checks, 20649510 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 186 regions 23141 pages 5800311 rebuilds 47 fallbacks 0
+[exec] preparing program (slot 1)
+[exec] launching
+[exec] preparing program (slot 2)
+[exec] launching
+[memprot] verify: 240 checks, 21410486 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 193 regions 24130 pages 6047103 rebuilds 49 fallbacks 0
+[memprot] verify: 242 checks, 21539057 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 194 regions 24131 pages 6047141 rebuilds 49 fallbacks 0
+[exec] preparing program (slot 1)
+[exec] launching
+[exec] preparing program (slot 2)
+[exec] launching
+[memprot] verify: 250 checks, 22300033 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 201 regions 25120 pages 6293933 rebuilds 51 fallbacks 0
+[memprot] verify: 252 checks, 22428604 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 202 regions 25121 pages 6293971 rebuilds 51 fallbacks 0
+[exec] preparing program (slot 1)
+[exec] launching
+[exec] preparing program (slot 2)
+[exec] launching
+[memprot] verify: 257 checks, 22996356 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 207 regions 25987 pages 6540565 rebuilds 53 fallbacks 0
+[memprot] verify: 260 checks, 23189580 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 209 regions 26110 pages 6540763 rebuilds 53 fallbacks 0
+[memprot] verify: 262 checks, 23318151 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 210 regions 26111 pages 6540801 rebuilds 53 fallbacks 0
+[exec] preparing program (slot 1)
+[exec] launching
+[exec] preparing program (slot 2)
+[exec] launching
+[memprot] verify: 270 checks, 24079127 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 217 regions 27100 pages 6787593 rebuilds 55 fallbacks 0
+[memprot] verify: 272 checks, 24207698 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 218 regions 27101 pages 6787631 rebuilds 55 fallbacks 0
+[exec] preparing program (slot 1)
+[exec] launching
+[exec] preparing program (slot 2)
+[exec] launching
+[memprot] verify: 280 checks, 24968674 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 225 regions 28090 pages 7034423 rebuilds 57 fallbacks 0
+[memprot] verify: 282 checks, 25097245 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 226 regions 28091 pages 7034461 rebuilds 57 fallbacks 0
+[exec] preparing program (slot 1)
+[exec] launching
+[exec] preparing program (slot 2)
+[exec] launching
+[memprot] verify: 290 checks, 25858221 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 233 regions 29080 pages 7281253 rebuilds 59 fallbacks 0
+[memprot] verify: 292 checks, 25986792 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 234 regions 29081 pages 7281291 rebuilds 59 fallbacks 0
+[exec] preparing program (slot 1)
+[exec] launching
+[exec] preparing program (slot 2)
+[exec] launching
+[memprot] verify: 300 checks, 26747768 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 241 regions 30070 pages 7528083 rebuilds 61 fallbacks 0
+[memprot] verify: 302 checks, 26876339 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 242 regions 30071 pages 7528121 rebuilds 61 fallbacks 0
+[exec] preparing program (slot 1)
+[exec] launching
+[exec] preparing program (slot 2)
+[exec] launching
+[memprot] verify: 310 checks, 27637315 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 249 regions 31060 pages 7774913 rebuilds 63 fallbacks 0
+[memprot] verify: 312 checks, 27765886 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 250 regions 31061 pages 7774951 rebuilds 63 fallbacks 0
+[exec] preparing program (slot 1)
+[exec] launching
+[exec] preparing program (slot 2)
+[exec] launching
+[memprot] verify: 320 checks, 28526862 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 257 regions 32050 pages 8021743 rebuilds 65 fallbacks 0
+[swcost] installs=128 restores=128 restore_ticks=18313 install_ticks=5141314 cntfrq=62500000 asid gen=1 rollovers=0 assigned=65 limit=65536
+[memprot] verify: 322 checks, 28655433 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 258 regions 32051 pages 8021781 rebuilds 65 fallbacks 0
+ASIDSTR: A end n=32
+ASIDSTR: A children that saw a foreign page 0 got=0x00000000 want=0x00000000 OK
+ASIDSTR: A parent page-0 cell/os_run wrong after the child got=0x00000000 want=0x00000000 OK
+ASIDSTR: B begin n=24
+[exec] preparing program (slot 1)
+[exec] launching
+[exec] preparing program (slot 2)
+[exec] launching
+[exec] preparing program (slot 3)
+[exec] launching
+[exec] preparing program (slot 4)
+[exec] launching
+[exec] preparing program (slot 5)
+[exec] launching
+[exec] preparing program (slot 6)
+[exec] launching
+[memprot] verify: 342 checks, 30689410 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 277 regions 35013 pages 8763271 rebuilds 71 fallbacks 0
+[memprot] verify: 344 checks, 30818821 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 278 regions 35015 pages 8763325 rebuilds 71 fallbacks 0
+[memprot] verify: 346 checks, 30948022 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 279 regions 35016 pages 8763420 rebuilds 71 fallbacks 0
+[memprot] verify: 348 checks, 31077013 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 280 regions 35017 pages 8763496 rebuilds 71 fallbacks 0
+[memprot] verify: 350 checks, 31205794 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 281 regions 35018 pages 8763553 rebuilds 71 fallbacks 0
+[memprot] verify: 352 checks, 31334365 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 282 regions 35019 pages 8763591 rebuilds 71 fallbacks 0
+[exec] preparing program (slot 1)
+[exec] launching
+[exec] preparing program (slot 2)
+[exec] launching
+[exec] preparing program (slot 3)
+[exec] launching
+[exec] preparing program (slot 4)
+[exec] launching
+[exec] preparing program (slot 5)
+[exec] launching
+[exec] preparing program (slot 6)
+[exec] launching
+[memprot] verify: 372 checks, 33368342 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 301 regions 37981 pages 9505081 rebuilds 77 fallbacks 0
+[memprot] verify: 374 checks, 33497753 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 302 regions 37983 pages 9505135 rebuilds 77 fallbacks 0
+[memprot] verify: 376 checks, 33626954 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 303 regions 37984 pages 9505230 rebuilds 77 fallbacks 0
+[memprot] verify: 378 checks, 33755945 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 304 regions 37985 pages 9505306 rebuilds 77 fallbacks 0
+[memprot] verify: 380 checks, 33884726 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 305 regions 37986 pages 9505363 rebuilds 77 fallbacks 0
+[memprot] verify: 382 checks, 34013297 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 306 regions 37987 pages 9505401 rebuilds 77 fallbacks 0
+[exec] preparing program (slot 1)
+[exec] launching
+[exec] preparing program (slot 2)
+[exec] launching
+[exec] preparing program (slot 3)
+[exec] launching
+[exec] preparing program (slot 4)
+[exec] launching
+[exec] preparing program (slot 5)
+[exec] launching
+[exec] preparing program (slot 6)
+[exec] launching
+[memprot] verify: 402 checks, 36047274 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 325 regions 40949 pages 10246891 rebuilds 83 fallbacks 0
+[memprot] verify: 404 checks, 36176685 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 326 regions 40951 pages 10246945 rebuilds 83 fallbacks 0
+[memprot] verify: 406 checks, 36305886 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 327 regions 40952 pages 10247040 rebuilds 83 fallbacks 0
+[memprot] verify: 408 checks, 36434877 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 328 regions 40953 pages 10247116 rebuilds 83 fallbacks 0
+[memprot] verify: 410 checks, 36563658 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 329 regions 40954 pages 10247173 rebuilds 83 fallbacks 0
+[memprot] verify: 412 checks, 36692229 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 330 regions 40955 pages 10247211 rebuilds 83 fallbacks 0
+[exec] preparing program (slot 1)
+[exec] launching
+[exec] preparing program (slot 2)
+[exec] launching
+[exec] preparing program (slot 3)
+[exec] launching
+[exec] preparing program (slot 4)
+[exec] launching
+[exec] preparing program (slot 5)
+[exec] launching
+[exec] preparing program (slot 6)
+[exec] launching
+[memprot] verify: 432 checks, 38726206 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 349 regions 43917 pages 10988701 rebuilds 89 fallbacks 0
+[memprot] verify: 434 checks, 38855617 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 350 regions 43919 pages 10988755 rebuilds 89 fallbacks 0
+[memprot] verify: 436 checks, 38984818 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 351 regions 43920 pages 10988850 rebuilds 89 fallbacks 0
+[memprot] verify: 438 checks, 39113809 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 352 regions 43921 pages 10988926 rebuilds 89 fallbacks 0
+[memprot] verify: 440 checks, 39242590 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 353 regions 43922 pages 10988983 rebuilds 89 fallbacks 0
+[memprot] verify: 442 checks, 39371161 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 354 regions 43923 pages 10989021 rebuilds 89 fallbacks 0
+ASIDSTR: B end n=24
+ASIDSTR: B chains with a wrong page 0 got=0x00000000 want=0x00000000 OK
+[exec] preparing program (slot 1)
+[exec] launching
+[exec] preparing program (slot 2)
+[exec] launching
+[memprot] verify: 453 checks, 40509645 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 364 regions 44916 pages 11235736 rebuilds 91 fallbacks 0
+ASIDKID: page freed by the thread, writing it again
+[crash] slot 1 Bus Error esr=0x92000047 pc=0x415ad4d4 far=Some(1096540160)
+
+
+Panic: Bus Error
+esr=92000047
+addr=00000000415be000 sr=20000000 pc=00000000415ad4d4
+Memory violation: free memory, write (translation fault, level 3)
+
+X0-3:   0000000000000035 0000000000000000 00000000415c0000 0000000000000000
+X4-7:   0000000000000000 0000000000000000 0000000000000000 0000000000000000
+X8-11:  0000000000000009 00000000415be000 000000004b494431 00000000415ad6ef
+X12-15: 0000000000000030 00000000ffffffa9 00000000ffffffbf 00000000ffffffc9
+X16-19: 0000000000000000 0000000000000000 0000000000000000 00000000415ac000
+X20-23: 00000000415ad7d0 00000000000117d0 0000000000000000 0000000000000000
+X24-27: 0000000000000000 0000000000000000 0000000000000000 0000000000000000
+X28-30: 0000000000000000 00000000415bd7c0 00000000415ad068
+ USP:   00000000415bd7b0
+
+basepage=415ac000
+text=415ad000 data=415ad700 bss=415ad7d0
+Crash at text+000004d4
+
+*** Press any key to continue ***
+[crash] slot 1 key pressed, terminating with Pterm(-1)
+[memprot] verify: 455 checks, 40638216 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 365 regions 44918 pages 11235812 rebuilds 91 fallbacks 0
+ASIDSTR: C write after the thread's Mfree (stopped) got=0x0000FFFF want=0x0000FFFF OK
+ASIDSTR: C own page-0 cell after got=0xA5000103 want=0xA5000103 OK
+ASIDSTR: D begin n=200
+ASIDSTR: D end n=200
+ASIDSTR: D page-0 cell/os_run wrong after a wait got=0x00000000 want=0x00000000 OK
+ASIDSTR: D _hz_200 went backwards got=0x00000000 want=0x00000000 OK
+ASIDSTR: PASS
+[memprot] verify: 457 checks, 40766472 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 366 regions 44919 pages 11235812 rebuilds 91 fallbacks 0
+[launch] returned (program Pterm'd)
+[asid4] back in the boot path after ASIDSTR, launch rc=0
+[aes] gsx_malloc: screen buffer pa=0x41597000 len=4147200 (kernel-owned, WF_SCREEN)
+[shell] sh_ldapp: starting NEWDESK, sh_nextapp=3, sh_isgem=1
+[desk] desktop up (0 drives, 0 window(s) from the context)

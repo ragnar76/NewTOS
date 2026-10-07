@@ -1,0 +1,164 @@
+head-on-rpi4-crashtst                    MISMATCH-lines=0 no-counter-line | memory protection ON
+head-on-rpi4-e10                         MISMATCH-lines=0 no-counter-line | memory protection ON
+head-on-rpi4-mprot                       MISMATCH-lines=0 no-counter-line | memory protection ON
+head-on-rpi4-uacc3a                      MISMATCH-lines=0 no-counter-line | memory protection ON
+mf-off-rpi4-acc                          MISMATCH-lines=0 no-counter-line | memory protection OFF (boot argument `memprot=off`)
+mf-off-rpi4-accfree                      MISMATCH-lines=0 no-counter-line | memory protection OFF (boot argument `memprot=off`)
+mf-off-rpi4-apitest                      MISMATCH-lines=0 no-counter-line | memory protection OFF (boot argument `memprot=off`)
+mf-off-rpi4-asidperf-counters            MISMATCH-lines=0 no-counter-line | memory protection OFF (boot argument `memprot=off`)
+mf-off-rpi4-asidperf                     MISMATCH-lines=0 no-counter-line | memory protection OFF (boot argument `memprot=off`)
+mf-off-rpi4-asidstr                      MISMATCH-lines=0 no-counter-line | memory protection OFF (boot argument `memprot=off`)
+mf-off-rpi4-atexit                       MISMATCH-lines=0 no-counter-line | memory protection OFF (boot argument `memprot=off`)
+mf-off-rpi4-crashtst                     MISMATCH-lines=0 no-counter-line | memory protection OFF (boot argument `memprot=off`)
+mf-off-rpi4-desk3a                       MISMATCH-lines=0 no-counter-line | memory protection OFF (boot argument `memprot=off`)
+mf-off-rpi4-desktop                      MISMATCH-lines=0 no-counter-line | memory protection OFF (boot argument `memprot=off`)
+mf-off-rpi4-doom                         MISMATCH-lines=0 no-counter-line | memory protection OFF (boot argument `memprot=off`)
+mf-off-rpi4-e10                          MISMATCH-lines=0 no-counter-line | memory protection OFF (boot argument `memprot=off`)
+mf-off-rpi4-e9mem                        MISMATCH-lines=0 no-counter-line | memory protection OFF (boot argument `memprot=off`)
+mf-off-rpi4-e9plain                      MISMATCH-lines=0 no-counter-line | memory protection OFF (boot argument `memprot=off`)
+mf-off-rpi4-emucon9                      MISMATCH-lines=0 no-counter-line | memory protection OFF (boot argument `memprot=off`)
+mf-off-rpi4-envrn                        MISMATCH-lines=0 no-counter-line | memory protection OFF (boot argument `memprot=off`)
+mf-off-rpi4-kbdvec-emucon                MISMATCH-lines=0 no-counter-line | memory protection OFF (boot argument `memprot=off`)
+mf-off-rpi4-mdprobe                      MISMATCH-lines=0 no-counter-line | memory protection OFF (boot argument `memprot=off`)
+mf-off-rpi4-mprot                        MISMATCH-lines=0 no-counter-line | memory protection OFF (boot argument `memprot=off`)
+mf-off-rpi4-port10-rerun                 MISMATCH-lines=0 no-counter-line | memory protection OFF (boot argument `memprot=off`)
+mf-off-rpi4-port10                       MISMATCH-lines=0 no-counter-line | memory protection OFF (boot argument `memprot=off`)
+mf-off-rpi4-pparent                      MISMATCH-lines=0 no-counter-line | memory protection OFF (boot argument `memprot=off`)
+mf-off-rpi4-ppdesk                       MISMATCH-lines=0 no-counter-line | memory protection OFF (boot argument `memprot=off`)
+mf-off-rpi4-qed                          MISMATCH-lines=0 no-counter-line | memory protection OFF (boot argument `memprot=off`)
+mf-off-rpi4-s2all-crashkernel            MISMATCH-lines=0 no-counter-line | memory protection OFF (boot argument `memprot=off`)
+mf-off-rpi4-s2all                        MISMATCH-lines=0 no-counter-line | memory protection OFF (boot argument `memprot=off`)
+mf-off-rpi4-tdqed                        MISMATCH-lines=0 no-counter-line | memory protection OFF (boot argument `memprot=off`)
+mf-off-rpi4-teradesk                     MISMATCH-lines=0 no-counter-line | memory protection OFF (boot argument `memprot=off`)
+mf-off-rpi4-uacc3a                       MISMATCH-lines=0 no-counter-line | memory protection OFF (boot argument `memprot=off`)
+mf-off-rpi4-vforkt-alone                 MISMATCH-lines=0 no-counter-line | memory protection OFF (boot argument `memprot=off`)
+mf-off-virt-asidstr                      MISMATCH-lines=0 no-counter-line | memory protection OFF (boot argument `memprot=off`)
+mf-off-virt-crash                        MISMATCH-lines=0 no-counter-line | memory protection OFF (boot argument `memprot=off`)
+mf-off-virt-desktop                      MISMATCH-lines=0 no-counter-line | memory protection OFF (boot argument `memprot=off`)
+mf-off-virt-selftests                    MISMATCH-lines=0 no-counter-line | memory protection OFF (boot argument `memprot=off`)
+mf-on-asid-rpi4-acc                      MISMATCH-lines=0 no-counter-line | memory protection ON (verify
+mf-on-asid-rpi4-accfree                  MISMATCH-lines=0 checks=30 compared=8633376 mismatches=0 tolerated=0 rebuilds=4 fallbacks=0 | memory protection ON (verify
+mf-on-asid-rpi4-apitest                  MISMATCH-lines=0 checks=10 compared=3027280 mismatches=0 tolerated=0 rebuilds=2 fallbacks=0 | memory protection ON (verify
+mf-on-asid-rpi4-asidperf-counters        MISMATCH-lines=0 checks=768 compared=250878976 mismatches=0 tolerated=0 rebuilds=154 fallbacks=0 | memory protection ON (verify
+mf-on-asid-rpi4-asidperf                 MISMATCH-lines=0 checks=768 compared=250878976 mismatches=0 tolerated=0 rebuilds=154 fallbacks=0 | memory protection ON (verify
+mf-on-asid-rpi4-asidstr                  MISMATCH-lines=0 checks=461 compared=150941648 mismatches=0 tolerated=0 rebuilds=92 fallbacks=0 | memory protection ON (verify
+mf-on-asid-rpi4-atexit                   MISMATCH-lines=0 checks=12 compared=3493984 mismatches=0 tolerated=0 rebuilds=2 fallbacks=0 | memory protection ON (verify
+mf-on-asid-rpi4-crashtst                 MISMATCH-lines=0 checks=40 compared=12805440 mismatches=0 tolerated=0 rebuilds=8 fallbacks=0 | memory protection ON (verify
+mf-on-asid-rpi4-desk3a                   MISMATCH-lines=0 no-counter-line | memory protection ON (verify
+mf-on-asid-rpi4-desktop                  MISMATCH-lines=0 no-counter-line | memory protection ON (verify
+mf-on-asid-rpi4-doom                     MISMATCH-lines=0 no-counter-line | memory protection ON (verify
+mf-on-asid-rpi4-e10                      MISMATCH-lines=0 checks=23 compared=6989880 mismatches=0 tolerated=0 rebuilds=3 fallbacks=0 | memory protection ON (verify
+mf-on-asid-rpi4-e9mem                    MISMATCH-lines=0 checks=12 compared=3509344 mismatches=0 tolerated=0 rebuilds=2 fallbacks=0 | memory protection ON (verify
+mf-on-asid-rpi4-e9plain                  MISMATCH-lines=0 checks=5 compared=1396392 mismatches=0 tolerated=0 rebuilds=1 fallbacks=0 | memory protection ON (verify
+mf-on-asid-rpi4-emucon9                  MISMATCH-lines=0 checks=33 compared=10249608 mismatches=0 tolerated=0 rebuilds=6 fallbacks=0 | memory protection ON (verify
+mf-on-asid-rpi4-envrn                    MISMATCH-lines=0 checks=6 compared=1630000 mismatches=0 tolerated=0 rebuilds=1 fallbacks=0 | memory protection ON (verify
+mf-on-asid-rpi4-kbdvec-emucon            MISMATCH-lines=0 checks=11 compared=3256280 mismatches=0 tolerated=0 rebuilds=2 fallbacks=0 | memory protection ON (verify
+mf-on-asid-rpi4-mdprobe                  MISMATCH-lines=0 checks=2728 compared=638043456 mismatches=0 tolerated=0 rebuilds=1 fallbacks=0 | memory protection ON (verify
+mf-on-asid-rpi4-mprot                    MISMATCH-lines=0 checks=53 compared=16994856 mismatches=0 tolerated=0 rebuilds=9 fallbacks=0 | memory protection ON (verify
+mf-on-asid-rpi4-port10-rerun             MISMATCH-lines=0 checks=94 compared=27273200 mismatches=0 tolerated=0 rebuilds=12 fallbacks=0 | memory protection ON (verify
+mf-on-asid-rpi4-port10                   MISMATCH-lines=0 checks=89 compared=25642824 mismatches=0 tolerated=0 rebuilds=11 fallbacks=0 | memory protection ON (verify
+mf-on-asid-rpi4-pparent                  MISMATCH-lines=0 checks=23 compared=6767072 mismatches=0 tolerated=0 rebuilds=5 fallbacks=0 | memory protection ON (verify
+mf-on-asid-rpi4-ppdesk                   MISMATCH-lines=0 checks=12 compared=3493984 mismatches=0 tolerated=0 rebuilds=2 fallbacks=0 | memory protection ON (verify
+mf-on-asid-rpi4-qed                      MISMATCH-lines=0 no-counter-line | memory protection ON (verify
+mf-on-asid-rpi4-s2all-crashkernel        MISMATCH-lines=0 checks=177 compared=49135112 mismatches=0 tolerated=0 rebuilds=24 fallbacks=0 | memory protection ON (verify
+mf-on-asid-rpi4-s2all                    MISMATCH-lines=0 checks=177 compared=49135112 mismatches=0 tolerated=0 rebuilds=24 fallbacks=0 | memory protection ON (verify
+mf-on-asid-rpi4-tdqed                    MISMATCH-lines=0 no-counter-line | memory protection ON (verify
+mf-on-asid-rpi4-teradesk                 MISMATCH-lines=0 no-counter-line | memory protection ON (verify
+mf-on-asid-rpi4-uacc3a                   MISMATCH-lines=0 checks=140 compared=45402720 mismatches=0 tolerated=0 rebuilds=28 fallbacks=0 | memory protection ON (verify
+mf-on-asid-rpi4-vforkt-alone             MISMATCH-lines=0 checks=35 compared=8438424 mismatches=0 tolerated=0 rebuilds=4 fallbacks=0 | memory protection ON (verify
+mf-on-asid-virt-asidstr                  MISMATCH-lines=0 checks=457 compared=40766472 mismatches=0 tolerated=0 rebuilds=91 fallbacks=0 | memory protection ON (verify
+mf-on-asid-virt-crash                    MISMATCH-lines=0 checks=227 compared=19891072 mismatches=0 tolerated=0 rebuilds=43 fallbacks=0 | memory protection ON (verify
+mf-on-asid-virt-desktop                  MISMATCH-lines=0 no-counter-line | memory protection ON (verify
+mf-on-asid-virt-selftests                MISMATCH-lines=0 checks=73 compared=5567977 mismatches=0 tolerated=0 rebuilds=12 fallbacks=0 | memory protection ON (verify
+mf-on-rpi4-acc                           MISMATCH-lines=0 no-counter-line | memory protection ON (verify
+mf-on-rpi4-accfree                       MISMATCH-lines=0 checks=30 compared=8633376 mismatches=0 tolerated=0 rebuilds=4 fallbacks=0 | memory protection ON (verify
+mf-on-rpi4-apitest                       MISMATCH-lines=0 checks=10 compared=3027280 mismatches=0 tolerated=0 rebuilds=2 fallbacks=0 | memory protection ON (verify
+mf-on-rpi4-asidperf-counters             MISMATCH-lines=0 checks=768 compared=250878976 mismatches=0 tolerated=0 rebuilds=154 fallbacks=0 | memory protection ON (verify
+mf-on-rpi4-asidperf                      MISMATCH-lines=0 checks=768 compared=250878976 mismatches=0 tolerated=0 rebuilds=154 fallbacks=0 | memory protection ON (verify
+mf-on-rpi4-asidstr                       MISMATCH-lines=0 checks=461 compared=150941648 mismatches=0 tolerated=0 rebuilds=92 fallbacks=0 | memory protection ON (verify
+mf-on-rpi4-atexit                        MISMATCH-lines=0 checks=12 compared=3493984 mismatches=0 tolerated=0 rebuilds=2 fallbacks=0 | memory protection ON (verify
+mf-on-rpi4-crashtst                      MISMATCH-lines=0 checks=40 compared=12805440 mismatches=0 tolerated=0 rebuilds=8 fallbacks=0 | memory protection ON (verify
+mf-on-rpi4-desk3a                        MISMATCH-lines=0 no-counter-line | memory protection ON (verify
+mf-on-rpi4-desktop                       MISMATCH-lines=0 no-counter-line | memory protection ON (verify
+mf-on-rpi4-doom                          MISMATCH-lines=0 no-counter-line | memory protection ON (verify
+mf-on-rpi4-e10                           MISMATCH-lines=0 checks=23 compared=6989880 mismatches=0 tolerated=0 rebuilds=3 fallbacks=0 | memory protection ON (verify
+mf-on-rpi4-e9mem                         MISMATCH-lines=0 checks=12 compared=3509344 mismatches=0 tolerated=0 rebuilds=2 fallbacks=0 | memory protection ON (verify
+mf-on-rpi4-e9plain                       MISMATCH-lines=0 checks=5 compared=1396392 mismatches=0 tolerated=0 rebuilds=1 fallbacks=0 | memory protection ON (verify
+mf-on-rpi4-emucon9                       MISMATCH-lines=0 checks=33 compared=10249608 mismatches=0 tolerated=0 rebuilds=6 fallbacks=0 | memory protection ON (verify
+mf-on-rpi4-envrn                         MISMATCH-lines=0 checks=6 compared=1630000 mismatches=0 tolerated=0 rebuilds=1 fallbacks=0 | memory protection ON (verify
+mf-on-rpi4-kbdvec-emucon                 MISMATCH-lines=0 checks=11 compared=3256280 mismatches=0 tolerated=0 rebuilds=2 fallbacks=0 | memory protection ON (verify
+mf-on-rpi4-mdprobe                       MISMATCH-lines=0 checks=2728 compared=638043456 mismatches=0 tolerated=0 rebuilds=1 fallbacks=0 | memory protection ON (verify
+mf-on-rpi4-mprot                         MISMATCH-lines=0 checks=53 compared=16994856 mismatches=0 tolerated=0 rebuilds=9 fallbacks=0 | memory protection ON (verify
+mf-on-rpi4-port10-rerun                  MISMATCH-lines=0 checks=94 compared=27273200 mismatches=0 tolerated=0 rebuilds=12 fallbacks=0 | memory protection ON (verify
+mf-on-rpi4-port10                        MISMATCH-lines=0 checks=89 compared=25642824 mismatches=0 tolerated=0 rebuilds=11 fallbacks=0 | memory protection ON (verify
+mf-on-rpi4-pparent                       MISMATCH-lines=0 checks=23 compared=6767072 mismatches=0 tolerated=0 rebuilds=5 fallbacks=0 | memory protection ON (verify
+mf-on-rpi4-ppdesk                        MISMATCH-lines=0 checks=12 compared=3493984 mismatches=0 tolerated=0 rebuilds=2 fallbacks=0 | memory protection ON (verify
+mf-on-rpi4-qed                           MISMATCH-lines=0 no-counter-line | memory protection ON (verify
+mf-on-rpi4-s2all-crashkernel             MISMATCH-lines=0 checks=177 compared=49135112 mismatches=0 tolerated=0 rebuilds=24 fallbacks=0 | memory protection ON (verify
+mf-on-rpi4-s2all                         MISMATCH-lines=0 checks=177 compared=49135112 mismatches=0 tolerated=0 rebuilds=24 fallbacks=0 | memory protection ON (verify
+mf-on-rpi4-tdqed                         MISMATCH-lines=0 no-counter-line | memory protection ON (verify
+mf-on-rpi4-teradesk                      MISMATCH-lines=0 no-counter-line | memory protection ON (verify
+mf-on-rpi4-uacc3a                        MISMATCH-lines=0 checks=140 compared=45402720 mismatches=0 tolerated=0 rebuilds=28 fallbacks=0 | memory protection ON (verify
+mf-on-rpi4-vforkt-alone                  MISMATCH-lines=0 checks=35 compared=8438424 mismatches=0 tolerated=0 rebuilds=4 fallbacks=0 | memory protection ON (verify
+mf-on-virt-asidstr                       MISMATCH-lines=0 checks=457 compared=40766472 mismatches=0 tolerated=0 rebuilds=91 fallbacks=0 | memory protection ON (verify
+mf-on-virt-crash                         MISMATCH-lines=0 checks=227 compared=19891072 mismatches=0 tolerated=0 rebuilds=43 fallbacks=0 | memory protection ON (verify
+mf-on-virt-desktop                       MISMATCH-lines=0 no-counter-line | memory protection ON (verify
+mf-on-virt-selftests                     MISMATCH-lines=0 checks=73 compared=5567977 mismatches=0 tolerated=0 rebuilds=12 fallbacks=0 | memory protection ON (verify
+mf-strict-rpi4-acc                       MISMATCH-lines=0 no-counter-line | memory protection ON (strict) (verify
+mf-strict-rpi4-accfree                   MISMATCH-lines=0 checks=30 compared=8633376 mismatches=0 tolerated=0 rebuilds=4 fallbacks=0 | memory protection ON (strict) (verify
+mf-strict-rpi4-apitest                   MISMATCH-lines=0 checks=10 compared=3026768 mismatches=0 tolerated=0 rebuilds=2 fallbacks=0 | memory protection ON (strict) (verify
+mf-strict-rpi4-asidperf-counters         MISMATCH-lines=0 checks=768 compared=250801152 mismatches=0 tolerated=0 rebuilds=154 fallbacks=0 | memory protection ON (strict) (verify
+mf-strict-rpi4-asidperf                  MISMATCH-lines=0 checks=768 compared=250801152 mismatches=0 tolerated=0 rebuilds=154 fallbacks=0 | memory protection ON (strict) (verify
+mf-strict-rpi4-asidstr                   MISMATCH-lines=0 checks=461 compared=150896080 mismatches=0 tolerated=0 rebuilds=92 fallbacks=0 | memory protection ON (strict) (verify
+mf-strict-rpi4-atexit                    MISMATCH-lines=0 checks=12 compared=3493472 mismatches=0 tolerated=0 rebuilds=2 fallbacks=0 | memory protection ON (strict) (verify
+mf-strict-rpi4-crashtst                  MISMATCH-lines=0 checks=40 compared=12801856 mismatches=0 tolerated=0 rebuilds=8 fallbacks=0 | memory protection ON (strict) (verify
+mf-strict-rpi4-desk3a                    MISMATCH-lines=0 no-counter-line | memory protection ON (strict) (verify
+mf-strict-rpi4-desktop                   MISMATCH-lines=0 no-counter-line | memory protection ON (strict) (verify
+mf-strict-rpi4-doom                      MISMATCH-lines=0 no-counter-line | memory protection ON (strict) (verify
+mf-strict-rpi4-e10                       MISMATCH-lines=0 checks=23 compared=6988856 mismatches=0 tolerated=0 rebuilds=3 fallbacks=0 | memory protection ON (strict) (verify
+mf-strict-rpi4-e9mem                     MISMATCH-lines=0 checks=12 compared=3502688 mismatches=0 tolerated=0 rebuilds=2 fallbacks=0 | memory protection ON (strict) (verify
+mf-strict-rpi4-e9plain                   MISMATCH-lines=0 checks=5 compared=1396392 mismatches=0 tolerated=0 rebuilds=1 fallbacks=0 | memory protection ON (strict) (verify
+mf-strict-rpi4-emucon9                   MISMATCH-lines=0 checks=33 compared=10242952 mismatches=0 tolerated=0 rebuilds=6 fallbacks=0 | memory protection ON (strict) (verify
+mf-strict-rpi4-envrn                     MISMATCH-lines=0 checks=6 compared=1630000 mismatches=0 tolerated=0 rebuilds=1 fallbacks=0 | memory protection ON (strict) (verify
+mf-strict-rpi4-kbdvec-emucon             MISMATCH-lines=0 checks=11 compared=3256280 mismatches=0 tolerated=0 rebuilds=2 fallbacks=0 | memory protection ON (strict) (verify
+mf-strict-rpi4-mdprobe                   MISMATCH-lines=0 checks=2728 compared=638043456 mismatches=0 tolerated=0 rebuilds=1 fallbacks=0 | memory protection ON (strict) (verify
+mf-strict-rpi4-mprot                     MISMATCH-lines=0 checks=53 compared=16991272 mismatches=0 tolerated=0 rebuilds=9 fallbacks=0 | memory protection ON (strict) (verify
+mf-strict-rpi4-port10-rerun              MISMATCH-lines=0 checks=94 compared=27267568 mismatches=0 tolerated=0 rebuilds=12 fallbacks=0 | memory protection ON (strict) (verify
+mf-strict-rpi4-port10                    MISMATCH-lines=0 checks=89 compared=25637704 mismatches=0 tolerated=0 rebuilds=11 fallbacks=0 | memory protection ON (strict) (verify
+mf-strict-rpi4-pparent                   MISMATCH-lines=0 checks=23 compared=6766560 mismatches=0 tolerated=0 rebuilds=5 fallbacks=0 | memory protection ON (strict) (verify
+mf-strict-rpi4-ppdesk                    MISMATCH-lines=0 checks=12 compared=3493472 mismatches=0 tolerated=0 rebuilds=2 fallbacks=0 | memory protection ON (strict) (verify
+mf-strict-rpi4-qed                       MISMATCH-lines=0 no-counter-line | memory protection ON (strict) (verify
+mf-strict-rpi4-s2all                     MISMATCH-lines=0 checks=65 compared=18451592 mismatches=0 tolerated=0 rebuilds=10 fallbacks=0 | memory protection ON (strict) (verify
+mf-strict-rpi4-s2alls-crashkernel        MISMATCH-lines=0 checks=168 compared=46546240 mismatches=0 tolerated=0 rebuilds=23 fallbacks=0 | memory protection ON (strict) (verify
+mf-strict-rpi4-tdqed                     MISMATCH-lines=0 no-counter-line | memory protection ON (strict) (verify
+mf-strict-rpi4-teradesk                  MISMATCH-lines=0 no-counter-line | memory protection ON (strict) (verify
+mf-strict-rpi4-uacc3a                    MISMATCH-lines=0 checks=140 compared=45388896 mismatches=0 tolerated=0 rebuilds=28 fallbacks=0 | memory protection ON (strict) (verify
+mf-strict-rpi4-vforkt-alone              MISMATCH-lines=0 checks=35 compared=8438424 mismatches=0 tolerated=0 rebuilds=4 fallbacks=0 | memory protection ON (strict) (verify
+mf-strict-virt-asidstr                   MISMATCH-lines=0 checks=457 compared=40754239 mismatches=0 tolerated=0 rebuilds=91 fallbacks=0 | memory protection ON (strict) (verify
+mf-strict-virt-crash                     MISMATCH-lines=0 checks=227 compared=19886373 mismatches=0 tolerated=0 rebuilds=43 fallbacks=0 | memory protection ON (strict) (verify
+mf-strict-virt-desktop                   MISMATCH-lines=0 no-counter-line | memory protection ON (strict) (verify
+mf-strict-virt-selftests                 MISMATCH-lines=0 checks=73 compared=5444841 mismatches=0 tolerated=0 rebuilds=12 fallbacks=0 | memory protection ON (strict) (verify
+head-on-acc2                             MISMATCH-lines=0 no-counter-line | memory protection ON
+head-on-ldgauto                          MISMATCH-lines=0 no-counter-line | memory protection ON
+head-on-popup                            MISMATCH-lines=0 no-counter-line | memory protection ON
+head-on-zview                            MISMATCH-lines=0 no-counter-line | memory protection ON
+head-strict-acc2                         MISMATCH-lines=0 no-counter-line | memory protection ON (strict)
+head-strict-ldgauto                      MISMATCH-lines=0 no-counter-line | memory protection ON (strict)
+head-strict-popup                        MISMATCH-lines=0 no-counter-line | memory protection ON (strict)
+head-strict-zview                        MISMATCH-lines=0 no-counter-line | memory protection ON (strict)
+mf-off-acc2                              MISMATCH-lines=0 no-counter-line | memory protection OFF (boot argument `memprot=off`)
+mf-off-ldgauto                           MISMATCH-lines=0 no-counter-line | memory protection OFF (boot argument `memprot=off`)
+mf-off-popup                             MISMATCH-lines=0 no-counter-line | memory protection OFF (boot argument `memprot=off`)
+mf-off-zview                             MISMATCH-lines=0 no-counter-line | memory protection OFF (boot argument `memprot=off`)
+mf-on-acc2                               MISMATCH-lines=0 checks=43 compared=13053656 mismatches=0 tolerated=0 rebuilds=5 fallbacks=0 | memory protection ON (verify
+mf-on-asid-acc2                          MISMATCH-lines=0 checks=43 compared=13053656 mismatches=0 tolerated=0 rebuilds=5 fallbacks=0 | memory protection ON (verify
+mf-on-asid-ldgauto                       MISMATCH-lines=0 checks=61 compared=19089024 mismatches=0 tolerated=0 rebuilds=9 fallbacks=0 | memory protection ON (verify
+mf-on-asid-popup                         MISMATCH-lines=0 checks=47 compared=13988088 mismatches=0 tolerated=0 rebuilds=5 fallbacks=0 | memory protection ON (verify
+mf-on-asid-zview                         MISMATCH-lines=0 checks=154 compared=50804832 mismatches=0 tolerated=0 rebuilds=23 fallbacks=0 | memory protection ON (verify
+mf-on-ldgauto                            MISMATCH-lines=0 checks=61 compared=19089024 mismatches=0 tolerated=0 rebuilds=9 fallbacks=0 | memory protection ON (verify
+mf-on-popup                              MISMATCH-lines=0 checks=47 compared=13988088 mismatches=0 tolerated=0 rebuilds=5 fallbacks=0 | memory protection ON (verify
+mf-on-zview                              MISMATCH-lines=0 checks=154 compared=50804832 mismatches=0 tolerated=0 rebuilds=23 fallbacks=0 | memory protection ON (verify
+mf-strict-acc2                           MISMATCH-lines=0 checks=43 compared=13053656 mismatches=0 tolerated=0 rebuilds=5 fallbacks=0 | memory protection ON (strict) (verify
+mf-strict-ldgauto                        MISMATCH-lines=0 checks=61 compared=19089024 mismatches=0 tolerated=0 rebuilds=9 fallbacks=0 | memory protection ON (strict) (verify
+mf-strict-popup                          MISMATCH-lines=0 checks=47 compared=13988088 mismatches=0 tolerated=0 rebuilds=5 fallbacks=0 | memory protection ON (strict) (verify
+mf-strict-zview                          MISMATCH-lines=0 checks=154 compared=50804832 mismatches=0 tolerated=0 rebuilds=23 fallbacks=0 | memory protection ON (strict) (verify
