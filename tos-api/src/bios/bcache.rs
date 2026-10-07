@@ -518,6 +518,12 @@ unsafe impl Sync for Global {}
 
 static GLOBAL: Global = Global(UnsafeCell::new(None));
 
+/// Bytes of memory the installed cache was given (its arena), 0 without a
+/// cache. Kept beside [`GLOBAL`] because the cache itself only knows its slot
+/// count, and the arena — what the boot line `[bcache] … N KiB at …` and
+/// `Ssystem(S_NEWTOS_BCACHE)` report — is that plus the slot metadata.
+static ARENA_BYTES: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
+
 fn cache() -> Option<&'static mut BlockCache> {
     // SAFETY: single trap path; the reference does not outlive one request.
     unsafe { (*GLOBAL.0.get()).as_mut() }
@@ -539,14 +545,23 @@ pub unsafe fn install(arena: *mut u8, bytes: usize, pct: u32) -> Option<Stats> {
     // SAFETY: forwarded contract.
     let c = unsafe { BlockCache::new(arena, bytes, pct) };
     let s = c.as_ref().map(|c| c.stats());
+    ARENA_BYTES.store(if s.is_some() { bytes } else { 0 }, core::sync::atomic::Ordering::Relaxed);
     // SAFETY: single trap path / boot CPU.
     unsafe { *GLOBAL.0.get() = c };
     s
 }
 
+/// Bytes of memory the installed cache occupies (the arena handed to
+/// [`install`]), 0 without a cache — the size `Ssystem(S_NEWTOS_BCACHE)`
+/// reports (`docs/api/gemdos/154-ssystem.md`, SYSINFO01).
+pub fn arena_bytes() -> usize {
+    ARENA_BYTES.load(core::sync::atomic::Ordering::Relaxed)
+}
+
 /// Remove the system's cache; [`device`] passes everything straight through
 /// again. The arena is no longer used afterwards.
 pub fn uninstall() {
+    ARENA_BYTES.store(0, core::sync::atomic::Ordering::Relaxed);
     // SAFETY: single trap path / boot CPU.
     unsafe { *GLOBAL.0.get() = None };
 }

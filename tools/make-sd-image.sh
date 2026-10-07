@@ -243,9 +243,9 @@ else
 fi
 
 # ACC05 / ACC02: the desk accessories. SYSACC.NAC is the accessory half of the
-# ACC06 pair (SYSINFO.NCP above is the console half): it registers " NewTOS
-# System" under *Desk* and answers AC_OPEN with a form_alert showing the ARM
-# clock and the die temperature.
+# ACC06 pair (SYSINFO.NCP above is the console half): it registers " System
+# Info" under *Desk* and answers AC_OPEN with the SYSINFO01 dialog (clock,
+# temperature, memory, protection, SD card, display, keyboard, serial).
 #
 # Installed in BOTH search locations so one card exercises both halves of the
 # two-place scan (docs/api/aes/accessories.md §7.3): C:\ACC\SYSACC.NAC is

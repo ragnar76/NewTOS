@@ -1,0 +1,9 @@
+# SYSINFO01 -- kernels and images of this run (scratch, deleted after the run)
+916c91db55dbfcdb81c1e1bada6734493abc4b9f9ce92c1a09ad312e39eaf1c6  kernel8-final.img     release board-rpi4 (checks.sh final, xtask) = bin/kernel8.img; APITEST run
+a56cc7df9efc89b39ddf843b49ca925cf6a205a32f6e3f4efb7c83865b21606e  kernel-virt-final.img release board-qemu-virt (checks.sh final; built, not booted)
+66cf6cb6410819429361fa304c3f1f4cb0a5b01a7d6dbf64d64294da80bc3e35  fix-kinj-desk.img     injector kernel, desk.actions (+desk-arm), runs desk/desk-alt/desk-alt2/desk-de
+4dde45b89f518d9ede87d403de51a0eb91f22a2aa7fd3774e4945ff1b1059f1c  fix-kinj-tera.img     injector kernel, tera.actions
+f916a552ef59159cb43343a8e8d2a36bdb56cca23d80d82398aeb95e7f60aa80  fix-kinj-qed.img      injector kernel, qed.actions
+6ea6ea01d24afacb363ef133d82480cc24987a5f8e54180bad82d17469b7cbf7  fix-kinj-ldg.img      injector kernel, ldg.actions
+07c52c007ec6908d9deca3bceda84115ea6855ed12742024adc3df04dc75ca80  base.img              tools/make-sd-image.sh base.img 64 (QEMU card base)
+06c7ceb690c6ca922b2cb68a4a3468e115168b0e719561710e16dc62b55828f2  C:\ACC\SYSACC.NAC     on base.img (= bin/SYSACC.NAC, same build)

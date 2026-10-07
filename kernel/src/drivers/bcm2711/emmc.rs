@@ -619,6 +619,18 @@ fn compat() -> bool {
     COMPAT.load(Ordering::Relaxed)
 }
 
+/// The transfer setup the initialised card actually runs with —
+/// `(compat, bus width in bits)` — or `None` while no card is up
+/// (`Ssystem(S_NEWTOS_SDMODE / S_NEWTOS_SDBUS)`, SYSINFO01). The width is 4
+/// only once [`init`] switched both the card (`ACMD6`) and the host to the
+/// 4-bit bus; fast mode with a card that offers no 4-bit bus stays at 1.
+pub fn transfer_mode() -> Option<(bool, u8)> {
+    if !SDCARD.ready.load(Ordering::Acquire) {
+        return None;
+    }
+    Some((compat(), if BUS_4BIT.load(Ordering::Relaxed) { 4 } else { 1 }))
+}
+
 /// Print failures on the console? Off while [`init`] probes the controller
 /// bases — a slot without a card answers every response command with a
 /// command timeout, and that is the probe doing its job.

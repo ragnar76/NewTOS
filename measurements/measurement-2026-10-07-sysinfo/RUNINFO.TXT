@@ -1,0 +1,142 @@
+measurement-2026-10-07-sysinfo -- TASK/SYSINFO01: the SYSACC desk accessory
+becomes a read-only "System Info" GEM dialog, fed by new NewTOS Ssystem modes
+2003-2019. Developer self-evidence; the Tester's verdict is separate.
+
+Date 2026-10-07, branch desk-rebuild, HEAD c50a9c9 plus this change,
+uncommitted (method/sysinfo-change.diff). QEMU raspi4b, -append serial=on
+(+ the arguments named per run), one QEMU at a time, host macOS. No SD card,
+Pi or TT touched. Scratch (kernels, cards, target dirs) in the session
+scratchpad, deleted after the run; hashes in checks/kernels-sha256.txt.
+
+RESULT IN ONE LINE
+  The dialog opens from the Desk menu of EmuDESK, TeraDesk and QED, shows
+  every value, changes them with the boot arguments exactly as the kernel's
+  own boot lines report them, and OK/Return closes it with the screen
+  restored; APITEST 106/0/5, LDGDEMO byte-identical, static checks at
+  baseline (host tests +8 new).
+
+SPEC (first): docs/api/gemdos/154-ssystem.md
+  mode table + section "System-information modes (2003-2019) -- SYSINFO01":
+  per mode number, arguments, answer, ERROR condition, source of the
+  effective state; board table; 2019 string interface (FreeMiNT S_KNAME /
+  strncpy_f rule, sys/ssystem.c:572-576, sys/libkern/strncpy_f.c:47-56).
+  Mailbox tags used are the existing, sourced ones: "Get clock rate
+  measured" 0x0003_0047 (references/rpi4-boot/firmware-wiki-mailbox-
+  property-interface.md:364-375, docs/hardware/mailbox-framebuffer.md 3f)
+  and "Get VC memory" 0x0001_0006 (wiki :111, 3a, already read at boot).
+
+NEW SSYSTEM MODES (scalars: arg1 = LONG pointer or 0, arg2 must be 0)
+  2003 S_NEWTOS_CPUMEAS    ARM clock measured, Hz          (Host, mailbox, live)
+  2004 S_NEWTOS_CPUPOLICY  0 firmware / 1 fixed max / 2 max refused (Host)
+  2005 S_NEWTOS_MEMPROT    0 off / 1 on / 2 strict          (bdos memprot)
+  2006 S_NEWTOS_ASID       0 off / 1 on / 2 test (asid=tiny) (bdos mmu)
+  2007 S_NEWTOS_SDMODE     0 fast / 1 compatibility          (Host, emmc)
+  2008 S_NEWTOS_SDBUS      1 / 4 bits negotiated             (Host, emmc)
+  2009 S_NEWTOS_BCACHE     cache arena KiB, 0 = off          (bios bcache)
+  2010 S_NEWTOS_BCACHEPCT  percent; ERROR without cache      (bios bcache)
+  2011 S_NEWTOS_STRAM      ST-RAM pool KiB                   (bdos mem init)
+  2012 S_NEWTOS_TTRAM      TT-RAM pool KiB, 0 = none         (bdos mem init)
+  2013/2014/2015           framebuffer width/height/bpp      (Host::screen)
+  2016 S_NEWTOS_GPUMEM     VideoCore memory KiB              (Host, boot answer)
+  2017 S_NEWTOS_KEYBOARD   0 US / 1 German / 2 KEYBOARD.KBD / 3 changed (Host, keymap)
+  2018 S_NEWTOS_SERIAL     0 off / 1 on                      (Host, console)
+  2019 S_NEWTOS_KVERSION   string "NewTOS 0.1 <date> (<rev>)" into buf/len
+  Unknown on a board -> ERROR, nothing written; 2020 -> EINVFN.
+
+CODE (method/sysinfo-change.diff)
+  tos-api/src/gemdos/ssystem.rs  constants, dispatch arms, sysinfo_value,
+                                 s_newtos_kversion
+  tos-api/src/host.rs            Host::cpu_clock_measured_hz, cpu_clock_policy,
+                                 sd_card_mode, gpu_memory_bytes,
+                                 keyboard_layout, serial_console, os_version
+                                 (all default None); CpuClockPolicy,
+                                 SdCardMode, KeyboardLayout
+  tos-api/src/bios/bcache.rs     ARENA_BYTES + arena_bytes()
+  tos-api/src/bdos/process/mmu.rs ASID_TEST_LIMIT (also used by lib.rs)
+  kernel/src/host_env.rs         the seven methods (rpi4: mailbox, emmc,
+                                 recorded boot facts; both boards: keymap,
+                                 serial, version); record_cpu_clock_policy,
+                                 record_gpu_memory
+  kernel/src/lib.rs              records the clock outcome (raise_arm_clock)
+                                 and the VC memory (firmware_dram)
+  kernel/src/drivers/bcm2711/emmc.rs transfer_mode()
+  kernel/src/keymap.rs           SOURCE tracking (built-in / file / Keytbl
+                                 with different contents), source()
+  kernel/src/initinfo.rs, kernel/src/desk/inf.rs  comments: "no syscall
+                                 reports the version string" was no longer true
+  sdk/examples/sysacc.c          the dialog (tree built in code, 3D flags as
+                                 form_alert: FL3DBAK OUTLINED root, FL3DACT
+                                 DEFAULT EXIT OK; framed G_IBOX groups; value
+                                 column = one object per value), title
+                                 " System Info"
+  tools/make-sd-image.sh         comment only
+  tos-api/tests/gemdos_ssystem_sysinfo.rs  8 new host tests
+  tos-api/tests/gemdos_ssystem_cpuinfo.rs  "next free number" probe moved
+                                 from 2003 to 2020 (2003 is now taken)
+  docs/api/desktop/_hw-test-2026-09-17.md  note at point 66
+
+QEMU RUNS (method/sysinfo-runs.sh; injector kernels method/make-inj.sh with
+the actions files; screendumps/, serial/)
+  desk       default args. D01: Desk drop-down "System Info" x2. D02: the
+             dialog -- Kernel "NewTOS 0.1 2026-10-07 (unknown)" (the injector
+             builds come from an rsync copy without .git, so no revision; the
+             release kernel bin/kernel8.img carries "c50a9c9c"), CPU clock
+             700.0 MHz requested, Measured not available (QEMU does not answer
+             0x0003_0047 -- boot line "measured ?" agrees), Firmware-
+             controlled, 25.0 C, ST-RAM 10 MB, TT-RAM 900 MB (pool 944275456
+             B), 640 x 480, 32-bit truecolour, GPU 64 MB, Protection On,
+             Address IDs Off, Fast (multi-block), 4-bit, 32 MB, 5 %, US
+             (built-in), Serial On. D03: closed, desktop restored.
+  desk-alt   serial=on memprot=strict bcache=0 emmc=compat cpuclk=max:
+             Fixed at maximum ([clock] ARM 700 -> 700 MHz, max 700), TT-RAM
+             932 MB (no cache carve), Strict, Compatibility, 1-bit, Off, "-".
+  desk-alt2  serial=on memprot=off asid=tiny bcache=8192 bcachepct=20:
+             Protection Off, Address IDs Test (rollover), 8 MB, 20 %, TT-RAM
+             934 MB.
+  desk-de    default args, NEWDESK.INF "#K de": Keyboard German (built-in).
+  tera       TeraDesk: T01 Desk drop-down "TeraDesk Info..." + System Info
+             x2; T02 the dialog over TeraDesk; T03 closed, icons (incl. the
+             trash the dialog covered) redrawn.
+  qed        QED: Q02 the dialog over QED; Q03 closed, QED's screen restored.
+  Every value cross-checked against the run's own boot lines
+  ([clock], [mm] BDOS pools, [bcache], [emmc] FS08 mode, [mm] ASIDs/memory
+  protection).
+
+REGRESSION
+  api        APITEST (#Z, release kernel8-final): TOTAL 106/0/5 (= baseline)
+  ldg        LDGDEMO (ldg.actions): all 10 dumps byte-identical to
+             measurement-2026-10-07-acctitle fix-ldg-*.
+  acctitle   the ACCTITLE desk/tera/qed path (same actions, marks renamed):
+             END dumps byte-identical to acctitle fix-*-END; D00/T00/Q00
+             differ only in the box (385,225)-(523,368) = the pointer sweep;
+             D01/T01/Q01 differ by the new entry text (intended); D02/T02/Q02
+             show the dialog instead of the alert (intended).
+
+STATIC CHECKS (method/checks.sh final -> checks/final-*)
+  host tests 1235/0/1 (baseline 1227/0/1, +8 new)
+  release builds rpi4 + qemu-virt (fresh): tos-api 64 / kernel 94 warnings
+    (= baseline), 0 errors
+  clippy rpi4 / qemu-virt: tos-api 76 / kernel 125 (= baseline); no hit in a
+    touched file except the pre-existing crate-level lib.rs:9
+  desk drift probe 31 (= baseline); SDK host tests 18/0/0 (= baseline)
+
+CARD PACKAGE (bin/, not copied anywhere)
+  SYSACC.NAC  06c7ceb690c6ca922b2cb68a4a3468e115168b0e719561710e16dc62b55828f2
+  kernel8.img 916c91db55dbfcdb81c1e1bada6734493abc4b9f9ce92c1a09ad312e39eaf1c6
+  (gitignored), LIESMICH.TXT.
+
+NOT DONE / OPEN
+  - Real Pi 4: not run (workers take no HW actions). Pi-only: Measured value,
+    live clock/temperature, real resolution, GPU split, Serial Off.
+  - qemu-virt not booted (no accessory session there); built + clippy only.
+  - The second accessory copy (C:\SYSACC2.NAC) was not clicked; it is the
+    same program.
+
+method/ FILES
+  this run: sysinfo-runs.sh (from acctitle acct-runs.sh), desk/tera/qed
+    .actions (acctitle's, header + mark names changed), sysinfo-change.diff
+  copied unchanged from measurement-2026-10-07-acctitle/method: qmp_timed.py,
+    newdesk-template.inf, run-rpi4.sh, run-rpi4-drive-m3.sh, drive-m3.py,
+    gen_script.py, apply-injector-m3.py, desk-arm-m3.py, make-inj.sh,
+    ldg.actions; checks.sh (header comment line only)
+  SHA256SUMS: every file of this run except itself and bin/kernel8.img.

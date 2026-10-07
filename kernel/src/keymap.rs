@@ -15,8 +15,9 @@
 //! a hand-rolled `Sync` over an `UnsafeCell` (like the console ring).
 
 use core::cell::UnsafeCell;
+use core::sync::atomic::{AtomicU8, Ordering};
 
-use tos_api::host::{KeyTable, KeyTables, ALT_TABLE_LEN};
+use tos_api::host::{KeyTable, KeyTables, KeyboardLayout, ALT_TABLE_LEN};
 
 /// Maximum AltGr `(scancode, ascii)` override pairs per shift level.
 const ALTGR_MAX: usize = 16;
@@ -194,6 +195,22 @@ struct Active {
 unsafe impl Sync for Active {}
 static ACTIVE: Active = Active { layout: UnsafeCell::new(US) };
 
+/// Where the active layout came from (`KeyboardLayout as u8`), for
+/// `Ssystem(S_NEWTOS_KEYBOARD)` (SYSINFO01). Starts as the compiled-in US
+/// default, like [`ACTIVE`].
+static SOURCE: AtomicU8 = AtomicU8::new(KeyboardLayout::BuiltinUs as u8);
+
+/// Where the active layout came from: a built-in, `C:\KEYBOARD.KBD`, or a
+/// program's `Keytbl` since.
+pub fn source() -> KeyboardLayout {
+    match SOURCE.load(Ordering::Relaxed) {
+        0 => KeyboardLayout::BuiltinUs,
+        1 => KeyboardLayout::BuiltinGerman,
+        2 => KeyboardLayout::File,
+        _ => KeyboardLayout::ChangedByProgram,
+    }
+}
+
 #[inline]
 fn active() -> &'static Layout {
     // SAFETY: single-CPU; the layout is only replaced during boot init,
@@ -204,12 +221,13 @@ fn active() -> &'static Layout {
 /// Install a built-in layout by name (`"us"` / `"de"`); returns whether the
 /// name was recognised.
 pub fn select_builtin(name: &[u8]) -> bool {
-    let lay = match name {
-        b"us" | b"US" => US,
-        b"de" | b"DE" => DE,
+    let (lay, src) = match name {
+        b"us" | b"US" => (US, KeyboardLayout::BuiltinUs),
+        b"de" | b"DE" => (DE, KeyboardLayout::BuiltinGerman),
         _ => return false,
     };
     install(lay);
+    SOURCE.store(src as u8, Ordering::Relaxed);
     true
 }
 
@@ -253,10 +271,16 @@ pub fn set_table(which: KeyTable, table: &[u8; 128]) {
     // SAFETY: single-CPU cooperative path; the active layout is only mutated
     // here and during boot init, never concurrently with a decode.
     let lay = unsafe { &mut *ACTIVE.layout.get() };
-    match which {
-        KeyTable::Norm => lay.norm = *table,
-        KeyTable::Shft => lay.shft = *table,
-        KeyTable::Caps => lay.caps = *table,
+    let slot = match which {
+        KeyTable::Norm => &mut lay.norm,
+        KeyTable::Shft => &mut lay.shft,
+        KeyTable::Caps => &mut lay.caps,
+    };
+    // A program that hands back the table it read changes nothing; only
+    // different contents make the layout "changed by a program".
+    if slot != table {
+        *slot = *table;
+        SOURCE.store(KeyboardLayout::ChangedByProgram as u8, Ordering::Relaxed);
     }
 }
 
@@ -412,5 +436,6 @@ pub fn load_kbd(blob: &[u8]) -> bool {
         }
     }
     install(lay);
+    SOURCE.store(KeyboardLayout::File as u8, Ordering::Relaxed);
     true
 }

@@ -285,7 +285,7 @@ extern "C" fn kernel_main_rust(dtb_phys: usize, entry_el: u64) -> ! {
         // SAFETY: boot CPU; TTBR0 holds the empty root (reinstall), no
         // process root has been built or installed.
         let (bits, field) = unsafe { arch::aarch64::mmu::size_asids() };
-        let limit = if tiny { 4 } else { 1u32 << bits };
+        let limit = if tiny { tos_api::bdos::process::mmu::ASID_TEST_LIMIT } else { 1u32 << bits };
         // SAFETY: boot CPU, before `map_pools` and any root install.
         unsafe {
             tos_api::bdos::process::mmu::configure_asids(limit, arch::aarch64::mmu::empty_l0_pa())
@@ -621,10 +621,14 @@ fn firmware_dram() -> Option<bios::machine::layout::DramReport> {
         );
     }
     match report.vc {
-        Some(r) => kprintln!(
-            "[mm] firmware: VC memory: 0x{:016x} + {} bytes ({} MiB)",
-            r.base, r.size, r.size / (1024 * 1024),
-        ),
+        Some(r) => {
+            kprintln!(
+                "[mm] firmware: VC memory: 0x{:016x} + {} bytes ({} MiB)",
+                r.base, r.size, r.size / (1024 * 1024),
+            );
+            // SYSINFO01: `Ssystem(S_NEWTOS_GPUMEM)` reports this split.
+            host_env::record_gpu_memory(r.size);
+        }
         None => kprintln!("[mm] firmware: VC memory: not reported"),
     }
 
@@ -1087,7 +1091,9 @@ fn raise_arm_clock(dtb: Option<usize>) {
     });
     let before = mailbox::get_clock_rate(CLOCK_ID_ARM);
     let temp = Soc(mailbox::get_temperature(TEMPERATURE_ID));
+    use tos_api::host::CpuClockPolicy;
     if firmware_only {
+        host_env::record_cpu_clock_policy(CpuClockPolicy::Firmware);
         kprintln!(
             "[clock] ARM {} MHz left to the firmware (no `cpuclk=max`) ({})",
             Mhz(before),
@@ -1096,10 +1102,12 @@ fn raise_arm_clock(dtb: Option<usize>) {
         return;
     }
     let Some(max) = mailbox::get_max_clock_rate(CLOCK_ID_ARM) else {
+        host_env::record_cpu_clock_policy(CpuClockPolicy::MaxRefused);
         kprintln!("[clock] ARM {} MHz kept: firmware reports no max rate ({})", Mhz(before), temp);
         return;
     };
     if mailbox::set_clock_rate(CLOCK_ID_ARM, max, false).is_none() {
+        host_env::record_cpu_clock_policy(CpuClockPolicy::MaxRefused);
         kprintln!(
             "[clock] ARM {} MHz kept: Set clock rate not answered (max {}, {})",
             Mhz(before),
@@ -1108,6 +1116,7 @@ fn raise_arm_clock(dtb: Option<usize>) {
         );
         return;
     }
+    host_env::record_cpu_clock_policy(CpuClockPolicy::FixedMax);
     let after = mailbox::get_clock_rate(CLOCK_ID_ARM);
     let measured = mailbox::get_clock_rate_measured(CLOCK_ID_ARM);
     kprintln!(

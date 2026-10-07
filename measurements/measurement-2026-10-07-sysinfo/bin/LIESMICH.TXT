@@ -1,0 +1,48 @@
+SYSINFO01 -- "System Info": das Accessory SYSACC wird ein Systeminfo-Dialog
+==========================================================================
+
+Dateien (nichts davon ist auf eine Karte kopiert; kopieren nur auf Ansage):
+  SYSACC.NAC   sha256 06c7ceb690c6ca922b2cb68a4a3468e115168b0e719561710e16dc62b55828f2
+  kernel8.img  sha256 916c91db55dbfcdb81c1e1bada6734493abc4b9f9ce92c1a09ad312e39eaf1c6
+               (release, board-rpi4, Stand desk-rebuild c50a9c9 + SYSINFO01,
+               nicht committet; der Kernel nennt sich "c50a9c9c")
+
+BEIDE gehoeren zusammen: das neue Accessory fragt den Kernel mit neuen
+Ssystem-Nummern (2003-2019). Mit einem aelteren Kernel zeigt es fast ueberall
+"not available" (es stuerzt nicht ab).
+
+Wohin auf der Karte:
+  kernel8.img -> Boot-Partition (ersetzt den bisherigen Kernel)
+  SYSACC.NAC  -> C:\ACC\SYSACC.NAC (und, falls dort eine zweite Kopie liegt,
+                 C:\SYSACC2.NAC ersetzen)
+
+WAS MAN SIEHT
+  Im Desk-Menue heisst der Eintrag jetzt " System Info" (vorher
+  " NewTOS System"). Ein Klick oeffnet den Dialog "NewTOS System Information",
+  OK (oder Return) schliesst ihn. Es wird nur angezeigt, nichts eingestellt.
+
+    Kernel        Version und Bauzeitpunkt
+    System        CPU clock (von der Firmware angeforderter Takt), Measured
+                  (von der Firmware gemessener Takt), Clock policy
+                  (Firmware-controlled / Fixed at maximum), Temperature,
+                  ST-RAM, TT-RAM
+    Display       Resolution, Colour depth, GPU memory
+    Memory prot.  Protection (Off / On / Strict), Address IDs (Off / On /
+                  Test)
+    SD card       Transfer (Fast / Compatibility), Bus width (1-bit / 4-bit),
+                  Block cache (Groesse oder Off), Cache share (Prozent)
+    Input/output  Keyboard (US / German / KEYBOARD.KBD / Changed by
+                  program), Serial port (On / Off)
+
+  Gezeigt wird, womit der Kernel WIRKLICH laeuft -- nicht, was in cmdline.txt
+  steht. Beispiel: cpuclk=max, das die Firmware nicht gewaehrt, erscheint als
+  "Firmware (max denied)".
+
+AUF DER PI ZU PRUEFEN (in QEMU nicht moeglich)
+  * "Measured" muss einen Wert zeigen (QEMU kennt die Abfrage nicht und zeigt
+    "not available"); "CPU clock" und "Temperature" duerfen nicht 700,0 MHz /
+    25,0 Grad sein (das sind QEMUs feste Zahlen).
+  * Bei 1920x1080 o. ae. muss Resolution die echte Bildschirmgroesse zeigen
+    und der Dialog mittig stehen.
+  * GPU memory = die gpu_mem-Aufteilung der Firmware.
+  * Serial port = Off ohne serial=on in cmdline.txt.

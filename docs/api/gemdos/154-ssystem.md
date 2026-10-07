@@ -20,8 +20,9 @@
 >
 > **Plus NewTOS's own modes from 2000 upwards** (§"NewTOS-own modes (2000+)"):
 > machine facts an EL0 program cannot reach any other way, because the hardware
-> that knows them is kernel-only (2000/2001), and the kernel entry of the
-> default `kbdvec` stub (2002, KEYS02). These are *not* FreeMiNT modes and are
+> that knows them is kernel-only (2000/2001), the kernel entry of the
+> default `kbdvec` stub (2002, KEYS02), and the effective system settings a
+> system-information tool shows (2003–2019, SYSINFO01). These are *not* FreeMiNT modes and are
 > marked as ours wherever they appear; 2000+ is a range FreeMiNT leaves free.
 
 > **Contract vs. reference** — see [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md).
@@ -152,6 +153,23 @@ NewTOS identity, but that is a separate decision.
 | `S_NEWTOS_CPUCLOCK` | 2000 | machine | ARM core clock, **Hz** |
 | `S_NEWTOS_CPUTEMP` | 2001 | machine | SoC die temperature, **1/1000 °C** |
 | `S_NEWTOS_KBDVEC` | 2002 | keyboard | run the default `kbdvec` (EmuTOS `kbd_int`) for one IKBD key byte — KEYS02, see below |
+| `S_NEWTOS_CPUMEAS` | 2003 | machine | ARM core clock **measured** by the firmware, Hz — SYSINFO01, see §"System-information modes" |
+| `S_NEWTOS_CPUPOLICY` | 2004 | machine | ARM clock policy in effect (firmware / fixed at maximum) |
+| `S_NEWTOS_MEMPROT` | 2005 | kernel | memory protection in effect (off / on / strict) |
+| `S_NEWTOS_ASID` | 2006 | kernel | address-space IDs in effect (off / on / test) |
+| `S_NEWTOS_SDMODE` | 2007 | storage | SD transfer mode in effect (fast / compatibility) |
+| `S_NEWTOS_SDBUS` | 2008 | storage | SD data-bus width negotiated with the card, bits |
+| `S_NEWTOS_BCACHE` | 2009 | storage | block read cache size, KiB (0 = off) |
+| `S_NEWTOS_BCACHEPCT` | 2010 | storage | block cache share one linear read may fill, percent |
+| `S_NEWTOS_STRAM` | 2011 | memory | ST-RAM pool size, KiB |
+| `S_NEWTOS_TTRAM` | 2012 | memory | TT-RAM pool size, KiB (0 = none) |
+| `S_NEWTOS_SCRWIDTH` | 2013 | display | framebuffer width, pixels |
+| `S_NEWTOS_SCRHEIGHT` | 2014 | display | framebuffer height, pixels |
+| `S_NEWTOS_SCRDEPTH` | 2015 | display | framebuffer depth, bits per pixel |
+| `S_NEWTOS_GPUMEM` | 2016 | display | VideoCore (GPU) memory, KiB |
+| `S_NEWTOS_KEYBOARD` | 2017 | input | source of the active keyboard layout |
+| `S_NEWTOS_SERIAL` | 2018 | console | serial console output on / off |
+| `S_NEWTOS_KVERSION` | 2019 | kernel | kernel version + build stamp, **string** into the caller's buffer |
 
 **Why the number block is free.** FreeMiNT's `sys/mint/ssystem.h` (@ `f906416`)
 assigns 0–29, 100 and `0x54f8` (21752), and reserves two ranges by comment:
@@ -245,6 +263,95 @@ print. Observed on QEMU `raspi4b` (2026-09-24): its firmware model *does*
 answer both tags, with the fixed values 700 000 000 Hz and 25 000 m°C — those
 are the emulator's numbers, faithfully reported, and only a real Pi 4 shows a
 clock that moves and a die that warms up.
+
+#### System-information modes (2003–2019) — SYSINFO01
+
+The settings and machine facts a system-information tool shows (the SYSACC desk
+accessory, `sdk/examples/sysacc.c`, TASK/SYSINFO01). Every mode reports the
+**effective** state the kernel runs with — what the boot code actually did with
+the boot arguments (`cmdline.txt`, `kernel/src/bootargs.rs`) and what the
+hardware actually negotiated — never the text of a configuration file. A
+program that wants to show `memprot=strict` learns "strict" only if the kernel
+really runs strict.
+
+**Interface of the scalar modes 2003–2018** — exactly the one of 2000/2001
+(§"Interface (both modes)" below): `arg1` = pointer to a 32-bit LONG that
+receives the value, or 0 for the value in the returned LONG; `arg2` reserved,
+must be 0 (`EINVAL` before anything is read, nothing written); `ERROR` (-1)
+when the value is unknown on this machine (nothing written). No value of these
+modes can reach `0xFFFF_FFFF`, but the pointer form remains the recommended
+one, for the same reason as there.
+
+| Mode | Value | Answer (`E_OK` / returned LONG) | `ERROR` when | Source of the effective state |
+|------|------:|---------------------------------|--------------|-------------------------------|
+| `S_NEWTOS_CPUMEAS` | 2003 | the ARM clock the firmware **measured**, Hz — *"the true/actual clock rate … which respects clamping, throttling and clock divider limitations"*, where 2000 answers *"the last requested value"* | the firmware does not answer tag `0x0003_0047` or answers rate 0; no VideoCore (`qemu-virt`, hostless) | `Host::cpu_clock_measured_hz` → mailbox "Get clock rate measured" `0x0003_0047`, clock id 3 (`docs/hardware/mailbox-framebuffer.md` §3f; `references/rpi4-boot/firmware-wiki-mailbox-property-interface.md`), live per call |
+| `S_NEWTOS_CPUPOLICY` | 2004 | **0** = the firmware controls the ARM clock (no `cpuclk=max`, or `cpuclk=firmware`); **1** = fixed at the firmware maximum (`cpuclk=max`, "Set clock rate" answered); **2** = `cpuclk=max` asked, but the firmware reported no maximum or did not answer "Set clock rate" — the clock stayed with the firmware | the board has no clock control (`qemu-virt`, hostless) | `Host::cpu_clock_policy`, recorded by the kernel's boot step `raise_arm_clock` (FS08 part 3) |
+| `S_NEWTOS_MEMPROT` | 2005 | **0** = off (`memprot=off`); **1** = on (default); **2** = on and strict (`memprot=strict`, FreeMiNT `MPF_STRICT`). `memprot=off memprot=strict` is off: strict has no effect without protection | — (always known once GEMDOS runs) | `tos_api::bdos::process::memprot::{enabled, strict}` (ARCH03 3b/E5) |
+| `S_NEWTOS_ASID` | 2006 | **0** = off (default; TLB dropped on every address-space switch); **1** = on (`asid=on`); **2** = test mode (`asid=tiny`: ASIDs on, four numbers per generation — the rollover test) | — | `tos_api::bdos::process::mmu::{asids_enabled, asid_stats}`, the generation limit `ASID_TEST_LIMIT` (ARCH03 stage 4) |
+| `S_NEWTOS_SDMODE` | 2007 | **0** = fast mode (multi-block `CMD18`/`CMD25`, 4-bit bus where the card offers it — FS08); **1** = compatibility mode (`emmc=compat`: 1-bit bus, one `CMD17`/`CMD24` per sector) | no SD card initialised, or a board without the SD driver (`qemu-virt`, hostless) | `Host::sd_card_mode` → `kernel::drivers::bcm2711::emmc` (`COMPAT`) |
+| `S_NEWTOS_SDBUS` | 2008 | the data-bus width the driver and the card actually use, in bits: **1** or **4**. Fast mode with a card whose SCR lists no 4-bit bus (or whose `ACMD6` failed) answers 1 | as 2007 | `Host::sd_card_mode` → `emmc` (`BUS_4BIT`, set only after `ACMD6` succeeded and the host was switched) |
+| `S_NEWTOS_BCACHE` | 2009 | the memory given to the block read cache, **KiB**; **0** = no cache (`bcache=0`, or a board without a block device) | — | `tos_api::bios::bcache` (FS09): the arena handed to `install`, the same number as the boot line `[bcache] … N KiB at …` |
+| `S_NEWTOS_BCACHEPCT` | 2010 | the share of the cache one linear read may fill, percent (`bcachepct=`, default 5) | no cache installed | `tos_api::bios::bcache::stats().pct` |
+| `S_NEWTOS_STRAM` | 2011 | the ST-RAM pool the BDOS manages, **KiB** (`end − start` as seeded at boot; the memory `Malloc`/`Mxalloc` can hand out, the extent `phystop` closes) | GEMDOS memory not initialised | `tos_api::bdos::mem::init::stram_range` |
+| `S_NEWTOS_TTRAM` | 2012 | the TT-RAM (alt-RAM) pool as seeded at boot, **KiB**; **0** = the machine has none (EmuTOS `ramtop == NULL`). A later `Maddalt` region does not count, as it does not move `ramtop` | as 2011 | `tos_api::bdos::mem::init::ttram_range` |
+| `S_NEWTOS_SCRWIDTH` | 2013 | width of the hardware framebuffer, pixels | no display up | `Host::screen().width` (the framebuffer the kernel allocated from the VideoCore) |
+| `S_NEWTOS_SCRHEIGHT` | 2014 | height, pixels | as 2013 | `Host::screen().height` |
+| `S_NEWTOS_SCRDEPTH` | 2015 | bits per pixel of the hardware framebuffer (32 = the XRGB8888 scan-out). This is the framebuffer, not the VDI workstation's colour model | as 2013 | `Host::screen().bpp` |
+| `S_NEWTOS_GPUMEM` | 2016 | the memory the firmware gives the VideoCore (`gpu_mem` split), **KiB** | the firmware did not answer "Get VC memory"; no VideoCore | `Host::gpu_memory_bytes` → mailbox "Get VC memory" `0x0001_0006` (§3a), read once at boot with "Get ARM memory" — the split cannot change while the machine runs |
+| `S_NEWTOS_KEYBOARD` | 2017 | where the active layout came from: **0** = built-in US (the default, or `#K us`); **1** = built-in German (`#K de` in `NEWDESK.INF`); **2** = loaded from `C:\KEYBOARD.KBD`; **3** = changed since by a program (XBIOS `Keytbl` replaced a table with different contents) | the board has no keyboard translator (hostless) | `Host::keyboard_layout` → `kernel::keymap` |
+| `S_NEWTOS_SERIAL` | 2018 | **0** = serial console output off; **1** = on (`serial=on` on `board-rpi4`; always on on `board-qemu-virt`, whose serial log is its only console) | hostless | `Host::serial_console` → `kernel::console::serial_tx_enabled` (SER01) |
+
+**`S_NEWTOS_KVERSION` (2019) — the kernel version string.** The string form of
+FreeMiNT's `S_KNAME` (900, `sys/ssystem.c:572-576` → `strncpy_f`,
+`sys/libkern/strncpy_f.c:47-56`):
+
+```
+Ssystem(2019, char *buf, LONG len)
+```
+
+| Arg | Meaning |
+|-----|---------|
+| `arg1` | the caller's buffer |
+| `arg2` | its size in bytes (a signed LONG) |
+
+The kernel copies at most `len − 1` characters of the version string and always
+terminates with a NUL — `strncpy_f`'s rule; `len <= 0` writes nothing and is
+still `E_OK`. The string is the OS name and version followed by the build stamp,
+`"NewTOS 0.1 2026-10-07 (c50a9c9)"` — the same two texts the boot screen prints
+as *Version* and *Built* (`kernel/src/initinfo.rs` `VERSION_STRING`,
+`tos_api::build::BUILD_STAMP`). It is shorter than 64 bytes.
+
+| Return | Condition |
+|--------|-----------|
+| `E_OK` (0) | copied (or `len <= 0`: nothing to copy) |
+| `EINVAL` (-25) | `arg1 == 0` with `len > 0` (FreeMiNT would write to address 0; NewTOS refuses) |
+| `ERROR` (-1) | the host reports no version (hostless) |
+
+**Not a number from the boot arguments.** Every scalar above is the state the
+kernel ended up in: a `bcache=` value that was refused keeps the default and
+2009 reports the default; `emmc=` on a board whose card did not initialise is
+`ERROR`, not "fast"; `cpuclk=max` that the firmware did not grant is 2, not 1.
+Where a fact is not known on a board, the answer is `ERROR` — the same rule as
+2000/2001.
+
+**Board table (SYSINFO01):**
+
+| Mode | `board-rpi4` (real Pi 4 / QEMU `raspi4b`) | `board-qemu-virt` | hostless (unit test) |
+|------|-------------------------------------------|-------------------|----------------------|
+| 2003 | firmware answer (QEMU: whatever its model answers, or `ERROR`) | `ERROR` | `ERROR` |
+| 2004 | 0 / 1 / 2 | `ERROR` | `ERROR` |
+| 2005, 2006 | value | value | value |
+| 2007, 2008 | value with a card, else `ERROR` | `ERROR` | `ERROR` |
+| 2009 | KiB | 0 | 0 |
+| 2010 | percent, `ERROR` with `bcache=0` | `ERROR` | `ERROR` |
+| 2011, 2012 | KiB | KiB | `ERROR` until `bdos::mem::init` |
+| 2013–2015 | framebuffer | framebuffer if a display is up | `ERROR` |
+| 2016 | firmware answer | `ERROR` | `ERROR` |
+| 2017 | 0–3 | 0–3 | `ERROR` |
+| 2018 | 0 / 1 | 1 | `ERROR` |
+| 2019 | string | string | `ERROR` |
+
+Tests: `tos-api/tests/gemdos_ssystem_sysinfo.rs`.
 
 ---
 

@@ -1,0 +1,19 @@
+# TASK/SYSINFO01, QED (#Z C:\Apps\QED\QED.NAP) with the card's two
+# accessories: hover "Desk" (26,9) -> QED's Desk drop-down with the accessory
+# entries; click the first (60,66) -> AC_OPEN -> the SYSINFO01 dialog over
+# QED; Return closes it.
+# Ticks hz_200 after the injector arms (the first accessory, session start).
+# (measurement-2026-10-07-acctitle/method/qed.actions, mark names changed.)
+100 parkbr
+3600 mark Q00_UP
+3700 move 26 9
+4100 mark Q01_DESK_OPEN
+4200 move 60 66
+4400 down
+4403 up
+5400 mark Q02_DIALOG
+5600 key 1C
+5606 key 9C
+6200 mark Q03_CLOSED
+6300 parkbr
+6600 mark END

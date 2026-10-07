@@ -8,9 +8,11 @@
 //! On top of those sit NewTOS's **own** subfunctions from 2000 upwards
 //! ([`S_NEWTOS_CPUCLOCK`], [`S_NEWTOS_CPUTEMP`]) — machine facts an EL0
 //! program cannot otherwise reach, because the hardware that knows them (the
-//! BCM2711 mailbox) is kernel-only — and [`S_NEWTOS_KBDVEC`] (2002), the
+//! BCM2711 mailbox) is kernel-only — [`S_NEWTOS_KBDVEC`] (2002), the
 //! kernel entry of the per-process default `kbdvec` stub (KEYS02,
-//! `docs/api/xbios/22-kbdvbase.md` B3/D6). 2000 is free: FreeMiNT's own header
+//! `docs/api/xbios/22-kbdvbase.md` B3/D6), and the system-information modes
+//! 2003–2019 ([`S_NEWTOS_CPUMEAS`] … [`S_NEWTOS_KVERSION`], SYSINFO01): the
+//! effective settings the kernel runs with. 2000 is free: FreeMiNT's own header
 //! reserves 0–29, 100, `0x54f8`, 900–999 and 1000–**1999**
 //! (`references/freemint/sys/mint/ssystem.h`, the two `reserved` comments),
 //! and the highest number its dispatcher answers is the build-gated test mode
@@ -42,6 +44,46 @@ pub const S_NEWTOS_CPUTEMP: u16 = 2001;
 /// 0 calls (KEYS02). Defined next to the stub in [`crate::xbios::kbdvecs`].
 pub const S_NEWTOS_KBDVEC: u16 = crate::xbios::kbdvecs::S_NEWTOS_KBDVEC;
 
+// SYSINFO01: the effective system settings a system-information tool shows
+// (`docs/api/gemdos/154-ssystem.md` §"System-information modes (2003–2019)").
+// Scalars 2003–2018 share the 2000/2001 interface ([`newtos_scalar`]); 2019 is
+// a string ([`s_newtos_kversion`]).
+
+/// The ARM clock the firmware measured, Hz.
+pub const S_NEWTOS_CPUMEAS: u16 = 2003;
+/// The ARM clock policy in effect: 0 firmware, 1 fixed at max, 2 max refused.
+pub const S_NEWTOS_CPUPOLICY: u16 = 2004;
+/// Memory protection in effect: 0 off, 1 on, 2 strict.
+pub const S_NEWTOS_MEMPROT: u16 = 2005;
+/// Address-space IDs in effect: 0 off, 1 on, 2 test (`asid=tiny`).
+pub const S_NEWTOS_ASID: u16 = 2006;
+/// SD transfer mode in effect: 0 fast, 1 compatibility (`emmc=compat`).
+pub const S_NEWTOS_SDMODE: u16 = 2007;
+/// SD data-bus width negotiated with the card, bits.
+pub const S_NEWTOS_SDBUS: u16 = 2008;
+/// Block read cache size, KiB (0 = off).
+pub const S_NEWTOS_BCACHE: u16 = 2009;
+/// Block cache share of one linear read, percent.
+pub const S_NEWTOS_BCACHEPCT: u16 = 2010;
+/// ST-RAM pool size, KiB.
+pub const S_NEWTOS_STRAM: u16 = 2011;
+/// TT-RAM pool size, KiB (0 = none).
+pub const S_NEWTOS_TTRAM: u16 = 2012;
+/// Framebuffer width, pixels.
+pub const S_NEWTOS_SCRWIDTH: u16 = 2013;
+/// Framebuffer height, pixels.
+pub const S_NEWTOS_SCRHEIGHT: u16 = 2014;
+/// Framebuffer depth, bits per pixel.
+pub const S_NEWTOS_SCRDEPTH: u16 = 2015;
+/// VideoCore (GPU) memory, KiB.
+pub const S_NEWTOS_GPUMEM: u16 = 2016;
+/// Source of the active keyboard layout: 0 US, 1 German, 2 file, 3 changed.
+pub const S_NEWTOS_KEYBOARD: u16 = 2017;
+/// Serial console output: 0 off, 1 on.
+pub const S_NEWTOS_SERIAL: u16 = 2018;
+/// Kernel version + build stamp, a string into the caller's buffer.
+pub const S_NEWTOS_KVERSION: u16 = 2019;
+
 /// `Ssystem(WORD mode, LONG arg1, LONG arg2)`: `mode` in `x0`, `arg1` in
 /// `x1`, `arg2` in `x2`.
 pub fn ssystem(args: &TrapArgs) -> Long {
@@ -65,8 +107,92 @@ pub fn ssystem(args: &TrapArgs) -> Long {
             newtos_scalar(args, || host::host()?.cpu_temperature_mdeg())
         }
         S_NEWTOS_KBDVEC => s_newtos_kbdvec(args),
+        S_NEWTOS_KVERSION => s_newtos_kversion(args),
+        mode @ S_NEWTOS_CPUMEAS..=S_NEWTOS_SERIAL => newtos_scalar(args, || sysinfo_value(mode)),
         _ => EINVFN,
     }
+}
+
+/// The value of one scalar system-information mode (2003–2018), or `None`
+/// when this machine does not know it (`docs/api/gemdos/154-ssystem.md`
+/// §"System-information modes"). Every answer is the state the kernel runs
+/// with — read from the module that holds it, or from the host for facts that
+/// live in the kernel's drivers and boot decisions.
+fn sysinfo_value(mode: u16) -> Option<Long> {
+    use crate::bdos::mem::init as pools;
+    use crate::bdos::process::{memprot, mmu};
+    let kib = |bytes: u64| (bytes / 1024) as Long;
+    match mode {
+        S_NEWTOS_CPUMEAS => host::host()?.cpu_clock_measured_hz().map(|hz| hz as Long),
+        S_NEWTOS_CPUPOLICY => host::host()?.cpu_clock_policy().map(|p| p as Long),
+        S_NEWTOS_MEMPROT => Some(match (memprot::enabled(), memprot::strict()) {
+            (false, _) => 0,
+            (true, false) => 1,
+            (true, true) => 2,
+        }),
+        S_NEWTOS_ASID => Some(if !mmu::asids_enabled() {
+            0
+        } else if mmu::asid_stats().3 == mmu::ASID_TEST_LIMIT {
+            2
+        } else {
+            1
+        }),
+        S_NEWTOS_SDMODE => host::host()?.sd_card_mode().map(|m| m.compat as Long),
+        S_NEWTOS_SDBUS => host::host()?.sd_card_mode().map(|m| m.bus_width as Long),
+        S_NEWTOS_BCACHE => Some(kib(crate::bios::bcache::arena_bytes() as u64)),
+        S_NEWTOS_BCACHEPCT => crate::bios::bcache::stats().map(|s| s.pct as Long),
+        S_NEWTOS_STRAM | S_NEWTOS_TTRAM => {
+            if !pools::is_initialised() {
+                return None;
+            }
+            let (start, end) =
+                if mode == S_NEWTOS_STRAM { pools::stram_range() } else { pools::ttram_range() };
+            Some(kib((end as u32).wrapping_sub(start as u32) as u64))
+        }
+        S_NEWTOS_SCRWIDTH => host::host()?.screen().map(|s| s.width as Long),
+        S_NEWTOS_SCRHEIGHT => host::host()?.screen().map(|s| s.height as Long),
+        S_NEWTOS_SCRDEPTH => host::host()?.screen().map(|s| s.bpp as Long),
+        S_NEWTOS_GPUMEM => host::host()?.gpu_memory_bytes().map(kib),
+        S_NEWTOS_KEYBOARD => host::host()?.keyboard_layout().map(|k| k as Long),
+        S_NEWTOS_SERIAL => host::host()?.serial_console().map(Long::from),
+        _ => None,
+    }
+}
+
+/// `S_NEWTOS_KVERSION` (2019): `arg1` = the caller's buffer, `arg2` = its
+/// size in bytes (signed). FreeMiNT's `S_KNAME` rule (`sys/ssystem.c:572-576`
+/// → `strncpy_f`, `sys/libkern/strncpy_f.c:47-56`): at most `len - 1`
+/// characters and always a NUL; `len <= 0` writes nothing and is `E_OK`. A
+/// null buffer with `len > 0` is `EINVAL` (FreeMiNT would write to address 0).
+/// The string is the host's OS version and the build stamp, e.g.
+/// `"NewTOS 0.1 2026-10-07 (c50a9c9)"`; `ERROR` without one.
+fn s_newtos_kversion(args: &TrapArgs) -> Long {
+    let buf = args.arg_u64(1);
+    let len = args.arg_i32(2);
+    let Some(name) = host::host().and_then(|h| h.os_version()) else {
+        return ERROR;
+    };
+    if len <= 0 {
+        return E_OK;
+    }
+    if buf == 0 {
+        return EINVAL;
+    }
+    let mut text = [0u8; 96];
+    let mut n = 0;
+    for part in [name.as_bytes(), b" ", crate::build::BUILD_STAMP.as_bytes()] {
+        let take = part.len().min(text.len() - 1 - n);
+        text[n..n + take].copy_from_slice(&part[..take]);
+        n += take;
+    }
+    let n = n.min(len as usize - 1);
+    // The NUL right after the copied characters (the cut may fall inside
+    // the text).
+    text[n] = 0;
+    if args.space.copy_to(buf, &text[..n + 1]).is_err() {
+        return crate::uaccess::FAULTED;
+    }
+    E_OK
 }
 
 /// `S_GETCOOKIE` (8). `arg1` = tag, `arg2` = pointer to a LONG (or 0).

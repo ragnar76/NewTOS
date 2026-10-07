@@ -253,6 +253,12 @@ static TLB_DIRTY: AtomicBool = AtomicBool::new(false);
 
 // ─── ASIDs (stage 4) ─────────────────────────────────────────────────
 
+/// ASID numbers per generation in the rollover test mode (boot argument
+/// `asid=tiny`): four, three of them usable. Hardware ASIDs are 8 or 16 bits
+/// wide (`ID_AA64MMFR0_EL1.ASIDBits`), so a generation limit of 4 is this mode
+/// and nothing else — `Ssystem(S_NEWTOS_ASID)` reports it as "test".
+pub const ASID_TEST_LIMIT: u32 = 4;
+
 /// ASIDs on (boot argument `asid=on`/`asid=tiny`, [`configure_asids`]).
 static ASID_ON: AtomicBool = AtomicBool::new(false);
 

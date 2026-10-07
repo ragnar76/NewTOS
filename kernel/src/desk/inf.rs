@@ -2612,10 +2612,13 @@ const ADDINFO_BOX_SPEC: u64 = (2 << 16) | 0x1100;
 ///
 /// **Deliberately the same text as [`crate::initinfo::VERSION_STRING`], and
 /// deliberately a second copy of it.** See the block comment above for why the
-/// shared symbol cannot survive the move. There is no NewTOS syscall that
-/// reports this string: the `NTOS` cookie carries a *number*
-/// (`0x0000_0100`, `tos-api/src/cookie.rs:142`) with no defined rendering, and
-/// `Sversion` reports the GEMDOS version, not the OS name.
+/// shared symbol cannot survive the move. The `NTOS` cookie carries a
+/// *number* (`0x0000_0100`, `tos-api/src/cookie.rs:142`) with no defined
+/// rendering, and `Sversion` reports the GEMDOS version, not the OS name.
+/// Since SYSINFO01, `Ssystem(S_NEWTOS_KVERSION)` (2019,
+/// `docs/api/gemdos/154-ssystem.md`) hands programs this string followed by
+/// the build stamp; this desktop does not ask for it (it is compiled with the
+/// kernel), a separately built one could.
 const VERSION_STRING: &str = "NewTOS 0.1";
 
 /// The project's independence notice — the NewTOS counterpart of the

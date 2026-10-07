@@ -5,6 +5,9 @@
 //! stubbed out (returning `None` / `false`) until the IRQ-driven
 //! ringbuffer in PHASE-02 D5 lands.
 
+#[cfg(feature = "board-rpi4")]
+use core::sync::atomic::Ordering;
+
 use tos_api::Host;
 
 use crate::console::CONSOLE;
@@ -346,6 +349,80 @@ impl Host for KernelHost {
         use crate::drivers::bcm2711::mailbox;
         mailbox::get_temperature(mailbox::TEMPERATURE_ID).map(|mdeg| mdeg as i32)
     }
+
+    /// `board-rpi4`: "Get clock rate measured" for the ARM clock, live per
+    /// call for the same reason as [`Host::cpu_clock_hz`].
+    #[cfg(feature = "board-rpi4")]
+    fn cpu_clock_measured_hz(&self) -> Option<u32> {
+        use crate::drivers::bcm2711::mailbox;
+        mailbox::get_clock_rate_measured(mailbox::CLOCK_ID_ARM)
+    }
+
+    /// `board-rpi4`: what `raise_arm_clock` did at boot ([`record_cpu_clock_policy`]).
+    #[cfg(feature = "board-rpi4")]
+    fn cpu_clock_policy(&self) -> Option<tos_api::host::CpuClockPolicy> {
+        use tos_api::host::CpuClockPolicy;
+        match CPU_CLOCK_POLICY.load(Ordering::Relaxed) {
+            0 => Some(CpuClockPolicy::Firmware),
+            1 => Some(CpuClockPolicy::FixedMax),
+            2 => Some(CpuClockPolicy::MaxRefused),
+            _ => None,
+        }
+    }
+
+    /// `board-rpi4`: the SD driver's transfer setup, `None` without a card.
+    #[cfg(feature = "board-rpi4")]
+    fn sd_card_mode(&self) -> Option<tos_api::host::SdCardMode> {
+        crate::drivers::bcm2711::emmc::transfer_mode()
+            .map(|(compat, bus_width)| tos_api::host::SdCardMode { compat, bus_width })
+    }
+
+    /// `board-rpi4`: the VideoCore memory the firmware reported at boot
+    /// ([`record_gpu_memory`]); the `gpu_mem` split is fixed while the
+    /// machine runs.
+    #[cfg(feature = "board-rpi4")]
+    fn gpu_memory_bytes(&self) -> Option<u64> {
+        match GPU_MEMORY_BYTES.load(Ordering::Relaxed) {
+            u64::MAX => None,
+            b => Some(b),
+        }
+    }
+
+    fn keyboard_layout(&self) -> Option<tos_api::host::KeyboardLayout> {
+        Some(crate::keymap::source())
+    }
+
+    fn serial_console(&self) -> Option<bool> {
+        Some(crate::console::serial_tx_enabled())
+    }
+
+    fn os_version(&self) -> Option<&'static str> {
+        Some(crate::initinfo::VERSION_STRING)
+    }
+}
+
+/// `raise_arm_clock`'s outcome as `CpuClockPolicy as u8`; `u8::MAX` = not
+/// decided (the boot step has not run).
+#[cfg(feature = "board-rpi4")]
+static CPU_CLOCK_POLICY: core::sync::atomic::AtomicU8 = core::sync::atomic::AtomicU8::new(u8::MAX);
+
+/// Record what the boot step did with the ARM clock (`cpuclk=`, FS08 part 3)
+/// for `Ssystem(S_NEWTOS_CPUPOLICY)`.
+#[cfg(feature = "board-rpi4")]
+pub fn record_cpu_clock_policy(p: tos_api::host::CpuClockPolicy) {
+    CPU_CLOCK_POLICY.store(p as u8, Ordering::Relaxed);
+}
+
+/// The VideoCore memory from the firmware's "Get VC memory" answer at boot;
+/// `u64::MAX` = not reported.
+#[cfg(feature = "board-rpi4")]
+static GPU_MEMORY_BYTES: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(u64::MAX);
+
+/// Record the VideoCore memory size the firmware reported at boot, for
+/// `Ssystem(S_NEWTOS_GPUMEM)`.
+#[cfg(feature = "board-rpi4")]
+pub fn record_gpu_memory(bytes: u64) {
+    GPU_MEMORY_BYTES.store(bytes, Ordering::Relaxed);
 }
 
 /// The blocking key-word read shared by [`Host::console_read_key_blocking`]

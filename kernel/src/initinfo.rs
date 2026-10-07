@@ -84,9 +84,10 @@ const INFO_LENGTH: i16 = 40;
 // (`docs/analysis/desktop-userspace-plan-v2.md` §6.4, measure 1), so the shared
 // symbol is exactly the kind of link that move removes. The desktop's copies
 // live at `kernel/src/desk/inf.rs`, next to the About box's other literals,
-// and name this comment. Editing one means editing both — there is no syscall
-// that reports an OS *name* string (the `NTOS` cookie is a number,
-// `tos-api/src/cookie.rs:142`; `Sversion` is the GEMDOS version).
+// and name this comment. Editing one means editing both (the `NTOS` cookie is
+// a number, `tos-api/src/cookie.rs:142`; `Sversion` is the GEMDOS version).
+// Programs get `VERSION_STRING` + the build stamp through
+// `Ssystem(S_NEWTOS_KVERSION)` (2019, SYSINFO01, via `Host::os_version`).
 
 /// The NewTOS version string, as the boot screen's `Version` line prints it.
 /// The desktop's About box shows the same text from its own constant — see the

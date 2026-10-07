@@ -267,6 +267,97 @@ pub trait Host: Sync {
     fn cpu_temperature_mdeg(&self) -> Option<i32> {
         None
     }
+
+    // ── SYSINFO01: the effective system settings (`Ssystem` 2003–2019) ──
+    //
+    // The facts below live in the kernel (drivers, boot decisions) and not in
+    // `tos-api`; each is the state the kernel actually ended up in, never the
+    // text of a boot argument. A host that does not know one keeps the
+    // default `None`, which `Ssystem` turns into `ERROR`
+    // (`docs/api/gemdos/154-ssystem.md` §"System-information modes").
+
+    /// The ARM core clock as the firmware **measured** it, in Hz — mailbox
+    /// "Get clock rate measured" (`0x0003_0047`), where
+    /// [`Host::cpu_clock_hz`] answers the last *requested* rate. Live per
+    /// call; `None` without a VideoCore or without an answer.
+    fn cpu_clock_measured_hz(&self) -> Option<u32> {
+        None
+    }
+
+    /// What the boot code did with the ARM clock (`cpuclk=`, FS08 part 3), or
+    /// `None` on a board without clock control.
+    fn cpu_clock_policy(&self) -> Option<CpuClockPolicy> {
+        None
+    }
+
+    /// The SD card's transfer mode and negotiated bus width, or `None` when
+    /// no card was initialised (or the board has no SD driver).
+    fn sd_card_mode(&self) -> Option<SdCardMode> {
+        None
+    }
+
+    /// The memory the firmware gives the VideoCore (the `gpu_mem` split), in
+    /// bytes, or `None` when the firmware did not report it.
+    fn gpu_memory_bytes(&self) -> Option<u64> {
+        None
+    }
+
+    /// Where the active keyboard layout came from, or `None` without a
+    /// keyboard translator.
+    fn keyboard_layout(&self) -> Option<KeyboardLayout> {
+        None
+    }
+
+    /// `Some(true)` while console output goes to the serial port,
+    /// `Some(false)` while it is switched off, `None` without a serial
+    /// console.
+    fn serial_console(&self) -> Option<bool> {
+        None
+    }
+
+    /// The OS name and version as the boot screen prints it
+    /// (`"NewTOS 0.1"`), or `None` (hostless). `Ssystem(S_NEWTOS_KVERSION)`
+    /// appends the build stamp ([`crate::build::BUILD_STAMP`]).
+    fn os_version(&self) -> Option<&'static str> {
+        None
+    }
+}
+
+/// What the boot code did with the ARM core clock (`cpuclk=`, FS08 part 3) —
+/// `Ssystem(S_NEWTOS_CPUPOLICY)`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum CpuClockPolicy {
+    /// The firmware controls the clock (the default, or `cpuclk=firmware`).
+    Firmware = 0,
+    /// Pinned at the firmware's maximum rate (`cpuclk=max`, granted).
+    FixedMax = 1,
+    /// `cpuclk=max` was asked, but the firmware reported no maximum or did
+    /// not answer "Set clock rate": the clock stayed with the firmware.
+    MaxRefused = 2,
+}
+
+/// The SD card's effective transfer setup — `Ssystem(S_NEWTOS_SDMODE)` and
+/// `Ssystem(S_NEWTOS_SDBUS)`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct SdCardMode {
+    /// `emmc=compat`: 1-bit bus, one single-block command per sector.
+    pub compat: bool,
+    /// Data-bus width the driver and the card use, in bits (1 or 4).
+    pub bus_width: u8,
+}
+
+/// Where the active keyboard layout came from — `Ssystem(S_NEWTOS_KEYBOARD)`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum KeyboardLayout {
+    /// The built-in US table (the default, or `#K us`).
+    BuiltinUs = 0,
+    /// The built-in German table (`#K de` in `NEWDESK.INF`).
+    BuiltinGerman = 1,
+    /// Loaded from `C:\KEYBOARD.KBD`.
+    File = 2,
+    /// A program has since replaced a table (XBIOS `Keytbl`) with different
+    /// contents.
+    ChangedByProgram = 3,
 }
 
 /// Bytes reserved for one AltGr override array. EmuTOS's non-`DUAL_KEYBOARD`
