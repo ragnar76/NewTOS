@@ -1,0 +1,24 @@
+FS08 after parts 1-3 on the real Pi 4 -- FSBENCH comparison (2026-10-07)
+
+Kernel ac17deae (release, built from b3f642d: EMMC multi-block + 4-bit,
+FAT/GEMDOS like EmuTOS, ARM clock to firmware max), same card, same D:\FSBENCH
+files and FSBENCH.NCP as measurements/measurement-2026-10-07-fs08-pi/ (before).
+No cmdline.txt (new paths active). All 100 reads CRC ok.
+
+Before -> after (10 MB file, cold):
+  L1 BIOS 128 sectors/call   13518 ms (757 KB/s)  ->   975 ms (10505 KB/s)  x13.9
+  L1 BIOS   1 sector/call    13526 ms (757 KB/s)  -> 11049 ms (926 KB/s)
+  L2 Fread whole file        14479 ms (707 KB/s)  ->   875 ms (~11.7 MB/s)  x16.5
+  L2 Fread 64 KB             14748 ms             ->   955 ms
+  L2 Fread 4 KB              17164 ms             ->  2235 ms
+  L2 Fread 512 B             25153 ms             -> 10744 ms
+  L3 stdio fread 1 KB        20824 ms (491 KB/s)  ->  7569 ms (1352 KB/s)  x2.75
+  Fopen/Fclose 3.00 ms artefact of the first run is gone (0.002-0.02 ms).
+
+Header: "CPU clock 1500 MHz" (requested rate, mailbox). spins/tick is UNCHANGED
+(1249930 vs 1249931) -- the spin loop is not CPU-bound, or the clock did not
+take effect; the measured rate (boot line, serial) was not captured. Open.
+
+Remaining limit for small reads: each sub-sector or single-sector request is
+one CMD17 (~0.54 ms); stdio reads in 1 KB (BUFSIZ) -> next lever would be a
+larger stdio buffer (fs08 analysis option F).
