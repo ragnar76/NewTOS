@@ -1079,14 +1079,17 @@ fn raise_arm_clock(dtb: Option<usize>) {
         }
     }
 
-    let firmware_only = boot_switch(dtb, false, |args: &[u8]| {
-        bootargs::has_token(args, bootargs::CPUCLK_FIRMWARE)
+    // Default: leave the clock to the firmware; only `cpuclk=max` (and not an
+    // explicit `cpuclk=firmware`) pins it at the maximum (see bootargs).
+    let firmware_only = !boot_switch(dtb, false, |args: &[u8]| {
+        bootargs::has_token(args, bootargs::CPUCLK_MAX)
+            && !bootargs::has_token(args, bootargs::CPUCLK_FIRMWARE)
     });
     let before = mailbox::get_clock_rate(CLOCK_ID_ARM);
     let temp = Soc(mailbox::get_temperature(TEMPERATURE_ID));
     if firmware_only {
         kprintln!(
-            "[clock] ARM {} MHz kept: boot arguments contain `cpuclk=firmware` ({})",
+            "[clock] ARM {} MHz left to the firmware (no `cpuclk=max`) ({})",
             Mhz(before),
             temp
         );
