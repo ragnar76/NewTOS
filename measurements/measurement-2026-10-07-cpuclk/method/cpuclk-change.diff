@@ -1,0 +1,513 @@
+diff --git a/docs/hardware/mailbox-framebuffer.md b/docs/hardware/mailbox-framebuffer.md
+index a01f34c..df7623b 100644
+--- a/docs/hardware/mailbox-framebuffer.md
++++ b/docs/hardware/mailbox-framebuffer.md
+@@ -24,8 +24,9 @@
+ | 1 | BCM2711 ARM Peripherals datasheet (datasheets.raspberrypi.com/bcm2711/bcm2711-peripherals.pdf), §1.2 address map / §1.3 mailboxes | peripheral base, mailbox region |
+ | 2 | raspberrypi/firmware wiki — [Mailboxes](https://github.com/raspberrypi/firmware/wiki/Mailboxes) | register offsets |
+ | 3 | raspberrypi/firmware wiki — [Accessing mailboxes](https://github.com/raspberrypi/firmware/wiki/Accessing-mailboxes) | status bits, read/write procedure, channel encoding |
+-| 4 | raspberrypi/firmware wiki — [Mailbox property interface](https://github.com/raspberrypi/firmware/wiki/Mailbox-property-interface) | channel 8 protocol, buffer format, tag IDs + value layouts |
++| 4 | raspberrypi/firmware wiki — [Mailbox property interface](https://github.com/raspberrypi/firmware/wiki/Mailbox-property-interface) (local copy since 2026-10-07: `references/rpi4-boot/firmware-wiki-mailbox-property-interface.md`, wiki @ `c9e615a`) | channel 8 protocol, buffer format, tag IDs + value layouts; ARM clock tags (§3f) |
+ | 5 | `references/circle` (in-tree, pinned) — `include/circle/bcmpropertytags.h`, `lib/bcmframebuffer.cpp`, `lib/2dgraphics.cpp`, `addon/linux/raspberrypi-firmware.h` | virtual-offset + vsync tag ids and value layouts, the double-buffer sequence (§3b), clock-rate + temperature tag ids and value layouts (§3d), command-line tag (§3e, also `lib/koptions.cpp`, `doc/cmdline.txt`) |
++| 6 | Raspberry Pi documentation — `config.txt` *Overclocking options* (raspberrypi/documentation `master` @ `42deaef`, `documentation/asciidoc/computers/config_txt/overclocking.adoc`; local copy `references/rpi4-boot/config-txt-overclocking.adoc`) | `force_turbo` / `arm_freq` / `arm_freq_min` defaults, firmware voltage scaling and `temp_limit` throttling (§3f) |
+ 
+ Cross-ref (verified-pattern, tertiary): rpi bare-metal FB tutorials
+ (valvers part 5), circle. **Linux is cross-reference only**, not
+@@ -456,6 +457,78 @@ Consumer: `kernel/src/console.rs::configure_serial_tx` with the token parser
+ 
+ ---
+ 
++## 3f. ARM clock control — raising the core to its maximum rate — sources #4, #5, #6 (FS08 part 3)
++
++The real Pi 4 reported **600 MHz** for the ARM clock under NewTOS
++(`measurements/measurement-2026-10-07-fs08-pi/FSBENCH.LOG`, via `Ssystem`
++2000 → "Get clock rate"); the nominal Pi 4 rate is 1500 MHz. `config.txt`
++on the card sets `force_turbo=0` and no `arm_freq`. Source #6 explains why
++the core then idles at the minimum: *"By default (`force_turbo=0`) the
++on-demand CPU frequency driver will raise clocks to their maximum frequencies
++when the Arm cores are busy, and will lower them to the minimum frequencies
++when the Arm cores are idle"* — that driver is the **OS's** (Linux cpufreq);
++NewTOS has none, and the Pi 4 `arm_freq_min` default is 600. So the kernel
++has to ask for the rate itself.
++
++Tags (source #4, local copy see the source table below; ids cross-checked in
++`references/circle/include/circle/bcmpropertytags.h:40,47,50`):
++
++| Tag id | Name | Request value | Response value | Wiki text that matters |
++|--------|------|---------------|----------------|------------------------|
++| `0x0003_0004` | Get max clock rate | `u32 clock id` (4 B) | `u32 clock id, u32 rate Hz` (8 B) | *"Return the maximum supported clock rate for the given clock. Clocks should not be set higher than this."* |
++| `0x0003_8002` | Set clock rate | `u32 clock id, u32 rate Hz, u32 skip setting turbo` (12 B) | `u32 clock id, u32 rate Hz` (8 B) | *"Next supported enable rate should be returned … A rate of 0 is returned if the clock does not exist. The clock rate may be clamped to the supported range."* and *"By default when setting arm freq above default, other turbo settings will be enabled (e.g. voltage, sdram and gpu frequencies). You can disable this effect by setting "skip setting turbo" to 1."* |
++| `0x0003_0047` | Get clock rate measured | `u32 clock id` (4 B) | `u32 clock id, u32 rate Hz` (8 B) | *"Get the true/actual clock rate (instead of the last requested value returned by "Get clock rate"/0x0003002) which respects clamping, throttling and clock divider limitations."* |
++
++`CLOCK_ID_ARM = 3` (wiki "Unique clock IDs"; circle `bcmpropertytags.h:184`).
++Circle's `TPropertyTagSetClockRate` (`bcmpropertytags.h:234-241`) has the same
++three words with `SKIP_SETTING_TURBO = 1`, and its `CCPUThrottle` sets the
++maximum rate with `bSkipTurbo = FALSE` (`lib/cputhrottle.cpp:326-336`,
++`:420-428`) — the same choice as below.
++
++**What NewTOS does** (`kernel/src/lib.rs::raise_arm_clock`, board-rpi4, early
++in the boot right after the boot-argument switches):
++
++1. "Get clock rate" and "Get temperature" (§3d) for the log line.
++2. `cpuclk=firmware` in the boot arguments (`kernel/src/bootargs.rs`) → stop
++   here, the firmware rate stays.
++3. "Get max clock rate" (ARM). No answer / rate 0 → stop, rate stays.
++4. "Set clock rate" (ARM, exactly that max, **skip setting turbo = 0**). The
++   kernel never asks above the documented maximum and never sets a voltage:
++   with `skip = 0` the firmware raises the matching turbo settings (*"e.g.
++   voltage"*) itself, and source #6 adds that *"The latest firmware
++   automatically scales up the voltage if the system is overclocked"* and that
++   the firmware uses Adaptive Voltage Scaling. No answer → stop, rate stays.
++5. "Get clock rate" (now the requested rate) and "Get clock rate measured"
++   (the actual rate) for the log line.
++
++One boot line in every case, e.g. `[clock] ARM 600 -> 1500 MHz (max 1500,
++measured 1500, SoC 45.2 C)`, or `[clock] ARM 600 MHz kept: …` with the reason.
++
++**Thermals.** The rate is set once and not regulated by NewTOS. Overheat
++protection stays with the firmware (source #6): *"Overclocking and
++overvoltage will be disabled at runtime when the SoC reaches `temp_limit` …
++which defaults to 85°C"*, *"When the core temperature is between 80°C and
++85°C, the Arm cores will be throttled back. If the temperature exceeds 85°C,
++the Arm cores and the GPU will be throttled back."* After such a throttle,
++"Get clock rate" still answers the requested rate; only "Get clock rate
++measured" shows it. Setting the documented maximum is not an overclock and
++touches no warranty bit (source #6: that bit needs `force_turbo=1` **and**
++`over_voltage_*` > 0).
++
++Pure encoding/decoding with host tests: `kernel/src/drivers/bcm2711/
++clock_tags.rs` (`encode_set_clock_rate`, `rate_reply`); transactions:
++`mailbox.rs::{get_max_clock_rate, set_clock_rate, get_clock_rate_measured}`.
++
++Source #6 = Raspberry Pi documentation, `config.txt` → *Overclocking options*
++(`documentation/asciidoc/computers/config_txt/overclocking.adoc`,
++raspberrypi/documentation `master` @ `42deaef`, fetched 2026-10-07; local
++copy `references/rpi4-boot/config-txt-overclocking.adoc`, sha256
++`b19ff813…`). Source #4 local copy: `references/rpi4-boot/
++firmware-wiki-mailbox-property-interface.md` (raspberrypi/firmware wiki @
++`c9e615a`, fetched 2026-10-07, sha256 `1197d7f5…`).
++
++---
++
+ ## 4. Framebuffer bus → ARM address conversion
+ 
+ The `allocate` tag returns a **VC bus address**, not an ARM physical
+diff --git a/kernel/src/bootargs.rs b/kernel/src/bootargs.rs
+index 0378f61..e17b64c 100644
+--- a/kernel/src/bootargs.rs
++++ b/kernel/src/bootargs.rs
+@@ -49,6 +49,12 @@ pub const ASID_TINY: &[u8] = b"asid=tiny";
+ /// allows, and moves multi-sector requests with one `CMD18`/`CMD25`.
+ pub const EMMC_COMPAT: &[u8] = b"emmc=compat";
+ 
++/// The fallback switch of the ARM clock (FS08 part 3): `cpuclk=firmware`
++/// leaves the ARM core at the rate the boot firmware started it with. Without
++/// it the kernel asks the firmware for the ARM clock's maximum rate at boot
++/// and sets it (mailbox "Get max clock rate" / "Set clock rate").
++pub const CPUCLK_FIRMWARE: &[u8] = b"cpuclk=firmware";
++
+ /// `true` if `args` contains `token` as a whole whitespace-delimited token.
+ ///
+ /// `args` ends at its first NUL byte, if any. An empty `token` never
+@@ -94,6 +100,17 @@ mod tests {
+         assert!(!has_token(b"serial=on memprot=on", EMMC_COMPAT));
+     }
+ 
++    #[test]
++    fn cpuclk_firmware_is_a_whole_token() {
++        assert!(has_token(b"serial=on cpuclk=firmware memprot=on", CPUCLK_FIRMWARE));
++        assert!(has_token(b"cpuclk=firmware\r\n", CPUCLK_FIRMWARE));
++        assert!(!has_token(b"cpuclk=firmwarex", CPUCLK_FIRMWARE));
++        assert!(!has_token(b"cpuclk=FIRMWARE", CPUCLK_FIRMWARE));
++        assert!(!has_token(b"cpuclk=", CPUCLK_FIRMWARE));
++        assert!(!has_token(b"cpuclk=max", CPUCLK_FIRMWARE));
++        assert!(!has_token(b"serial=on emmc=compat", CPUCLK_FIRMWARE));
++    }
++
+     #[test]
+     fn finds_the_token_alone_and_among_others() {
+         assert!(has_token(b"serial=on", SERIAL_ON));
+diff --git a/kernel/src/drivers/bcm2711/mailbox.rs b/kernel/src/drivers/bcm2711/mailbox.rs
+index 02078a6..444e55d 100644
+--- a/kernel/src/drivers/bcm2711/mailbox.rs
++++ b/kernel/src/drivers/bcm2711/mailbox.rs
+@@ -442,6 +442,66 @@ pub fn get_temperature(id: u32) -> Option<u32> {
+     query_id_value(PROPTAG_GET_TEMPERATURE, id)
+ }
+ 
++// ─────────────────────────────────────────────────────────────────────
++// ARM clock control (FS08 part 3): "Get max clock rate" (0x00030004),
++// "Get clock rate measured" (0x00030047), "Set clock rate" (0x00038002)
++// ─────────────────────────────────────────────────────────────────────
++//
++// Reference: `docs/hardware/mailbox-framebuffer.md` §3f. Tag ids, value
++// layouts and the reply rules are in the pure module `clock_tags` (with
++// their sources), which the host suite tests.
++
++/// The highest rate clock `clock_id` supports, in Hz — *"Clocks should not
++/// be set higher than this"* — or `None` when the firmware does not answer
++/// (a rate of 0 = the clock does not exist, also `None`).
++pub fn get_max_clock_rate(clock_id: u32) -> Option<u32> {
++    match query_id_value(super::clock_tags::PROPTAG_GET_MAX_CLOCK_RATE, clock_id) {
++        Some(0) | None => None,
++        Some(hz) => Some(hz),
++    }
++}
++
++/// The rate clock `clock_id` actually runs at, in Hz, *"which respects
++/// clamping, throttling and clock divider limitations"* (where
++/// [`get_clock_rate`] answers the last requested rate), or `None` when the
++/// firmware does not answer.
++pub fn get_clock_rate_measured(clock_id: u32) -> Option<u32> {
++    match query_id_value(super::clock_tags::PROPTAG_GET_CLOCK_RATE_MEASURED, clock_id) {
++        Some(0) | None => None,
++        Some(hz) => Some(hz),
++    }
++}
++
++/// 16-byte-aligned property buffer for "Set clock rate".
++#[repr(C, align(16))]
++struct SetClockBuf {
++    words: [u32; super::clock_tags::SET_CLOCK_RATE_WORDS],
++}
++static mut SET_CLOCK_BUF: SetClockBuf =
++    SetClockBuf { words: [0; super::clock_tags::SET_CLOCK_RATE_WORDS] };
++
++/// Ask the firmware to set clock `clock_id` to `rate_hz`; returns the rate
++/// it answers with (the next supported rate, possibly clamped to the
++/// supported range), or `None` when it does not answer the tag or reports
++/// rate 0 (the clock does not exist). `skip_setting_turbo` is the tag's third
++/// request word — see [`super::clock_tags::encode_set_clock_rate`].
++pub fn set_clock_rate(clock_id: u32, rate_hz: u32, skip_setting_turbo: bool) -> Option<u32> {
++    use super::clock_tags::{encode_set_clock_rate, rate_reply, SC_CODE, SC_RATE, SET_CLOCK_RATE_WORDS};
++    // SAFETY: boot CPU, single-threaded; exclusive use of the static buffer.
++    unsafe {
++        (*core::ptr::addr_of_mut!(SET_CLOCK_BUF)).words =
++            encode_set_clock_rate(clock_id, rate_hz, skip_setting_turbo);
++        let va = (&raw const SET_CLOCK_BUF) as usize;
++        let pa = crate::arch::aarch64::mmu::va_to_pa(va as u64) as u32;
++        if !call_property(va, pa, SET_CLOCK_RATE_WORDS * 4) {
++            return None;
++        }
++        let code = core::ptr::read_volatile((va + SC_CODE * 4) as *const u32);
++        let rate = core::ptr::read_volatile((va + SC_RATE * 4) as *const u32);
++        rate_reply(code, rate)
++    }
++}
++
+ // ─────────────────────────────────────────────────────────────────────
+ // Command-line tag: "Get command line" (0x00050001)
+ // ─────────────────────────────────────────────────────────────────────
+diff --git a/kernel/src/drivers/bcm2711/mod.rs b/kernel/src/drivers/bcm2711/mod.rs
+index ceb2f85..fbe0d95 100644
+--- a/kernel/src/drivers/bcm2711/mod.rs
++++ b/kernel/src/drivers/bcm2711/mod.rs
+@@ -4,6 +4,7 @@
+ //! (`0xFE00_0000` base), which is the firmware default in 64-bit mode.
+ //! Source: BCM2711 ARM Peripherals datasheet §1.2.4.
+ 
++pub mod clock_tags;
+ pub mod emmc;
+ pub mod emmc_xfer;
+ pub mod framebuffer;
+diff --git a/kernel/src/lib.rs b/kernel/src/lib.rs
+index d301b8a..3238399 100644
+--- a/kernel/src/lib.rs
++++ b/kernel/src/lib.rs
+@@ -253,6 +253,11 @@ extern "C" fn kernel_main_rust(dtb_phys: usize, entry_el: u64) -> ! {
+     let memprot = memprot_switch(dtb);
+     // ARCH03 stage 4: per-process ASIDs (`asid=on`), off by default.
+     let asid = asid_switch(dtb);
++    // FS08 part 3: raise the ARM core from the firmware's boot rate to its
++    // maximum (`cpuclk=firmware` keeps the boot rate). Early, so the rest of
++    // the boot already runs at the final clock.
++    #[cfg(feature = "board-rpi4")]
++    raise_arm_clock(dtb);
+ 
+     // Discover the physical memory map and dump it for visibility.
+     // Pure function of the board constants, the DTB and the firmware
+@@ -948,6 +953,88 @@ fn asid_switch(dtb: Option<usize>) -> Option<bool> {
+     })
+ }
+ 
++/// FS08 part 3: set the ARM core clock to the highest rate the firmware
++/// supports, and log one `[clock]` boot line.
++///
++/// Protocol (`docs/hardware/mailbox-framebuffer.md` §3f, firmware wiki
++/// *Mailbox property interface*): "Get max clock rate" for `CLOCK_ID_ARM`
++/// (*"Clocks should not be set higher than this"*), then "Set clock rate" to
++/// exactly that rate with `skip setting turbo = 0`, so the firmware raises
++/// the turbo settings that go with an ARM rate above default (*"e.g.
++/// voltage"*) itself — the kernel sets no voltage. Overheat protection stays
++/// the firmware's (`temp_limit`, `references/rpi4-boot/
++/// config-txt-overclocking.adoc`). Read back: "Get clock rate" (the rate now
++/// requested) and "Get clock rate measured" (the rate actually running).
++///
++/// Any unanswered step leaves the firmware rate as it is and says so in the
++/// line. `cpuclk=firmware` in the boot arguments skips the change.
++#[cfg(feature = "board-rpi4")]
++fn raise_arm_clock(dtb: Option<usize>) {
++    use drivers::bcm2711::clock_tags::{deci_celsius, mhz};
++    use drivers::bcm2711::mailbox::{self, CLOCK_ID_ARM, TEMPERATURE_ID};
++
++    /// A rate in MHz, `?` when the firmware gave none.
++    struct Mhz(Option<u32>);
++    impl core::fmt::Display for Mhz {
++        fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
++            match self.0 {
++                Some(hz) => write!(f, "{}", mhz(hz)),
++                None => f.write_str("?"),
++            }
++        }
++    }
++    /// The SoC temperature, `?` when the firmware gave none.
++    struct Soc(Option<u32>);
++    impl core::fmt::Display for Soc {
++        fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
++            match self.0 {
++                Some(mdeg) => {
++                    let (c, tenth) = deci_celsius(mdeg);
++                    write!(f, "SoC {}.{} C", c, tenth)
++                }
++                None => f.write_str("SoC ? C"),
++            }
++        }
++    }
++
++    let firmware_only = boot_switch(dtb, false, |args: &[u8]| {
++        bootargs::has_token(args, bootargs::CPUCLK_FIRMWARE)
++    });
++    let before = mailbox::get_clock_rate(CLOCK_ID_ARM);
++    let temp = Soc(mailbox::get_temperature(TEMPERATURE_ID));
++    if firmware_only {
++        kprintln!(
++            "[clock] ARM {} MHz kept: boot arguments contain `cpuclk=firmware` ({})",
++            Mhz(before),
++            temp
++        );
++        return;
++    }
++    let Some(max) = mailbox::get_max_clock_rate(CLOCK_ID_ARM) else {
++        kprintln!("[clock] ARM {} MHz kept: firmware reports no max rate ({})", Mhz(before), temp);
++        return;
++    };
++    if mailbox::set_clock_rate(CLOCK_ID_ARM, max, false).is_none() {
++        kprintln!(
++            "[clock] ARM {} MHz kept: Set clock rate not answered (max {}, {})",
++            Mhz(before),
++            Mhz(Some(max)),
++            temp
++        );
++        return;
++    }
++    let after = mailbox::get_clock_rate(CLOCK_ID_ARM);
++    let measured = mailbox::get_clock_rate_measured(CLOCK_ID_ARM);
++    kprintln!(
++        "[clock] ARM {} -> {} MHz (max {}, measured {}, {})",
++        Mhz(before),
++        Mhz(after),
++        Mhz(Some(max)),
++        Mhz(measured),
++        temp
++    );
++}
++
+ /// Read the boot arguments once and `decide` on them; `default` when there
+ /// are none. `board-rpi4` asks the firmware for its command line
+ /// (`cmdline.txt`, or QEMU's `-append`), QEMU `virt` reads `/chosen/bootargs`
+diff --git a/tools/xtask/src/main.rs b/tools/xtask/src/main.rs
+index a672312..3844b07 100644
+--- a/tools/xtask/src/main.rs
++++ b/tools/xtask/src/main.rs
+@@ -42,6 +42,12 @@ mod kernel_key_repeat;
+ #[cfg(test)]
+ #[path = "../../../kernel/src/drivers/bcm2711/emmc_xfer.rs"]
+ mod kernel_emmc_xfer;
++/// FS08 part 3 — the firmware ARM-clock property tags (max / measured / set
++/// clock rate): message encoding and reply decoding. Pure, compiled here by
++/// path like `kernel_bootargs`.
++#[cfg(test)]
++#[path = "../../../kernel/src/drivers/bcm2711/clock_tags.rs"]
++mod kernel_clock_tags;
+ 
+ /// ARCH03 E8b — the loader's ELF parser, compiled here by path (it is pure,
+ /// `no_std`, dependency-free) so `xtask prgflags` reads the PRGFLAGS note
+diff --git a/kernel/src/drivers/bcm2711/clock_tags.rs b/kernel/src/drivers/bcm2711/clock_tags.rs
+new file mode 100644
+index 0000000..105589f
+--- /dev/null
++++ b/kernel/src/drivers/bcm2711/clock_tags.rs
+@@ -0,0 +1,173 @@
++//! Pure encoding/decoding of the firmware's ARM-clock property tags (FS08
++//! part 3): "Get max clock rate", "Get clock rate measured" and "Set clock
++//! rate".
++//!
++//! Word arithmetic only, no register access and no kernel dependency, so the
++//! host test suite (`tools/xtask`, which includes this file by path) can run
++//! its tests; `mailbox.rs` does the transaction.
++//!
++//! Sources (Track B, `docs/hardware/mailbox-framebuffer.md` §3f):
++//! * the raspberrypi/firmware wiki page *Mailbox property interface*
++//!   (source #4; local copy `references/rpi4-boot/
++//!   firmware-wiki-mailbox-property-interface.md`, wiki HEAD `c9e615a`),
++//!   sections "Get clock rate measured" (`0x00030047`), "Set clock rate"
++//!   (`0x00038002`: request 12 bytes `clock id, rate, skip setting turbo`,
++//!   response 8 bytes `clock id, rate`; *"A rate of 0 is returned if the
++//!   clock does not exist"*), "Get max clock rate" (`0x00030004`);
++//! * cross-checked against the pinned `references/circle`:
++//!   `include/circle/bcmpropertytags.h:40,47,50` (tag ids), `:234-241`
++//!   (`TPropertyTagSetClockRate`, `SKIP_SETTING_TURBO = 1`),
++//!   `lib/cputhrottle.cpp:420-428` (the request: 12 parameter bytes).
++
++/// `PROPTAG_GET_MAX_CLOCK_RATE` — answers `(clock id, rate in Hz)`: *"the
++/// maximum supported clock rate for the given clock. Clocks should not be set
++/// higher than this."*
++pub const PROPTAG_GET_MAX_CLOCK_RATE: u32 = 0x0003_0004;
++/// `PROPTAG_GET_CLOCK_RATE_MEASURED` — answers `(clock id, rate in Hz)`: the
++/// true rate, *"which respects clamping, throttling and clock divider
++/// limitations"*, where "Get clock rate" returns the last requested value.
++pub const PROPTAG_GET_CLOCK_RATE_MEASURED: u32 = 0x0003_0047;
++/// `PROPTAG_SET_CLOCK_RATE` — request `(clock id, rate in Hz, skip setting
++/// turbo)`, answers `(clock id, rate in Hz)`.
++pub const PROPTAG_SET_CLOCK_RATE: u32 = 0x0003_8002;
++
++/// Bit 31 of a tag's code word: set in a response, clear in a request
++/// (`docs/hardware/mailbox-framebuffer.md` §2).
++pub const TAG_RESPONSE: u32 = 0x8000_0000;
++
++/// Request parameter bytes of "Set clock rate": three `u32` words.
++pub const SET_CLOCK_RATE_REQ_LEN: u32 = 12;
++
++// Word indices into a "Set clock rate" message.
++/// Tag code word: request/response code (+ value length in a response).
++pub const SC_CODE: usize = 4;
++/// Value word 1: the rate in Hz (request) / the rate set (response).
++pub const SC_RATE: usize = 6;
++const SC_TAG: usize = 2;
++const SC_LEN: usize = 3;
++const SC_ID: usize = 5;
++const SC_SKIP: usize = 7;
++const SC_ENDTAG: usize = 8;
++/// Message length in words: the end tag plus padding, rounded up so the
++/// byte length is a multiple of 16 (the property buffer's alignment unit).
++pub const SET_CLOCK_RATE_WORDS: usize = (SC_ENDTAG + 1 + 3) & !3;
++
++/// The complete property message for "Set clock rate" of `clock_id` to
++/// `rate_hz`.
++///
++/// `skip_setting_turbo = false` sends `0`, which per the wiki is the default
++/// behaviour: *"when setting arm freq above default, other turbo settings will
++/// be enabled (e.g. voltage, sdram and gpu frequencies)"*; `true` sends `1`
++/// (circle's `SKIP_SETTING_TURBO`) and leaves those settings alone. The value
++/// buffer is 12 bytes — the larger of the 12-byte request and the 8-byte
++/// response.
++pub fn encode_set_clock_rate(
++    clock_id: u32,
++    rate_hz: u32,
++    skip_setting_turbo: bool,
++) -> [u32; SET_CLOCK_RATE_WORDS] {
++    let mut b = [0u32; SET_CLOCK_RATE_WORDS];
++    b[0] = (SET_CLOCK_RATE_WORDS * 4) as u32; // total size in bytes
++    b[1] = 0; // request code
++    b[SC_TAG] = PROPTAG_SET_CLOCK_RATE;
++    b[SC_LEN] = SET_CLOCK_RATE_REQ_LEN; // value buffer size, bytes
++    // Request (b31 clear) carrying the parameter length, as circle's
++    // `GetTag` writes it (`lib/bcmpropertytags.cpp:49-56`) and
++    // `mailbox::query_id_value` does for its 4-byte requests.
++    b[SC_CODE] = SET_CLOCK_RATE_REQ_LEN;
++    b[SC_ID] = clock_id;
++    b[SC_RATE] = rate_hz;
++    b[SC_SKIP] = u32::from(skip_setting_turbo);
++    b[SC_ENDTAG] = 0; // end tag
++    b
++}
++
++/// Decode a `(clock id, rate)` reply from its tag code word and rate word.
++///
++/// `None` unless the tag was answered (`b31` set), the response carries the
++/// 8 value bytes the reply format requires, and the rate is non-zero — the
++/// wiki's *"A rate of 0 is returned if the clock does not exist"* (same rule
++/// as `mailbox::get_clock_rate`).
++pub fn rate_reply(code: u32, rate_hz: u32) -> Option<u32> {
++    if code & TAG_RESPONSE == 0 || (code & !TAG_RESPONSE) < 8 || rate_hz == 0 {
++        None
++    } else {
++        Some(rate_hz)
++    }
++}
++
++/// A rate in Hz as whole MHz, rounded to the nearest.
++pub fn mhz(rate_hz: u32) -> u32 {
++    rate_hz.saturating_add(500_000) / 1_000_000
++}
++
++/// A temperature in thousandths of a degree Celsius as `(whole degrees,
++/// tenths)`, the tenth truncated.
++pub fn deci_celsius(mdeg: u32) -> (u32, u32) {
++    (mdeg / 1000, (mdeg % 1000) / 100)
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++
++    #[test]
++    fn set_clock_rate_message_layout() {
++        let b = encode_set_clock_rate(3, 1_500_000_000, false);
++        assert_eq!(SET_CLOCK_RATE_WORDS, 12);
++        assert_eq!(b[0], 48); // total size, a multiple of 16
++        assert_eq!(b[1], 0); // request
++        assert_eq!(b[2], 0x0003_8002);
++        assert_eq!(b[3], 12); // value buffer
++        assert_eq!(b[4], 12); // request, 12 parameter bytes
++        assert_eq!(b[5], 3); // CLOCK_ID_ARM
++        assert_eq!(b[6], 1_500_000_000);
++        assert_eq!(b[7], 0); // turbo settings follow (wiki default)
++        assert_eq!(b[8], 0); // end tag
++        assert_eq!(&b[9..], &[0, 0, 0]); // padding
++        assert_eq!(b[SC_CODE], b[4]);
++        assert_eq!(b[SC_RATE], b[6]);
++    }
++
++    #[test]
++    fn skip_setting_turbo_is_one() {
++        let b = encode_set_clock_rate(3, 600_000_000, true);
++        assert_eq!(b[7], 1); // circle SKIP_SETTING_TURBO
++        assert_eq!(b[6], 600_000_000);
++    }
++
++    #[test]
++    fn rate_reply_needs_response_bit_length_and_rate() {
++        assert_eq!(
++            rate_reply(TAG_RESPONSE | 8, 1_500_000_000),
++            Some(1_500_000_000)
++        );
++        assert_eq!(
++            rate_reply(TAG_RESPONSE | 12, 700_000_000),
++            Some(700_000_000)
++        );
++        // Unanswered tag: b31 clear (a mailbox that does not implement it).
++        assert_eq!(rate_reply(12, 1_500_000_000), None);
++        // Too short for (clock id, rate).
++        assert_eq!(rate_reply(TAG_RESPONSE | 4, 1_500_000_000), None);
++        // Rate 0: the clock does not exist.
++        assert_eq!(rate_reply(TAG_RESPONSE | 8, 0), None);
++    }
++
++    #[test]
++    fn mhz_rounds_to_nearest() {
++        assert_eq!(mhz(600_000_000), 600);
++        assert_eq!(mhz(1_500_000_000), 1500);
++        assert_eq!(mhz(1_499_999_999), 1500);
++        assert_eq!(mhz(1_500_499_999), 1500);
++        assert_eq!(mhz(1_500_500_000), 1501);
++        assert_eq!(mhz(u32::MAX), u32::MAX / 1_000_000);
++    }
++
++    #[test]
++    fn deci_celsius_splits_tenths() {
++        assert_eq!(deci_celsius(45_277), (45, 2));
++        assert_eq!(deci_celsius(25_000), (25, 0));
++        assert_eq!(deci_celsius(999), (0, 9));
++    }
++}

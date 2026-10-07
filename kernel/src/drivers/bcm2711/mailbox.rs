@@ -443,6 +443,66 @@ pub fn get_temperature(id: u32) -> Option<u32> {
 }
 
 // ─────────────────────────────────────────────────────────────────────
+// ARM clock control (FS08 part 3): "Get max clock rate" (0x00030004),
+// "Get clock rate measured" (0x00030047), "Set clock rate" (0x00038002)
+// ─────────────────────────────────────────────────────────────────────
+//
+// Reference: `docs/hardware/mailbox-framebuffer.md` §3f. Tag ids, value
+// layouts and the reply rules are in the pure module `clock_tags` (with
+// their sources), which the host suite tests.
+
+/// The highest rate clock `clock_id` supports, in Hz — *"Clocks should not
+/// be set higher than this"* — or `None` when the firmware does not answer
+/// (a rate of 0 = the clock does not exist, also `None`).
+pub fn get_max_clock_rate(clock_id: u32) -> Option<u32> {
+    match query_id_value(super::clock_tags::PROPTAG_GET_MAX_CLOCK_RATE, clock_id) {
+        Some(0) | None => None,
+        Some(hz) => Some(hz),
+    }
+}
+
+/// The rate clock `clock_id` actually runs at, in Hz, *"which respects
+/// clamping, throttling and clock divider limitations"* (where
+/// [`get_clock_rate`] answers the last requested rate), or `None` when the
+/// firmware does not answer.
+pub fn get_clock_rate_measured(clock_id: u32) -> Option<u32> {
+    match query_id_value(super::clock_tags::PROPTAG_GET_CLOCK_RATE_MEASURED, clock_id) {
+        Some(0) | None => None,
+        Some(hz) => Some(hz),
+    }
+}
+
+/// 16-byte-aligned property buffer for "Set clock rate".
+#[repr(C, align(16))]
+struct SetClockBuf {
+    words: [u32; super::clock_tags::SET_CLOCK_RATE_WORDS],
+}
+static mut SET_CLOCK_BUF: SetClockBuf =
+    SetClockBuf { words: [0; super::clock_tags::SET_CLOCK_RATE_WORDS] };
+
+/// Ask the firmware to set clock `clock_id` to `rate_hz`; returns the rate
+/// it answers with (the next supported rate, possibly clamped to the
+/// supported range), or `None` when it does not answer the tag or reports
+/// rate 0 (the clock does not exist). `skip_setting_turbo` is the tag's third
+/// request word — see [`super::clock_tags::encode_set_clock_rate`].
+pub fn set_clock_rate(clock_id: u32, rate_hz: u32, skip_setting_turbo: bool) -> Option<u32> {
+    use super::clock_tags::{encode_set_clock_rate, rate_reply, SC_CODE, SC_RATE, SET_CLOCK_RATE_WORDS};
+    // SAFETY: boot CPU, single-threaded; exclusive use of the static buffer.
+    unsafe {
+        (*core::ptr::addr_of_mut!(SET_CLOCK_BUF)).words =
+            encode_set_clock_rate(clock_id, rate_hz, skip_setting_turbo);
+        let va = (&raw const SET_CLOCK_BUF) as usize;
+        let pa = crate::arch::aarch64::mmu::va_to_pa(va as u64) as u32;
+        if !call_property(va, pa, SET_CLOCK_RATE_WORDS * 4) {
+            return None;
+        }
+        let code = core::ptr::read_volatile((va + SC_CODE * 4) as *const u32);
+        let rate = core::ptr::read_volatile((va + SC_RATE * 4) as *const u32);
+        rate_reply(code, rate)
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────
 // Command-line tag: "Get command line" (0x00050001)
 // ─────────────────────────────────────────────────────────────────────
 //

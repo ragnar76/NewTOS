@@ -253,6 +253,11 @@ extern "C" fn kernel_main_rust(dtb_phys: usize, entry_el: u64) -> ! {
     let memprot = memprot_switch(dtb);
     // ARCH03 stage 4: per-process ASIDs (`asid=on`), off by default.
     let asid = asid_switch(dtb);
+    // FS08 part 3: raise the ARM core from the firmware's boot rate to its
+    // maximum (`cpuclk=firmware` keeps the boot rate). Early, so the rest of
+    // the boot already runs at the final clock.
+    #[cfg(feature = "board-rpi4")]
+    raise_arm_clock(dtb);
 
     // Discover the physical memory map and dump it for visibility.
     // Pure function of the board constants, the DTB and the firmware
@@ -946,6 +951,88 @@ fn asid_switch(dtb: Option<usize>) -> Option<bool> {
             None
         }
     })
+}
+
+/// FS08 part 3: set the ARM core clock to the highest rate the firmware
+/// supports, and log one `[clock]` boot line.
+///
+/// Protocol (`docs/hardware/mailbox-framebuffer.md` §3f, firmware wiki
+/// *Mailbox property interface*): "Get max clock rate" for `CLOCK_ID_ARM`
+/// (*"Clocks should not be set higher than this"*), then "Set clock rate" to
+/// exactly that rate with `skip setting turbo = 0`, so the firmware raises
+/// the turbo settings that go with an ARM rate above default (*"e.g.
+/// voltage"*) itself — the kernel sets no voltage. Overheat protection stays
+/// the firmware's (`temp_limit`, `references/rpi4-boot/
+/// config-txt-overclocking.adoc`). Read back: "Get clock rate" (the rate now
+/// requested) and "Get clock rate measured" (the rate actually running).
+///
+/// Any unanswered step leaves the firmware rate as it is and says so in the
+/// line. `cpuclk=firmware` in the boot arguments skips the change.
+#[cfg(feature = "board-rpi4")]
+fn raise_arm_clock(dtb: Option<usize>) {
+    use drivers::bcm2711::clock_tags::{deci_celsius, mhz};
+    use drivers::bcm2711::mailbox::{self, CLOCK_ID_ARM, TEMPERATURE_ID};
+
+    /// A rate in MHz, `?` when the firmware gave none.
+    struct Mhz(Option<u32>);
+    impl core::fmt::Display for Mhz {
+        fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            match self.0 {
+                Some(hz) => write!(f, "{}", mhz(hz)),
+                None => f.write_str("?"),
+            }
+        }
+    }
+    /// The SoC temperature, `?` when the firmware gave none.
+    struct Soc(Option<u32>);
+    impl core::fmt::Display for Soc {
+        fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+            match self.0 {
+                Some(mdeg) => {
+                    let (c, tenth) = deci_celsius(mdeg);
+                    write!(f, "SoC {}.{} C", c, tenth)
+                }
+                None => f.write_str("SoC ? C"),
+            }
+        }
+    }
+
+    let firmware_only = boot_switch(dtb, false, |args: &[u8]| {
+        bootargs::has_token(args, bootargs::CPUCLK_FIRMWARE)
+    });
+    let before = mailbox::get_clock_rate(CLOCK_ID_ARM);
+    let temp = Soc(mailbox::get_temperature(TEMPERATURE_ID));
+    if firmware_only {
+        kprintln!(
+            "[clock] ARM {} MHz kept: boot arguments contain `cpuclk=firmware` ({})",
+            Mhz(before),
+            temp
+        );
+        return;
+    }
+    let Some(max) = mailbox::get_max_clock_rate(CLOCK_ID_ARM) else {
+        kprintln!("[clock] ARM {} MHz kept: firmware reports no max rate ({})", Mhz(before), temp);
+        return;
+    };
+    if mailbox::set_clock_rate(CLOCK_ID_ARM, max, false).is_none() {
+        kprintln!(
+            "[clock] ARM {} MHz kept: Set clock rate not answered (max {}, {})",
+            Mhz(before),
+            Mhz(Some(max)),
+            temp
+        );
+        return;
+    }
+    let after = mailbox::get_clock_rate(CLOCK_ID_ARM);
+    let measured = mailbox::get_clock_rate_measured(CLOCK_ID_ARM);
+    kprintln!(
+        "[clock] ARM {} -> {} MHz (max {}, measured {}, {})",
+        Mhz(before),
+        Mhz(after),
+        Mhz(Some(max)),
+        Mhz(measured),
+        temp
+    );
 }
 
 /// Read the boot arguments once and `decide` on them; `default` when there

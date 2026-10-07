@@ -1,0 +1,89 @@
+measurement-2026-10-07-cpuclk -- TASK/FS08 part 3 (user decision
+2026-10-07): raise the ARM core clock to the firmware's maximum rate at boot.
+Developer self-evidence; the Tester's verdict is separate.
+
+Date 2026-10-07, branch desk-rebuild, HEAD b473178 plus this change
+(uncommitted). QEMU 11 raspi4b and virt, one QEMU at a time, only our own pid
+killed (the host has no `timeout`). No SD card, Pi or TT touched; nothing
+copied to any card. Scratch (kernels, base card, run clones, HEAD build) in
+the session scratchpad: ONE base card (method/seed-base.sh), every raspi4b
+run on an APFS clone (cp -c) deleted after the run; hashes in checks/.
+
+INPUT
+  measurements/measurement-2026-10-07-fs08-pi/FSBENCH.LOG line 3: real Pi 4
+  "CPU clock 600 MHz" (Ssystem 2000 S_NEWTOS_CPUCLOCK -> mailbox "Get clock
+  rate", ARM); nominal 1500. boot/rpi4/config.txt: force_turbo=0, no arm_freq.
+
+SOURCES (Track B; docs/hardware/mailbox-framebuffer.md §3f, sources #4-#6)
+  #4 raspberrypi/firmware wiki "Mailbox property interface", wiki HEAD
+     c9e615a, fetched 2026-10-07, local copy
+     references/rpi4-boot/firmware-wiki-mailbox-property-interface.md
+     (sha256 in checks/inputs-sha256.txt): "Get max clock rate" 0x00030004
+     ("Clocks should not be set higher than this"), "Set clock rate"
+     0x00038002 (request clock id, rate, skip setting turbo = 12 B; response
+     8 B; "By default when setting arm freq above default, other turbo
+     settings will be enabled (e.g. voltage, sdram and gpu frequencies)"),
+     "Get clock rate measured" 0x00030047 (actual rate incl. throttling),
+     clock id ARM = 3.
+  #5 references/circle @ 6177984: bcmpropertytags.h:40,47,50,184,234-241
+     (ids, TPropertyTagSetClockRate, SKIP_SETTING_TURBO=1),
+     lib/cputhrottle.cpp:326-336,420-428 (max rate set with bSkipTurbo=FALSE),
+     lib/bcmpropertytags.cpp:49-56 (request code word = parameter length).
+  #6 raspberrypi/documentation master @ 42deaef, config_txt/overclocking.adoc,
+     fetched 2026-10-07, local copy references/rpi4-boot/
+     config-txt-overclocking.adoc: force_turbo=0 = the OS's on-demand driver
+     raises/lowers the clock; Pi 4 arm_freq 1500 (R1.4: 1800 with arm_boost),
+     arm_freq_min 600; firmware AVS / automatic voltage scaling; temp_limit
+     85 C, Arm throttled 80-85 C; warranty bit only with force_turbo=1 AND
+     over_voltage_* > 0.
+  No Linux source used.
+
+CODE (method/cpuclk-change.diff)
+  kernel/src/drivers/bcm2711/clock_tags.rs  NEW, pure: tag ids,
+    encode_set_clock_rate (12-word message, skip word 0/1), rate_reply
+    (b31 set, >= 8 value bytes, rate != 0), mhz, deci_celsius; 5 host tests
+  kernel/src/drivers/bcm2711/mailbox.rs  get_max_clock_rate,
+    get_clock_rate_measured (over query_id_value), set_clock_rate (own
+    16-byte-aligned buffer)
+  kernel/src/drivers/bcm2711/mod.rs  pub mod clock_tags
+  kernel/src/bootargs.rs  CPUCLK_FIRMWARE = "cpuclk=firmware" + 1 host test
+  kernel/src/lib.rs  raise_arm_clock (board-rpi4), called right after the
+    memprot/asid boot switches: before rate + temperature; cpuclk=firmware
+    -> keep; Get max -> Set (max, skip=0) -> Get rate + Get measured; one
+    "[clock] ARM ..." line in every case
+  tools/xtask/src/main.rs  clock_tags.rs compiled by path into the host suite
+  docs/hardware/mailbox-framebuffer.md  sources #4 (local copy) and #6, §3f
+
+STATIC CHECKS (method/checks.sh, copied from fat-curcl; checks/v1-*, v2-*;
+v2 = final tree, only a comment changed after v1; v1 and v2 kernels are
+byte-identical, checks/kernels-sha256.txt)
+                                     baseline (fat-curcl)  v2 (final)
+  host tests pass/fail/ignored       1195/0/1              1201/0/1 (+6 new)
+  release warnings tos-api/kernel    64/94 both boards     64/94 both boards
+  clippy tos-api/kernel rpi4, virt   76/125                76/125
+  desk-drift-probe                   31                    31
+  SDK host tests                     16/0/0                16/0/0
+
+QEMU RUNS (release kernels; head = git archive HEAD built in scratch,
+v1 = this tree; serial/, screendumps/, checks/*-fsck.txt)
+  raspi4b desktop (append "serial=on memprot=on", method/run-boot.sh desk)
+    head: no [clock] ARM line; v1: "[clock] ARM 700 -> 700 MHz (max 700,
+    measured ?, SoC 25.0 C)". Serial diff head..v1 = that line + kernel
+    size/addresses only. Screendumps pixel-identical (desktop).
+  raspi4b cpuclk=firmware (append "serial=on memprot=on cpuclk=firmware")
+    v1: "[clock] ARM 700 MHz kept: boot arguments contain `cpuclk=firmware`
+    (SoC 25.0 C)", desktop up.
+  raspi4b APITEST (#Z C:\APITEST.NCP in the clone, memprot on)
+    head TOTAL 105/0/6, v1 TOTAL 105/0/6; serial diff = clock line +
+    addresses (kernel 4 KiB larger); screendumps pixel-identical.
+  virt desktop (method/run-virt.sh, append memprot=on)
+    head vs v1: serial logs identical (raise_arm_clock is board-rpi4 only),
+    screendumps pixel-identical.
+  fsck_msdos -n on every clone: no errors.
+  QEMU's firmware model: rate 700 MHz fixed for "Get clock rate" AND "Get
+  max clock rate", answers "Set clock rate" with 700, does not answer "Get
+  clock rate measured" (-> "measured ?"). The real raise is Pi-only.
+
+PI PACKAGE (not copied): bin/kernel8.img sha256 ff3540e5... (= tree
+kernel8.img = v1 = v2), bin/LIESMICH.TXT (German: what to look for, fallback
+cpuclk=firmware), bin/SHA256SUMS.

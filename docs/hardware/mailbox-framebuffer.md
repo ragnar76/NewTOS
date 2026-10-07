@@ -24,8 +24,9 @@
 | 1 | BCM2711 ARM Peripherals datasheet (datasheets.raspberrypi.com/bcm2711/bcm2711-peripherals.pdf), §1.2 address map / §1.3 mailboxes | peripheral base, mailbox region |
 | 2 | raspberrypi/firmware wiki — [Mailboxes](https://github.com/raspberrypi/firmware/wiki/Mailboxes) | register offsets |
 | 3 | raspberrypi/firmware wiki — [Accessing mailboxes](https://github.com/raspberrypi/firmware/wiki/Accessing-mailboxes) | status bits, read/write procedure, channel encoding |
-| 4 | raspberrypi/firmware wiki — [Mailbox property interface](https://github.com/raspberrypi/firmware/wiki/Mailbox-property-interface) | channel 8 protocol, buffer format, tag IDs + value layouts |
+| 4 | raspberrypi/firmware wiki — [Mailbox property interface](https://github.com/raspberrypi/firmware/wiki/Mailbox-property-interface) (local copy since 2026-10-07: `references/rpi4-boot/firmware-wiki-mailbox-property-interface.md`, wiki @ `c9e615a`) | channel 8 protocol, buffer format, tag IDs + value layouts; ARM clock tags (§3f) |
 | 5 | `references/circle` (in-tree, pinned) — `include/circle/bcmpropertytags.h`, `lib/bcmframebuffer.cpp`, `lib/2dgraphics.cpp`, `addon/linux/raspberrypi-firmware.h` | virtual-offset + vsync tag ids and value layouts, the double-buffer sequence (§3b), clock-rate + temperature tag ids and value layouts (§3d), command-line tag (§3e, also `lib/koptions.cpp`, `doc/cmdline.txt`) |
+| 6 | Raspberry Pi documentation — `config.txt` *Overclocking options* (raspberrypi/documentation `master` @ `42deaef`, `documentation/asciidoc/computers/config_txt/overclocking.adoc`; local copy `references/rpi4-boot/config-txt-overclocking.adoc`) | `force_turbo` / `arm_freq` / `arm_freq_min` defaults, firmware voltage scaling and `temp_limit` throttling (§3f) |
 
 Cross-ref (verified-pattern, tertiary): rpi bare-metal FB tutorials
 (valvers part 5), circle. **Linux is cross-reference only**, not
@@ -453,6 +454,78 @@ no `-append` leaves it off. That makes `-append` the emulator's stand-in for
 Driver: `kernel/src/drivers/bcm2711/mailbox.rs::with_command_line`.
 Consumer: `kernel/src/console.rs::configure_serial_tx` with the token parser
 `kernel/src/bootargs.rs`.
+
+---
+
+## 3f. ARM clock control — raising the core to its maximum rate — sources #4, #5, #6 (FS08 part 3)
+
+The real Pi 4 reported **600 MHz** for the ARM clock under NewTOS
+(`measurements/measurement-2026-10-07-fs08-pi/FSBENCH.LOG`, via `Ssystem`
+2000 → "Get clock rate"); the nominal Pi 4 rate is 1500 MHz. `config.txt`
+on the card sets `force_turbo=0` and no `arm_freq`. Source #6 explains why
+the core then idles at the minimum: *"By default (`force_turbo=0`) the
+on-demand CPU frequency driver will raise clocks to their maximum frequencies
+when the Arm cores are busy, and will lower them to the minimum frequencies
+when the Arm cores are idle"* — that driver is the **OS's** (Linux cpufreq);
+NewTOS has none, and the Pi 4 `arm_freq_min` default is 600. So the kernel
+has to ask for the rate itself.
+
+Tags (source #4, local copy see the source table below; ids cross-checked in
+`references/circle/include/circle/bcmpropertytags.h:40,47,50`):
+
+| Tag id | Name | Request value | Response value | Wiki text that matters |
+|--------|------|---------------|----------------|------------------------|
+| `0x0003_0004` | Get max clock rate | `u32 clock id` (4 B) | `u32 clock id, u32 rate Hz` (8 B) | *"Return the maximum supported clock rate for the given clock. Clocks should not be set higher than this."* |
+| `0x0003_8002` | Set clock rate | `u32 clock id, u32 rate Hz, u32 skip setting turbo` (12 B) | `u32 clock id, u32 rate Hz` (8 B) | *"Next supported enable rate should be returned … A rate of 0 is returned if the clock does not exist. The clock rate may be clamped to the supported range."* and *"By default when setting arm freq above default, other turbo settings will be enabled (e.g. voltage, sdram and gpu frequencies). You can disable this effect by setting "skip setting turbo" to 1."* |
+| `0x0003_0047` | Get clock rate measured | `u32 clock id` (4 B) | `u32 clock id, u32 rate Hz` (8 B) | *"Get the true/actual clock rate (instead of the last requested value returned by "Get clock rate"/0x0003002) which respects clamping, throttling and clock divider limitations."* |
+
+`CLOCK_ID_ARM = 3` (wiki "Unique clock IDs"; circle `bcmpropertytags.h:184`).
+Circle's `TPropertyTagSetClockRate` (`bcmpropertytags.h:234-241`) has the same
+three words with `SKIP_SETTING_TURBO = 1`, and its `CCPUThrottle` sets the
+maximum rate with `bSkipTurbo = FALSE` (`lib/cputhrottle.cpp:326-336`,
+`:420-428`) — the same choice as below.
+
+**What NewTOS does** (`kernel/src/lib.rs::raise_arm_clock`, board-rpi4, early
+in the boot right after the boot-argument switches):
+
+1. "Get clock rate" and "Get temperature" (§3d) for the log line.
+2. `cpuclk=firmware` in the boot arguments (`kernel/src/bootargs.rs`) → stop
+   here, the firmware rate stays.
+3. "Get max clock rate" (ARM). No answer / rate 0 → stop, rate stays.
+4. "Set clock rate" (ARM, exactly that max, **skip setting turbo = 0**). The
+   kernel never asks above the documented maximum and never sets a voltage:
+   with `skip = 0` the firmware raises the matching turbo settings (*"e.g.
+   voltage"*) itself, and source #6 adds that *"The latest firmware
+   automatically scales up the voltage if the system is overclocked"* and that
+   the firmware uses Adaptive Voltage Scaling. No answer → stop, rate stays.
+5. "Get clock rate" (now the requested rate) and "Get clock rate measured"
+   (the actual rate) for the log line.
+
+One boot line in every case, e.g. `[clock] ARM 600 -> 1500 MHz (max 1500,
+measured 1500, SoC 45.2 C)`, or `[clock] ARM 600 MHz kept: …` with the reason.
+
+**Thermals.** The rate is set once and not regulated by NewTOS. Overheat
+protection stays with the firmware (source #6): *"Overclocking and
+overvoltage will be disabled at runtime when the SoC reaches `temp_limit` …
+which defaults to 85°C"*, *"When the core temperature is between 80°C and
+85°C, the Arm cores will be throttled back. If the temperature exceeds 85°C,
+the Arm cores and the GPU will be throttled back."* After such a throttle,
+"Get clock rate" still answers the requested rate; only "Get clock rate
+measured" shows it. Setting the documented maximum is not an overclock and
+touches no warranty bit (source #6: that bit needs `force_turbo=1` **and**
+`over_voltage_*` > 0).
+
+Pure encoding/decoding with host tests: `kernel/src/drivers/bcm2711/
+clock_tags.rs` (`encode_set_clock_rate`, `rate_reply`); transactions:
+`mailbox.rs::{get_max_clock_rate, set_clock_rate, get_clock_rate_measured}`.
+
+Source #6 = Raspberry Pi documentation, `config.txt` → *Overclocking options*
+(`documentation/asciidoc/computers/config_txt/overclocking.adoc`,
+raspberrypi/documentation `master` @ `42deaef`, fetched 2026-10-07; local
+copy `references/rpi4-boot/config-txt-overclocking.adoc`, sha256
+`b19ff813…`). Source #4 local copy: `references/rpi4-boot/
+firmware-wiki-mailbox-property-interface.md` (raspberrypi/firmware wiki @
+`c9e615a`, fetched 2026-10-07, sha256 `1197d7f5…`).
 
 ---
 

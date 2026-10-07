@@ -1,0 +1,62 @@
+FS08 Teil 3 -- ARM-Takt beim Booten auf das Maximum der Firmware
+=================================================================
+
+Kernel: kernel8.img   sha256 ff3540e57a9691ca7540a864e4fb9f88b5e0a740b1db9d4a60bd68dd983cf05a
+        (release, board-rpi4, Stand desk-rebuild b473178 + FS08-CPUCLK, nicht committet;
+        enthaelt FS08 Teil 1 + 2)
+Nichts davon ist auf eine Karte kopiert. Kopieren nur auf Ansage des Anwenders.
+
+WAS SICH AENDERT
+  * Bisher lief der ARM-Kern unter NewTOS mit 600 MHz (FSBENCH-Kopf vom
+    2026-10-07: "CPU clock 600 MHz"). Mit force_turbo=0 senkt die Firmware den
+    Kern auf arm_freq_min (Pi 4: 600) und erwartet, dass das Betriebssystem
+    hochregelt -- NewTOS hatte keinen solchen Regler.
+  * Neu fragt der Kernel frueh beim Booten die Firmware nach dem hoechsten
+    zulaessigen ARM-Takt ("Get max clock rate") und setzt genau diesen
+    ("Set clock rate", skip_setting_turbo = 0: die Firmware stellt Spannung
+    usw. selbst passend ein; der Kernel setzt keine Spannung). Erwartet: 1500
+    MHz (Pi 4B; ein Pi 4B ab Rev. 1.4 mit arm_boost=1 meldet ggf. 1800 -- dann
+    eben das).
+  * Kein Uebertakten: es wird nie mehr als das gemeldete Maximum verlangt,
+    config.txt bleibt unveraendert (force_turbo=0). Die Firmware drosselt
+    weiter selbst bei 80-85 Grad C (temp_limit).
+
+WORAN MAN ES SIEHT
+  * FSBENCH-Kopf (C:\AUTO\FSBENCH.NC -> FSBENCH.NCP umbenennen, wie beim
+    letzten Lauf): Zeile "CPU clock ... MHz" sollte 1500 statt 600 zeigen.
+    Achtung: diese Zahl ist der von der Firmware zuletzt *angeforderte* Takt.
+  * Unabhaengiger Gegencheck im selben Kopf: "spins/tick" (Schleifendurchlaeufe
+    je 5-ms-Tick) war bei 600 MHz 1 249 931. Laeuft der Kern wirklich
+    schneller, muss diese Zahl deutlich steigen (bei 1500 MHz grob um den
+    Faktor 2,5, falls die Schleife rein am Kerntakt haengt -- das ist eine
+    Erwartung, keine Messung).
+  * Serielle Ausgabe (nur mit serial=on in cmdline.txt und Kabel am UART):
+    eine Bootzeile
+        [clock] ARM 600 -> 1500 MHz (max 1500, measured 1500, SoC 45.2 C)
+    "measured" ist der tatsaechlich laufende Takt laut Firmware, "SoC" die
+    Chiptemperatur beim Booten. Bei einem Fehler steht stattdessen
+        [clock] ARM 600 MHz kept: <Grund>
+    und der Takt bleibt, wie die Firmware ihn gestartet hat.
+  * SYSINFO.NCP ist nicht mehr auf der Karte -- nicht danach suchen.
+
+RUECKFALL OHNE ANDEREN KERNEL
+  * In cmdline.txt auf der Boot-Partition das Wort  cpuclk=firmware  ergaenzen
+    (eine Zeile, Woerter durch Leerzeichen getrennt, z. B.
+     "serial=on cpuclk=firmware"; fehlt die Datei, eine mit genau dieser
+    Zeile anlegen). Dann bleibt der Firmware-Takt; die serielle Bootzeile
+    lautet "[clock] ARM 600 MHz kept: boot arguments contain `cpuclk=firmware`".
+    Danach das Wort wieder entfernen.
+
+WENN ETWAS SCHIEFGEHT
+  * Pi bootet nicht / Bild bleibt schwarz / Absturz unter Last -> zuerst
+    cpuclk=firmware (oben) probieren, sonst vorherigen Kernel zurueckkopieren
+    und melden (Foto, ggf. serielles Log).
+  * Netzteil: hoeherer Takt zieht mehr Strom. Laut Raspberry-Pi-Doku schaltet
+    die Firmware bei erkannter Unterspannung den Turbo selbst ab -- dann zeigt
+    "measured" bzw. spins/tick weniger als erwartet.
+
+QEMU (raspi4b) zur Einordnung: dessen Firmware-Modell meldet fest 700 MHz als
+aktuellen UND maximalen Takt, beantwortet "Set clock rate" mit 700 und kennt
+"Get clock rate measured" nicht -- dort erscheint
+    [clock] ARM 700 -> 700 MHz (max 700, measured ?, SoC 25.0 C)
+Der eigentliche Nachweis geht nur auf der echten Pi.

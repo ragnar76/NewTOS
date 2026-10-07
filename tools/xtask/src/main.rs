@@ -42,6 +42,12 @@ mod kernel_key_repeat;
 #[cfg(test)]
 #[path = "../../../kernel/src/drivers/bcm2711/emmc_xfer.rs"]
 mod kernel_emmc_xfer;
+/// FS08 part 3 — the firmware ARM-clock property tags (max / measured / set
+/// clock rate): message encoding and reply decoding. Pure, compiled here by
+/// path like `kernel_bootargs`.
+#[cfg(test)]
+#[path = "../../../kernel/src/drivers/bcm2711/clock_tags.rs"]
+mod kernel_clock_tags;
 
 /// ARCH03 E8b — the loader's ELF parser, compiled here by path (it is pure,
 /// `no_std`, dependency-free) so `xtask prgflags` reads the PRGFLAGS note

@@ -1,0 +1,20 @@
+host: arm64 Darwin; cc: Apple clang version 21.0.0 (clang-2100.1.1.101)
+
+PASS  obspec_bits
+PASS  evnt_timer_words
+PASS  wind_set_addrin
+PASS  intin_long_words
+PASS  ptr_word_count
+PASS  aesglobal_fields
+PASS  setjmp-host
+PASS  cmdargs-host
+PASS  gmp-host
+PASS  spawn-host
+PASS  system-host
+PASS  quickstat-host
+PASS  waith-host
+PASS  c2p-host
+PASS  libtest-host
+PASS  libshare-host
+
+host tests: 16 passed, 0 failed, 0 skipped

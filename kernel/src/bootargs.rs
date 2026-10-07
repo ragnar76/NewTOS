@@ -49,6 +49,12 @@ pub const ASID_TINY: &[u8] = b"asid=tiny";
 /// allows, and moves multi-sector requests with one `CMD18`/`CMD25`.
 pub const EMMC_COMPAT: &[u8] = b"emmc=compat";
 
+/// The fallback switch of the ARM clock (FS08 part 3): `cpuclk=firmware`
+/// leaves the ARM core at the rate the boot firmware started it with. Without
+/// it the kernel asks the firmware for the ARM clock's maximum rate at boot
+/// and sets it (mailbox "Get max clock rate" / "Set clock rate").
+pub const CPUCLK_FIRMWARE: &[u8] = b"cpuclk=firmware";
+
 /// `true` if `args` contains `token` as a whole whitespace-delimited token.
 ///
 /// `args` ends at its first NUL byte, if any. An empty `token` never
@@ -92,6 +98,17 @@ mod tests {
         assert!(!has_token(b"emmc=COMPAT", EMMC_COMPAT));
         assert!(!has_token(b"emmc=", EMMC_COMPAT));
         assert!(!has_token(b"serial=on memprot=on", EMMC_COMPAT));
+    }
+
+    #[test]
+    fn cpuclk_firmware_is_a_whole_token() {
+        assert!(has_token(b"serial=on cpuclk=firmware memprot=on", CPUCLK_FIRMWARE));
+        assert!(has_token(b"cpuclk=firmware\r\n", CPUCLK_FIRMWARE));
+        assert!(!has_token(b"cpuclk=firmwarex", CPUCLK_FIRMWARE));
+        assert!(!has_token(b"cpuclk=FIRMWARE", CPUCLK_FIRMWARE));
+        assert!(!has_token(b"cpuclk=", CPUCLK_FIRMWARE));
+        assert!(!has_token(b"cpuclk=max", CPUCLK_FIRMWARE));
+        assert!(!has_token(b"serial=on emmc=compat", CPUCLK_FIRMWARE));
     }
 
     #[test]
