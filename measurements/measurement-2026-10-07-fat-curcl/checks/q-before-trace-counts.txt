@@ -1,0 +1,13 @@
+CMD17  1175966
+CMD18  358
+CMD24  43
+CMD25  0
+CMD12  358
+read commands (CMD17+CMD18)   1176324
+blocks read  (sdcard_read_block)  1221462
+blocks written (sdcard_write_block) 43
+payload L1 46587904 B, L2 187252736 B, L3 46813184 B, total 280653824 B = 274076 KiB
+payload blocks (512 B)                 548152
+device blocks read per payload block   2.2283  (1.0000 = no overhead)
+device blocks read per KiB of payload  4.4567  (2.0000 = no overhead)
+read commands per KiB of payload       4.2920

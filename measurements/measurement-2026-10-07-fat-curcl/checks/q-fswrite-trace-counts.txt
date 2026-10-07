@@ -1,0 +1,15 @@
+FSWRITE.NCP (method/fswrite.c) from C:\AUTO, QEMU raspi4b serial=on memprot=on,
+trace -trace sdcard_normal_command -trace sdcard_read_block -trace sdcard_write_block,
+counted with method/trace-counts.py (whole run: boot + FSWRITE + desktop start).
+
+                      before (kernel8-before)   after (kernel8-v2)
+CMD17                 280451                    5176
+CMD18                 0                         2377
+CMD24                 25750                     2354
+CMD25                 0                         437
+CMD12 (auto)          0                         2814
+blocks read           280451                    50521
+blocks written        25750                     18562
+FSWRITE               PASS                      PASS
+HOSTCHECK             PASS                      PASS
+fsck_msdos -n C: D:   clean                     clean

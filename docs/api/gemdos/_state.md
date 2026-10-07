@@ -237,6 +237,130 @@ NewTOS: replace with a write-back page cache in the FAT driver;
 preserve the "close flushes all drives, media-change discards without
 flushing" observable behaviour, not literally a `flush()` API shape.
 
+### Replacement policy and FAT mirroring (`getbcb`, `flush`) — FS08
+
+Extracted 2026-10-07 from EmuTOS @ `1a7484ab` for TASK/FS08 (part 2):
+
+- **Which list.** `getrec(recn, ofd, wrt)` classifies the access by the OFD
+  — the drive's "FAT file" OFD (`m_fatofd`) → `BT_FAT`, an OFD without a
+  directory node → `BT_ROOT`, everything else → `BT_DATA`
+  (`bdos/fsbuf.c:218-222`) — and `getbcb` searches **only** that type's list
+  (`bdos/fsbuf.c:121`), matching drive, type and record
+  (`bdos/fsbuf.c:132`). Data and directory traffic therefore can never
+  displace a FAT sector, and vice versa.
+- **Hit.** The buffer moves to the head of its list (`bdos/fsbuf.c:197-199`):
+  the list is kept in most-recently-used order.
+- **Miss.** The victim is the **last invalid** buffer met during the search
+  (`b_bufdrv == -1`, `bdos/fsbuf.c:137-138`, `:146-147`); if every buffer is
+  valid, the **tail** of the list — the least recently used one
+  (`bdos/fsbuf.c:154-157`). A dirty victim is written back first
+  (`:162-163`), then the record is read into it (`:165`) and it becomes the
+  list head. A write access (`getrec(…, 1)`) reads the record too and then
+  marks the buffer dirty (`bdos/fsbuf.c:231-232`); EmuTOS has no "overwrite
+  without reading" path in the cache.
+- **FAT mirror.** Only one FAT copy is cached: `m_recoff[BT_FAT] = fatrec`
+  (`bdos/fsdrive.c:241`), the **second** FAT on a two-FAT medium. `flush`
+  writes the buffer there and, unless `m_1fat`, the same 512 bytes once more
+  `m_fsiz` records earlier, into the first FAT (`bdos/fsbuf.c:95-102`). A
+  `clfix` (`bdos/fsfat.c:36-93`) therefore dirties exactly one buffer, and
+  both copies come out identical at write-back.
+- **Number of buffers.** `NUMBUFS = 2` per list (`bdos/fsbuf.c:26`). The
+  count is not part of the contract (programs may append BCBs to `bufl[]`,
+  which is the API, but rely on no particular count).
+
+NewTOS (FS08, `tos-api/src/bdos/fs/cache.rs`): two separate lists, FAT and
+data (directory + root + file data), each with the policy above (MRU order,
+last invalid buffer else LRU tail, dirty victim written back first, FAT
+buffers cached once and written to every FAT copy). 8 buffers per list instead
+of 2 — the ST-RAM economy behind `NUMBUFS = 2` does not apply, and the count
+is unobservable. Two named deviations stay: a write access to a *whole* sector
+does not read the old contents first (unobservable — all 512 bytes are
+replaced), and a failed write-back keeps the buffer (HW03, see the module
+comment) instead of `b_bufdrv = -1`.
+
+### 3a. The file transfer engine `xrw` (`bdos/fsio.c`) — FS08
+
+`Fread`, `Fwrite` and the directory reader all move bytes through one engine,
+`xrw(wrtflg, ofd, len, ubufr)` (`bdos/fsio.c:208-284`), driven by four OFD
+position fields (`docs/api/structures/ofd.md`):
+
+| Field | Meaning |
+|---|---|
+| `o_bytnum` | byte position in the file |
+| `o_curcl` | **current cluster**: the cluster holding the last byte moved (0 = none yet) |
+| `o_currec` | first record of `o_curcl`, data-area relative (`cl2rec`, `bdos/fsfat.c:23-26`) |
+| `o_curbyt` | bytes of `o_curcl` already behind the position, `0..=clsizb` |
+
+`o_curbyt == 0` and `o_curbyt == clsizb` both mean "`o_curcl` is used up —
+the next byte lives in the **next** cluster": `addit` (`bdos/fsio.c:33-47`)
+adds a transfer to `o_curbyt` only when it is smaller than a cluster, so after
+a run of whole clusters `o_curbyt` stays at the 0 that `nextcl` left
+(`bdos/fsfat.c:290`).
+
+**No chain walk per call.** The engine only ever steps **one** FAT link at a
+time, from `o_curcl`: `nextcl(ofd, wrtflg)` (`bdos/fsfat.c:247-293`) reads the
+FAT entry of `o_curcl` (or takes `o_strtcl` when `o_curcl == 0`), and on a
+write past the end of the chain allocates a cluster with `findfree(o_curcl)`
+— from the start of the FAT only for the file's *first* cluster
+(`findfree16`, `bdos/fsfat.c:215-216`), otherwise scanning forward from the
+current cluster with wrap-around (`:223-231`) — links it (`clfix`) and, for
+the first cluster, sets `o_strtcl` and `O_DIRTY` (`:269-283`). An end-of-chain
+or a cluster number `< 2` ends the transfer (`:285-286`).
+
+**Three parts per call** (`bdos/fsio.c:196-206`):
+
+1. **Head bytes** — the request starts inside a record (`o_curbyt % recsiz !=
+   0`): `min(len, recsiz - bytn)` bytes are copied through the buffer cache
+   (`getrec`, `:229-245`).
+2. **Whole records** — `xrw_recs` (`bdos/fsio.c:84-187`):
+   - *header records*: the rest of the current cluster, if the position is
+     inside it (`:98-117`);
+   - *whole clusters*: one `nextcl` per cluster; consecutive clusters whose
+     records are contiguous are **merged into one transfer** until a gap, the
+     end of the request, the end of the chain or `CNTMAX = 0x7FFF` records
+     (`:22`, `:130-169`);
+   - *tail records*: after one more `nextcl`, the leading records of the last
+     cluster (`:174-184`).
+   Every one of these is a single `usrio` (`bdos/fsio.c:57-74`): **one `Rwabs`
+   straight into (or out of) the caller's buffer**, after any cached data
+   buffer of the same drive inside the record range has been written back if
+   dirty and invalidated (`:61-71`). Whole records never pass through the
+   cache.
+3. **Tail bytes** — the request ends inside a record: if the position is at a
+   cluster boundary (`o_curbyt / recsiz` is 0 or `clsiz`), `nextcl` first;
+   then the bytes are copied through the cache (`:261-278`).
+
+A write's head/tail record is read-modify-write through the cache (`getrec(…,
+1)` reads the old record). The return value is `o_bytnum - bytpos`, i.e. the
+bytes actually moved; reaching the end of the chain (`nextcl` fails, e.g. disk
+full on a write) ends the transfer with the partial count (`:255-257`, `:280-283`).
+
+**`Fseek` (`ixlseek`, `bdos/fsio.c:354-426`).** `n == 0` clears all four
+fields. Otherwise it walks the chain to the cluster of `n` — **forward from
+`o_curcl`** when one is loaded and `n >= o_bytnum` (counting the current
+cluster as not yet entered when `o_curbyt` is 0 or `clsizb`, `:378-396`),
+otherwise from `o_strtcl` — and stops **one cluster short** when `n` is on a
+cluster boundary (`:410-411`), because `xrw` steps (`nextcl`) before it
+transfers at a boundary. A chain shorter than the walk is `EINTRN`
+(`:413-418`). It then sets `o_curcl`, `o_currec`, `o_bytnum = n`,
+`o_curbyt = n % clsizb` (`:420-423`).
+
+**Write-back.** `xrw` itself writes nothing back: dirty head/tail and FAT
+buffers stay in the cache until they are evicted (`getbcb`), overlapped by a
+later `usrio`, or flushed by `ixclose` (§3, `bdos/fsopnclo.c:576-579`).
+
+NewTOS (FS08, `tos-api/src/bdos/fs/fsio.rs`): the same engine — the four
+position fields per OFD, `nextcl` one link at a time, `ixlseek`, the three-part
+split with whole records transferred directly between the device and the
+caller's buffer (the caller's range checked and reached through its kernel
+alias, as `Rwabs` does), contiguous clusters merged up to `CNTMAX`, head/tail
+through the data list. `findfree` follows EmuTOS (first cluster from the FAT
+start, later clusters forward from the current one). The program loader's
+range reads (`FileImage`) use the same engine with a private position. NewTOS
+additionally writes the cache back at the end of every `Fwrite` (HW03: that is
+how a device error becomes the call's `EWRITF` instead of surfacing at a later,
+unrelated call); this is stricter than EmuTOS and loses nothing.
+
 ---
 
 ## 4. Drive Descriptors and the current-drive model

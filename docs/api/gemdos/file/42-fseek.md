@@ -212,3 +212,10 @@ invalid-mode error is `EINVFN` (-32), not a POSIX-style `EINVAL`.
 PHASE-05: same OFD model. The "one cluster before boundary" positioning is tied
 to the `xrw` transfer loop; NewTOS may restructure both together but must keep
 the observable `Fseek` return (absolute position) and error set identical.
+
+FS08 (2026-10-07): `Fseek` now positions exactly as `ixlseek` does
+(`_state.md` §3a): forward chaining from `o_curcl`, otherwise from the start
+cluster, one cluster short on a boundary, `EINTRN` for a chain shorter than the
+file length claims. Before FS08 `Fseek` only stored the byte position and every
+`Fread`/`Fwrite` walked the chain from the start; the `EINTRN` row above was
+not reachable.

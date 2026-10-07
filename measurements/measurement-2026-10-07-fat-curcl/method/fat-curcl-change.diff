@@ -1,0 +1,2679 @@
+diff --git a/docs/api/gemdos/_state.md b/docs/api/gemdos/_state.md
+index a85b0e7..2f5825c 100644
+--- a/docs/api/gemdos/_state.md
++++ b/docs/api/gemdos/_state.md
+@@ -237,6 +237,130 @@ NewTOS: replace with a write-back page cache in the FAT driver;
+ preserve the "close flushes all drives, media-change discards without
+ flushing" observable behaviour, not literally a `flush()` API shape.
+ 
++### Replacement policy and FAT mirroring (`getbcb`, `flush`) — FS08
++
++Extracted 2026-10-07 from EmuTOS @ `1a7484ab` for TASK/FS08 (part 2):
++
++- **Which list.** `getrec(recn, ofd, wrt)` classifies the access by the OFD
++  — the drive's "FAT file" OFD (`m_fatofd`) → `BT_FAT`, an OFD without a
++  directory node → `BT_ROOT`, everything else → `BT_DATA`
++  (`bdos/fsbuf.c:218-222`) — and `getbcb` searches **only** that type's list
++  (`bdos/fsbuf.c:121`), matching drive, type and record
++  (`bdos/fsbuf.c:132`). Data and directory traffic therefore can never
++  displace a FAT sector, and vice versa.
++- **Hit.** The buffer moves to the head of its list (`bdos/fsbuf.c:197-199`):
++  the list is kept in most-recently-used order.
++- **Miss.** The victim is the **last invalid** buffer met during the search
++  (`b_bufdrv == -1`, `bdos/fsbuf.c:137-138`, `:146-147`); if every buffer is
++  valid, the **tail** of the list — the least recently used one
++  (`bdos/fsbuf.c:154-157`). A dirty victim is written back first
++  (`:162-163`), then the record is read into it (`:165`) and it becomes the
++  list head. A write access (`getrec(…, 1)`) reads the record too and then
++  marks the buffer dirty (`bdos/fsbuf.c:231-232`); EmuTOS has no "overwrite
++  without reading" path in the cache.
++- **FAT mirror.** Only one FAT copy is cached: `m_recoff[BT_FAT] = fatrec`
++  (`bdos/fsdrive.c:241`), the **second** FAT on a two-FAT medium. `flush`
++  writes the buffer there and, unless `m_1fat`, the same 512 bytes once more
++  `m_fsiz` records earlier, into the first FAT (`bdos/fsbuf.c:95-102`). A
++  `clfix` (`bdos/fsfat.c:36-93`) therefore dirties exactly one buffer, and
++  both copies come out identical at write-back.
++- **Number of buffers.** `NUMBUFS = 2` per list (`bdos/fsbuf.c:26`). The
++  count is not part of the contract (programs may append BCBs to `bufl[]`,
++  which is the API, but rely on no particular count).
++
++NewTOS (FS08, `tos-api/src/bdos/fs/cache.rs`): two separate lists, FAT and
++data (directory + root + file data), each with the policy above (MRU order,
++last invalid buffer else LRU tail, dirty victim written back first, FAT
++buffers cached once and written to every FAT copy). 8 buffers per list instead
++of 2 — the ST-RAM economy behind `NUMBUFS = 2` does not apply, and the count
++is unobservable. Two named deviations stay: a write access to a *whole* sector
++does not read the old contents first (unobservable — all 512 bytes are
++replaced), and a failed write-back keeps the buffer (HW03, see the module
++comment) instead of `b_bufdrv = -1`.
++
++### 3a. The file transfer engine `xrw` (`bdos/fsio.c`) — FS08
++
++`Fread`, `Fwrite` and the directory reader all move bytes through one engine,
++`xrw(wrtflg, ofd, len, ubufr)` (`bdos/fsio.c:208-284`), driven by four OFD
++position fields (`docs/api/structures/ofd.md`):
++
++| Field | Meaning |
++|---|---|
++| `o_bytnum` | byte position in the file |
++| `o_curcl` | **current cluster**: the cluster holding the last byte moved (0 = none yet) |
++| `o_currec` | first record of `o_curcl`, data-area relative (`cl2rec`, `bdos/fsfat.c:23-26`) |
++| `o_curbyt` | bytes of `o_curcl` already behind the position, `0..=clsizb` |
++
++`o_curbyt == 0` and `o_curbyt == clsizb` both mean "`o_curcl` is used up —
++the next byte lives in the **next** cluster": `addit` (`bdos/fsio.c:33-47`)
++adds a transfer to `o_curbyt` only when it is smaller than a cluster, so after
++a run of whole clusters `o_curbyt` stays at the 0 that `nextcl` left
++(`bdos/fsfat.c:290`).
++
++**No chain walk per call.** The engine only ever steps **one** FAT link at a
++time, from `o_curcl`: `nextcl(ofd, wrtflg)` (`bdos/fsfat.c:247-293`) reads the
++FAT entry of `o_curcl` (or takes `o_strtcl` when `o_curcl == 0`), and on a
++write past the end of the chain allocates a cluster with `findfree(o_curcl)`
++— from the start of the FAT only for the file's *first* cluster
++(`findfree16`, `bdos/fsfat.c:215-216`), otherwise scanning forward from the
++current cluster with wrap-around (`:223-231`) — links it (`clfix`) and, for
++the first cluster, sets `o_strtcl` and `O_DIRTY` (`:269-283`). An end-of-chain
++or a cluster number `< 2` ends the transfer (`:285-286`).
++
++**Three parts per call** (`bdos/fsio.c:196-206`):
++
++1. **Head bytes** — the request starts inside a record (`o_curbyt % recsiz !=
++   0`): `min(len, recsiz - bytn)` bytes are copied through the buffer cache
++   (`getrec`, `:229-245`).
++2. **Whole records** — `xrw_recs` (`bdos/fsio.c:84-187`):
++   - *header records*: the rest of the current cluster, if the position is
++     inside it (`:98-117`);
++   - *whole clusters*: one `nextcl` per cluster; consecutive clusters whose
++     records are contiguous are **merged into one transfer** until a gap, the
++     end of the request, the end of the chain or `CNTMAX = 0x7FFF` records
++     (`:22`, `:130-169`);
++   - *tail records*: after one more `nextcl`, the leading records of the last
++     cluster (`:174-184`).
++   Every one of these is a single `usrio` (`bdos/fsio.c:57-74`): **one `Rwabs`
++   straight into (or out of) the caller's buffer**, after any cached data
++   buffer of the same drive inside the record range has been written back if
++   dirty and invalidated (`:61-71`). Whole records never pass through the
++   cache.
++3. **Tail bytes** — the request ends inside a record: if the position is at a
++   cluster boundary (`o_curbyt / recsiz` is 0 or `clsiz`), `nextcl` first;
++   then the bytes are copied through the cache (`:261-278`).
++
++A write's head/tail record is read-modify-write through the cache (`getrec(…,
++1)` reads the old record). The return value is `o_bytnum - bytpos`, i.e. the
++bytes actually moved; reaching the end of the chain (`nextcl` fails, e.g. disk
++full on a write) ends the transfer with the partial count (`:255-257`, `:280-283`).
++
++**`Fseek` (`ixlseek`, `bdos/fsio.c:354-426`).** `n == 0` clears all four
++fields. Otherwise it walks the chain to the cluster of `n` — **forward from
++`o_curcl`** when one is loaded and `n >= o_bytnum` (counting the current
++cluster as not yet entered when `o_curbyt` is 0 or `clsizb`, `:378-396`),
++otherwise from `o_strtcl` — and stops **one cluster short** when `n` is on a
++cluster boundary (`:410-411`), because `xrw` steps (`nextcl`) before it
++transfers at a boundary. A chain shorter than the walk is `EINTRN`
++(`:413-418`). It then sets `o_curcl`, `o_currec`, `o_bytnum = n`,
++`o_curbyt = n % clsizb` (`:420-423`).
++
++**Write-back.** `xrw` itself writes nothing back: dirty head/tail and FAT
++buffers stay in the cache until they are evicted (`getbcb`), overlapped by a
++later `usrio`, or flushed by `ixclose` (§3, `bdos/fsopnclo.c:576-579`).
++
++NewTOS (FS08, `tos-api/src/bdos/fs/fsio.rs`): the same engine — the four
++position fields per OFD, `nextcl` one link at a time, `ixlseek`, the three-part
++split with whole records transferred directly between the device and the
++caller's buffer (the caller's range checked and reached through its kernel
++alias, as `Rwabs` does), contiguous clusters merged up to `CNTMAX`, head/tail
++through the data list. `findfree` follows EmuTOS (first cluster from the FAT
++start, later clusters forward from the current one). The program loader's
++range reads (`FileImage`) use the same engine with a private position. NewTOS
++additionally writes the cache back at the end of every `Fwrite` (HW03: that is
++how a device error becomes the call's `EWRITF` instead of surfacing at a later,
++unrelated call); this is stricter than EmuTOS and loses nothing.
++
+ ---
+ 
+ ## 4. Drive Descriptors and the current-drive model
+diff --git a/docs/api/gemdos/file/3f-fread.md b/docs/api/gemdos/file/3f-fread.md
+index 86d2d4d..7cb6e9d 100644
+--- a/docs/api/gemdos/file/3f-fread.md
++++ b/docs/api/gemdos/file/3f-fread.md
+@@ -214,3 +214,12 @@ BIOS code (`EREADF` -11, or `EDRVNR` / `ESECNF` as the driver reported) rather
+ than a short count; end-of-file and a chain that ends early stay short counts.
+ Same mechanism as `40-fwrite.md`; driven by
+ `tos-api/tests/gemdos_fs_device_error.rs`.
++
++FS08 (2026-10-07): the transfer follows EmuTOS `xrw` as extracted in
++[`_state.md` §3a](../_state.md): the OFD keeps `o_curcl`/`o_currec`/`o_curbyt`,
++so a sequential `Fread` steps the FAT chain one link per new cluster instead
++of walking it from the file start on every call; whole records go in one block
++request straight into the caller's buffer (contiguous clusters merged up to
++`CNTMAX` records), only the partial head/tail records pass through the data
++buffer list. Unobservable through the API (same bytes, same return values);
++measured effect in `measurements/measurement-2026-10-07-fat-curcl/`.
+diff --git a/docs/api/gemdos/file/40-fwrite.md b/docs/api/gemdos/file/40-fwrite.md
+index 95e6f3e..653bbb8 100644
+--- a/docs/api/gemdos/file/40-fwrite.md
++++ b/docs/api/gemdos/file/40-fwrite.md
+@@ -220,3 +220,11 @@ draws is therefore live: a **full disk** is still a short byte count, a
+ the driver reported. Driven by `tos-api/tests/gemdos_fs_device_error.rs`.
+ Before HW03, `Fwrite` returned the full byte count for data that never left
+ the machine (`docs/api/hw/emmc-audit.md` finding 5).
++
++FS08 (2026-10-07): same engine as `Fread` (`_state.md` §3a): whole records are
++written in one block request straight from the caller's buffer (any cached
++copy in that range written back if dirty and invalidated first, EmuTOS
++`usrio`), head/tail records are read-modify-write through the data list, new
++clusters come from `nextcl`/`findfree` exactly as in EmuTOS (first cluster from
++the FAT start, later ones forward from the current cluster). The end-of-call
++write-back of the cache (HW03, above) is kept.
+diff --git a/docs/api/gemdos/file/42-fseek.md b/docs/api/gemdos/file/42-fseek.md
+index 4b86de3..185884f 100644
+--- a/docs/api/gemdos/file/42-fseek.md
++++ b/docs/api/gemdos/file/42-fseek.md
+@@ -212,3 +212,10 @@ invalid-mode error is `EINVFN` (-32), not a POSIX-style `EINVAL`.
+ PHASE-05: same OFD model. The "one cluster before boundary" positioning is tied
+ to the `xrw` transfer loop; NewTOS may restructure both together but must keep
+ the observable `Fseek` return (absolute position) and error set identical.
++
++FS08 (2026-10-07): `Fseek` now positions exactly as `ixlseek` does
++(`_state.md` §3a): forward chaining from `o_curcl`, otherwise from the start
++cluster, one cluster short on a boundary, `EINTRN` for a chain shorter than the
++file length claims. Before FS08 `Fseek` only stored the byte position and every
++`Fread`/`Fwrite` walked the chain from the start; the `EINTRN` row above was
++not reachable.
+diff --git a/tos-api/src/bdos/fs/cache.rs b/tos-api/src/bdos/fs/cache.rs
+index c2459cf..88c78d3 100644
+--- a/tos-api/src/bdos/fs/cache.rs
++++ b/tos-api/src/bdos/fs/cache.rs
+@@ -1,11 +1,21 @@
+-//! Sector cache (Phase 09 D2). Mirrors EmuTOS `bdos/fsbuf.c`.
++//! Sector cache (Phase 09 D2, FS08). Mirrors EmuTOS `bdos/fsbuf.c`.
+ //!
+ //! A small write-back cache of 512-byte sectors sitting between the FAT /
+-//! directory / file layers and the block device. Reads populate it;
+-//! repeated accesses to the same FAT or directory sector (the common case
+-//! in `fat_entry`, the directory scan and `Dfree`) hit the cache instead
+-//! of re-issuing an SD read. Writes mark slots dirty for write-back; the
+-//! write side flushes via [`flush`].
++//! directory / file layers and the block device, in **two separate lists**
++//! like EmuTOS' `bufl[BI_FAT]` / `bufl[BI_DATA]` (`bdos/fsbuf.c:67-71`,
++//! `docs/api/gemdos/_state.md` §3): FAT sectors in one, directory and file
++//! data sectors in the other. An access searches only its own list
++//! (`getbcb`, `bdos/fsbuf.c:121`), so streaming file data can never push the
++//! FAT sectors out — before FS08 one shared 16-slot round-robin cache did
++//! exactly that, and every `Fread` re-read the FAT from the card
++//! (`docs/analysis/fs08-sd-read-2026-10-07.md` §2.3).
++//!
++//! Each list is kept in most-recently-used order; a miss takes the last
++//! invalid slot, else the least recently used one (`bdos/fsbuf.c:130-201`).
++//! A FAT slot is cached once and written to **every** FAT copy at
++//! write-back (`flush`, `bdos/fsbuf.c:95-102`). Whole-record file transfers
++//! bypass the cache ([`direct_read`] / [`direct_write`], EmuTOS `usrio`,
++//! `bdos/fsio.c:57-74`).
+ //!
+ //! Single block device, single-CPU, IRQ-off trap path — no locking.
+ //!
+@@ -33,7 +43,7 @@
+ //!   "disk full" (`docs/api/gemdos/file/40-fwrite.md` §"Error conditions").
+ 
+ use core::cell::UnsafeCell;
+-use core::sync::atomic::{AtomicI32, AtomicU32, AtomicUsize, Ordering};
++use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
+ 
+ use tos_types::error::{EUNDEV, E_OK};
+ use tos_types::Long;
+@@ -41,9 +51,40 @@ use tos_types::Long;
+ use crate::bios::block::BlockDev;
+ use crate::host;
+ 
+-const SLOTS: usize = 16;
++/// Buffers per list. EmuTOS has `NUMBUFS = 2` (`bdos/fsbuf.c:26`), sized for
++/// ST RAM; the count is not part of the contract (`_state.md` §3), so NewTOS
++/// keeps the 16 buffers it had before FS08, split evenly between the lists.
++const SLOTS: usize = 8;
+ const SECTOR: usize = 512;
+ 
++/// Which buffer list an access goes to — EmuTOS `BI_FAT` / `BI_DATA`, with
++/// what a FAT buffer needs to know for its write-back.
++#[derive(Clone, Copy, PartialEq, Eq, Debug)]
++pub enum Kind {
++    /// A FAT sector, addressed by its LBA in the **last** FAT copy (EmuTOS
++    /// `m_recoff[BT_FAT] = fatrec`, `bdos/fsdrive.c:241`). Write-back also
++    /// writes the same data `stride`, `2 * stride`, … sectors earlier, into
++    /// the other `copies - 1` FATs (`bdos/fsbuf.c:97-102`).
++    Fat {
++        /// Sectors between two FAT copies (`fsiz`).
++        stride: u32,
++        /// Number of FAT copies (1 or 2).
++        copies: u8,
++    },
++    /// A root-directory, sub-directory or file-data sector
++    /// (`BT_ROOT` / `BT_DATA`, both in `bufl[BI_DATA]`, `bdos/fsbuf.c:121`).
++    Data,
++}
++
++impl Kind {
++    fn list(self) -> usize {
++        match self {
++            Kind::Fat { .. } => 0,
++            Kind::Data => 1,
++        }
++    }
++}
++
+ /// How often the cache re-attempts the write-back of one and the same
+ /// dirty slot before it stops trying on its own.
+ ///
+@@ -65,6 +106,9 @@ struct Slot {
+     lba: u64,
+     valid: bool,
+     dirty: bool,
++    /// The list's kind the slot was filled for; for a FAT slot this carries
++    /// the mirror geometry its write-back needs.
++    kind: Kind,
+     /// Failed write-back attempts for the data currently in this slot.
+     /// Reset to 0 by a successful write-back and by a fresh [`write`] of
+     /// the same sector (new data is a new request).
+@@ -75,32 +119,53 @@ struct Slot {
+     data: [u8; SECTOR],
+ }
+ 
++/// One buffer list: the slots plus their order, most recently used first
++/// (`b_link` order in EmuTOS).
++struct List {
++    slots: [Slot; SLOTS],
++    /// Slot indices, head = most recently used, tail = least.
++    order: [u8; SLOTS],
++}
++
++const EMPTY_SLOT: Slot = Slot {
++    lba: 0,
++    valid: false,
++    dirty: false,
++    kind: Kind::Data,
++    wb_fails: 0,
++    wb_err: E_OK,
++    data: [0u8; SECTOR],
++};
++
++const fn initial_order() -> [u8; SLOTS] {
++    let mut o = [0u8; SLOTS];
++    let mut i = 0;
++    while i < SLOTS {
++        o[i] = i as u8;
++        i += 1;
++    }
++    o
++}
++
+ struct Cache {
+-    slots: UnsafeCell<[Slot; SLOTS]>,
+-    /// Round-robin eviction pointer.
+-    victim: AtomicUsize,
++    lists: UnsafeCell<[List; 2]>,
+ }
+ // SAFETY: accessed only from the single-CPU, IRQ-off trap path.
+ unsafe impl Sync for Cache {}
+ 
+ static CACHE: Cache = Cache {
+-    slots: UnsafeCell::new(
+-        [const {
+-            Slot {
+-                lba: 0,
+-                valid: false,
+-                dirty: false,
+-                wb_fails: 0,
+-                wb_err: E_OK,
+-                data: [0u8; SECTOR],
+-            }
+-        }; SLOTS],
++    lists: UnsafeCell::new(
++        [const { List { slots: [EMPTY_SLOT; SLOTS], order: initial_order() } }; 2],
+     ),
+-    victim: AtomicUsize::new(0),
+ };
+ 
+ static HITS: AtomicU32 = AtomicU32::new(0);
+ static MISSES: AtomicU32 = AtomicU32::new(0);
++/// Misses per list, `[FAT, data]` — the device reads the cache issued.
++static LIST_MISSES: [AtomicU32; 2] = [AtomicU32::new(0), AtomicU32::new(0)];
++/// Whole-record transfers that bypassed the cache: `(requests, sectors)`.
++static DIRECT_REQS: AtomicU32 = AtomicU32::new(0);
++static DIRECT_SECTORS: AtomicU32 = AtomicU32::new(0);
+ 
+ /// The hard error of the most recent failed block access — EmuTOS `rwerr` /
+ /// `errcode` (`bdos/fsglob.c:40-41`). `E_OK` when there is none pending.
+@@ -120,9 +185,9 @@ fn block() -> Option<&'static dyn BlockDev> {
+     host::host().and_then(|h| h.block())
+ }
+ 
+-fn slots() -> &'static mut [Slot; SLOTS] {
++fn lists() -> &'static mut [List; 2] {
+     // SAFETY: single trap path; never concurrently borrowed.
+-    unsafe { &mut *CACHE.slots.get() }
++    unsafe { &mut *CACHE.lists.get() }
+ }
+ 
+ /// Record a hard device error for the running GEMDOS call — EmuTOS
+@@ -138,6 +203,12 @@ pub fn clear_error() {
+     LAST_ERROR.store(E_OK, Ordering::Relaxed);
+ }
+ 
++/// Is a hard device error pending (without taking it)? Lets a caller tell
++/// "no free cluster" from "the FAT could not be read".
++pub fn error_pending() -> bool {
++    LAST_ERROR.load(Ordering::Relaxed) != E_OK
++}
++
+ /// Take the pending hard device error, if any, and clear it. The GEMDOS
+ /// entry points return it as their own result — `osif`'s "return the error
+ /// to caller as if it were the function's return value"
+@@ -151,7 +222,9 @@ pub fn take_error() -> Option<Long> {
+     }
+ }
+ 
+-/// Write one dirty slot back to the device.
++/// Write one dirty slot back to the device — EmuTOS `flush(b)`
++/// (`bdos/fsbuf.c:85-105`): the sector itself and, for a FAT slot, the same
++/// data into every other FAT copy.
+ ///
+ /// On success the slot is clean. **On failure the slot keeps its data, its
+ /// `valid` flag and its dirty flag** — losing it would throw away the only
+@@ -172,7 +245,20 @@ fn write_back(s: &mut Slot) -> Result<(), Long> {
+         WB_RETRIES.fetch_add(1, Ordering::Relaxed);
+     }
+     let r = match block() {
+-        Some(b) => b.write_blocks(s.lba, &s.data),
++        Some(b) => {
++            let mut r = b.write_blocks(s.lba, &s.data);
++            if let (Ok(()), Kind::Fat { stride, copies }) = (r, s.kind) {
++                // "flush to both fats" (`bdos/fsbuf.c:97-102`): the slot is
++                // keyed by the last copy; the others lie `stride` earlier each.
++                for k in 1..u64::from(copies) {
++                    r = b.write_blocks(s.lba - k * u64::from(stride), &s.data);
++                    if r.is_err() {
++                        break;
++                    }
++                }
++            }
++            r
++        }
+         // No block device behind a mounted volume: the same code `Rwabs`
+         // gives an unknown device (`bios/mod.rs`, EmuTOS `blkdev.c:440-441`).
+         None => Err(EUNDEV),
+@@ -207,125 +293,242 @@ fn retryable(s: &Slot) -> bool {
+     s.wb_fails < WRITEBACK_ATTEMPTS
+ }
+ 
+-/// Pick a victim slot (round robin), writing it back first if dirty.
+-///
+-/// Returns the failure code when the victim is dirty and cannot be written
+-/// back: the slot is then **not** handed out, so the caller's access fails
+-/// rather than silently overwriting a sector that never reached the card.
+-/// The round-robin pointer has already moved on, so the next access picks a
+-/// different slot and one bad sector does not block the whole cache.
+-fn evict(slots: &mut [Slot; SLOTS]) -> Result<usize, Long> {
+-    let v = CACHE.victim.fetch_add(1, Ordering::Relaxed) % SLOTS;
+-    if slots[v].valid && slots[v].dirty {
+-        if !retryable(&slots[v]) {
+-            // Out of attempts: do not touch the device again, but do not
+-            // hand the slot out either — its sector is still only here.
+-            let code = slots[v].wb_err;
+-            set_error(code);
+-            return Err(code);
+-        }
+-        write_back(&mut slots[v])?;
++impl List {
++    /// Move the slot at order position `pos` to the head (most recently
++    /// used) — `*q = b->b_link; b->b_link = *phdr; *phdr = b`
++    /// (`bdos/fsbuf.c:197-199`).
++    fn promote(&mut self, pos: usize) {
++        let idx = self.order[pos];
++        self.order.copy_within(0..pos, 1);
++        self.order[0] = idx;
+     }
+-    Ok(v)
+-}
+ 
+-/// Read sector `lba` into `out`, through the cache.
+-///
+-/// `false` means the access failed; the TOS code is in [`take_error`].
+-pub fn read(lba: u64, out: &mut [u8; SECTOR]) -> bool {
+-    let slots = slots();
+-    for s in slots.iter() {
+-        if s.valid && s.lba == lba {
+-            out.copy_from_slice(&s.data);
+-            HITS.fetch_add(1, Ordering::Relaxed);
+-            return true;
++    /// Order position of the valid slot holding `lba`, if any.
++    fn find(&self, lba: u64) -> Option<usize> {
++        (0..SLOTS).find(|&p| {
++            let s = &self.slots[self.order[p] as usize];
++            s.valid && s.lba == lba
++        })
++    }
++
++    /// Pick the victim for a miss — `getbcb`'s choice (`bdos/fsbuf.c:
++    /// 130-157`): the **last** invalid slot in list order, else the tail
++    /// (least recently used). A dirty victim is written back first
++    /// (`:162-163`). Returns its order position.
++    ///
++    /// When the victim is dirty and cannot be written back, the slot is
++    /// **not** handed out — the caller's access fails rather than silently
++    /// overwriting a sector that never reached the card (HW03). The slot is
++    /// moved to the head, so the next miss picks a different victim and one
++    /// bad sector does not block the whole list.
++    fn victim(&mut self) -> Result<usize, Long> {
++        let pos = (0..SLOTS)
++            .rev()
++            .find(|&p| !self.slots[self.order[p] as usize].valid)
++            .unwrap_or(SLOTS - 1);
++        let s = &mut self.slots[self.order[pos] as usize];
++        if s.valid && s.dirty {
++            let r = if retryable(s) {
++                write_back(s)
++            } else {
++                // Out of attempts: do not touch the device again, but do not
++                // hand the slot out either — its sector is still only here.
++                set_error(s.wb_err);
++                Err(s.wb_err)
++            };
++            if let Err(code) = r {
++                self.promote(pos);
++                return Err(code);
++            }
+         }
++        Ok(pos)
+     }
+-    MISSES.fetch_add(1, Ordering::Relaxed);
+ 
+-    let v = match evict(slots) {
+-        Ok(v) => v,
+-        // The victim's dirty sector could not be written back. Giving the
+-        // slot away here is exactly the loss of audit finding 4.
+-        Err(_) => return false,
+-    };
+-    match block() {
+-        Some(b) => {
+-            if let Err(code) = b.read_blocks(lba, &mut slots[v].data) {
++    /// EmuTOS `getbcb` (`bdos/fsbuf.c:114-202`): the slot holding `lba`,
++    /// read in on a miss unless `fill` is `false` (the caller overwrites all
++    /// 512 bytes), moved to the head. Returns the slot index.
++    fn get(&mut self, kind: Kind, lba: u64, fill: bool) -> Result<usize, Long> {
++        if let Some(pos) = self.find(lba) {
++            HITS.fetch_add(1, Ordering::Relaxed);
++            let idx = self.order[pos] as usize;
++            self.promote(pos);
++            return Ok(idx);
++        }
++        MISSES.fetch_add(1, Ordering::Relaxed);
++        LIST_MISSES[kind.list()].fetch_add(1, Ordering::Relaxed);
++        let pos = self.victim()?;
++        let idx = self.order[pos] as usize;
++        let s = &mut self.slots[idx];
++        // "in case longjmp_rwabs() fails" (`bdos/fsbuf.c:164`).
++        s.valid = false;
++        if fill {
++            let r = match block() {
++                Some(b) => b.read_blocks(lba, &mut s.data),
++                None => Err(EUNDEV),
++            };
++            if let Err(code) = r {
+                 set_error(code);
+-                slots[v].valid = false;
+-                return false;
++                return Err(code);
+             }
+         }
+-        None => {
+-            set_error(EUNDEV);
+-            slots[v].valid = false;
+-            return false;
+-        }
++        s.lba = lba;
++        s.kind = kind;
++        s.valid = true;
++        s.dirty = false;
++        s.wb_fails = 0;
++        s.wb_err = E_OK;
++        self.promote(pos);
++        Ok(idx)
+     }
+-    slots[v].lba = lba;
+-    slots[v].valid = true;
+-    slots[v].dirty = false;
+-    slots[v].wb_fails = 0;
+-    slots[v].wb_err = E_OK;
+-    out.copy_from_slice(&slots[v].data);
+-    true
+ }
+ 
+-/// Write sector `lba` from `data` into the cache (write-back: the slot is
+-/// marked dirty and flushed later).
++/// EmuTOS `getrec` (`bdos/fsbuf.c:209-235`): run `f` on the cached contents
++/// of sector `lba` in `kind`'s list, reading it in on a miss; with `write`
++/// the slot is marked dirty afterwards (`:231-232`).
++///
++/// `None` means the access failed; the TOS code is in [`take_error`].
++pub fn with_sector<R>(
++    kind: Kind,
++    lba: u64,
++    write: bool,
++    f: impl FnOnce(&mut [u8; SECTOR]) -> R,
++) -> Option<R> {
++    let list = &mut lists()[kind.list()];
++    let idx = list.get(kind, lba, true).ok()?;
++    let s = &mut list.slots[idx];
++    let r = f(&mut s.data);
++    if write {
++        s.dirty = true;
++        // New content for this sector: the old content's failed attempts
++        // do not count against it.
++        s.wb_fails = 0;
++        s.wb_err = E_OK;
++    }
++    Some(r)
++}
++
++/// Read sector `lba` into `out`, through `kind`'s list.
++///
++/// `false` means the access failed; the TOS code is in [`take_error`].
++pub fn read(kind: Kind, lba: u64, out: &mut [u8; SECTOR]) -> bool {
++    with_sector(kind, lba, false, |d| out.copy_from_slice(d)).is_some()
++}
++
++/// Write sector `lba` from `data` into `kind`'s list (write-back: the slot
++/// is marked dirty and flushed later). A miss does not read the old
++/// contents first — all 512 bytes are replaced, so the read would be
++/// unobservable.
+ ///
+ /// `false` means no slot could be made available because another sector's
+ /// write-back failed; the TOS code is in [`take_error`].
+-pub fn write(lba: u64, data: &[u8; SECTOR]) -> bool {
+-    let slots = slots();
+-    for s in slots.iter_mut() {
+-        if s.valid && s.lba == lba {
+-            s.data.copy_from_slice(data);
+-            s.dirty = true;
+-            // New content for this sector: the old content's failed
+-            // attempts do not count against it.
+-            s.wb_fails = 0;
+-            s.wb_err = E_OK;
+-            return true;
++pub fn write(kind: Kind, lba: u64, data: &[u8; SECTOR]) -> bool {
++    let list = &mut lists()[kind.list()];
++    let Ok(idx) = list.get(kind, lba, false) else {
++        return false;
++    };
++    let s = &mut list.slots[idx];
++    s.data.copy_from_slice(data);
++    s.dirty = true;
++    s.wb_fails = 0;
++    s.wb_err = E_OK;
++    true
++}
++
++/// The data-list half of EmuTOS `usrio` (`bdos/fsio.c:61-71`): every cached
++/// data sector in `lba .. lba + count` is written back if dirty and then
++/// invalidated, so a whole-record transfer that bypasses the cache neither
++/// reads stale card contents nor leaves a stale copy behind.
++fn usrio_invalidate(lba: u64, count: u64) -> Result<(), Long> {
++    let list = &mut lists()[Kind::Data.list()];
++    for s in list.slots.iter_mut() {
++        if s.valid && s.lba >= lba && s.lba < lba + count {
++            if s.dirty {
++                if !retryable(s) {
++                    set_error(s.wb_err);
++                    return Err(s.wb_err);
++                }
++                write_back(s)?;
++            }
++            s.valid = false;
+         }
+     }
+-    let v = match evict(slots) {
+-        Ok(v) => v,
+-        Err(_) => return false,
++    Ok(())
++}
++
++/// Read `buf.len() / 512` sectors from `lba` straight into `buf` in **one**
++/// block request, bypassing the cache — EmuTOS `usrio(0, …)`
++/// (`bdos/fsio.c:57-74`).
++///
++/// `false` means the access failed; the TOS code is in [`take_error`].
++pub fn direct_read(lba: u64, buf: &mut [u8]) -> bool {
++    let count = (buf.len() / SECTOR) as u64;
++    if usrio_invalidate(lba, count).is_err() {
++        return false;
++    }
++    DIRECT_REQS.fetch_add(1, Ordering::Relaxed);
++    DIRECT_SECTORS.fetch_add(count as u32, Ordering::Relaxed);
++    let r = match block() {
++        Some(b) => b.read_blocks(lba, buf),
++        None => Err(EUNDEV),
+     };
+-    slots[v].data.copy_from_slice(data);
+-    slots[v].lba = lba;
+-    slots[v].valid = true;
+-    slots[v].dirty = true;
+-    slots[v].wb_fails = 0;
+-    slots[v].wb_err = E_OK;
+-    true
++    match r {
++        Ok(()) => true,
++        Err(code) => {
++            set_error(code);
++            false
++        }
++    }
++}
++
++/// Write `buf.len() / 512` sectors from `buf` to `lba` in **one** block
++/// request, bypassing the cache — EmuTOS `usrio(1, …)`.
++///
++/// `false` means the access failed; the TOS code is in [`take_error`].
++pub fn direct_write(lba: u64, buf: &[u8]) -> bool {
++    let count = (buf.len() / SECTOR) as u64;
++    if usrio_invalidate(lba, count).is_err() {
++        return false;
++    }
++    DIRECT_REQS.fetch_add(1, Ordering::Relaxed);
++    DIRECT_SECTORS.fetch_add(count as u32, Ordering::Relaxed);
++    let r = match block() {
++        Some(b) => b.write_blocks(lba, buf),
++        None => Err(EUNDEV),
++    };
++    match r {
++        Ok(()) => true,
++        Err(code) => {
++            set_error(code);
++            false
++        }
++    }
+ }
+ 
+-/// Write back all dirty sectors to the block device.
++/// Write back all dirty sectors to the block device — the loop at the end
++/// of EmuTOS `ixclose` (`bdos/fsopnclo.c:576-579`), FAT list first.
+ ///
+ /// Returns the TOS error code of the **first** failure, after having tried
+ /// every other dirty slot: one bad sector must not keep the rest of the
+ /// volume's metadata in memory. Sectors that fail stay in the cache, dirty
+ /// (see [`write_back`]).
+ pub fn flush() -> Result<(), Long> {
+-    let slots = slots();
+     let mut first_err = None;
+-    for s in slots.iter_mut() {
+-        if !(s.valid && s.dirty) {
+-            continue;
+-        }
+-        if !retryable(s) {
+-            // Already given up on automatically; still an error for the
+-            // caller, because this sector is not on the card.
+-            let code = s.wb_err;
+-            set_error(code);
+-            first_err.get_or_insert(code);
+-            continue;
+-        }
+-        if let Err(code) = write_back(s) {
+-            first_err.get_or_insert(code);
++    for list in lists().iter_mut() {
++        for s in list.slots.iter_mut() {
++            if !(s.valid && s.dirty) {
++                continue;
++            }
++            if !retryable(s) {
++                // Already given up on automatically; still an error for the
++                // caller, because this sector is not on the card.
++                let code = s.wb_err;
++                set_error(code);
++                first_err.get_or_insert(code);
++                continue;
++            }
++            if let Err(code) = write_back(s) {
++                first_err.get_or_insert(code);
++            }
+         }
+     }
+     match first_err {
+@@ -334,11 +537,21 @@ pub fn flush() -> Result<(), Long> {
+     }
+ }
+ 
+-/// Cache statistics: `(hits, misses)`.
++/// Cache statistics: `(hits, misses)` over both lists.
+ pub fn stats() -> (u32, u32) {
+     (HITS.load(Ordering::Relaxed), MISSES.load(Ordering::Relaxed))
+ }
+ 
++/// Device reads issued per list on a miss: `(fat, data)`.
++pub fn list_misses() -> (u32, u32) {
++    (LIST_MISSES[0].load(Ordering::Relaxed), LIST_MISSES[1].load(Ordering::Relaxed))
++}
++
++/// Whole-record transfers that bypassed the cache: `(requests, sectors)`.
++pub fn direct_stats() -> (u32, u32) {
++    (DIRECT_REQS.load(Ordering::Relaxed), DIRECT_SECTORS.load(Ordering::Relaxed))
++}
++
+ /// Write-back statistics: `(failures, retries, exhausted, dirty_slots)`.
+ ///
+ /// * `failures` — write-back attempts that the device rejected, every
+@@ -351,7 +564,11 @@ pub fn stats() -> (u32, u32) {
+ /// * `dirty_slots` — dirty slots right now, i.e. sectors the card has not
+ ///   got yet.
+ pub fn writeback_stats() -> (u32, u32, u32, u32) {
+-    let dirty = slots().iter().filter(|s| s.valid && s.dirty).count() as u32;
++    let dirty = lists()
++        .iter()
++        .flat_map(|l| l.slots.iter())
++        .filter(|s| s.valid && s.dirty)
++        .count() as u32;
+     (
+         WB_FAILURES.load(Ordering::Relaxed),
+         WB_RETRIES.load(Ordering::Relaxed),
+diff --git a/tos-api/src/bdos/fs/fat.rs b/tos-api/src/bdos/fs/fat.rs
+index 3bb7199..e3d5650 100644
+--- a/tos-api/src/bdos/fs/fat.rs
++++ b/tos-api/src/bdos/fs/fat.rs
+@@ -9,10 +9,15 @@
+ //! - [`Volume::read_cluster`] — read a whole cluster's data sectors.
+ //!
+ //! All sector numbers in the BPB are **partition-relative**; this module
+-//! adds `start_lba` to reach absolute LBAs on the block device. No sector
+-//! cache yet (Phase 09 D2) — each access reads through the block device.
++//! adds `start_lba` to reach absolute LBAs on the block device. FAT sectors
++//! go through the cache's FAT list (one copy cached, every copy written at
++//! write-back, EmuTOS `flush`), directory and data sectors through its data
++//! list (FS08, [`super::cache`]).
+ 
+ use core::cell::UnsafeCell;
++use core::sync::atomic::{AtomicU32, Ordering};
++
++use super::cache::{self, Kind};
+ 
+ use crate::bios::bpb::{self, Bpb};
+ use crate::bios::drive;
+@@ -25,6 +30,16 @@ const B_16: u16 = 0x01;
+ const EOC12: u32 = 0x0FF8;
+ const EOC16: u32 = 0xFFF8;
+ 
++/// FAT entries looked up ([`Volume::fat_entry`]) since boot — the number
++/// of chain steps the file system took. Exposed for the FS08 evidence
++/// (sequential reads must take one step per cluster, not a walk per call).
++static FAT_LOOKUPS: AtomicU32 = AtomicU32::new(0);
++
++/// FAT entries looked up since boot (see [`FAT_LOOKUPS`]).
++pub fn fat_lookups() -> u32 {
++    FAT_LOOKUPS.load(Ordering::Relaxed)
++}
++
+ /// Mounted FAT volume geometry for one TOS drive.
+ #[derive(Clone, Copy)]
+ pub struct Volume {
+@@ -40,8 +55,6 @@ pub struct Volume {
+     pub rdlen: u32,
+     /// Partition-relative first sector of the last FAT (read source).
+     fatrec: u32,
+-    /// Partition-relative first sector of the first FAT.
+-    fat1: u32,
+     /// Number of FAT copies (updated together on write).
+     num_fats: u32,
+     /// FAT size in sectors (one copy).
+@@ -120,7 +133,6 @@ impl Volume {
+             clsizb: bpb.clsizb as u32,
+             rdlen: bpb.rdlen as u32,
+             fatrec: bpb.fatrec as u32,
+-            fat1: geo.reserved as u32,
+             num_fats: geo.num_fats as u32,
+             fsiz: bpb.fsiz as u32,
+             datrec: bpb.datrec as u32,
+@@ -194,15 +206,49 @@ impl Volume {
+         self.write_rel(rel_sector, buf)
+     }
+ 
+-    /// Read one partition-relative sector into `buf` (must be 512 bytes),
+-    /// through the sector cache.
++    /// Read one partition-relative directory/data sector into `buf` (must be
++    /// 512 bytes), through the cache's data list.
+     fn read_rel(&self, rel_sector: u32, buf: &mut [u8; SECTOR]) -> bool {
+-        super::cache::read((self.start_lba + rel_sector) as u64, buf)
++        cache::read(Kind::Data, (self.start_lba + rel_sector) as u64, buf)
+     }
+ 
+-    /// Write one partition-relative sector from `buf` through the cache.
++    /// Write one partition-relative directory/data sector from `buf` through
++    /// the cache's data list.
+     fn write_rel(&self, rel_sector: u32, buf: &[u8; SECTOR]) -> bool {
+-        super::cache::write((self.start_lba + rel_sector) as u64, buf)
++        cache::write(Kind::Data, (self.start_lba + rel_sector) as u64, buf)
++    }
++
++    /// The cache list FAT sectors of this volume go to: keyed by the last
++    /// FAT copy (`fatrec`, EmuTOS `m_recoff[BT_FAT]`, `bdos/fsdrive.c:241`),
++    /// mirrored into the `num_fats - 1` copies `fsiz` sectors before it at
++    /// write-back (`bdos/fsbuf.c:97-102`).
++    fn fat_kind(&self) -> Kind {
++        Kind::Fat { stride: self.fsiz, copies: self.num_fats as u8 }
++    }
++
++    /// EmuTOS `getrec(recnum, m_fatofd, wrt)` for FAT sector `recnum`
++    /// (relative to `fatrec`): run `f` on the cached sector, marking it
++    /// dirty with `write`. `None` on a device error.
++    fn with_fat_sector<R>(
++        &self,
++        recnum: u32,
++        write: bool,
++        f: impl FnOnce(&mut [u8; SECTOR]) -> R,
++    ) -> Option<R> {
++        let lba = (self.start_lba + self.fatrec + recnum) as u64;
++        cache::with_sector(self.fat_kind(), lba, write, f)
++    }
++
++    /// Absolute LBA of data-area record `rec` (EmuTOS `RECNO` relative to
++    /// `m_recoff[BT_DATA]`; record 0 is the first sector of cluster 2).
++    pub fn data_lba(&self, rec: u32) -> u64 {
++        (self.start_lba + self.datrec + rec) as u64
++    }
++
++    /// EmuTOS `cl2rec` (`bdos/fsfat.c:23-26`): the first data-area record of
++    /// `cluster`.
++    pub fn cl2rec(&self, cluster: u32) -> u32 {
++        (cluster - 2) * self.clsiz
+     }
+ 
+     /// `true` if FAT writes are supported on this volume (FAT16 only for
+@@ -214,8 +260,10 @@ impl Volume {
+     /// FAT16 end-of-chain marker written for a newly allocated cluster.
+     pub const EOC: u32 = 0xFFFF;
+ 
+-    /// Write a FAT16 entry in **every** FAT copy. Returns `false` on a
+-    /// non-FAT16 volume or a read/write error.
++    /// Write a FAT16 entry — EmuTOS `clfix` (`bdos/fsfat.c:36-57`): the
++    /// cached FAT sector is updated and marked dirty; the write-back puts it
++    /// into **every** FAT copy (`cache` FAT list). Returns `false` on a
++    /// non-FAT16 volume or a read error.
+     pub fn set_fat_entry(&self, cluster: u32, value: u32) -> bool {
+         if !self.fat16 {
+             return false;
+@@ -227,54 +275,77 @@ impl Volume {
+             return false;
+         }
+         let off = cluster * 2;
+-        let sec_in_fat = off / self.recsiz;
+         let within = (off % self.recsiz) as usize;
+-        let mut buf = [0u8; SECTOR];
+-        for f in 0..self.num_fats {
+-            let sec = self.fat1 + f * self.fsiz + sec_in_fat;
+-            if !self.read_rel(sec, &mut buf) {
+-                return false;
+-            }
++        self.with_fat_sector(off / self.recsiz, true, |buf| {
+             buf[within..within + 2].copy_from_slice(&(value as u16).to_le_bytes());
+-            if !self.write_rel(sec, &buf) {
+-                return false;
+-            }
+-        }
+-        true
++        })
++        .is_some()
+     }
+ 
+-    /// Allocate the first free cluster: mark it end-of-chain and return
+-    /// its number. `None` if the volume is full or not writable.
+-    pub fn alloc_cluster(&self) -> Option<u32> {
++    /// EmuTOS `findfree` (`bdos/fsfat.c:208-234`): the first free cluster
++    /// from the start of the FAT when `cl == 0` (`findfree16`, `:174-200`),
++    /// otherwise scanning forward from `cl` with wrap-around (`:223-231`).
++    /// `None` if the volume is full, not writable, or the FAT cannot be read.
++    pub fn findfree(&self, cl: u32) -> Option<u32> {
+         if !self.fat16 {
+             return None;
+         }
++        if cl == 0 {
++            return self.findfree16();
++        }
++        let mut cl = cl.max(2);
++        for _ in 0..self.numcl {
++            if !self.is_data_cluster(cl) {
++                cl = 2;
++            }
++            match self.fat_entry(cl) {
++                Some(0) => return Some(cl),
++                Some(_) => {}
++                None => return None,
++            }
++            if cl == self.numcl + 1 {
++                cl = 1; // wrap at max cluster num
++            }
++            cl += 1;
++        }
++        None
++    }
++
++    /// EmuTOS `findfree16` (`bdos/fsfat.c:174-200`): scan the FAT record by
++    /// record for the first zero entry.
++    fn findfree16(&self) -> Option<u32> {
+         let last = self.numcl + 2;
+         let eps = self.recsiz / 2;
+-        let nsec = (last * 2).div_ceil(self.recsiz);
+-        let mut buf = [0u8; SECTOR];
+-        for s in 0..nsec {
+-            if !self.read_rel(self.fatrec + s, &mut buf) {
+-                return None;
+-            }
+-            for i in 0..eps {
+-                let cl = s * eps + i;
+-                if cl < 2 {
+-                    continue;
+-                }
+-                if cl >= last {
+-                    return None;
+-                }
+-                let b = (i * 2) as usize;
+-                if u16::from_le_bytes([buf[b], buf[b + 1]]) == 0 && self.set_fat_entry(cl, Self::EOC)
+-                {
+-                    return Some(cl);
++        let mut clnum = 2u32;
++        while clnum < last {
++            let recnum = clnum / eps;
++            let found = self.with_fat_sector(recnum, false, |buf| {
++                let mut c = clnum;
++                while c / eps == recnum && c < last {
++                    let b = ((c % eps) * 2) as usize;
++                    if u16::from_le_bytes([buf[b], buf[b + 1]]) == 0 {
++                        return Ok(c);
++                    }
++                    c += 1;
+                 }
++                Err(c)
++            })?;
++            match found {
++                Ok(c) => return Some(c),
++                Err(next) => clnum = next,
+             }
+         }
+         None
+     }
+ 
++    /// Allocate the first free cluster on the volume and mark it
++    /// end-of-chain (`findfree(0)` + `clfix(cl2, ENDOFCHAIN)`). `None` if the
++    /// volume is full or not writable.
++    pub fn alloc_cluster(&self) -> Option<u32> {
++        let cl = self.findfree(0)?;
++        self.set_fat_entry(cl, Self::EOC).then_some(cl)
++    }
++
+     /// Free a whole cluster chain starting at `start` (sets each entry to
+     /// the free marker `0`).
+     pub fn free_chain(&self, start: u32) -> bool {
+@@ -334,16 +405,14 @@ impl Volume {
+         if !self.is_data_cluster(cluster) {
+             return None;
+         }
++        FAT_LOOKUPS.fetch_add(1, Ordering::Relaxed);
+         if self.fat16 {
+             let off = cluster * 2;
+-            let sec = self.fatrec + off / self.recsiz;
+             let within = (off % self.recsiz) as usize;
+-            let mut b = [0u8; SECTOR];
+-            if !self.read_rel(sec, &mut b) {
+-                return None;
+-            }
+             // A 2-byte LE entry at an even offset never crosses a sector.
+-            Some(u16::from_le_bytes([b[within], b[within + 1]]) as u32)
++            self.with_fat_sector(off / self.recsiz, false, |b| {
++                u16::from_le_bytes([b[within], b[within + 1]]) as u32
++            })
+         } else {
+             // FAT12: 12-bit packed; an entry can straddle two sectors, so
+             // read the two bytes individually.
+@@ -357,13 +426,8 @@ impl Volume {
+ 
+     /// Read a single byte at partition-relative FAT byte offset `off`.
+     fn fat12_byte(&self, off: u32) -> Option<u8> {
+-        let sec = self.fatrec + off / self.recsiz;
+         let within = (off % self.recsiz) as usize;
+-        let mut b = [0u8; SECTOR];
+-        if !self.read_rel(sec, &mut b) {
+-            return None;
+-        }
+-        Some(b[within])
++        self.with_fat_sector(off / self.recsiz, false, |b| b[within])
+     }
+ 
+     /// Partition-relative first sector of a data cluster.
+@@ -395,23 +459,27 @@ impl Volume {
+         if self.fat16 {
+             let eps = self.recsiz / 2; // 16-bit entries per sector
+             let nsec = (last * 2).div_ceil(self.recsiz);
+-            let mut sbuf = [0u8; SECTOR];
+             for s in 0..nsec {
+-                if !self.read_rel(self.fatrec + s, &mut sbuf) {
+-                    break;
+-                }
+-                for i in 0..eps {
+-                    let cl = s * eps + i;
+-                    if cl < 2 {
+-                        continue;
+-                    }
+-                    if cl >= last {
+-                        return free;
+-                    }
+-                    let b = (i * 2) as usize;
+-                    if u16::from_le_bytes([sbuf[b], sbuf[b + 1]]) == 0 {
+-                        free += 1;
++                let counted = self.with_fat_sector(s, false, |sbuf| {
++                    let mut n = 0u32;
++                    for i in 0..eps {
++                        let cl = s * eps + i;
++                        if cl < 2 {
++                            continue;
++                        }
++                        if cl >= last {
++                            break;
++                        }
++                        let b = (i * 2) as usize;
++                        if u16::from_le_bytes([sbuf[b], sbuf[b + 1]]) == 0 {
++                            n += 1;
++                        }
+                     }
++                    n
++                });
++                match counted {
++                    Some(n) => free += n,
++                    None => break,
+                 }
+             }
+         } else {
+diff --git a/tos-api/src/bdos/fs/file.rs b/tos-api/src/bdos/fs/file.rs
+index b92b714..e526c0e 100644
+--- a/tos-api/src/bdos/fs/file.rs
++++ b/tos-api/src/bdos/fs/file.rs
+@@ -16,14 +16,14 @@ use core::cell::UnsafeCell;
+ 
+ use super::dir;
+ use super::fat::Volume;
++use super::fsio::{self, Fail, Stream};
+ use super::path;
+ use crate::trap::TrapArgs;
+ use tos_types::error::{
+-    EACCDN, EFILNF, EIHNDL, EINTRN, EINVFN, ENHNDL, ENSAME, EPTHNF, ERANGE, E_OK,
++    EACCDN, EFILNF, EIHNDL, EINTRN, EINVFN, ENHNDL, ENSAME, EPTHNF, E_OK,
+ };
+ use tos_types::Long;
+ 
+-const SECTOR: usize = 512;
+ /// Number of reserved standard handles (0..5); first real handle is 6.
+ const NUMSTD: u16 = 6;
+ /// Open-file table size (EmuTOS `OPNFILES` is 75).
+@@ -34,7 +34,9 @@ const FA_RO: u8 = 0x01;
+ /// Open File Descriptor — reduced EmuTOS `OFD`.
+ #[derive(Clone, Copy)]
+ struct Ofd {
+-    vol: Volume,
++    /// Volume, start cluster, length, `O_DIRTY` and the position fields
++    /// `o_bytnum`/`o_curcl`/`o_currec`/`o_curbyt` (FS08, [`fsio`]).
++    s: Stream,
+     /// Drive the file lives on (recorded for future open-file tracking).
+     #[allow(dead_code)]
+     drive: u16,
+@@ -43,18 +45,10 @@ struct Ofd {
+     /// write-back on close).
+     dir_start: u32,
+     dir_slot: u32,
+-    /// First cluster of the file (0 ⇒ empty file, no clusters yet).
+-    start_cluster: u32,
+-    /// File length in bytes.
+-    file_len: u32,
+-    /// Current byte offset (`o_bytnum`).
+-    pos: u32,
+     /// Open mode bits (`mod & 0x77`). Sharing bits are recorded, not
+     /// enforced, per the TOS contract.
+     #[allow(dead_code)]
+     mode: u8,
+-    /// The directory entry needs a flush (size / start cluster changed).
+-    dirty: bool,
+     /// The OFD is on its directory's open-file list (`o_dnode->d_files`):
+     /// put there when the file is opened (`makopn`, `bdos/fsopnclo.c:294-295`),
+     /// taken off by the first full `ixclose` (`:552-566`). A later `ixclose`
+@@ -288,15 +282,11 @@ pub fn fopen(args: &TrapArgs) -> Long {
+     };
+ 
+     open_handle(Ofd {
+-        vol,
++        s: Stream::new(vol, entry.cluster, entry.size),
+         drive,
+         dir_start: parent,
+         dir_slot,
+-        start_cluster: entry.cluster,
+-        file_len: entry.size,
+-        pos: 0,
+         mode,
+-        dirty: false,
+         listed: true,
+     })
+     .unwrap_or(ENHNDL)
+@@ -377,15 +367,11 @@ pub fn fcreate(args: &TrapArgs) -> Long {
+     }
+ 
+     open_handle(Ofd {
+-        vol,
++        s: Stream::new(vol, 0, 0),
+         drive,
+         dir_start: parent,
+         dir_slot,
+-        start_cluster: 0,
+-        file_len: 0,
+-        pos: 0,
+         mode: 0x01, // write access
+-        dirty: false,
+         listed: true,
+     })
+     .unwrap_or(ENHNDL)
+@@ -408,70 +394,29 @@ pub fn fread(args: &TrapArgs) -> Long {
+         Some(o) => o,
+         None => return EIHNDL,
+     };
++    // `ixread` (`bdos/fsio.c:498-514`): clamp to the bytes before EOF; zero
++    // or negative requests move nothing.
+     if len <= 0 {
+         return 0;
+     }
+-    let want = (len as u32).min(ofd.file_len.saturating_sub(ofd.pos));
++    let want = (len as u32).min(ofd.s.fileln.saturating_sub(ofd.s.bytnum));
+     if want == 0 {
+         return 0;
+     }
+-
+-    let vol = ofd.vol;
+-    let clsizb = vol.clsizb;
+-    let recsiz = vol.recsiz;
+-
+-    // Walk to the cluster containing the current position.
+-    let mut cluster = ofd.start_cluster;
+-    let skip = ofd.pos / clsizb;
+-    for _ in 0..skip {
+-        match vol.fat_entry(cluster) {
+-            Some(n) if !vol.is_eoc(n) => cluster = n,
+-            // A chain that ends early is a short read (0 bytes); a chain
+-            // walk that failed because the *device* failed is a hard error
+-            // and carries the BIOS code (`EREADF`), the way EmuTOS' FAT
+-            // walk unwinds through `longjmp_rwabs` (`bdos/fs.h:60`).
+-            _ => return super::cache::take_error().unwrap_or(0),
+-        }
+-    }
+-
+-    let mut byte_in_cluster = ofd.pos % clsizb;
+-    let mut done = 0u32;
+-    let mut sbuf = [0u8; SECTOR];
+-
+-    while done < want && vol.is_data_cluster(cluster) {
+-        while byte_in_cluster < clsizb && done < want {
+-            let sec_in_cl = byte_in_cluster / recsiz;
+-            let off_in_sec = byte_in_cluster % recsiz;
+-            if !vol.read_cluster_sector(cluster, sec_in_cl, &mut sbuf) {
+-                break;
+-            }
+-            let avail = recsiz - off_in_sec;
+-            let n = avail.min(want - done).min(clsizb - byte_in_cluster);
+-            // Into the caller's buffer, in the caller's space (ARCH03 3a): a
+-            // buffer the program cannot write stops the call here and the
+-            // syscall tail ends the program (`crate::uaccess`).
+-            let chunk = &sbuf[off_in_sec as usize..(off_in_sec + n) as usize];
+-            if args.space.copy_to(ubuf + u64::from(done), chunk).is_err() {
+-                return crate::uaccess::FAULTED;
+-            }
+-            done += n;
+-            byte_in_cluster += n;
+-        }
+-        byte_in_cluster = 0;
+-        match vol.fat_entry(cluster) {
+-            Some(nx) if !vol.is_eoc(nx) => cluster = nx,
+-            _ => break,
+-        }
+-    }
+-
+-    ofd.pos += done;
++    // `xrw(0, …)` (FS08, `docs/api/gemdos/_state.md` §3a): one FAT step per
++    // new cluster from `o_curcl`, whole records straight into the caller's
++    // buffer (in its space, ARCH03 3a), partial ones through the cache.
++    let r = fsio::xrw(&mut ofd.s, false, want, args.space, ubuf);
+     // A read that stopped on a device error reports the error, not a short
+     // count (`docs/api/gemdos/file/3f-fread.md` §"Error conditions": an
+-    // underlying disk read failure surfaces as the BIOS code, `EREADF`).
+-    if let Some(code) = super::cache::take_error() {
+-        return code;
++    // underlying disk read failure surfaces as the BIOS code, `EREADF`); a
++    // chain that ends early stays a short count.
++    let pending = super::cache::take_error();
++    match r {
++        Err(Fail::Fault) => crate::uaccess::FAULTED,
++        Err(Fail::Device) => pending.unwrap_or(EINTRN),
++        Ok(done) => pending.unwrap_or(done as Long),
+     }
+-    done as Long
+ }
+ 
+ /// `Fwrite` (0x40) — write `len` bytes from a buffer to a handle,
+@@ -495,63 +440,17 @@ pub fn fwrite(args: &TrapArgs) -> Long {
+     if len <= 0 {
+         return 0;
+     }
+-    let vol = ofd.vol;
+-    if !vol.is_writable() {
++    if !ofd.s.vol.is_writable() {
+         return EACCDN;
+     }
+-    let clsizb = vol.clsizb;
+-    let recsiz = vol.recsiz;
+-    let want = len as u32;
+-
+-    let mut done = 0u32;
+-    let mut sbuf = [0u8; SECTOR];
+-
+-    while done < want {
+-        let pos = ofd.pos + done;
+-        let cl_index = pos / clsizb; // which cluster of the file
+-
+-        // Resolve (allocating/linking as needed) the cluster holding pos.
+-        let cluster = match resolve_cluster(ofd, cl_index) {
+-            Some(c) => c,
+-            None => break, // disk full → short write
+-        };
+-
+-        let byte_in_cluster = pos % clsizb;
+-        let sec_in_cl = byte_in_cluster / recsiz;
+-        let off_in_sec = (byte_in_cluster % recsiz) as usize;
+-        let avail = recsiz - byte_in_cluster % recsiz;
+-        let n = avail.min(want - done) as usize;
+-
+-        // Read-modify-write the target sector. A full, aligned sector
+-        // overwrite needs no prior read (the copy below fills all 512
+-        // bytes); a partial write reads first, starting from zero if the
+-        // sector is past EOF and not yet allocated.
+-        let full_sector = off_in_sec == 0 && n == recsiz as usize;
+-        if !full_sector {
+-            if !vol.read_cluster_sector(cluster, sec_in_cl, &mut sbuf) {
+-                sbuf = [0u8; SECTOR];
+-            }
+-        } else {
+-            sbuf = [0u8; SECTOR];
+-        }
+-        // From the caller's buffer, in the caller's space (ARCH03 3a); a
+-        // buffer the program cannot read stops the call before this sector is
+-        // written.
+-        if args.space.copy_from(&mut sbuf[off_in_sec..off_in_sec + n], ubuf + u64::from(done)).is_err() {
+-            return crate::uaccess::FAULTED;
+-        }
+-        if !vol.write_cluster_sector(cluster, sec_in_cl, &sbuf) {
+-            break;
+-        }
+-        done += n as u32;
+-    }
+-
+-    ofd.pos += done;
+-    if ofd.pos > ofd.file_len {
+-        ofd.file_len = ofd.pos;
+-    }
+-    if done > 0 {
+-        ofd.dirty = true;
++    // `ixwrite` → `xrw(1, …)` (FS08, `docs/api/gemdos/_state.md` §3a):
++    // clusters allocated by `nextcl` as the write runs past the chain, whole
++    // records straight from the caller's buffer, partial ones
++    // read-modify-write through the cache. A disk that fills up ends the
++    // transfer with a short count.
++    let r = fsio::xrw(&mut ofd.s, true, len as u32, args.space, ubuf);
++    if r == Err(Fail::Fault) {
++        return crate::uaccess::FAULTED;
+     }
+     // Write-back of everything this call dirtied. Its code wins over the
+     // byte count: EmuTOS never returns a short count for a hard error, it
+@@ -559,42 +458,17 @@ pub fn fwrite(args: &TrapArgs) -> Long {
+     if let Err(code) = super::cache::flush() {
+         return code;
+     }
+-    // ...and a loop that stopped early because the *device* failed is the
++    // ...and a transfer that stopped because the *device* failed is the
+     // same hard error, not the "disk full" short count
+     // (`docs/api/gemdos/file/40-fwrite.md` §"Error conditions": disk-full is
+     // a short count, a media fault is a BIOS code).
+     if let Some(code) = super::cache::take_error() {
+         return code;
+     }
+-    done as Long
+-}
+-
+-/// Resolve the `index`-th cluster of the open file, allocating and
+-/// linking new clusters when writing past the current end of chain.
+-/// Updates `start_cluster` for a previously empty file.
+-fn resolve_cluster(ofd: &mut Ofd, index: u32) -> Option<u32> {
+-    let vol = ofd.vol;
+-    if ofd.start_cluster == 0 {
+-        // File has no clusters yet: allocate the first.
+-        let c = vol.alloc_cluster()?;
+-        ofd.start_cluster = c;
+-        ofd.dirty = true;
+-    }
+-    let mut cluster = ofd.start_cluster;
+-    for _ in 0..index {
+-        match vol.fat_entry(cluster) {
+-            Some(n) if !vol.is_eoc(n) && vol.is_data_cluster(n) => cluster = n,
+-            _ => {
+-                // End of chain: allocate and link a new cluster.
+-                let new = vol.alloc_cluster()?;
+-                if !vol.set_fat_entry(cluster, new) {
+-                    return None;
+-                }
+-                cluster = new;
+-            }
+-        }
++    match r {
++        Ok(done) => done as Long,
++        Err(_) => EINTRN,
+     }
+-    Some(cluster)
+ }
+ 
+ /// Free a file's cluster chain and mark its directory entry — and the
+@@ -646,10 +520,10 @@ fn close_open_file(dir_start: u32, dir_slot: u32) {
+ /// Flush an open file's directory entry (size + start cluster).
+ fn flush_ofd(ofd: &Ofd) {
+     let mut e = [0u8; 32];
+-    if dir::read_slot(&ofd.vol, ofd.dir_start, ofd.dir_slot, &mut e) {
+-        e[0x1A..0x1C].copy_from_slice(&((ofd.start_cluster & 0xFFFF) as u16).to_le_bytes());
+-        e[0x1C..0x20].copy_from_slice(&ofd.file_len.to_le_bytes());
+-        dir::write_slot(&ofd.vol, ofd.dir_start, ofd.dir_slot, &e);
++    if dir::read_slot(&ofd.s.vol, ofd.dir_start, ofd.dir_slot, &mut e) {
++        e[0x1A..0x1C].copy_from_slice(&((ofd.s.strtcl & 0xFFFF) as u16).to_le_bytes());
++        e[0x1C..0x20].copy_from_slice(&ofd.s.fileln.to_le_bytes());
++        dir::write_slot(&ofd.s.vol, ofd.dir_start, ofd.dir_slot, &e);
+     }
+ }
+ 
+@@ -986,7 +860,7 @@ pub fn fdatime(args: &TrapArgs) -> Long {
+         None => return EIHNDL,
+     };
+     let mut e = [0u8; 32];
+-    if !dir::read_slot(&ofd.vol, ofd.dir_start, ofd.dir_slot, &mut e) {
++    if !dir::read_slot(&ofd.s.vol, ofd.dir_start, ofd.dir_slot, &mut e) {
+         return EIHNDL;
+     }
+     // The 4-byte DOSTIME buffer is in the caller's space (ARCH03 3a).
+@@ -1000,7 +874,7 @@ pub fn fdatime(args: &TrapArgs) -> Long {
+         if args.space.copy_from(&mut e[0x16..0x1A], buf).is_err() {
+             return crate::uaccess::FAULTED;
+         }
+-        dir::write_slot(&ofd.vol, ofd.dir_start, ofd.dir_slot, &e);
++        dir::write_slot(&ofd.s.vol, ofd.dir_start, ofd.dir_slot, &e);
+         if let Err(code) = super::cache::flush() {
+             return code;
+         }
+@@ -1018,18 +892,15 @@ pub fn fseek(args: &TrapArgs) -> Long {
+         Some(o) => o,
+         None => return EIHNDL,
+     };
++    // `xlseek` (`bdos/fsio.c:321-337`) folds the mode into an absolute
++    // target; `ixlseek` positions the cluster fields (FS08, `fsio`).
+     let base = match flg {
+-        0 => 0,                  // SEEK_SET
+-        1 => ofd.pos as i64,     // SEEK_CUR
+-        2 => ofd.file_len as i64, // SEEK_END
++        0 => 0,                       // SEEK_SET
++        1 => ofd.s.bytnum as i64,     // SEEK_CUR
++        2 => ofd.s.fileln as i64,     // SEEK_END
+         _ => return EINVFN,
+     };
+-    let target = base + n;
+-    if target < 0 || target > ofd.file_len as i64 {
+-        return ERANGE;
+-    }
+-    ofd.pos = target as u32;
+-    ofd.pos as Long
++    fsio::ixlseek(&mut ofd.s, base + n)
+ }
+ 
+ /// `Fclose` (0x3E) — close a handle (EmuTOS `xclose`,
+@@ -1097,9 +968,9 @@ fn ixclose(j: usize) -> Long {
+     let Some(ofd) = ofds()[j].as_mut() else {
+         return EIHNDL;
+     };
+-    if ofd.dirty {
++    if ofd.s.dirty {
+         flush_ofd(ofd);
+-        ofd.dirty = false;
++        ofd.s.dirty = false;
+     }
+     if !ofd.listed {
+         return EINTRN; // some kind of internal error
+diff --git a/tos-api/src/bdos/fs/mod.rs b/tos-api/src/bdos/fs/mod.rs
+index cb1220f..7b84dcf 100644
+--- a/tos-api/src/bdos/fs/mod.rs
++++ b/tos-api/src/bdos/fs/mod.rs
+@@ -12,6 +12,7 @@ pub mod drive;
+ pub mod fat;
+ pub mod file;
+ pub mod find;
++pub mod fsio;
+ pub mod path;
+ 
+ use crate::trap::TrapArgs;
+@@ -58,7 +59,7 @@ pub(crate) fn path_arg<'b>(
+ /// there is no fixed intermediate buffer capping the program size.
+ ///
+ /// Holds the mounted [`fat::Volume`], the file's first cluster and its
+-/// length — the minimum to walk the cluster chain for a range read.
++/// length — the minimum to position a [`fsio::Stream`] for a range read.
+ #[derive(Clone, Copy)]
+ pub struct FileImage {
+     vol: fat::Volume,
+@@ -93,66 +94,49 @@ impl FileImage {
+         self.file_len == 0
+     }
+ 
+-    /// Read up to `dst.len()` bytes starting at byte `offset` into `dst`,
+-    /// walking the cluster chain and copying sector by sector (so no
+-    /// whole-cluster or whole-file staging buffer is needed). Returns the
+-    /// number of bytes read — fewer than `dst.len()` only at end of file —
+-    /// or `None` on a block-device read error.
++    /// Read up to `dst.len()` bytes starting at byte `offset` into `dst`.
++    /// Returns the number of bytes read — fewer than `dst.len()` only at end
++    /// of file or where the cluster chain ends early — or `None` on a
++    /// block-device read error.
+     ///
+-    /// Mirrors [`file::Fread`](super::file)'s cluster walk but against a
+-    /// standalone `(cluster, offset)` rather than an open SFT handle.
++    /// The same engine as `Fread` (FS08, [`fsio`]): positioned with
++    /// `ixlseek`, whole records read straight into `dst` in one block request
++    /// per run of contiguous clusters, partial ones through the cache.
+     pub fn read_at(&self, offset: u32, dst: &mut [u8]) -> Option<usize> {
+-        let vol = &self.vol;
+-        let clsizb = vol.clsizb;
+-        let recsiz = vol.recsiz as usize;
+         if offset >= self.file_len {
+             return Some(0);
+         }
+-        let want = dst.len().min((self.file_len - offset) as usize);
++        let want = dst.len().min((self.file_len - offset) as usize) as u32;
+         if want == 0 {
+             return Some(0);
+         }
+-
+-        // Walk to the cluster holding `offset`.
+-        let mut cluster = self.start_cluster;
+-        for _ in 0..(offset / clsizb) {
+-            match vol.fat_entry(cluster) {
+-                Some(n) if !vol.is_eoc(n) => cluster = n,
+-                _ => return Some(0), // chain ended before `offset`
+-            }
++        let mut s = fsio::Stream::new(self.vol, self.start_cluster, self.file_len);
++        let pos = fsio::ixlseek(&mut s, i64::from(offset));
++        if pos < 0 {
++            // A chain shorter than the length (EINTRN) reads nothing, as
++            // before; a device error during the walk is a read error.
++            return if cache::error_pending() { None } else { Some(0) };
+         }
++        read_stream(&mut s, &mut dst[..want as usize])
++    }
++}
+ 
+-        let mut byte_in_cluster = offset % clsizb;
+-        let mut done = 0usize;
+-        let mut sbuf = [0u8; 512];
+-        while done < want && vol.is_data_cluster(cluster) {
+-            while byte_in_cluster < clsizb && done < want {
+-                let sec_in_cl = byte_in_cluster / recsiz as u32;
+-                let off_in_sec = (byte_in_cluster % recsiz as u32) as usize;
+-                if !vol.read_cluster_sector(cluster, sec_in_cl, &mut sbuf) {
+-                    return None;
+-                }
+-                let n = (recsiz - off_in_sec)
+-                    .min(want - done)
+-                    .min((clsizb - byte_in_cluster) as usize);
+-                dst[done..done + n].copy_from_slice(&sbuf[off_in_sec..off_in_sec + n]);
+-                done += n;
+-                byte_in_cluster += n as u32;
+-            }
+-            byte_in_cluster = 0;
+-            match vol.fat_entry(cluster) {
+-                Some(nx) if !vol.is_eoc(nx) => cluster = nx,
+-                _ => break,
+-            }
+-        }
+-        Some(done)
++/// Read `dst.len()` bytes (at most) from the position of `s` into the kernel
++/// buffer `dst`. `None` on a device error.
++fn read_stream(s: &mut fsio::Stream, dst: &mut [u8]) -> Option<usize> {
++    let space = crate::uaccess::Space::Kernel;
++    match fsio::xrw(s, false, dst.len() as u32, space, dst.as_mut_ptr() as u64) {
++        Ok(n) => Some(n as usize),
++        // A kernel buffer cannot fault; a device failure is a read error.
++        Err(_) => None,
+     }
+ }
+ 
+ /// Read a whole file at `path` into `out` (truncated to `out.len()`).
+ /// Returns the number of bytes read, or `None` on a path/IO error or if
+-/// the name is a directory. Used by the program loader to pull a `.PRG`
+-/// off the FAT16 file system without going through the SFT handle table.
++/// the name is a directory. Used by the AES resource loader, the shell and
++/// the keyboard-table loader to pull a file off the FAT file system without
++/// going through the SFT handle table.
+ pub fn read_file(path: &str, out: &mut [u8]) -> Option<usize> {
+     let (vol, parent, name11) = path::findit(path).ok()?;
+     let entry = dir::find_in_dir(&vol, parent, &name11)?;
+@@ -160,26 +144,6 @@ pub fn read_file(path: &str, out: &mut [u8]) -> Option<usize> {
+         return None; // a sub-directory, not a file
+     }
+     let want = (entry.size as usize).min(out.len());
+-    let recsiz = vol.recsiz as usize;
+-    let mut cluster = entry.cluster;
+-    let mut done = 0;
+-    let mut sbuf = [0u8; 512];
+-    while done < want && vol.is_data_cluster(cluster) {
+-        for sec in 0..vol.clsiz {
+-            if done >= want {
+-                break;
+-            }
+-            if !vol.read_cluster_sector(cluster, sec, &mut sbuf) {
+-                return None;
+-            }
+-            let n = recsiz.min(want - done);
+-            out[done..done + n].copy_from_slice(&sbuf[..n]);
+-            done += n;
+-        }
+-        match vol.fat_entry(cluster) {
+-            Some(nx) if !vol.is_eoc(nx) => cluster = nx,
+-            _ => break,
+-        }
+-    }
+-    Some(done)
++    let mut s = fsio::Stream::new(vol, entry.cluster, entry.size);
++    read_stream(&mut s, &mut out[..want])
+ }
+diff --git a/tos-api/tests/gemdos_fs_device_error.rs b/tos-api/tests/gemdos_fs_device_error.rs
+index f24fbff..548575c 100644
+--- a/tos-api/tests/gemdos_fs_device_error.rs
++++ b/tos-api/tests/gemdos_fs_device_error.rs
+@@ -33,12 +33,20 @@ mod fatvol;
+ 
+ use fatvol::*;
+ 
+-/// `Dfree` reads every sector of the FAT (20 in this image), which is more
+-/// than the cache has slots — a cheap way to make sure a particular sector
+-/// is no longer cached when the next access asks for it.
++/// Make sure a particular sector is no longer cached when the next access
++/// asks for it. Since FS08 the cache has two lists (FAT and data, EmuTOS
++/// `bufl[BI_FAT]`/`bufl[BI_DATA]`), so both are turned over: `Dfree` reads
++/// every sector of the FAT (20 in this image) and a search for a name that
++/// does not exist reads every sector of the root directory (32) — each more
++/// than a list has slots. The search's own result is not asserted: with a
++/// sector whose write-back fails in the data list it may report that fault.
+ fn turn_the_cache_over() {
+     let mut buf = [0u8; 16];
+     assert_eq!(gemdos2(0x36, buf.as_mut_ptr() as u64, 3), E_OK, "Dfree C:");
++    let mut dta = Dta::new();
++    let _ = gemdos1(FSETDTA, dta.ptr());
++    let pat = cpath("C:\\NOSUCH.XYZ");
++    let _ = gemdos2(FSFIRST, pat.as_ptr() as u64, FA_ANY);
+ }
+ 
+ /// Create `name`, write `data`, close — and return the data cluster the
+diff --git a/tos-api/src/bdos/fs/fsio.rs b/tos-api/src/bdos/fs/fsio.rs
+new file mode 100644
+index 0000000..0258c14
+--- /dev/null
++++ b/tos-api/src/bdos/fs/fsio.rs
+@@ -0,0 +1,377 @@
++//! The file transfer engine — EmuTOS `bdos/fsio.c` `xrw` / `ixlseek` with
++//! `nextcl` from `bdos/fsfat.c` (TASK/FS08 part 2).
++//!
++//! Spec: `docs/api/gemdos/_state.md` §3a. One [`Stream`] holds what EmuTOS
++//! keeps in an OFD and its DFD for a transfer: the file's start cluster and
++//! length (`o_strtcl`, `o_fileln`, `O_DIRTY`) and the four position fields
++//! `o_bytnum` / `o_curcl` / `o_currec` / `o_curbyt`. With them a sequential
++//! `Fread`/`Fwrite` steps the FAT chain **one link per new cluster**
++//! ([`nextcl`]) instead of walking it from the file start on every call, and
++//! [`ixlseek`] chains forward from the current cluster where it can.
++//!
++//! [`xrw`] splits a transfer like EmuTOS: partial head/tail records through
++//! the cache's data list, whole records in **one block request per run of
++//! contiguous clusters** straight between the device and the caller's
++//! buffer ([`usrio`], `bdos/fsio.c:57-74`).
++//!
++//! Records are the volume's logical sectors (`recsiz`); the file system
++//! below assumes they are the device's 512-byte sectors, as it did before.
++
++use super::cache::{self, Kind};
++use super::fat::Volume;
++use crate::uaccess::Space;
++use tos_types::error::{EINTRN, ERANGE};
++use tos_types::Long;
++
++/// `CNTMAX` — the most records one `usrio` moves, "16-bit MAXINT"
++/// (`bdos/fsio.c:22`); a longer run of contiguous clusters is split.
++const CNTMAX: u32 = 0x7FFF;
++
++/// Why a transfer stopped before its end.
++#[derive(Clone, Copy, PartialEq, Eq, Debug)]
++pub enum Fail {
++    /// The caller's buffer could not be accessed (ARCH03 3a): the syscall
++    /// tail ends the program.
++    Fault,
++    /// The block device failed; the TOS code is pending in
++    /// [`cache::take_error`] (EmuTOS `longjmp_rwabs`, `bdos/fs.h:60`).
++    Device,
++}
++
++/// The transfer state of one open file — EmuTOS `OFD` position fields plus
++/// the `DFD` fields they move (`docs/api/structures/ofd.md`).
++#[derive(Clone, Copy)]
++pub struct Stream {
++    /// The mounted volume the file lives on (`o_dmd`).
++    pub vol: Volume,
++    /// `o_strtcl`: first cluster (0 = the file has none yet).
++    pub strtcl: u32,
++    /// `o_fileln`: file length in bytes.
++    pub fileln: u32,
++    /// `O_DIRTY`: start cluster or length changed, the directory entry needs
++    /// rewriting.
++    pub dirty: bool,
++    /// `o_bytnum`: byte position in the file.
++    pub bytnum: u32,
++    /// `o_curcl`: the cluster holding the last byte moved (0 = none yet).
++    pub curcl: u32,
++    /// `o_currec`: first data-area record of `curcl`.
++    pub currec: u32,
++    /// `o_curbyt`: bytes of `curcl` behind the position; 0 and `clsizb` both
++    /// mean "`curcl` is used up" (`_state.md` §3a).
++    pub curbyt: u32,
++}
++
++impl Stream {
++    /// A file positioned at its start (`o_curcl = o_currec = o_bytnum =
++    /// o_curbyt = 0`, as `makopn` leaves a fresh OFD).
++    pub fn new(vol: Volume, strtcl: u32, fileln: u32) -> Stream {
++        Stream { vol, strtcl, fileln, dirty: false, bytnum: 0, curcl: 0, currec: 0, curbyt: 0 }
++    }
++}
++
++/// EmuTOS `addit` (`bdos/fsio.c:33-47`): account for `siz` bytes moved.
++/// `o_curbyt` only grows for transfers smaller than a cluster.
++fn addit(s: &mut Stream, siz: u32) {
++    if siz < s.vol.clsizb {
++        s.curbyt += siz;
++    }
++    s.bytnum += siz;
++    if s.bytnum > s.fileln {
++        s.fileln = s.bytnum;
++        s.dirty = true;
++    }
++}
++
++/// EmuTOS `nextcl` (`bdos/fsfat.c:247-293`): step to the cluster after
++/// `o_curcl` (the start cluster when there is none yet), allocating one on a
++/// write past the end of the chain. `Ok(false)` at the end of the chain or
++/// when no free cluster is left.
++pub fn nextcl(s: &mut Stream, wrt: bool) -> Result<bool, Fail> {
++    let vol = s.vol;
++    let cl = s.curcl;
++    let mut eoc;
++    let mut cl2;
++    if cl == 0 {
++        // "initial value"
++        cl2 = s.strtcl;
++        eoc = cl2 == 0;
++    } else {
++        cl2 = match vol.fat_entry(cl) {
++            Some(n) => n,
++            // `cl` is a data cluster (it was checked when it became current),
++            // so a failed lookup is a failed FAT read.
++            None => return Err(Fail::Device),
++        };
++        eoc = vol.is_eoc(cl2);
++    }
++
++    if wrt && eoc {
++        // "end of file, allocate new clusters"
++        cl2 = match vol.findfree(cl) {
++            Some(c) => c,
++            None if cache::error_pending() => return Err(Fail::Device),
++            None => return Ok(false), // disk full
++        };
++        if !vol.set_fat_entry(cl2, Volume::EOC) {
++            return Err(Fail::Device);
++        }
++        if cl != 0 {
++            if !vol.set_fat_entry(cl, cl2) {
++                return Err(Fail::Device);
++            }
++        } else {
++            s.strtcl = cl2;
++            s.dirty = true;
++        }
++        eoc = false;
++    }
++
++    // "treat invalid cluster num as end of chain" — `cl2 < 2` in EmuTOS;
++    // a number past the volume's last cluster is treated the same here.
++    if eoc || !vol.is_data_cluster(cl2) {
++        return Ok(false);
++    }
++    s.curcl = cl2;
++    s.currec = vol.cl2rec(cl2);
++    s.curbyt = 0;
++    Ok(true)
++}
++
++/// EmuTOS `usrio` (`bdos/fsio.c:57-74`): move `num` whole records starting
++/// at data-area record `strt` directly between the device and the caller's
++/// buffer at `ubuf`, in one block request. The caller's range is checked
++/// with its rights and reached through its kernel alias, as BIOS `Rwabs`
++/// does (`tos-api/src/bios/mod.rs`).
++fn usrio(s: &Stream, wrt: bool, num: u32, strt: u32, space: Space, ubuf: u64) -> Result<(), Fail> {
++    let bytes = num as usize * s.vol.recsiz as usize;
++    // Reading from the device writes the caller's buffer, and vice versa.
++    let kva = space.kptr(ubuf, bytes as u64, !wrt).map_err(|_| Fail::Fault)?;
++    let lba = s.vol.data_lba(strt);
++    let ok = if wrt {
++        // SAFETY: `kva .. kva + bytes` was just checked readable by the
++        // caller (or is a kernel caller's buffer) and stays mapped for the
++        // call; nothing else aliases it on the single trap path.
++        let buf = unsafe { core::slice::from_raw_parts(kva as *const u8, bytes) };
++        cache::direct_write(lba, buf)
++    } else {
++        // SAFETY: as above, checked writable.
++        let buf = unsafe { core::slice::from_raw_parts_mut(kva as *mut u8, bytes) };
++        cache::direct_read(lba, buf)
++    };
++    if ok { Ok(()) } else { Err(Fail::Device) }
++}
++
++/// `getrec` + `memcpy` for a partial record: `n` bytes at offset `off` of
++/// data-area record `rec`, through the cache's data list. A write reads the
++/// record first and marks it dirty (`getrec(…, 1)`, `bdos/fsbuf.c:231`).
++fn partial(
++    s: &Stream,
++    wrt: bool,
++    rec: u32,
++    off: u32,
++    n: u32,
++    space: Space,
++    ubuf: u64,
++) -> Result<(), Fail> {
++    let (a, b) = (off as usize, (off + n) as usize);
++    let r = cache::with_sector(Kind::Data, s.vol.data_lba(rec), wrt, |buf| {
++        if wrt {
++            space.copy_from(&mut buf[a..b], ubuf)
++        } else {
++            space.copy_to(ubuf, &buf[a..b])
++        }
++    });
++    match r {
++        None => Err(Fail::Device),
++        Some(Err(_)) => Err(Fail::Fault),
++        Some(Ok(())) => Ok(()),
++    }
++}
++
++/// EmuTOS `xrw_recs` (`bdos/fsio.c:84-187`): `numrecs` whole records from
++/// data-area record `startrec` on. `Ok(None)` when the end of the cluster
++/// chain was reached, else the advanced buffer address.
++fn xrw_recs(
++    s: &mut Stream,
++    wrt: bool,
++    startrec: u32,
++    mut numrecs: u32,
++    space: Space,
++    mut ubuf: u64,
++) -> Result<Option<u64>, Fail> {
++    let clsiz = s.vol.clsiz;
++    let recsiz = s.vol.recsiz;
++
++    // 'header' records: the rest of the current cluster (`:98-117`).
++    let mut hdrrec = startrec % clsiz;
++    if hdrrec != 0 {
++        hdrrec = (clsiz - hdrrec).min(numrecs);
++        usrio(s, wrt, hdrrec, startrec, space, ubuf)?;
++        let nbytes = hdrrec * recsiz;
++        ubuf += u64::from(nbytes);
++        addit(s, nbytes);
++        numrecs -= hdrrec;
++    }
++
++    let tailrec = numrecs % clsiz;
++
++    // whole (middle) clusters, contiguous ones merged (`:125-169`).
++    let mut numclus = numrecs / clsiz;
++    let mut last = 0u32;
++    let mut nrecs = 0u32;
++    let mut first_time = true;
++    loop {
++        let mut end_of_chain = false;
++        if numclus != 0 {
++            end_of_chain = !nextcl(s, wrt)?;
++        }
++        if first_time {
++            last = s.currec;
++            first_time = false;
++        }
++        // "if necessary, complete pending data transfer"
++        if (end_of_chain
++            || numclus == 0
++            || s.currec != last + nrecs
++            || nrecs + clsiz > CNTMAX)
++            && nrecs != 0
++        {
++            usrio(s, wrt, nrecs, last, space, ubuf)?;
++            let nbytes = nrecs * recsiz;
++            addit(s, nbytes);
++            ubuf += u64::from(nbytes);
++            last = s.currec;
++            nrecs = 0;
++        }
++        if end_of_chain {
++            return Ok(None);
++        }
++        if numclus == 0 {
++            break;
++        }
++        nrecs += clsiz;
++        numclus -= 1;
++    }
++
++    // 'tail' records (`:174-184`).
++    if tailrec != 0 {
++        if !nextcl(s, wrt)? {
++            return Ok(None);
++        }
++        usrio(s, wrt, tailrec, s.currec, space, ubuf)?;
++        let nbytes = tailrec * recsiz;
++        addit(s, nbytes);
++        ubuf += u64::from(nbytes);
++    }
++    Ok(Some(ubuf))
++}
++
++/// EmuTOS `xrw` (`bdos/fsio.c:208-284`): move `len` bytes between the file
++/// position of `s` and the caller's buffer `ubuf` (in `space`). Returns the
++/// bytes moved — fewer than `len` when the chain ends (end of file on a
++/// read, disk full on a write).
++///
++/// On `Err` the position fields describe the bytes moved before the stop.
++pub fn xrw(s: &mut Stream, wrt: bool, mut len: u32, space: Space, mut ubuf: u64) -> Result<u32, Fail> {
++    let recsiz = s.vol.recsiz;
++    let clsiz = s.vol.clsiz;
++    let bytpos = s.bytnum;
++
++    let mut recn = s.curbyt / recsiz;
++    let bytn = s.curbyt % recsiz;
++    recn += s.currec;
++
++    // header bytes (`:228-245`)
++    if bytn != 0 {
++        let lenxfr = len.min(recsiz - bytn);
++        partial(s, wrt, recn, bytn, lenxfr, space, ubuf)?;
++        addit(s, lenxfr);
++        len -= lenxfr;
++        recn += 1;
++        ubuf += u64::from(lenxfr);
++    }
++
++    // middle records, then the tail (`:250-258`)
++    let lentail = len % recsiz;
++    let numrecs = (len - lentail) / recsiz;
++    if numrecs != 0 {
++        match xrw_recs(s, wrt, recn, numrecs, space, ubuf)? {
++            Some(next) => ubuf = next,
++            None => return Ok(s.bytnum - bytpos), // end of cluster chain
++        }
++    }
++
++    // tail bytes (`:261-278`)
++    if lentail != 0 {
++        let mut recn = s.curbyt / recsiz;
++        if recn == 0 || recn == clsiz {
++            if !nextcl(s, wrt)? {
++                return Ok(s.bytnum - bytpos);
++            }
++            recn = 0;
++        }
++        partial(s, wrt, s.currec + recn, 0, lentail, space, ubuf)?;
++        addit(s, lentail);
++    }
++
++    Ok(s.bytnum - bytpos)
++}
++
++/// EmuTOS `ixlseek` (`bdos/fsio.c:354-426`): position `s` at byte `n`.
++/// Returns `n`, `ERANGE` outside `0..=fileln`, `EINTRN` for a cluster chain
++/// shorter than the length says, or the device's code if a FAT read fails.
++pub fn ixlseek(s: &mut Stream, n: i64) -> Long {
++    if n < 0 || n > i64::from(s.fileln) {
++        return ERANGE;
++    }
++    let n = n as u32;
++    if n == 0 {
++        s.curcl = 0;
++        s.currec = 0;
++        s.bytnum = 0;
++        s.curbyt = 0;
++        return 0;
++    }
++    let vol = s.vol;
++    let clsizb = vol.clsizb;
++
++    // the desired position in units of 1 cluster
++    let mut clnum = n / clsizb;
++    let mut clx;
++    if s.curcl != 0 && n >= s.bytnum {
++        // "OK, we can chain forward"
++        let mut curnum = s.bytnum / clsizb;
++        if (s.curbyt == 0 || s.curbyt == clsizb) && s.bytnum != 0 {
++            curnum = curnum.saturating_sub(1);
++        }
++        clnum = clnum.saturating_sub(curnum);
++        clx = s.curcl;
++    } else {
++        // "we have to start at the beginning"
++        clx = s.strtcl;
++    }
++
++    // "go one less if on cluster boundary" — xrw steps before it transfers.
++    if n.is_multiple_of(clsizb) {
++        clnum = clnum.saturating_sub(1);
++    }
++
++    for _ in 0..clnum {
++        clx = match vol.fat_entry(clx) {
++            Some(c) if !vol.is_eoc(c) && vol.is_data_cluster(c) => c,
++            _ if cache::error_pending() => return cache::take_error().unwrap_or(EINTRN),
++            // "FAT chain is shorter than filesize says ..."
++            _ => return EINTRN,
++        };
++    }
++    if !vol.is_data_cluster(clx) {
++        return EINTRN; // a file with a length but no (valid) start cluster
++    }
++
++    s.curcl = clx;
++    s.currec = vol.cl2rec(clx);
++    s.bytnum = n;
++    s.curbyt = n % clsizb;
++    n as Long
++}
+diff --git a/tos-api/tests/fatclus/mod.rs b/tos-api/tests/fatclus/mod.rs
+new file mode 100644
+index 0000000..24c528b
+--- /dev/null
++++ b/tos-api/tests/fatclus/mod.rs
+@@ -0,0 +1,289 @@
++//! A FAT16 volume with **multi-sector clusters** in host memory, wired to the
++//! TOS-API layer as its block device, with a log of every device request —
++//! the fixture for the FS08 transfer-engine tests (`tests/gemdos_fs_curcl.rs`,
++//! `tests/gemdos_fs_chain_steps.rs`).
++//!
++//! `tests/fatvol` has one-sector clusters, so it cannot tell a cluster step
++//! from a sector step, and it counts sectors, not requests. This one has
++//! 4-sector (2 KiB) clusters, a contiguous and a fragmented file with known
++//! contents, and records each `read_blocks`/`write_blocks` call as
++//! `(lba, sectors)`.
++
++#![allow(dead_code)] // each test binary uses a different part of this
++
++use std::sync::{Mutex, MutexGuard, OnceLock};
++
++use tos_api::host::Host;
++use tos_api::trap::{TrapArgs, TrapClass};
++
++pub const SECTOR: usize = 512;
++const PART_LBA: u32 = 64;
++pub const CLSIZ: u32 = 4;
++pub const CLSIZB: u32 = CLSIZ * SECTOR as u32;
++const RESERVED: u32 = 1;
++const NUM_FATS: u32 = 2;
++const ROOT_ENTRIES: u32 = 512;
++const RDLEN: u32 = ROOT_ENTRIES * 32 / SECTOR as u32;
++/// > 4084 clusters, so the BPB parser makes it FAT16 (writable).
++const NUMCL: u32 = 5000;
++pub const FSIZ: u32 = ((NUMCL + 2) * 2).div_ceil(SECTOR as u32);
++const FAT1: u32 = RESERVED;
++const ROOT_SEC: u32 = RESERVED + NUM_FATS * FSIZ;
++const DATA_SEC: u32 = ROOT_SEC + RDLEN;
++const PART_SECTORS: u32 = DATA_SEC + NUMCL * CLSIZ;
++
++/// `C:\SEQ.DAT`: 40 contiguous clusters, length not a multiple of a record.
++pub const SEQ_CHAIN: &[u16] = &[
++    10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32,
++    33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49,
++];
++pub const SEQ_LEN: u32 = 40 * CLSIZB - 300;
++pub const SEQ_SEED: u8 = 0x11;
++
++/// `C:\FRAG.DAT`: 8 clusters in five contiguous runs
++/// `[60 61] [90] [62] [120 121 122] [70]`.
++pub const FRAG_CHAIN: &[u16] = &[60, 61, 90, 62, 120, 121, 122, 70];
++pub const FRAG_LEN: u32 = 8 * CLSIZB - 100;
++pub const FRAG_SEED: u8 = 0x5A;
++
++/// The byte at offset `i` of a fixture file.
++pub fn pattern(seed: u8, i: u32) -> u8 {
++    (i.wrapping_mul(7).wrapping_add(i / 251) as u8) ^ seed
++}
++
++fn dirent(name: &[u8; 11], attr: u8, cluster: u16, size: u32) -> [u8; 32] {
++    let mut e = [0u8; 32];
++    e[0..11].copy_from_slice(name);
++    e[0x0B] = attr;
++    e[0x16..0x18].copy_from_slice(&0x8000u16.to_le_bytes());
++    e[0x18..0x1A].copy_from_slice(&0x5901u16.to_le_bytes());
++    e[0x1A..0x1C].copy_from_slice(&cluster.to_le_bytes());
++    e[0x1C..0x20].copy_from_slice(&size.to_le_bytes());
++    e
++}
++
++fn build_image() -> Vec<u8> {
++    let total = (PART_LBA + PART_SECTORS) as usize;
++    let mut img = vec![0u8; total * SECTOR];
++    {
++        let e = 0x1BE;
++        img[e + 4] = 0x06;
++        img[e + 8..e + 12].copy_from_slice(&PART_LBA.to_le_bytes());
++        img[e + 12..e + 16].copy_from_slice(&PART_SECTORS.to_le_bytes());
++        img[510] = 0x55;
++        img[511] = 0xAA;
++    }
++    let part = PART_LBA as usize * SECTOR;
++    {
++        let b = &mut img[part..part + SECTOR];
++        b[0x0B..0x0D].copy_from_slice(&(SECTOR as u16).to_le_bytes());
++        b[0x0D] = CLSIZ as u8;
++        b[0x0E..0x10].copy_from_slice(&(RESERVED as u16).to_le_bytes());
++        b[0x10] = NUM_FATS as u8;
++        b[0x11..0x13].copy_from_slice(&(ROOT_ENTRIES as u16).to_le_bytes());
++        b[0x16..0x18].copy_from_slice(&(FSIZ as u16).to_le_bytes());
++        b[0x20..0x24].copy_from_slice(&PART_SECTORS.to_le_bytes());
++        b[510] = 0x55;
++        b[511] = 0xAA;
++    }
++    let link = |img: &mut Vec<u8>, chain: &[u16]| {
++        for copy in 0..NUM_FATS {
++            let fat = part + ((FAT1 + copy * FSIZ) as usize) * SECTOR;
++            for (k, &cl) in chain.iter().enumerate() {
++                let next = chain.get(k + 1).copied().unwrap_or(0xFFFF);
++                let o = fat + cl as usize * 2;
++                img[o..o + 2].copy_from_slice(&next.to_le_bytes());
++            }
++        }
++    };
++    for copy in 0..NUM_FATS {
++        let fat = part + ((FAT1 + copy * FSIZ) as usize) * SECTOR;
++        img[fat..fat + 2].copy_from_slice(&0xFFF8u16.to_le_bytes());
++        img[fat + 2..fat + 4].copy_from_slice(&0xFFFFu16.to_le_bytes());
++    }
++    link(&mut img, SEQ_CHAIN);
++    link(&mut img, FRAG_CHAIN);
++    {
++        let root = part + ROOT_SEC as usize * SECTOR;
++        img[root..root + 32].copy_from_slice(&dirent(b"SEQ     DAT", 0x20, SEQ_CHAIN[0], SEQ_LEN));
++        img[root + 32..root + 64]
++            .copy_from_slice(&dirent(b"FRAG    DAT", 0x20, FRAG_CHAIN[0], FRAG_LEN));
++    }
++    let fill = |img: &mut Vec<u8>, chain: &[u16], len: u32, seed: u8| {
++        for i in 0..len {
++            let cl = chain[(i / CLSIZB) as usize] as u32;
++            let at = part + ((DATA_SEC + (cl - 2) * CLSIZ) as usize) * SECTOR + (i % CLSIZB) as usize;
++            img[at] = pattern(seed, i);
++        }
++    };
++    fill(&mut img, SEQ_CHAIN, SEQ_LEN, SEQ_SEED);
++    fill(&mut img, FRAG_CHAIN, FRAG_LEN, FRAG_SEED);
++    img
++}
++
++/// One device request.
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++pub struct Req {
++    pub write: bool,
++    pub lba: u64,
++    pub sectors: u32,
++}
++
++pub struct LogDisk {
++    img: Mutex<Vec<u8>>,
++    log: Mutex<Vec<Req>>,
++}
++
++impl tos_api::bios::block::BlockDev for LogDisk {
++    fn block_count(&self) -> u64 {
++        (self.img.lock().unwrap().len() / SECTOR) as u64
++    }
++    fn read_blocks(&self, lba: u64, buf: &mut [u8]) -> Result<(), i32> {
++        let n = buf.len() / SECTOR;
++        let img = self.img.lock().unwrap();
++        let off = lba as usize * SECTOR;
++        if off + n * SECTOR > img.len() {
++            return Err(tos_types::error::ESECNF);
++        }
++        buf.copy_from_slice(&img[off..off + n * SECTOR]);
++        self.log.lock().unwrap().push(Req { write: false, lba, sectors: n as u32 });
++        Ok(())
++    }
++    fn write_blocks(&self, lba: u64, buf: &[u8]) -> Result<(), i32> {
++        let n = buf.len() / SECTOR;
++        let mut img = self.img.lock().unwrap();
++        let off = lba as usize * SECTOR;
++        if off + n * SECTOR > img.len() {
++            return Err(tos_types::error::ESECNF);
++        }
++        img[off..off + n * SECTOR].copy_from_slice(buf);
++        self.log.lock().unwrap().push(Req { write: true, lba, sectors: n as u32 });
++        Ok(())
++    }
++}
++
++pub struct DiskHost {
++    pub disk: LogDisk,
++}
++
++impl Host for DiskHost {
++    fn console_write_byte(&self, _byte: u8) {}
++    fn block(&self) -> Option<&dyn tos_api::bios::block::BlockDev> {
++        Some(&self.disk)
++    }
++}
++
++/// Absolute LBA of partition-relative sector `rel`.
++pub fn part_lba(rel: u32) -> u64 {
++    (PART_LBA + rel) as u64
++}
++/// Absolute LBA of the first sector of FAT copy `copy`.
++pub fn fat_lba(copy: u32) -> u64 {
++    part_lba(FAT1 + copy * FSIZ)
++}
++/// Absolute LBA of the first sector of data cluster `cl`.
++pub fn cluster_lba(cl: u32) -> u64 {
++    part_lba(DATA_SEC + (cl - 2) * CLSIZ)
++}
++/// Is `lba` inside either FAT copy?
++pub fn is_fat(lba: u64) -> bool {
++    lba >= fat_lba(0) && lba < fat_lba(NUM_FATS)
++}
++/// Is `lba` in the data area (clusters)?
++pub fn is_data(lba: u64) -> bool {
++    lba >= part_lba(DATA_SEC)
++}
++
++impl DiskHost {
++    /// Forget the request log.
++    pub fn clear_log(&self) {
++        self.disk.log.lock().unwrap().clear();
++    }
++    /// The requests since the last [`DiskHost::clear_log`].
++    pub fn log(&self) -> Vec<Req> {
++        self.disk.log.lock().unwrap().clone()
++    }
++    /// One raw sector, bypassing the BDOS cache and the log.
++    pub fn raw(&self, lba: u64) -> Vec<u8> {
++        let img = self.disk.img.lock().unwrap();
++        img[lba as usize * SECTOR..(lba as usize + 1) * SECTOR].to_vec()
++    }
++}
++
++static HOST: OnceLock<&'static DiskHost> = OnceLock::new();
++static FS_LOCK: Mutex<()> = Mutex::new(());
++
++pub fn fs<'a>() -> (MutexGuard<'a, ()>, &'static DiskHost) {
++    let guard = FS_LOCK.lock().unwrap_or_else(|e| e.into_inner());
++    let host = *HOST.get_or_init(|| {
++        let host: &'static DiskHost = Box::leak(Box::new(DiskHost {
++            disk: LogDisk { img: Mutex::new(build_image()), log: Mutex::new(Vec::new()) },
++        }));
++        let slot: &'static &'static dyn Host = Box::leak(Box::new(host as &'static dyn Host));
++        tos_api::host::install_host(slot);
++        assert_eq!(tos_api::bios::mount(), 1, "one FAT16 partition expected");
++        host
++    });
++    (guard, host)
++}
++
++pub fn call(func: u16, regs: [u64; 8]) -> i32 {
++    let args = TrapArgs {
++        regs,
++        func: func as u64,
++        svc_imm: TrapClass::Gemdos as u16,
++        space: tos_api::uaccess::Space::Kernel,
++    };
++    tos_api::gemdos::dispatch(&args)
++}
++
++pub fn cpath(p: &str) -> Vec<u8> {
++    let mut v = p.as_bytes().to_vec();
++    v.push(0);
++    v
++}
++
++pub fn fopen(name: &str, mode: u64) -> i32 {
++    let p = cpath(name);
++    call(0x3D, [p.as_ptr() as u64, mode, 0, 0, 0, 0, 0, 0])
++}
++pub fn fcreate(name: &str) -> i32 {
++    let p = cpath(name);
++    call(0x3C, [p.as_ptr() as u64, 0, 0, 0, 0, 0, 0, 0])
++}
++pub fn fread(h: i32, buf: &mut [u8]) -> i32 {
++    call(0x3F, [h as u64, buf.len() as u64, buf.as_mut_ptr() as u64, 0, 0, 0, 0, 0])
++}
++pub fn fwrite(h: i32, buf: &[u8]) -> i32 {
++    call(0x40, [h as u64, buf.len() as u64, buf.as_ptr() as u64, 0, 0, 0, 0, 0])
++}
++pub fn fseek(off: i64, h: i32, mode: u16) -> i32 {
++    call(0x42, [off as i32 as u32 as u64, h as u64, mode as u64, 0, 0, 0, 0, 0])
++}
++pub fn fclose(h: i32) -> i32 {
++    call(0x3E, [h as u64, 0, 0, 0, 0, 0, 0, 0])
++}
++pub fn fdelete(name: &str) -> i32 {
++    let p = cpath(name);
++    call(0x41, [p.as_ptr() as u64, 0, 0, 0, 0, 0, 0, 0])
++}
++
++/// Read an open file to its end in chunks of `chunk` bytes.
++pub fn read_all(h: i32, chunk: usize) -> Vec<u8> {
++    let mut out = Vec::new();
++    let mut buf = vec![0u8; chunk];
++    loop {
++        let n = fread(h, &mut buf);
++        assert!(n >= 0, "Fread -> {n}");
++        if n == 0 {
++            break;
++        }
++        out.extend_from_slice(&buf[..n as usize]);
++    }
++    out
++}
++
++/// The expected contents of a fixture file.
++pub fn expected(seed: u8, len: u32) -> Vec<u8> {
++    (0..len).map(|i| pattern(seed, i)).collect()
++}
+diff --git a/tos-api/tests/gemdos_fs_curcl.rs b/tos-api/tests/gemdos_fs_curcl.rs
+new file mode 100644
+index 0000000..e97bd89
+--- /dev/null
++++ b/tos-api/tests/gemdos_fs_curcl.rs
+@@ -0,0 +1,254 @@
++//! FS08 part 2 — the GEMDOS read/write path moves data like EmuTOS `xrw`
++//! (`docs/api/gemdos/_state.md` §3a, §3).
++//!
++//! Driven through the GEMDOS dispatcher against a FAT16 volume with 4-sector
++//! clusters whose block device logs every request (`tests/fatclus`):
++//!
++//! * whole records go to/from the caller's buffer in **one request per run
++//!   of contiguous clusters** (EmuTOS `xrw_recs` + `usrio`,
++//!   `bdos/fsio.c:84-187`, `:57-74`), only partial records through the cache;
++//! * a sequential read touches each FAT sector **once** — the FAT has its own
++//!   buffer list that data traffic cannot evict (`bdos/fsbuf.c:67-71`, `:121`)
++//!   and the position keeps the current cluster (`o_curcl`);
++//! * `Fseek` forward/backward and reads across sector and cluster boundaries
++//!   return the right bytes; writes read back, and both FAT copies agree.
++//!
++//! Before FS08 every sector was its own request and `Fread` walked the chain
++//! from the start each call (`docs/analysis/fs08-sd-read-2026-10-07.md` §2.2).
++
++mod fatclus;
++
++use fatclus::*;
++
++fn data_reads(log: &[Req]) -> Vec<Req> {
++    log.iter().copied().filter(|r| !r.write && is_data(r.lba)).collect()
++}
++
++fn fat_reads(log: &[Req]) -> Vec<Req> {
++    log.iter().copied().filter(|r| !r.write && is_fat(r.lba)).collect()
++}
++
++#[test]
++fn one_fread_of_a_fragmented_file_is_one_request_per_contiguous_run() {
++    let (_g, host) = fs();
++    let h = fopen("C:\\FRAG.DAT", 0);
++    assert!(h >= 6, "Fopen -> {h}");
++    let mut buf = vec![0u8; FRAG_LEN as usize + 1000];
++    host.clear_log();
++    assert_eq!(fread(h, &mut buf), FRAG_LEN as i32);
++    let log = host.log();
++    assert_eq!(&buf[..FRAG_LEN as usize], &expected(FRAG_SEED, FRAG_LEN)[..]);
++
++    // FRAG_LEN = 8 clusters - 100 bytes = 31 whole records + 412 bytes.
++    // Runs [60 61] [90] [62] [120 121 122], then the 3 whole records of the
++    // last cluster (70) as the 'tail records', then 412 bytes through the
++    // cache (record 3 of cluster 70) — unless that record is cached already.
++    let want = [
++        Req { write: false, lba: cluster_lba(60), sectors: 8 },
++        Req { write: false, lba: cluster_lba(90), sectors: 4 },
++        Req { write: false, lba: cluster_lba(62), sectors: 4 },
++        Req { write: false, lba: cluster_lba(120), sectors: 12 },
++        Req { write: false, lba: cluster_lba(70), sectors: 3 },
++    ];
++    let data = data_reads(&log);
++    assert_eq!(&data[..5], &want[..], "whole records: one request per run, got {data:?}");
++    let rest = &data[5..];
++    assert!(
++        rest.is_empty() || rest == [Req { write: false, lba: cluster_lba(70) + 3, sectors: 1 }],
++        "only the partial last record may go through the cache, got {rest:?}"
++    );
++    assert!(fat_reads(&log).len() <= 1, "one FAT sector covers the chain: {log:?}");
++    assert_eq!(fclose(h), 0);
++}
++
++#[test]
++fn sequential_small_freads_read_each_fat_sector_once() {
++    let (_g, host) = fs();
++    for chunk in [512usize, 100, 1024, 3000] {
++        let h = fopen("C:\\SEQ.DAT", 0);
++        assert!(h >= 6);
++        host.clear_log();
++        let got = read_all(h, chunk);
++        let log = host.log();
++        assert_eq!(got, expected(SEQ_SEED, SEQ_LEN), "contents with {chunk}-byte Freads");
++        // All 40 clusters' entries live in FAT sector 0: at most one device
++        // read of it for the whole file, however small the Freads. Before
++        // FS08 data sectors pushed it out of the shared cache and every
++        // chain walk read it again.
++        let fat = fat_reads(&log);
++        assert!(fat.len() <= 1, "{chunk}-byte Freads: FAT read {} times: {fat:?}", fat.len());
++        // Every data sector of the file is read once at most.
++        let sectors: u32 = data_reads(&log).iter().map(|r| r.sectors).sum();
++        assert!(
++            sectors <= SEQ_LEN.div_ceil(512),
++            "{chunk}-byte Freads: {sectors} data sectors for a {}-sector file",
++            SEQ_LEN.div_ceil(512)
++        );
++        assert_eq!(fclose(h), 0);
++    }
++}
++
++#[test]
++fn whole_record_freads_go_straight_to_the_device_in_one_request() {
++    let (_g, host) = fs();
++    let h = fopen("C:\\SEQ.DAT", 0);
++    assert!(h >= 6);
++    // 64 KiB from offset 0: 32 contiguous clusters, 128 records, one request.
++    let mut buf = vec![0u8; 65536];
++    host.clear_log();
++    assert_eq!(fread(h, &mut buf), 65536);
++    assert_eq!(&buf[..], &expected(SEQ_SEED, 65536)[..]);
++    let data = data_reads(&host.log());
++    assert_eq!(data, vec![Req { write: false, lba: cluster_lba(10), sectors: 128 }]);
++    assert_eq!(fclose(h), 0);
++}
++
++#[test]
++fn fseek_forward_backward_and_boundaries() {
++    let (_g, _host) = fs();
++    let all = expected(FRAG_SEED, FRAG_LEN);
++    let h = fopen("C:\\FRAG.DAT", 0);
++    assert!(h >= 6);
++    let c = CLSIZB as i64;
++    // (offset, length) pairs: cluster boundaries, one byte before/after,
++    // sector boundaries, backwards jumps, the last byte.
++    let probes: &[(i64, usize)] = &[
++        (0, 10),
++        (c, 600),
++        (c - 1, 2),
++        (3 * c + 512, 1500),
++        (100, 5000),
++        (2 * c, 2048),
++        (7 * c + 3, 5000),
++        (c * 5 - 512, 1024),
++        (FRAG_LEN as i64 - 1, 10),
++        (0, FRAG_LEN as usize),
++        (4 * c, 1),
++        (c / 2, 3 * CLSIZB as usize + 7),
++    ];
++    for &(off, len) in probes {
++        assert_eq!(fseek(off, h, 0), off as i32, "Fseek({off}, SEEK_SET)");
++        let mut buf = vec![0u8; len];
++        let n = fread(h, &mut buf) as usize;
++        let want = &all[off as usize..(off as usize + len).min(all.len())];
++        assert_eq!(n, want.len(), "Fread({len}) at {off}");
++        assert_eq!(&buf[..n], want, "bytes at {off}+{len}");
++    }
++    // SEEK_CUR / SEEK_END and the range checks.
++    assert_eq!(fseek(c, h, 0), c as i32);
++    assert_eq!(fseek(-10, h, 1), c as i32 - 10);
++    let mut b = [0u8; 20];
++    assert_eq!(fread(h, &mut b), 20);
++    assert_eq!(&b[..], &all[c as usize - 10..c as usize + 10]);
++    assert_eq!(fseek(0, h, 2), FRAG_LEN as i32);
++    assert_eq!(fseek(-1, h, 0), -64, "ERANGE");
++    assert_eq!(fseek(FRAG_LEN as i64 + 1, h, 0), -64, "ERANGE");
++    assert_eq!(fseek(0, h, 3), -32, "EINVFN");
++    assert_eq!(fclose(h), 0);
++}
++
++#[test]
++fn mixed_partial_and_whole_record_reads_across_boundaries() {
++    let (_g, _host) = fs();
++    let all = expected(SEQ_SEED, SEQ_LEN);
++    let h = fopen("C:\\SEQ.DAT", 0);
++    assert!(h >= 6);
++    let mut pos = 0usize;
++    for &len in [1usize, 511, 512, 3, 2045, 2048, 4096, 7, 8192 + 513, 100, 30000, 1, 99999].iter() {
++        let mut buf = vec![0u8; len];
++        let n = fread(h, &mut buf) as usize;
++        let end = (pos + len).min(all.len());
++        assert_eq!(n, end - pos, "Fread({len}) at {pos}");
++        assert_eq!(&buf[..n], &all[pos..end], "bytes at {pos}+{len}");
++        pos = end;
++    }
++    assert_eq!(pos, all.len());
++    assert_eq!(fclose(h), 0);
++}
++
++#[test]
++fn write_then_read_back_and_both_fats_agree() {
++    let (_g, host) = fs();
++    let _ = fdelete("C:\\NEW.DAT");
++    let h = fcreate("C:\\NEW.DAT");
++    assert!(h >= 6, "Fcreate -> {h}");
++    // Mixed chunk sizes: partial, whole records, whole clusters, unaligned.
++    let chunks = [100usize, 1000, 4096, 5000, 3, 20000, 512, 2048, 777];
++    let total: usize = chunks.iter().sum();
++    let data: Vec<u8> = (0..total as u32).map(|i| pattern(0xC3, i)).collect();
++    let mut at = 0;
++    for &c in &chunks {
++        assert_eq!(fwrite(h, &data[at..at + c]), c as i32, "Fwrite({c}) at {at}");
++        at += c;
++    }
++    // Overwrite a stretch in the middle that spans a cluster boundary.
++    let patch: Vec<u8> = (0..3000u32).map(|i| (i % 253) as u8).collect();
++    assert_eq!(fseek(5000, h, 0), 5000);
++    assert_eq!(fwrite(h, &patch), 3000);
++    assert_eq!(fseek(0, h, 2), total as i32, "the overwrite does not grow the file");
++    assert_eq!(fclose(h), 0);
++
++    let mut want = data.clone();
++    want[5000..8000].copy_from_slice(&patch);
++
++    for chunk in [512usize, 333, 65536] {
++        let h = fopen("C:\\NEW.DAT", 0);
++        assert!(h >= 6);
++        assert_eq!(read_all(h, chunk), want, "read back in {chunk}-byte chunks");
++        assert_eq!(fclose(h), 0);
++    }
++
++    // Both FAT copies are identical on the card (FAT buffers are cached once
++    // and written to every copy, EmuTOS `flush`, `bdos/fsbuf.c:95-102`).
++    for s in 0..FSIZ {
++        assert_eq!(host.raw(fat_lba(0) + s as u64), host.raw(fat_lba(1) + s as u64), "FAT sector {s}");
++    }
++    assert_eq!(fdelete("C:\\NEW.DAT"), 0);
++    for s in 0..FSIZ {
++        assert_eq!(host.raw(fat_lba(0) + s as u64), host.raw(fat_lba(1) + s as u64), "FAT sector {s} after delete");
++    }
++}
++
++#[test]
++fn whole_record_writes_go_straight_to_the_device_and_stale_copies_are_dropped() {
++    let (_g, host) = fs();
++    let _ = fdelete("C:\\COH.DAT");
++    let h = fcreate("C:\\COH.DAT");
++    assert!(h >= 6);
++    let first = vec![0xAAu8; 8192];
++    host.clear_log();
++    assert_eq!(fwrite(h, &first), 8192);
++    let writes: Vec<Req> =
++        host.log().into_iter().filter(|r| r.write && is_data(r.lba)).collect();
++    assert_eq!(writes.len(), 1, "8 KiB of whole records = one request: {writes:?}");
++    assert_eq!(writes[0].sectors, 16);
++    assert_eq!(fclose(h), 0);
++
++    // Read a few bytes of record 1 (now cached), overwrite the whole record
++    // directly, read the bytes again: the cached copy must not survive the
++    // direct write (EmuTOS `usrio` invalidates, `bdos/fsio.c:61-71`).
++    let h = fopen("C:\\COH.DAT", 2);
++    assert!(h >= 6);
++    let mut b = [0u8; 4];
++    assert_eq!(fseek(512 + 10, h, 0), 522);
++    assert_eq!(fread(h, &mut b), 4);
++    assert_eq!(b, [0xAA; 4]);
++    assert_eq!(fseek(512, h, 0), 512);
++    assert_eq!(fwrite(h, &[0x55u8; 512]), 512);
++    assert_eq!(fseek(512 + 10, h, 0), 522);
++    assert_eq!(fread(h, &mut b), 4);
++    assert_eq!(b, [0x55; 4], "the direct write must invalidate the cached record");
++
++    // A partial write (through the cache) followed by a whole-record read of
++    // the same record must see the new bytes.
++    assert_eq!(fseek(1024 + 100, h, 0), 1124);
++    assert_eq!(fwrite(h, &[0x11u8; 8]), 8);
++    assert_eq!(fseek(1024, h, 0), 1024);
++    let mut rec = [0u8; 512];
++    assert_eq!(fread(h, &mut rec), 512);
++    assert_eq!(&rec[100..108], &[0x11; 8]);
++    assert_eq!(rec[99], 0xAA);
++    assert_eq!(rec[108], 0xAA);
++    assert_eq!(fclose(h), 0);
++    assert_eq!(fdelete("C:\\COH.DAT"), 0);
++}
+diff --git a/tos-api/tests/gemdos_fs_chain_steps.rs b/tos-api/tests/gemdos_fs_chain_steps.rs
+new file mode 100644
+index 0000000..091df33
+--- /dev/null
++++ b/tos-api/tests/gemdos_fs_chain_steps.rs
+@@ -0,0 +1,113 @@
++//! FS08 part 2 — the cluster chain is stepped, not re-walked
++//! (`docs/api/gemdos/_state.md` §3a; EmuTOS `nextcl`, `bdos/fsfat.c:247-293`,
++//! `ixlseek`, `bdos/fsio.c:354-426`).
++//!
++//! Counts FAT entry lookups ([`tos_api::bdos::fs::fat::fat_lookups`]): a
++//! sequential read of an `n`-cluster file takes `n - 1` steps (one per new
++//! cluster) whatever the `Fread` size; a forward `Fseek` continues from the
++//! current cluster; only a backward `Fseek` starts again at the start
++//! cluster. Before FS08 a read of `k` bytes per call walked
++//! `pos / clsizb` links per call — quadratic in the file length
++//! (`docs/analysis/fs08-sd-read-2026-10-07.md` §2.2: 4 746 240 lookups for
++//! one 4 MiB benchmark).
++
++mod fatclus;
++
++use fatclus::*;
++use tos_api::bdos::fs::fat::fat_lookups;
++
++#[test]
++fn sequential_reads_take_one_fat_step_per_cluster() {
++    let (_g, _host) = fs();
++    let clusters = SEQ_LEN.div_ceil(CLSIZB);
++    for chunk in [100usize, 512, 1024, 4096, 65536] {
++        let h = fopen("C:\\SEQ.DAT", 0);
++        assert!(h >= 6);
++        let before = fat_lookups();
++        let got = read_all(h, chunk);
++        let steps = fat_lookups() - before;
++        assert_eq!(got.len(), SEQ_LEN as usize);
++        // n - 1 links between n clusters; nothing more.
++        assert_eq!(steps, clusters - 1, "{chunk}-byte Freads took {steps} FAT steps");
++        assert_eq!(fclose(h), 0);
++    }
++}
++
++#[test]
++fn forward_seek_chains_on_backward_seek_restarts() {
++    let (_g, _host) = fs();
++    let h = fopen("C:\\SEQ.DAT", 0);
++    assert!(h >= 6);
++    let c = CLSIZB as i64;
++    let mut b = [0u8; 16];
++
++    // To the middle of cluster 20 (index), from the start: 20 steps.
++    let before = fat_lookups();
++    assert_eq!(fseek(20 * c + 5, h, 0), (20 * c + 5) as i32);
++    assert_eq!(fat_lookups() - before, 20);
++    assert_eq!(fread(h, &mut b), 16);
++    assert_eq!(b[0], pattern(SEQ_SEED, 20 * 2048 + 5));
++
++    // Forward to cluster 25: 5 more steps from the current cluster.
++    let before = fat_lookups();
++    assert_eq!(fseek(25 * c + 9, h, 0), (25 * c + 9) as i32);
++    assert_eq!(fat_lookups() - before, 5);
++    assert_eq!(fread(h, &mut b), 16);
++    assert_eq!(b[0], pattern(SEQ_SEED, 25 * 2048 + 9));
++
++    // Forward onto a cluster boundary: positioned one cluster short
++    // (`bdos/fsio.c:410-411`), the read then steps once.
++    let before = fat_lookups();
++    assert_eq!(fseek(30 * c, h, 0), (30 * c) as i32);
++    assert_eq!(fat_lookups() - before, 4);
++    let before = fat_lookups();
++    assert_eq!(fread(h, &mut b), 16);
++    assert_eq!(fat_lookups() - before, 1);
++    assert_eq!(b[0], pattern(SEQ_SEED, 30 * 2048));
++
++    // Backwards: from the start cluster again.
++    let before = fat_lookups();
++    assert_eq!(fseek(3 * c + 1, h, 0), (3 * c + 1) as i32);
++    assert_eq!(fat_lookups() - before, 3);
++    assert_eq!(fread(h, &mut b), 16);
++    assert_eq!(b[0], pattern(SEQ_SEED, 3 * 2048 + 1));
++
++    // To 0: no walk at all (`bdos/fsio.c:363-367`).
++    let before = fat_lookups();
++    assert_eq!(fseek(0, h, 0), 0);
++    assert_eq!(fat_lookups() - before, 0);
++    assert_eq!(fclose(h), 0);
++}
++
++#[test]
++fn sequential_writes_take_one_step_per_new_cluster() {
++    let (_g, _host) = fs();
++    let _ = fdelete("C:\\STEPW.DAT");
++    let h = fcreate("C:\\STEPW.DAT");
++    assert!(h >= 6);
++    let data = vec![0x3Cu8; 512];
++    let before = fat_lookups();
++    for _ in 0..64 {
++        assert_eq!(fwrite(h, &data), 512);
++    }
++    let steps = fat_lookups() - before;
++    // 64 records = 16 clusters, allocated as EmuTOS `nextcl` + `findfree`
++    // do it (`bdos/fsfat.c:247-293`, `:208-234`). The free clusters of the
++    // fixture are 2..=9 and 50.. (10..=49 is SEQ.DAT, 60.. FRAG.DAT):
++    //   cluster 2   first cluster: `findfree16` from the FAT start, no
++    //               entry lookups (it scans the FAT sector directly);
++    //   3..=9       per cluster: 1 lookup of the current link (end of chain)
++    //               + `findfree(cl)` starting AT `cl` (used) then `cl+1`
++    //               (free) = 3 lookups, 7 x 3 = 21;
++    //   50          1 + `findfree(9)`: 9, then 10..=49 used (40), 50 free
++    //               = 1 + 42 = 43;
++    //   51..=57     7 x 3 = 21.
++    // Total 85 — linear in the clusters written plus the scan over the used
++    // run. Before FS08 each Fwrite also re-walked the chain from the start.
++    assert_eq!(steps, 85, "64 sequential 512-byte Fwrites took {steps} FAT lookups");
++    assert_eq!(fclose(h), 0);
++    let h = fopen("C:\\STEPW.DAT", 0);
++    assert_eq!(read_all(h, 4096), vec![0x3Cu8; 64 * 512]);
++    assert_eq!(fclose(h), 0);
++    assert_eq!(fdelete("C:\\STEPW.DAT"), 0);
++}

@@ -9,10 +9,15 @@
 //! - [`Volume::read_cluster`] — read a whole cluster's data sectors.
 //!
 //! All sector numbers in the BPB are **partition-relative**; this module
-//! adds `start_lba` to reach absolute LBAs on the block device. No sector
-//! cache yet (Phase 09 D2) — each access reads through the block device.
+//! adds `start_lba` to reach absolute LBAs on the block device. FAT sectors
+//! go through the cache's FAT list (one copy cached, every copy written at
+//! write-back, EmuTOS `flush`), directory and data sectors through its data
+//! list (FS08, [`super::cache`]).
 
 use core::cell::UnsafeCell;
+use core::sync::atomic::{AtomicU32, Ordering};
+
+use super::cache::{self, Kind};
 
 use crate::bios::bpb::{self, Bpb};
 use crate::bios::drive;
@@ -24,6 +29,16 @@ const B_16: u16 = 0x01;
 /// cluster). FAT16 uses `0xFFF8`.
 const EOC12: u32 = 0x0FF8;
 const EOC16: u32 = 0xFFF8;
+
+/// FAT entries looked up ([`Volume::fat_entry`]) since boot — the number
+/// of chain steps the file system took. Exposed for the FS08 evidence
+/// (sequential reads must take one step per cluster, not a walk per call).
+static FAT_LOOKUPS: AtomicU32 = AtomicU32::new(0);
+
+/// FAT entries looked up since boot (see [`FAT_LOOKUPS`]).
+pub fn fat_lookups() -> u32 {
+    FAT_LOOKUPS.load(Ordering::Relaxed)
+}
 
 /// Mounted FAT volume geometry for one TOS drive.
 #[derive(Clone, Copy)]
@@ -40,8 +55,6 @@ pub struct Volume {
     pub rdlen: u32,
     /// Partition-relative first sector of the last FAT (read source).
     fatrec: u32,
-    /// Partition-relative first sector of the first FAT.
-    fat1: u32,
     /// Number of FAT copies (updated together on write).
     num_fats: u32,
     /// FAT size in sectors (one copy).
@@ -120,7 +133,6 @@ impl Volume {
             clsizb: bpb.clsizb as u32,
             rdlen: bpb.rdlen as u32,
             fatrec: bpb.fatrec as u32,
-            fat1: geo.reserved as u32,
             num_fats: geo.num_fats as u32,
             fsiz: bpb.fsiz as u32,
             datrec: bpb.datrec as u32,
@@ -194,15 +206,49 @@ impl Volume {
         self.write_rel(rel_sector, buf)
     }
 
-    /// Read one partition-relative sector into `buf` (must be 512 bytes),
-    /// through the sector cache.
+    /// Read one partition-relative directory/data sector into `buf` (must be
+    /// 512 bytes), through the cache's data list.
     fn read_rel(&self, rel_sector: u32, buf: &mut [u8; SECTOR]) -> bool {
-        super::cache::read((self.start_lba + rel_sector) as u64, buf)
+        cache::read(Kind::Data, (self.start_lba + rel_sector) as u64, buf)
     }
 
-    /// Write one partition-relative sector from `buf` through the cache.
+    /// Write one partition-relative directory/data sector from `buf` through
+    /// the cache's data list.
     fn write_rel(&self, rel_sector: u32, buf: &[u8; SECTOR]) -> bool {
-        super::cache::write((self.start_lba + rel_sector) as u64, buf)
+        cache::write(Kind::Data, (self.start_lba + rel_sector) as u64, buf)
+    }
+
+    /// The cache list FAT sectors of this volume go to: keyed by the last
+    /// FAT copy (`fatrec`, EmuTOS `m_recoff[BT_FAT]`, `bdos/fsdrive.c:241`),
+    /// mirrored into the `num_fats - 1` copies `fsiz` sectors before it at
+    /// write-back (`bdos/fsbuf.c:97-102`).
+    fn fat_kind(&self) -> Kind {
+        Kind::Fat { stride: self.fsiz, copies: self.num_fats as u8 }
+    }
+
+    /// EmuTOS `getrec(recnum, m_fatofd, wrt)` for FAT sector `recnum`
+    /// (relative to `fatrec`): run `f` on the cached sector, marking it
+    /// dirty with `write`. `None` on a device error.
+    fn with_fat_sector<R>(
+        &self,
+        recnum: u32,
+        write: bool,
+        f: impl FnOnce(&mut [u8; SECTOR]) -> R,
+    ) -> Option<R> {
+        let lba = (self.start_lba + self.fatrec + recnum) as u64;
+        cache::with_sector(self.fat_kind(), lba, write, f)
+    }
+
+    /// Absolute LBA of data-area record `rec` (EmuTOS `RECNO` relative to
+    /// `m_recoff[BT_DATA]`; record 0 is the first sector of cluster 2).
+    pub fn data_lba(&self, rec: u32) -> u64 {
+        (self.start_lba + self.datrec + rec) as u64
+    }
+
+    /// EmuTOS `cl2rec` (`bdos/fsfat.c:23-26`): the first data-area record of
+    /// `cluster`.
+    pub fn cl2rec(&self, cluster: u32) -> u32 {
+        (cluster - 2) * self.clsiz
     }
 
     /// `true` if FAT writes are supported on this volume (FAT16 only for
@@ -214,8 +260,10 @@ impl Volume {
     /// FAT16 end-of-chain marker written for a newly allocated cluster.
     pub const EOC: u32 = 0xFFFF;
 
-    /// Write a FAT16 entry in **every** FAT copy. Returns `false` on a
-    /// non-FAT16 volume or a read/write error.
+    /// Write a FAT16 entry — EmuTOS `clfix` (`bdos/fsfat.c:36-57`): the
+    /// cached FAT sector is updated and marked dirty; the write-back puts it
+    /// into **every** FAT copy (`cache` FAT list). Returns `false` on a
+    /// non-FAT16 volume or a read error.
     pub fn set_fat_entry(&self, cluster: u32, value: u32) -> bool {
         if !self.fat16 {
             return false;
@@ -227,52 +275,75 @@ impl Volume {
             return false;
         }
         let off = cluster * 2;
-        let sec_in_fat = off / self.recsiz;
         let within = (off % self.recsiz) as usize;
-        let mut buf = [0u8; SECTOR];
-        for f in 0..self.num_fats {
-            let sec = self.fat1 + f * self.fsiz + sec_in_fat;
-            if !self.read_rel(sec, &mut buf) {
-                return false;
-            }
+        self.with_fat_sector(off / self.recsiz, true, |buf| {
             buf[within..within + 2].copy_from_slice(&(value as u16).to_le_bytes());
-            if !self.write_rel(sec, &buf) {
-                return false;
-            }
-        }
-        true
+        })
+        .is_some()
     }
 
-    /// Allocate the first free cluster: mark it end-of-chain and return
-    /// its number. `None` if the volume is full or not writable.
-    pub fn alloc_cluster(&self) -> Option<u32> {
+    /// EmuTOS `findfree` (`bdos/fsfat.c:208-234`): the first free cluster
+    /// from the start of the FAT when `cl == 0` (`findfree16`, `:174-200`),
+    /// otherwise scanning forward from `cl` with wrap-around (`:223-231`).
+    /// `None` if the volume is full, not writable, or the FAT cannot be read.
+    pub fn findfree(&self, cl: u32) -> Option<u32> {
         if !self.fat16 {
             return None;
         }
+        if cl == 0 {
+            return self.findfree16();
+        }
+        let mut cl = cl.max(2);
+        for _ in 0..self.numcl {
+            if !self.is_data_cluster(cl) {
+                cl = 2;
+            }
+            match self.fat_entry(cl) {
+                Some(0) => return Some(cl),
+                Some(_) => {}
+                None => return None,
+            }
+            if cl == self.numcl + 1 {
+                cl = 1; // wrap at max cluster num
+            }
+            cl += 1;
+        }
+        None
+    }
+
+    /// EmuTOS `findfree16` (`bdos/fsfat.c:174-200`): scan the FAT record by
+    /// record for the first zero entry.
+    fn findfree16(&self) -> Option<u32> {
         let last = self.numcl + 2;
         let eps = self.recsiz / 2;
-        let nsec = (last * 2).div_ceil(self.recsiz);
-        let mut buf = [0u8; SECTOR];
-        for s in 0..nsec {
-            if !self.read_rel(self.fatrec + s, &mut buf) {
-                return None;
-            }
-            for i in 0..eps {
-                let cl = s * eps + i;
-                if cl < 2 {
-                    continue;
+        let mut clnum = 2u32;
+        while clnum < last {
+            let recnum = clnum / eps;
+            let found = self.with_fat_sector(recnum, false, |buf| {
+                let mut c = clnum;
+                while c / eps == recnum && c < last {
+                    let b = ((c % eps) * 2) as usize;
+                    if u16::from_le_bytes([buf[b], buf[b + 1]]) == 0 {
+                        return Ok(c);
+                    }
+                    c += 1;
                 }
-                if cl >= last {
-                    return None;
-                }
-                let b = (i * 2) as usize;
-                if u16::from_le_bytes([buf[b], buf[b + 1]]) == 0 && self.set_fat_entry(cl, Self::EOC)
-                {
-                    return Some(cl);
-                }
+                Err(c)
+            })?;
+            match found {
+                Ok(c) => return Some(c),
+                Err(next) => clnum = next,
             }
         }
         None
+    }
+
+    /// Allocate the first free cluster on the volume and mark it
+    /// end-of-chain (`findfree(0)` + `clfix(cl2, ENDOFCHAIN)`). `None` if the
+    /// volume is full or not writable.
+    pub fn alloc_cluster(&self) -> Option<u32> {
+        let cl = self.findfree(0)?;
+        self.set_fat_entry(cl, Self::EOC).then_some(cl)
     }
 
     /// Free a whole cluster chain starting at `start` (sets each entry to
@@ -334,16 +405,14 @@ impl Volume {
         if !self.is_data_cluster(cluster) {
             return None;
         }
+        FAT_LOOKUPS.fetch_add(1, Ordering::Relaxed);
         if self.fat16 {
             let off = cluster * 2;
-            let sec = self.fatrec + off / self.recsiz;
             let within = (off % self.recsiz) as usize;
-            let mut b = [0u8; SECTOR];
-            if !self.read_rel(sec, &mut b) {
-                return None;
-            }
             // A 2-byte LE entry at an even offset never crosses a sector.
-            Some(u16::from_le_bytes([b[within], b[within + 1]]) as u32)
+            self.with_fat_sector(off / self.recsiz, false, |b| {
+                u16::from_le_bytes([b[within], b[within + 1]]) as u32
+            })
         } else {
             // FAT12: 12-bit packed; an entry can straddle two sectors, so
             // read the two bytes individually.
@@ -357,13 +426,8 @@ impl Volume {
 
     /// Read a single byte at partition-relative FAT byte offset `off`.
     fn fat12_byte(&self, off: u32) -> Option<u8> {
-        let sec = self.fatrec + off / self.recsiz;
         let within = (off % self.recsiz) as usize;
-        let mut b = [0u8; SECTOR];
-        if !self.read_rel(sec, &mut b) {
-            return None;
-        }
-        Some(b[within])
+        self.with_fat_sector(off / self.recsiz, false, |b| b[within])
     }
 
     /// Partition-relative first sector of a data cluster.
@@ -395,23 +459,27 @@ impl Volume {
         if self.fat16 {
             let eps = self.recsiz / 2; // 16-bit entries per sector
             let nsec = (last * 2).div_ceil(self.recsiz);
-            let mut sbuf = [0u8; SECTOR];
             for s in 0..nsec {
-                if !self.read_rel(self.fatrec + s, &mut sbuf) {
-                    break;
-                }
-                for i in 0..eps {
-                    let cl = s * eps + i;
-                    if cl < 2 {
-                        continue;
+                let counted = self.with_fat_sector(s, false, |sbuf| {
+                    let mut n = 0u32;
+                    for i in 0..eps {
+                        let cl = s * eps + i;
+                        if cl < 2 {
+                            continue;
+                        }
+                        if cl >= last {
+                            break;
+                        }
+                        let b = (i * 2) as usize;
+                        if u16::from_le_bytes([sbuf[b], sbuf[b + 1]]) == 0 {
+                            n += 1;
+                        }
                     }
-                    if cl >= last {
-                        return free;
-                    }
-                    let b = (i * 2) as usize;
-                    if u16::from_le_bytes([sbuf[b], sbuf[b + 1]]) == 0 {
-                        free += 1;
-                    }
+                    n
+                });
+                match counted {
+                    Some(n) => free += n,
+                    None => break,
                 }
             }
         } else {

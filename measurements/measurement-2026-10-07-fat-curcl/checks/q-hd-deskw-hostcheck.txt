@@ -1,0 +1,5 @@
+ok      SUB3A/INSIDE.TXT 15 B
+ok      SUB3A/BIG.DAT 300003 B
+ok      SUB3A/NOTE.TXT 38 B
+ok      D3A empty
+HOSTCHECK: PASS

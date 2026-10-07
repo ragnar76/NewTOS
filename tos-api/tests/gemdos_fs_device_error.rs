@@ -33,12 +33,20 @@ mod fatvol;
 
 use fatvol::*;
 
-/// `Dfree` reads every sector of the FAT (20 in this image), which is more
-/// than the cache has slots — a cheap way to make sure a particular sector
-/// is no longer cached when the next access asks for it.
+/// Make sure a particular sector is no longer cached when the next access
+/// asks for it. Since FS08 the cache has two lists (FAT and data, EmuTOS
+/// `bufl[BI_FAT]`/`bufl[BI_DATA]`), so both are turned over: `Dfree` reads
+/// every sector of the FAT (20 in this image) and a search for a name that
+/// does not exist reads every sector of the root directory (32) — each more
+/// than a list has slots. The search's own result is not asserted: with a
+/// sector whose write-back fails in the data list it may report that fault.
 fn turn_the_cache_over() {
     let mut buf = [0u8; 16];
     assert_eq!(gemdos2(0x36, buf.as_mut_ptr() as u64, 3), E_OK, "Dfree C:");
+    let mut dta = Dta::new();
+    let _ = gemdos1(FSETDTA, dta.ptr());
+    let pat = cpath("C:\\NOSUCH.XYZ");
+    let _ = gemdos2(FSFIRST, pat.as_ptr() as u64, FA_ANY);
 }
 
 /// Create `name`, write `data`, close — and return the data cluster the

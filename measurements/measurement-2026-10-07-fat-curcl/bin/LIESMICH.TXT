@@ -1,0 +1,48 @@
+FS08 Teil 2 -- Dateisystem liest und schreibt wie EmuTOS
+=========================================================
+
+Kernel: kernel8.img   sha256 28f56fb35009d4074b85a7cc9e4a80a442213c4e8050f8621176ee50a1cd245c
+        (release, board-rpi4, Stand desk-rebuild 003da28 + FS08-FAT, nicht committet;
+        enthaelt Teil 1 = Mehrblock-Treiber + 4-Bit-Bus, schon committet)
+Nichts davon ist auf eine Karte kopiert. Kopieren nur auf Ansage des Anwenders.
+
+WAS SICH AENDERT (nur innen; Rueckgabewerte und Dateiinhalte bleiben gleich)
+  * Jede offene Datei merkt sich ihren aktuellen Cluster. Fread/Fwrite gehen
+    die Clusterkette nicht mehr bei jedem Aufruf vom Dateianfang ab, sondern
+    einen Schritt je neuem Cluster (EmuTOS o_curcl / nextcl).
+  * Ganze Sektoren eines Fread/Fwrite gehen in EINEM Kartenkommando direkt in
+    den Puffer des Programms (zusammenhaengende Cluster werden zusammengefasst,
+    EmuTOS usrio). Nur angebrochene Sektoren laufen ueber den Puffer.
+  * FAT-Sektoren haben eigene Puffer, die Datenzugriffe nicht mehr verdraengen
+    koennen (EmuTOS bufl[BI_FAT] / bufl[BI_DATA]).
+
+WAS ZU ERWARTEN IST (Pi, nicht gemessen -- QEMU bildet die Kartenlatenz nicht ab)
+  * QEMU zaehlt fuer einen ganzen FSBENCH-Lauf: gelesene Sektoren 1 221 462 ->
+    548 939 (= so viele, wie FSBENCH anfordert), Lesekommandos 1 176 324 ->
+    195 769.
+  * L1 (BIOS) unveraendert gegenueber Teil 1.
+  * L2 64 KB und "ganz" sollten jetzt ungefaehr so schnell sein wie L1 mit
+    128 Sektoren je Aufruf.
+  * L2 512 B / 4 KB auf den 10-MB-Dateien: der Aufschlag gegenueber "ganz"
+    (vorher 25,0 s gegen 14,5 s) sollte weitgehend verschwinden; 512-B-Aufrufe
+    bleiben ein Kommando je Sektor (wie bei EmuTOS).
+  * L3 (stdio, 1 KB): ein Kommando je 1-KB-Aufruf statt zwei plus Kettenlauf.
+  * Alle 100 Lesungen muessen weiter "crc ok" sein.
+
+VERGLEICHSLAUF MIT FSBENCH (macht der Lead auf Ansage)
+  1. kernel8.img auf die Boot-Partition kopieren.
+  2. C:\AUTO\FSBENCH.NC zurueck in C:\AUTO\FSBENCH.NCP umbenennen
+     (FSBENCH.NCP sha256 2362d3fb..., D:\FSBENCH\ mit den 10 Testdateien
+     muss noch da sein).
+  3. Booten, Seiten fotografieren wie bei den ersten Laeufen (Taste je Seite).
+     FSBENCH haengt an C:\FSBENCH.LOG an -- die alten Laeufe bleiben darin.
+  4. Optional zum Vergleich: zweiter Lauf mit emmc=compat in cmdline.txt
+     (Treiber wie vor Teil 1; das Dateisystem bleibt das neue), danach wieder
+     entfernen.
+  5. C:\FSBENCH.LOG zurueckgeben, danach C:\AUTO\FSBENCH.NCP wieder in
+     FSBENCH.NC umbenennen (parken).
+
+WENN ETWAS SCHIEFGEHT
+  * Dateien falsch gelesen/geschrieben, Desktop meldet Fehler -> vorherigen
+    Kernel zurueckkopieren und melden (Foto/Log).
+  * Schreibtest danach am Mac: fsck_msdos -n auf C: und D: (nur lesen).

@@ -1,0 +1,215 @@
+measurement-2026-10-07-fat-curcl -- TASK/FS08 part 2 (user decision
+2026-10-07): the FAT/GEMDOS read and write path like EmuTOS -- current-
+cluster tracking per open file, separate FAT and data buffer lists, whole
+records straight between the device and the caller's buffer. Developer
+self-evidence; the Tester's verdict is separate.
+
+Date 2026-10-07, branch desk-rebuild, HEAD 003da28 plus this change
+(uncommitted). QEMU 11 raspi4b, -append "serial=on" (memprot on = default)
+or "serial=on memprot=on", one QEMU at a time, only our own pid killed (the
+host has no `timeout`). No SD card, Pi or TT touched; nothing copied to any
+card. Scratch (kernels, base cards, run clones, target dirs, traces) in the
+session scratchpad: ONE base card per content (base.img, base-fsb.img,
+base-s2all.img, base-api.img), every run on an APFS clone (cp -c) that is
+deleted after the run; hashes in checks/*-sha256.txt.
+
+INPUT
+  measurements/measurement-2026-10-07-fs08-pi/RUNINFO.TXT + FSBENCH.LOG (real
+  Pi: small Freads on large files +18..73 %); docs/analysis/fs08-sd-read-
+  2026-10-07.md (U2: shared 16-slot round-robin cache for FAT and data,
+  cache.rs:44/:217; Fread walks the chain from the file start every call,
+  file.rs:422-436); measurements/measurement-2026-10-07-emmc-mb (part 1:
+  driver multi-block; trace 1.18 M CMD17 from cache + chain walks).
+
+EMUTOS REFERENCE (references/emutos, read for this run)
+  bdos/fsio.c   addit :33-47, usrio :57-74 (dirty data buffers in range
+                flushed + invalidated, one Rwabs into the user buffer),
+                xrw_recs :84-187 (header records, whole clusters merged while
+                contiguous up to CNTMAX 0x7FFF :22, tail records), xrw
+                :208-284 (head bytes / records / tail bytes via getrec),
+                ixlseek :354-426 (forward chaining from o_curcl, one cluster
+                short on a boundary, EINTRN), ixread :498-514, ixwrite :554
+  bdos/fsfat.c  cl2rec :23-26, clfix :36-93, getrealcl :107-148,
+                findfree16 :174-200, findfree :208-234 (first cluster from
+                the FAT start, later ones forward from the current cluster),
+                nextcl :247-293
+  bdos/fsbuf.c  NUMBUFS 2 :26, bufl[BI_FAT]/bufl[BI_DATA] :67-71, flush
+                :85-105 (both FAT copies), getbcb :114-202 (own list per
+                type :121, hit -> head :197-199, miss -> last invalid else
+                LRU tail :130-157, dirty victim written first :162-163),
+                getrec :209-235 (wrtflg -> dirty)
+  bdos/fsopnclo.c ixclose :511-581 (flush loop :576-579)
+
+SPEC (written first)
+  docs/api/gemdos/_state.md  §3 new subsection "Replacement policy and FAT
+    mirroring (getbcb, flush) -- FS08" + NewTOS note (two lists, policy,
+    8 buffers per list instead of NUMBUFS 2, named deviations); new §3a "The
+    file transfer engine xrw" (the four OFD position fields, nextcl /
+    findfree, the three-part split, usrio, ixlseek, write-back points) +
+    NewTOS note (per-Fwrite write-back kept, HW03)
+  docs/api/gemdos/file/3f-fread.md, 40-fwrite.md, 42-fseek.md  FS08 notes
+
+CODE
+  tos-api/src/bdos/fs/fsio.rs   NEW: Stream (o_strtcl/o_fileln/O_DIRTY +
+    o_bytnum/o_curcl/o_currec/o_curbyt), addit, nextcl, usrio (caller range
+    via Space::kptr, as BIOS Rwabs), xrw_recs, xrw, ixlseek
+  tos-api/src/bdos/fs/cache.rs  two lists (Kind::Fat{stride,copies} /
+    Kind::Data), 8 slots each, MRU order, getbcb victim choice, FAT slot
+    written to every FAT copy, with_sector (getrec), direct_read/
+    direct_write (usrio's invalidate + one block request), error_pending,
+    list_misses/direct_stats; HW03 write-back semantics kept (a failed
+    victim is promoted, not handed out)
+  tos-api/src/bdos/fs/fat.rs    FAT access through the FAT list (one copy
+    cached; set_fat_entry = clfix dirtying one sector), findfree/findfree16,
+    alloc_cluster = findfree(0)+EOC, data_lba, cl2rec, fat_lookups counter;
+    the unused `fat1` field removed
+  tos-api/src/bdos/fs/file.rs   Ofd holds a Stream; fread/fwrite = ixread/
+    ixwrite -> xrw; fseek = xlseek -> ixlseek; resolve_cluster removed
+  tos-api/src/bdos/fs/mod.rs    `pub mod fsio`; FileImage::read_at (program
+    loader) and read_file use the same engine (Space::Kernel)
+  TESTS
+  tos-api/tests/fatclus/mod.rs           NEW fixture: FAT16, 4-sector
+    clusters, contiguous SEQ.DAT (40 clusters) and fragmented FRAG.DAT (5
+    runs), device request log
+  tos-api/tests/gemdos_fs_curcl.rs       NEW 7 tests (requests per run,
+    FAT read once, 64 KiB = one request, Fseek fwd/back/boundaries, mixed
+    partial/whole reads, write + read back + both FATs equal, direct write
+    invalidates / partial write seen by direct read)
+  tos-api/tests/gemdos_fs_chain_steps.rs NEW 3 tests (fat_lookups: n-1
+    steps for n clusters at every Fread size; forward Fseek chains on,
+    backward restarts, boundary one short; 64 x 512 B Fwrite = 85 lookups,
+    derived step by step from nextcl/findfree on the fixture)
+  tos-api/tests/gemdos_fs_device_error.rs  turn_the_cache_over() now turns
+    over both lists (Dfree = FAT, a failing Fsfirst = 32 root sectors); the
+    assertions are unchanged
+
+HOST TESTS RED/GREEN (checks/red-head-*.txt, checks/green-*.txt)
+  HEAD (git archive HEAD + the new test files): gemdos_fs_curcl 3 pass /
+  4 FAIL -- one_fread_..._one_request_per_contiguous_run (32 one-sector
+  requests), sequential_small_freads_read_each_fat_sector_once (FAT sector
+  read 10 times for 512-byte Freads), whole_record_freads_..._one_request,
+  whole_record_writes_..._stale_copies_are_dropped (16 one-sector writes);
+  the 3 correctness tests (Fseek, mixed reads, write/read back) pass on HEAD
+  too, as they must. gemdos_fs_chain_steps does not compile on HEAD (no
+  fat_lookups counter). This change: 7/7 and 3/3.
+
+STATIC CHECKS (method/checks.sh v2 -> checks/v2-*.txt; v1 = first pass)
+                                     baseline (emmc-mb)  v1        v2 (final)
+  host tests pass/fail/ignored       1185/0/1            1195/0/1  1195/0/1
+  release warnings tos-api/kernel    64/94 both boards   64/94     64/94
+  clippy tos-api/kernel rpi4, virt   76/125              78/125    76/125
+  desk-drift-probe                   31                  31        31
+  SDK host tests                     16/0/0              16/0/0    16/0/0
+  v1 had two new clippy hits in my files (wrong_self_convention `to_head`,
+  manual_is_multiple_of); fixed (renamed `promote`, is_multiple_of). v2 is
+  the code in the tree; kernel8-v2 = tree kernel8.img = bin/kernel8.img.
+
+FSBENCH (method/run-fsbench.sh, C:\AUTO\FSBENCH.NCP 2362d3fb... = the Pi
+package, base-fsb.img; QEMU trace sdcard_normal_command/sdcard_read_block/
+sdcard_write_block, method/trace-counts.py; checks/q-{before,after}-*)
+                                   before (HEAD kernel)   after (kernel8-v2)
+  CMD17                            1 175 966              137 492
+  CMD18                            358                    58 277
+  read commands total              1 176 324              195 769
+  blocks read                      1 221 462              548 939
+  payload asked by FSBENCH         548 152 blocks (L1 46.6 MB, L2 187.3 MB,
+                                   L3 46.8 MB = 274 076 KiB)
+  blocks read per payload block    2.2283                 1.0014
+  read commands per KiB payload    4.2920                 0.7143
+  FSBENCH summary                  100 reads crc ok       100 reads crc ok
+  D:\FSBENCH vs SHA256SUMS         10/10 OK               10/10 OK
+  fsck_msdos -n C: D:              clean                  clean
+  The remaining 137 492 CMD17 are the one-sector requests FSBENCH itself
+  makes (L1 1 sector/call 45 496 + L2 512-B Freads 91 432 = 136 928; boot
+  and desktop start the rest) -- EmuTOS makes one Rwabs per record there too.
+  QEMU times are not representative (no card latency modelled).
+
+FSWRITE (NEW measurement tool, method/fswrite.c + build-fswrite.sh, from
+C:\AUTO; method/run-fswrite.sh; host model method/fswrite-check.py)
+  15 files on D:\FSW\ and C:\FSWC\ (0 B .. 3 MB) written with Fwrite sizes 1,
+  100, 512, 1000, 4096, 8192, 65536 and one whole-file call, read back with
+  other Fread sizes, Fseek+Fwrite patches across a cluster boundary and one
+  byte before a record boundary, an append, copies (32 KiB / 4 KiB chunks),
+  Frename into a sub-folder, Fdelete, a folder with three files emptied and
+  Ddelete'd; every byte checked in the program after every step AND on the
+  host against an independent Python model of the final set.
+                         before (HEAD)        after (kernel8-v2)
+  FSWRITE                PASS (34 ok lines)   PASS
+  HOSTCHECK              PASS                 PASS
+  fsck_msdos -n C: D:    clean                clean
+  blocks read / written  280 451 / 25 750     50 521 / 18 562
+  CMD17/18/24/25         280451/0/25750/0     5176/2377/2354/437
+  (checks/q-fswrite-trace-counts.txt, q-fsw-*)
+
+GUI WRITE/READ REGRESSION (injector kernels method/make-inj.sh: fx- = this
+tree, hd- = git archive HEAD; method/gui-series.sh, run-gui.sh,
+prep-card.sh, card-check.py; memprot on)
+  deskw  EmuDESK, window C:\D3A\: drag BIG.DAT (300003 B) onto SUB3A (copy),
+         Ctrl-drag NOTE.TXT onto SUB3A (move), select BIG.DAT + Ctrl-D
+         (delete), drag folder SUB3A onto drive C (folder copy, 1 folder
+         3 files), select SUB3A + Ctrl-D (folder delete); each dialog
+         confirmed with Return. Host: C:\SUB3A\{INSIDE.TXT,BIG.DAT,NOTE.TXT}
+         byte-equal to the sources, C:\D3A\ empty.
+  qedw   QED: ^N, type "fs08" Return, ^S -> AES file selector, name
+         QEDT.TXT, Return; type "ab" Return, ^S (rewrites the saved file),
+         ^Q. Host: C:\APPS\QED\QEDT.TXT = b'fs08\r\nab\r\n'.
+  teraw  TeraDesk: open C:, drag DUMPVDI.NAP (156048 B) onto ZVIEW (copy),
+         drag COREMARK onto APPS (folder copy). Host: copies byte-equal.
+  zvw    zView (ZVLAUNCH) opens C:\PHOTO\BIG.JPG (2 273 801 B, 1 KiB stdio
+         Freads; measurement-2026-10-07-fs08 pi-package, 26ab5f8a...):
+         1932x2576x24 decoded and shown; Esc.
+  Result: hd and fx -- 8 runs, HOSTCHECK PASS x6 (zvw has none), fsck
+  clean on C: and D: after every run, 0 [EXC]/PANIC/"Memory violation"
+  lines; all 34 screendumps BYTE-IDENTICAL hd vs fx
+  (checks/q-gui-screendumps-hd-vs-fx.txt). screendumps/ = the fx set.
+
+APITEST / S2ALL (method/runs-headless.sh; cards seeded with
+measurement-2026-10-06-vforkt-fix/method/seed-card.sh, programs from that
+run's bin/, APITEST from sdk/apps/apitest f1713412...)
+                         HEAD kernel          kernel8-v2
+  APITEST                TOTAL 106/0/5        TOTAL 106/0/5
+  S2ALL (memprot on)     S2ALL: PASS          S2ALL: PASS
+  fsck_msdos -n C:       clean                clean
+
+NOT DONE HERE
+  - Real Pi 4 (workers take no hardware action): bin/ package below.
+  - qemu-virt: built and clippy'd, not booted (no SD path there).
+  - Full Tester series (strict mode, Doom, PORT10, accessories, desk3a ...).
+
+PI PACKAGE  bin/kernel8.img sha256 28f56fb35009d4074b85a7cc9e4a80a442213c4e8050f8621176ee50a1cd245c
+  (= kernel8-v2 = tree kernel8.img; *.img gitignored), bin/LIESMICH.TXT
+  (German: what changes, what to expect, FSBENCH comparison steps),
+  bin/SHA256SUMS. Not copied to any card.
+
+OPEN / NOTES
+  - Fwrite still writes the cache back at the end of every call (HW03: a
+    device error becomes that call's EWRITF). EmuTOS writes back only on
+    eviction, usrio overlap and ixclose. Kept deliberately (spec _state.md
+    §3a); it costs one FAT write-back (both copies) per Fwrite that
+    allocated, plus a partial record.
+  - 8 buffers per list instead of EmuTOS' 2 (count is not contract; named in
+    _state.md §3).
+  - A whole-record transfer into a user buffer that starts in page 0 and runs
+    past it is refused by Space::kptr (as for BIOS Rwabs) and ends the call
+    as a user fault; before, Fread copied byte-wise through page 0. No program
+    known to Fread across the page-0 boundary.
+  - The directory reader (dir.rs dir_nth_sector) still walks a sub-
+    directory's chain from its start for every sector -- outside this task.
+  - recsiz != 512 is still unsupported by the FS layer as a whole (cache and
+    LBA arithmetic assume 512-byte records), unchanged.
+
+method/ FILES
+  this run: fswrite.c, build-fswrite.sh, fswrite-check.py, run-fswrite.sh,
+    trace-counts.py, gen-pattern.py, prep-card.sh, card-check.py, run-gui.sh,
+    gui-series.sh, runs-headless.sh, deskw.actions, qedw.actions,
+    teraw.actions, zvw.actions, teraexp.actions (exploration), desk/
+    (newdesk-deskw.inf = desk3a's NEWDESK.INF, INSIDE.TXT, NOTE.TXT from
+    measurement-2026-10-06-vforkt-fix/method/desk3a)
+  copied unchanged from measurement-2026-10-07-emmc-mb/method: prep-base.sh,
+    run-fsbench.sh, qmp_on_marker.py; checks.sh (header comment line only)
+  copied unchanged from measurement-2026-10-07-acctitle/method: make-inj.sh,
+    apply-injector-m3.py, desk-arm-m3.py, gen_script.py, drive-m3.py,
+    newdesk-template.inf (run-gui.sh replaces its run-rpi4-drive-m3.sh: same
+    QEMU line, sockets relative to a scratch dir, APFS clone, fsck + hash +
+    delete afterwards)
+  SHA256SUMS: every file of this run except itself and bin/.

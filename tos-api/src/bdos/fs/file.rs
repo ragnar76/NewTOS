@@ -16,14 +16,14 @@ use core::cell::UnsafeCell;
 
 use super::dir;
 use super::fat::Volume;
+use super::fsio::{self, Fail, Stream};
 use super::path;
 use crate::trap::TrapArgs;
 use tos_types::error::{
-    EACCDN, EFILNF, EIHNDL, EINTRN, EINVFN, ENHNDL, ENSAME, EPTHNF, ERANGE, E_OK,
+    EACCDN, EFILNF, EIHNDL, EINTRN, EINVFN, ENHNDL, ENSAME, EPTHNF, E_OK,
 };
 use tos_types::Long;
 
-const SECTOR: usize = 512;
 /// Number of reserved standard handles (0..5); first real handle is 6.
 const NUMSTD: u16 = 6;
 /// Open-file table size (EmuTOS `OPNFILES` is 75).
@@ -34,7 +34,9 @@ const FA_RO: u8 = 0x01;
 /// Open File Descriptor — reduced EmuTOS `OFD`.
 #[derive(Clone, Copy)]
 struct Ofd {
-    vol: Volume,
+    /// Volume, start cluster, length, `O_DIRTY` and the position fields
+    /// `o_bytnum`/`o_curcl`/`o_currec`/`o_curbyt` (FS08, [`fsio`]).
+    s: Stream,
     /// Drive the file lives on (recorded for future open-file tracking).
     #[allow(dead_code)]
     drive: u16,
@@ -43,18 +45,10 @@ struct Ofd {
     /// write-back on close).
     dir_start: u32,
     dir_slot: u32,
-    /// First cluster of the file (0 ⇒ empty file, no clusters yet).
-    start_cluster: u32,
-    /// File length in bytes.
-    file_len: u32,
-    /// Current byte offset (`o_bytnum`).
-    pos: u32,
     /// Open mode bits (`mod & 0x77`). Sharing bits are recorded, not
     /// enforced, per the TOS contract.
     #[allow(dead_code)]
     mode: u8,
-    /// The directory entry needs a flush (size / start cluster changed).
-    dirty: bool,
     /// The OFD is on its directory's open-file list (`o_dnode->d_files`):
     /// put there when the file is opened (`makopn`, `bdos/fsopnclo.c:294-295`),
     /// taken off by the first full `ixclose` (`:552-566`). A later `ixclose`
@@ -288,15 +282,11 @@ pub fn fopen(args: &TrapArgs) -> Long {
     };
 
     open_handle(Ofd {
-        vol,
+        s: Stream::new(vol, entry.cluster, entry.size),
         drive,
         dir_start: parent,
         dir_slot,
-        start_cluster: entry.cluster,
-        file_len: entry.size,
-        pos: 0,
         mode,
-        dirty: false,
         listed: true,
     })
     .unwrap_or(ENHNDL)
@@ -377,15 +367,11 @@ pub fn fcreate(args: &TrapArgs) -> Long {
     }
 
     open_handle(Ofd {
-        vol,
+        s: Stream::new(vol, 0, 0),
         drive,
         dir_start: parent,
         dir_slot,
-        start_cluster: 0,
-        file_len: 0,
-        pos: 0,
         mode: 0x01, // write access
-        dirty: false,
         listed: true,
     })
     .unwrap_or(ENHNDL)
@@ -408,70 +394,29 @@ pub fn fread(args: &TrapArgs) -> Long {
         Some(o) => o,
         None => return EIHNDL,
     };
+    // `ixread` (`bdos/fsio.c:498-514`): clamp to the bytes before EOF; zero
+    // or negative requests move nothing.
     if len <= 0 {
         return 0;
     }
-    let want = (len as u32).min(ofd.file_len.saturating_sub(ofd.pos));
+    let want = (len as u32).min(ofd.s.fileln.saturating_sub(ofd.s.bytnum));
     if want == 0 {
         return 0;
     }
-
-    let vol = ofd.vol;
-    let clsizb = vol.clsizb;
-    let recsiz = vol.recsiz;
-
-    // Walk to the cluster containing the current position.
-    let mut cluster = ofd.start_cluster;
-    let skip = ofd.pos / clsizb;
-    for _ in 0..skip {
-        match vol.fat_entry(cluster) {
-            Some(n) if !vol.is_eoc(n) => cluster = n,
-            // A chain that ends early is a short read (0 bytes); a chain
-            // walk that failed because the *device* failed is a hard error
-            // and carries the BIOS code (`EREADF`), the way EmuTOS' FAT
-            // walk unwinds through `longjmp_rwabs` (`bdos/fs.h:60`).
-            _ => return super::cache::take_error().unwrap_or(0),
-        }
-    }
-
-    let mut byte_in_cluster = ofd.pos % clsizb;
-    let mut done = 0u32;
-    let mut sbuf = [0u8; SECTOR];
-
-    while done < want && vol.is_data_cluster(cluster) {
-        while byte_in_cluster < clsizb && done < want {
-            let sec_in_cl = byte_in_cluster / recsiz;
-            let off_in_sec = byte_in_cluster % recsiz;
-            if !vol.read_cluster_sector(cluster, sec_in_cl, &mut sbuf) {
-                break;
-            }
-            let avail = recsiz - off_in_sec;
-            let n = avail.min(want - done).min(clsizb - byte_in_cluster);
-            // Into the caller's buffer, in the caller's space (ARCH03 3a): a
-            // buffer the program cannot write stops the call here and the
-            // syscall tail ends the program (`crate::uaccess`).
-            let chunk = &sbuf[off_in_sec as usize..(off_in_sec + n) as usize];
-            if args.space.copy_to(ubuf + u64::from(done), chunk).is_err() {
-                return crate::uaccess::FAULTED;
-            }
-            done += n;
-            byte_in_cluster += n;
-        }
-        byte_in_cluster = 0;
-        match vol.fat_entry(cluster) {
-            Some(nx) if !vol.is_eoc(nx) => cluster = nx,
-            _ => break,
-        }
-    }
-
-    ofd.pos += done;
+    // `xrw(0, …)` (FS08, `docs/api/gemdos/_state.md` §3a): one FAT step per
+    // new cluster from `o_curcl`, whole records straight into the caller's
+    // buffer (in its space, ARCH03 3a), partial ones through the cache.
+    let r = fsio::xrw(&mut ofd.s, false, want, args.space, ubuf);
     // A read that stopped on a device error reports the error, not a short
     // count (`docs/api/gemdos/file/3f-fread.md` §"Error conditions": an
-    // underlying disk read failure surfaces as the BIOS code, `EREADF`).
-    if let Some(code) = super::cache::take_error() {
-        return code;
+    // underlying disk read failure surfaces as the BIOS code, `EREADF`); a
+    // chain that ends early stays a short count.
+    let pending = super::cache::take_error();
+    match r {
+        Err(Fail::Fault) => crate::uaccess::FAULTED,
+        Err(Fail::Device) => pending.unwrap_or(EINTRN),
+        Ok(done) => pending.unwrap_or(done as Long),
     }
-    done as Long
 }
 
 /// `Fwrite` (0x40) — write `len` bytes from a buffer to a handle,
@@ -495,63 +440,17 @@ pub fn fwrite(args: &TrapArgs) -> Long {
     if len <= 0 {
         return 0;
     }
-    let vol = ofd.vol;
-    if !vol.is_writable() {
+    if !ofd.s.vol.is_writable() {
         return EACCDN;
     }
-    let clsizb = vol.clsizb;
-    let recsiz = vol.recsiz;
-    let want = len as u32;
-
-    let mut done = 0u32;
-    let mut sbuf = [0u8; SECTOR];
-
-    while done < want {
-        let pos = ofd.pos + done;
-        let cl_index = pos / clsizb; // which cluster of the file
-
-        // Resolve (allocating/linking as needed) the cluster holding pos.
-        let cluster = match resolve_cluster(ofd, cl_index) {
-            Some(c) => c,
-            None => break, // disk full → short write
-        };
-
-        let byte_in_cluster = pos % clsizb;
-        let sec_in_cl = byte_in_cluster / recsiz;
-        let off_in_sec = (byte_in_cluster % recsiz) as usize;
-        let avail = recsiz - byte_in_cluster % recsiz;
-        let n = avail.min(want - done) as usize;
-
-        // Read-modify-write the target sector. A full, aligned sector
-        // overwrite needs no prior read (the copy below fills all 512
-        // bytes); a partial write reads first, starting from zero if the
-        // sector is past EOF and not yet allocated.
-        let full_sector = off_in_sec == 0 && n == recsiz as usize;
-        if !full_sector {
-            if !vol.read_cluster_sector(cluster, sec_in_cl, &mut sbuf) {
-                sbuf = [0u8; SECTOR];
-            }
-        } else {
-            sbuf = [0u8; SECTOR];
-        }
-        // From the caller's buffer, in the caller's space (ARCH03 3a); a
-        // buffer the program cannot read stops the call before this sector is
-        // written.
-        if args.space.copy_from(&mut sbuf[off_in_sec..off_in_sec + n], ubuf + u64::from(done)).is_err() {
-            return crate::uaccess::FAULTED;
-        }
-        if !vol.write_cluster_sector(cluster, sec_in_cl, &sbuf) {
-            break;
-        }
-        done += n as u32;
-    }
-
-    ofd.pos += done;
-    if ofd.pos > ofd.file_len {
-        ofd.file_len = ofd.pos;
-    }
-    if done > 0 {
-        ofd.dirty = true;
+    // `ixwrite` → `xrw(1, …)` (FS08, `docs/api/gemdos/_state.md` §3a):
+    // clusters allocated by `nextcl` as the write runs past the chain, whole
+    // records straight from the caller's buffer, partial ones
+    // read-modify-write through the cache. A disk that fills up ends the
+    // transfer with a short count.
+    let r = fsio::xrw(&mut ofd.s, true, len as u32, args.space, ubuf);
+    if r == Err(Fail::Fault) {
+        return crate::uaccess::FAULTED;
     }
     // Write-back of everything this call dirtied. Its code wins over the
     // byte count: EmuTOS never returns a short count for a hard error, it
@@ -559,42 +458,17 @@ pub fn fwrite(args: &TrapArgs) -> Long {
     if let Err(code) = super::cache::flush() {
         return code;
     }
-    // ...and a loop that stopped early because the *device* failed is the
+    // ...and a transfer that stopped because the *device* failed is the
     // same hard error, not the "disk full" short count
     // (`docs/api/gemdos/file/40-fwrite.md` §"Error conditions": disk-full is
     // a short count, a media fault is a BIOS code).
     if let Some(code) = super::cache::take_error() {
         return code;
     }
-    done as Long
-}
-
-/// Resolve the `index`-th cluster of the open file, allocating and
-/// linking new clusters when writing past the current end of chain.
-/// Updates `start_cluster` for a previously empty file.
-fn resolve_cluster(ofd: &mut Ofd, index: u32) -> Option<u32> {
-    let vol = ofd.vol;
-    if ofd.start_cluster == 0 {
-        // File has no clusters yet: allocate the first.
-        let c = vol.alloc_cluster()?;
-        ofd.start_cluster = c;
-        ofd.dirty = true;
+    match r {
+        Ok(done) => done as Long,
+        Err(_) => EINTRN,
     }
-    let mut cluster = ofd.start_cluster;
-    for _ in 0..index {
-        match vol.fat_entry(cluster) {
-            Some(n) if !vol.is_eoc(n) && vol.is_data_cluster(n) => cluster = n,
-            _ => {
-                // End of chain: allocate and link a new cluster.
-                let new = vol.alloc_cluster()?;
-                if !vol.set_fat_entry(cluster, new) {
-                    return None;
-                }
-                cluster = new;
-            }
-        }
-    }
-    Some(cluster)
 }
 
 /// Free a file's cluster chain and mark its directory entry — and the
@@ -646,10 +520,10 @@ fn close_open_file(dir_start: u32, dir_slot: u32) {
 /// Flush an open file's directory entry (size + start cluster).
 fn flush_ofd(ofd: &Ofd) {
     let mut e = [0u8; 32];
-    if dir::read_slot(&ofd.vol, ofd.dir_start, ofd.dir_slot, &mut e) {
-        e[0x1A..0x1C].copy_from_slice(&((ofd.start_cluster & 0xFFFF) as u16).to_le_bytes());
-        e[0x1C..0x20].copy_from_slice(&ofd.file_len.to_le_bytes());
-        dir::write_slot(&ofd.vol, ofd.dir_start, ofd.dir_slot, &e);
+    if dir::read_slot(&ofd.s.vol, ofd.dir_start, ofd.dir_slot, &mut e) {
+        e[0x1A..0x1C].copy_from_slice(&((ofd.s.strtcl & 0xFFFF) as u16).to_le_bytes());
+        e[0x1C..0x20].copy_from_slice(&ofd.s.fileln.to_le_bytes());
+        dir::write_slot(&ofd.s.vol, ofd.dir_start, ofd.dir_slot, &e);
     }
 }
 
@@ -986,7 +860,7 @@ pub fn fdatime(args: &TrapArgs) -> Long {
         None => return EIHNDL,
     };
     let mut e = [0u8; 32];
-    if !dir::read_slot(&ofd.vol, ofd.dir_start, ofd.dir_slot, &mut e) {
+    if !dir::read_slot(&ofd.s.vol, ofd.dir_start, ofd.dir_slot, &mut e) {
         return EIHNDL;
     }
     // The 4-byte DOSTIME buffer is in the caller's space (ARCH03 3a).
@@ -1000,7 +874,7 @@ pub fn fdatime(args: &TrapArgs) -> Long {
         if args.space.copy_from(&mut e[0x16..0x1A], buf).is_err() {
             return crate::uaccess::FAULTED;
         }
-        dir::write_slot(&ofd.vol, ofd.dir_start, ofd.dir_slot, &e);
+        dir::write_slot(&ofd.s.vol, ofd.dir_start, ofd.dir_slot, &e);
         if let Err(code) = super::cache::flush() {
             return code;
         }
@@ -1018,18 +892,15 @@ pub fn fseek(args: &TrapArgs) -> Long {
         Some(o) => o,
         None => return EIHNDL,
     };
+    // `xlseek` (`bdos/fsio.c:321-337`) folds the mode into an absolute
+    // target; `ixlseek` positions the cluster fields (FS08, `fsio`).
     let base = match flg {
-        0 => 0,                  // SEEK_SET
-        1 => ofd.pos as i64,     // SEEK_CUR
-        2 => ofd.file_len as i64, // SEEK_END
+        0 => 0,                       // SEEK_SET
+        1 => ofd.s.bytnum as i64,     // SEEK_CUR
+        2 => ofd.s.fileln as i64,     // SEEK_END
         _ => return EINVFN,
     };
-    let target = base + n;
-    if target < 0 || target > ofd.file_len as i64 {
-        return ERANGE;
-    }
-    ofd.pos = target as u32;
-    ofd.pos as Long
+    fsio::ixlseek(&mut ofd.s, base + n)
 }
 
 /// `Fclose` (0x3E) — close a handle (EmuTOS `xclose`,
@@ -1097,9 +968,9 @@ fn ixclose(j: usize) -> Long {
     let Some(ofd) = ofds()[j].as_mut() else {
         return EIHNDL;
     };
-    if ofd.dirty {
+    if ofd.s.dirty {
         flush_ofd(ofd);
-        ofd.dirty = false;
+        ofd.s.dirty = false;
     }
     if !ofd.listed {
         return EINTRN; // some kind of internal error

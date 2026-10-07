@@ -1,0 +1,10 @@
+# exploration: TeraDesk (#Z) start screen, then open drive C (double-click)
+100 parkbr
+3600 mark T00_UP
+3700 move 195 38
+3800 down
+3803 up
+3808 down
+3811 up
+5000 mark T01_C_OPEN
+5400 mark END

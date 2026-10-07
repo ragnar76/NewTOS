@@ -220,3 +220,11 @@ draws is therefore live: a **full disk** is still a short byte count, a
 the driver reported. Driven by `tos-api/tests/gemdos_fs_device_error.rs`.
 Before HW03, `Fwrite` returned the full byte count for data that never left
 the machine (`docs/api/hw/emmc-audit.md` finding 5).
+
+FS08 (2026-10-07): same engine as `Fread` (`_state.md` §3a): whole records are
+written in one block request straight from the caller's buffer (any cached
+copy in that range written back if dirty and invalidated first, EmuTOS
+`usrio`), head/tail records are read-modify-write through the data list, new
+clusters come from `nextcl`/`findfree` exactly as in EmuTOS (first cluster from
+the FAT start, later ones forward from the current cluster). The end-of-call
+write-back of the cache (HW03, above) is kept.

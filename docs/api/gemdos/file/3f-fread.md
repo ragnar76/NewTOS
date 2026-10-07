@@ -214,3 +214,12 @@ BIOS code (`EREADF` -11, or `EDRVNR` / `ESECNF` as the driver reported) rather
 than a short count; end-of-file and a chain that ends early stay short counts.
 Same mechanism as `40-fwrite.md`; driven by
 `tos-api/tests/gemdos_fs_device_error.rs`.
+
+FS08 (2026-10-07): the transfer follows EmuTOS `xrw` as extracted in
+[`_state.md` §3a](../_state.md): the OFD keeps `o_curcl`/`o_currec`/`o_curbyt`,
+so a sequential `Fread` steps the FAT chain one link per new cluster instead
+of walking it from the file start on every call; whole records go in one block
+request straight into the caller's buffer (contiguous clusters merged up to
+`CNTMAX` records), only the partial head/tail records pass through the data
+buffer list. Unobservable through the API (same bytes, same return values);
+measured effect in `measurements/measurement-2026-10-07-fat-curcl/`.

@@ -12,6 +12,7 @@ pub mod drive;
 pub mod fat;
 pub mod file;
 pub mod find;
+pub mod fsio;
 pub mod path;
 
 use crate::trap::TrapArgs;
@@ -58,7 +59,7 @@ pub(crate) fn path_arg<'b>(
 /// there is no fixed intermediate buffer capping the program size.
 ///
 /// Holds the mounted [`fat::Volume`], the file's first cluster and its
-/// length — the minimum to walk the cluster chain for a range read.
+/// length — the minimum to position a [`fsio::Stream`] for a range read.
 #[derive(Clone, Copy)]
 pub struct FileImage {
     vol: fat::Volume,
@@ -93,66 +94,49 @@ impl FileImage {
         self.file_len == 0
     }
 
-    /// Read up to `dst.len()` bytes starting at byte `offset` into `dst`,
-    /// walking the cluster chain and copying sector by sector (so no
-    /// whole-cluster or whole-file staging buffer is needed). Returns the
-    /// number of bytes read — fewer than `dst.len()` only at end of file —
-    /// or `None` on a block-device read error.
+    /// Read up to `dst.len()` bytes starting at byte `offset` into `dst`.
+    /// Returns the number of bytes read — fewer than `dst.len()` only at end
+    /// of file or where the cluster chain ends early — or `None` on a
+    /// block-device read error.
     ///
-    /// Mirrors [`file::Fread`](super::file)'s cluster walk but against a
-    /// standalone `(cluster, offset)` rather than an open SFT handle.
+    /// The same engine as `Fread` (FS08, [`fsio`]): positioned with
+    /// `ixlseek`, whole records read straight into `dst` in one block request
+    /// per run of contiguous clusters, partial ones through the cache.
     pub fn read_at(&self, offset: u32, dst: &mut [u8]) -> Option<usize> {
-        let vol = &self.vol;
-        let clsizb = vol.clsizb;
-        let recsiz = vol.recsiz as usize;
         if offset >= self.file_len {
             return Some(0);
         }
-        let want = dst.len().min((self.file_len - offset) as usize);
+        let want = dst.len().min((self.file_len - offset) as usize) as u32;
         if want == 0 {
             return Some(0);
         }
-
-        // Walk to the cluster holding `offset`.
-        let mut cluster = self.start_cluster;
-        for _ in 0..(offset / clsizb) {
-            match vol.fat_entry(cluster) {
-                Some(n) if !vol.is_eoc(n) => cluster = n,
-                _ => return Some(0), // chain ended before `offset`
-            }
+        let mut s = fsio::Stream::new(self.vol, self.start_cluster, self.file_len);
+        let pos = fsio::ixlseek(&mut s, i64::from(offset));
+        if pos < 0 {
+            // A chain shorter than the length (EINTRN) reads nothing, as
+            // before; a device error during the walk is a read error.
+            return if cache::error_pending() { None } else { Some(0) };
         }
+        read_stream(&mut s, &mut dst[..want as usize])
+    }
+}
 
-        let mut byte_in_cluster = offset % clsizb;
-        let mut done = 0usize;
-        let mut sbuf = [0u8; 512];
-        while done < want && vol.is_data_cluster(cluster) {
-            while byte_in_cluster < clsizb && done < want {
-                let sec_in_cl = byte_in_cluster / recsiz as u32;
-                let off_in_sec = (byte_in_cluster % recsiz as u32) as usize;
-                if !vol.read_cluster_sector(cluster, sec_in_cl, &mut sbuf) {
-                    return None;
-                }
-                let n = (recsiz - off_in_sec)
-                    .min(want - done)
-                    .min((clsizb - byte_in_cluster) as usize);
-                dst[done..done + n].copy_from_slice(&sbuf[off_in_sec..off_in_sec + n]);
-                done += n;
-                byte_in_cluster += n as u32;
-            }
-            byte_in_cluster = 0;
-            match vol.fat_entry(cluster) {
-                Some(nx) if !vol.is_eoc(nx) => cluster = nx,
-                _ => break,
-            }
-        }
-        Some(done)
+/// Read `dst.len()` bytes (at most) from the position of `s` into the kernel
+/// buffer `dst`. `None` on a device error.
+fn read_stream(s: &mut fsio::Stream, dst: &mut [u8]) -> Option<usize> {
+    let space = crate::uaccess::Space::Kernel;
+    match fsio::xrw(s, false, dst.len() as u32, space, dst.as_mut_ptr() as u64) {
+        Ok(n) => Some(n as usize),
+        // A kernel buffer cannot fault; a device failure is a read error.
+        Err(_) => None,
     }
 }
 
 /// Read a whole file at `path` into `out` (truncated to `out.len()`).
 /// Returns the number of bytes read, or `None` on a path/IO error or if
-/// the name is a directory. Used by the program loader to pull a `.PRG`
-/// off the FAT16 file system without going through the SFT handle table.
+/// the name is a directory. Used by the AES resource loader, the shell and
+/// the keyboard-table loader to pull a file off the FAT file system without
+/// going through the SFT handle table.
 pub fn read_file(path: &str, out: &mut [u8]) -> Option<usize> {
     let (vol, parent, name11) = path::findit(path).ok()?;
     let entry = dir::find_in_dir(&vol, parent, &name11)?;
@@ -160,26 +144,6 @@ pub fn read_file(path: &str, out: &mut [u8]) -> Option<usize> {
         return None; // a sub-directory, not a file
     }
     let want = (entry.size as usize).min(out.len());
-    let recsiz = vol.recsiz as usize;
-    let mut cluster = entry.cluster;
-    let mut done = 0;
-    let mut sbuf = [0u8; 512];
-    while done < want && vol.is_data_cluster(cluster) {
-        for sec in 0..vol.clsiz {
-            if done >= want {
-                break;
-            }
-            if !vol.read_cluster_sector(cluster, sec, &mut sbuf) {
-                return None;
-            }
-            let n = recsiz.min(want - done);
-            out[done..done + n].copy_from_slice(&sbuf[..n]);
-            done += n;
-        }
-        match vol.fat_entry(cluster) {
-            Some(nx) if !vol.is_eoc(nx) => cluster = nx,
-            _ => break,
-        }
-    }
-    Some(done)
+    let mut s = fsio::Stream::new(vol, entry.cluster, entry.size);
+    read_stream(&mut s, &mut out[..want])
 }
