@@ -11,7 +11,9 @@ run time as LDG modules. On NewTOS it is `ZVIEW.NAP` plus ten codec modules
 `CODECS\*.NLD`, built from the unmodified sources with toolchain overlays —
 **without the PDF module**.
 
-> **Open blocker K1 (kernel, not fixed here).** On NewTOS the VDI handle that
+> **K1 was fixed in the kernel by `78aa445` (2026-10-07): the AES now opens its physical workstation and `graf_handle` returns it; the product `ZVIEW.NAP` shows pictures. The text below is the original diagnosis, kept as history.**
+>
+> **Blocker K1 (kernel, not fixed here).** On NewTOS the VDI handle that
 > `graf_handle` returns (1, EmuTOS `gl_handle`) is never opened, so
 > `vq_extnd(1, …)` answers nothing. WinDom's `ApplInit` reads the screen depth
 > exactly that way (`windom-1.21.3/src/appl_init.c:42-46`) and gets
@@ -28,7 +30,7 @@ run time as LDG modules. On NewTOS it is `ZVIEW.NAP` plus ten codec modules
 |---|---|
 | Source pin | `sdk/zview/z-tools-04805b7.tar.xz` — a `git archive` subset of z-tools commit `04805b7` (`zview/`, `common/`, `ztask/gmem.{c,h}`; without the PDF fonts, the m68k goodies, HypView); command, origin and licence in `sdk/zview/zview-sources.sha256` |
 | Build | `sdk/zview/build-zview.sh` (extract, shadow tree + overlays, compile, link, map check, stack patch, RSC, dist, samples) |
-| Overlays | `sdk/zview/overlay/zview/…` — 12 files, §3 |
+| Overlays | `sdk/zview/overlay/zview/…` — 13 files, §3 |
 | Prelude | `sdk/zview/include/zview-ints.h` (`-DHAVE_INTS_DEFINED -include …`) |
 | Samples | `sdk/zview/samples/gen-samples.py` → `sdk/zview/build/samples/{IMAGES,expected}` (15 synthesised files, no third-party pictures) |
 | Output | `sdk/zview/build/dist/ZVIEW/` = `ZVIEW.NAP`, `ZVIEW.RSC`, `ICONS\*.GOD`, `CODECS\*.NLD` |
@@ -61,7 +63,7 @@ Codecs are linked like their makefiles (`-lshare -lldg` + image library) with
 `ls_check_module_map` (`sdk/libshare/libshare-link.sh`): libshare's
 allocator only. Two builds are byte-identical.
 
-## 3. Overlays (12 files)
+## 3. Overlays (13 files)
 
 | File | Kind | Change |
 |---|---|---|
@@ -69,6 +71,7 @@ allocator only. Two builds are byte-identical.
 | `zview/main.c` | PDF omission | `if (pdf_initialised) pdf_exit();` removed (`:48-49`) |
 | `zview/winimg.c` | PDF omission | `if PDF return WindPdf(…)` removed (`:969-970`) |
 | `zview/av_prot.c` | message pointer (endianness + width) | `VA_START` command pointer read as the hi/lo WORD pair (`:91`), the convention of the WinDom overlays |
+| `zview/custom_font.c` | endianness | `draw_text()` builds each glyph's 1-plane MFDB WORD by WORD (row in bits 15..8, rows from `my_font_8[]` big-endian) instead of upstream's byte walk (`:182-183`, `:188-195`), which on little-endian put every row into bits 7..0 — outside the copied columns, so the browser drew no file/folder names (TASK/ZVIEW01; host test `sdk/zview/tests/custom-font-host.c`) |
 | `plugins/degas/degasldg.c` | endianness + bit-field order | header word (compression bit 15, resolution bits 1-0) and the 16 ST palette words decoded big-endian into the struct |
 | `plugins/neochrome/neoldg.c` | endianness | the 128-byte header's words swapped in place |
 | `plugins/godpaint/godldg.c` | endianness | file words swapped once after reading; encoder writes width/height/pixels big-endian |
@@ -81,7 +84,7 @@ allocator only. Two builds are byte-identical.
 Each file's header names the upstream lines and the reason. Endian-neutral
 and left alone: bmp, tga (byte-wise parsers), png, gif, jpg (library-based).
 
-**LP64 sweep of the rest (read, not changed).** No other pointer/integer
+**LP64 sweep of the rest (read, not changed).** (The M4 sweep missed `custom_font.c`'s byte walk over a WORD table — found by the user on the Pi, TASK/ZVIEW01, overlay above.) No other pointer/integer
 casts (clang reported none besides `chrono.c`'s `Super` token, harmless: the
 SDK's `Super` is a no-op, [05](05-abi-pitfalls.md) B4). `winimg.c:1006`,
 `infobox.c:294` print `uint32` colours with `%ld` — formally a mismatch,

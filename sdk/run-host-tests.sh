@@ -176,6 +176,24 @@ else
   echo "FAIL  c2p-host (did not build)"; sed 's/^/      /' "$WORK/c2p-host.log"; fail=$((fail+1))
 fi
 
+# custom-font-host (ZVIEW01): zView's draw_text() (zview/custom_font.c as the
+# SDK builds it -- the overlay) hands vrt_cpyfm each glyph as host-order WORDs
+# with row r in bits 15..8, exactly the form the 68k original builds; the
+# pristine byte walk left the copied columns empty on little-endian (the
+# browser's missing names). Needs the extracted z-tools tree for custom_font.h.
+ZVT="$SDK/zview/z-tools-04805b7/zview"
+if [ ! -f "$ZVT/custom_font.h" ]; then
+  report custom-font-host 77 "z-tools tree absent (run sdk/zview/build-zview.sh)"
+elif "$CC" -fsigned-char -Wall -Wno-pointer-sign -I "$SDK/zview/tests" -I "$ZVT" \
+     -DZVIEW_CUSTOM_FONT_C="\"$SDK/zview/overlay/zview/custom_font.c\"" \
+     -o "$WORK/custom-font-host" "$SDK/zview/tests/custom-font-host.c" > "$WORK/custom-font-host.log" 2>&1; then
+  "$WORK/custom-font-host" >> "$WORK/custom-font-host.log" 2>&1; rc=$?
+  [ $rc -eq 0 ] || sed 's/^/      /' "$WORK/custom-font-host.log"
+  report custom-font-host $rc
+else
+  echo "FAIL  custom-font-host (did not build)"; sed 's/^/      /' "$WORK/custom-font-host.log"; fail=$((fail+1))
+fi
+
 # libtest-host (LDG-M2): the codec libraries (zlib, libpng, libjpeg, giflib,
 # libexif) built for the host from the same pinned trees + config overlays;
 # their results must reproduce the committed host references

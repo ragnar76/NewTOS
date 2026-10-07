@@ -1,0 +1,23 @@
+# red: sdk/zview/tests/custom-font-host.c against the PRISTINE zview/custom_font.c (copied unchanged to scratch so its #include "general.h" resolves to the test stand-in)
+char 1 row 0: form word 0018, want 0000
+char 1 row 1: form word 0000, want 1800
+char 1 row 2: form word 007e, want 3c00
+char 1 row 3: form word 003c, want 7e00
+char 1 row 4: form word 0018, want 1800
+char 1 row 5: form word 0018, want 1800
+char 1 row 6: form word 0000, want 1800
+char 1 row 7: form word 0018, want 0000
+char 2 row 0: form word 0018, want 0000
+char 2 row 1: form word 0000, want 1800
+char 2 row 2: form word 0018, want 1800
+char 2 row 3: form word 0018, want 1800
+char 2 row 4: form word 003c, want 7e00
+char 2 row 5: form word 007e, want 3c00
+char 2 row 6: form word 0000, want 1800
+char 2 row 7: form word 0018, want 0000
+char 3 row 0: form word 0008, want 0000
+char 3 row 1: form word 0000, want 0800
+char 3 row 2: form word 007e, want 0c00
+char 3 row 3: form word 000c, want 7e00
+custom-font-host: 1816 mismatches, 0 glyph rows with pixels in the copied columns
+rc=1

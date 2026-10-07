@@ -1,0 +1,148 @@
+measurement-2026-10-07-zview01 -- TASK/ZVIEW01: zView's browser draws no
+file or folder names (user report, real Pi 4, kernel 3895575, ZVIEW.NAP
+sha256 9c6497ad...). Developer self-evidence; the Tester's verdict is
+separate.
+
+Date 2026-10-07, branch desk-rebuild, HEAD 428ac4a plus this change,
+uncommitted. QEMU raspi4b, -append serial=on, memprot default (on; LDGDEMO
+also strict), one QEMU at a time, host macOS. No SD card, Pi or TT touched.
+Scratch (kernels, cards, target dirs) in the session scratchpad, deleted.
+
+RESULT IN ONE LINE
+  Not a kernel deviation: zView's own text renderer draw_text()
+  (zview/custom_font.c:159-205) builds each glyph's 1-plane MFDB with a
+  byte walk that is only right on a big-endian machine; on little-endian
+  AArch64 every glyph row lands in bits 7..0 of its WORD, outside the 2..8
+  columns vrt_cpyfm copies, so nothing is drawn. Fixed by a toolchain
+  overlay (sdk/zview/overlay/zview/custom_font.c); names now drawn in black
+  (tiles, tree), white on the selection, sizes in LBLACK.
+
+CAUSE CHAIN (with evidence)
+  1. Every name in the browser goes through draw_text():
+       catalog/catalog.c:857,889,920,993,1020 (tiles, size line, edit,
+       selected) and catalog/catalog_mini_entry.c:192,195 (tree)
+     (/usr/bin/grep over the pristine tree sdk/zview/z-tools-04805b7/zview).
+  2. draw_text() (custom_font.c:181-201): per character a 16x8 1-plane MFDB
+     fx_mem[16]; the glyph's 8 row bytes are copied from the WORD table
+     my_font_8[] with char pointers, "*dest = *model++; dest += 2"
+     (:182-183, :188-195), then vrt_cpyfm(handle, MD_TRANS, ...) with
+     source columns 0..ofwf[c]-1 (2..8 pixels wide, :197-201).
+     On the 68k the byte at an even address is the WORD's high byte =
+     pixels 0..7, and the table bytes come out in row order.
+  3. NewTOS reads an MFDB form as host-order 16-bit WORDs, bit 15 leftmost
+     (tos-api/src/vdi/backend.rs MonoBits::word / MonoSrc, raster.rs
+     vrt_cpyfm) -- the same contract as EmuTOS, which reads the form as
+     native UWORDs with mask 0x8000 >> x (references/emutos/vdi/
+     vdi_raster.c:1241-1243 vrt_cpyfm16; :1257-1260). The SDK's other
+     forms (icons, RSC images) are native WORDs (ADR on the native RSC,
+     docs/MEMORY.md:383-400), and zView's icons draw correctly.
+  4. On little-endian the byte walk writes the LOW byte of each WORD
+     (pixels 8..15) and swaps every row pair. Host proof with the UNCHANGED
+     draw_text() (method/fontprobe: a stand-in general.h whose vrt_cpyfm
+     records the form as the NewTOS VDI reads it):
+       glyph cols 0..5 words: 0004 007c 0010 0008 0040 0020 0000 007c  -> NO PIXELS
+     for "ZVIEW": every glyph "NO PIXELS"; with the overlay:
+       glyph cols 0..5 words: 7c00 0400 0800 1000 2000 4000 7c00 0000  -> pixels
+     and the word renders as readable ASCII art.
+     Host test sdk/zview/tests/custom-font-host.c over all 255 characters:
+       pristine (checks/red-custom-font-host-pristine.txt):
+         1816 mismatches, 0 glyph rows with pixels in the copied columns, rc=1
+       overlay  (checks/green-custom-font-host-overlay.txt):
+         0 mismatches, 1545 glyph rows with pixels, rc=0
+  5. QEMU repro (screendumps/before-Z05_TREE.png, before-Z03_LATER.png,
+     product ZVIEW.NAP 9c6497ad...): browser on C:\, tree expanded, tiles
+     with folder/file icons, no text anywhere -- the user's photo.
+     The selected tile shows only the grey selection bar (white text on it
+     is empty as well).
+
+FIX (toolchain overlay, zView stays unmodified; docs/sdk/05-abi-pitfalls.md
+B11 class "big-endian word tricks")
+  sdk/zview/overlay/zview/custom_font.c   draw_text(): model is a
+      const unsigned short * into my_font_8[]; fx_mem[row] = row byte << 8,
+      the row byte being the high byte of my_font_8[k + row/2] for even rows
+      and the low byte for odd rows -- exactly the WORDs the 68k code
+      produces (memset kept). Header names the upstream lines and the reason.
+  sdk/zview/tests/custom-font-host.c + general.h   host test (new)
+  sdk/run-host-tests.sh    runs custom-font-host (SDK host tests 16 -> 17)
+  sdk/zview/build-zview.sh comment: overlay list
+  docs/sdk/13-zview.md     overlay table (13 files) + note in the LP64 sweep
+  docs/sdk/README.md       index line (13 overlays)
+  Rebuilt with sdk/zview/build-zview.sh (rc 0; warnings: still 11 files,
+  custom_font.c not among them): ZVIEW.NAP sha256
+  cebb3b1b6924e01cfed2e0f21138575fe325b30e6090fe4b34f676acc4d86475.
+
+QEMU RUNS (method/zv01-runs.sh, method/run-rpi4-drive-m3.sh, injector =
+method/apply-injector-m3.py via make-kernels.sh, scripts *.actions)
+  Card: tools/make-sd-image.sh <S>/base.img 64 (built with the OLD dist,
+  sha256 c35329f1...), per run a cp -c clone with NEWDESK.INF "#Z 01
+  C:\ZVIEW\ZVIEW.NAP@" and C:\ZVIEW\ZVIEW.NAP replaced by the NAP under
+  test; clones deleted after each run.
+  zv-browser.actions: File > Browser... -> browser on C:\; click first tile
+  (select); click the tree expander of C.
+    before-*.png   ZVIEW.NAP 9c6497ad (product, = user's)   no names
+    after-*.png    ZVIEW.NAP cebb3b1b (overlay)             names drawn
+    (before-head-*/after-overlay-* = the first pass of the same script
+    without the select/tree steps; same result.)
+  Pixel check after-Z03_LATER, tile name band y 140..160, x 210..520:
+    before: white 6120, grey frame 80 -- no black;
+    after:  white 6004, black 116, grey 80.
+  Selected tile (after-Z05_TREE, x 240..280, y 140..158): white glyphs on
+  (140,140,140) selection = catalog.c:1020 WHITE. Tree: "C", acc, apps,
+  auto, coremark, gemsys, ldg, spotli~1, sub, zview in black; sizes under
+  the file tiles in LBLACK ("8.8 KB", "16.0 KB", "92.4 KB").
+  zv-samples.actions (attempt to show C:\ZVIEW\SAMPLES thumbnails): the
+  double clicks on folder tiles did not open the folder, neither with a
+  3-tick nor with a 72-tick second press (samples-*, samples2-after-*);
+  the click only selects (names drawn correctly there too). NOT examined
+  further -- outside this ticket (open point in the receipt).
+
+REGRESSION (memprot on; LDGDEMO also strict) -- method/evb-runs.sh with
+the k1 scripts (seed-card.sh cards, programs from measurement-2026-10-06-
+ldg-m3/bin + sdk builds; these cards carry no zView). The kernel is the
+unchanged HEAD tree: kernel8-evb.img = kernel8-final.img (checks.sh release
+build) sha256 b7430553...; this change touches no kernel/tos-api file.
+  Compared pixel by pixel with measurement-2026-10-07-k1/screendumps:
+    acc-on-* (10), acc-strict-* (10)  LDGDEMO       identical
+    api-t25, api-t40                  APITEST       identical; TOTAL 106/0/5
+    desk-A..D                         EmuDESK       identical
+    desk-E_MENU_CLICKED, desk-END     EmuDESK       244 px differ in
+        (361,89)-(399,119): the file times in "Show as text" (13:15 here,
+        01:29 there = card seeding time), nothing else
+    qed-* (4)                         QED           identical
+    tera-* (4)                        TeraDesk      identical
+  (A first attempt of these runs had no TERADESK.INF in method/ --
+  seed-card.sh stopped before NEWDESK.INF, no #Z ran; its timeout dumps
+  were deleted, the cards rebuilt, the runs repeated.)
+
+STATIC CHECKS (method/checks.sh final -> checks/final-*)
+  host tests 1201/0/1 (= baseline; includes vdi_reference*,
+    aes_reference = `cargo xtask test`'s packages tos-api, tos-types, xtask)
+  release builds rpi4 + qemu-virt (cargo clean -p kernel -p tos-api):
+    tos-api 64 / kernel 94 warnings (= baseline), 0 errors
+  clippy rpi4 / qemu-virt: tos-api 76 / kernel 125 (= baseline)
+  desk drift probe 31 (= baseline)
+  SDK host tests 17/0/0 (baseline 16/0/0 + custom-font-host)
+
+IMAGES (scratch, deleted; sha256)
+  kernel8-evb.img / kernel8-final.img  b74305532d5d4dedbd7e4e4c7569b51f63841ade013387ce8c8ff63b3e3040d9
+  kernel-virt-final.img                47acaefa107574efcfe49399db31713e48cb4beeae9a4221a6c8506112dbf20f
+  kinj-zv-browser.img                  0e433fcb559e86d77f63f99010cf8edf8603aa336e5213dd965b1ab5d5e7f7e4
+  kinj-zv-samples.img (72-tick)        6fb40c81e16e8f256b3c43fb9487b8c964ea4d40ea84063b016682e6071933ba
+  kinj-evb-acc.img                     738b2860b33232d7f298e8b2fdd61af796563d9634ac02a15983b54323faa764
+  kinj-evb-desk.img                    895defedafac68a6f2f20e9650f0daac1845f9b4cedb3a27165b0588fee298e6
+  kinj-evb-qed.img                     9bdd2a6a76e966d412a5849c5d8208793ac5eccc0caddd98bd6dda8facd6ca37
+  kinj-evb-tera.img                    184a26618e82cdcc98eb31512e95bbfb7cb4e0614dbe33e656089f83d418389c
+  base.img                             c35329f13e73c862e253124d8b6a2fc4741b6f29b70c2f2182dfbb0f54340a89
+  ZVIEW.NAP before                     9c6497adad2e21e3c9243fc5998aab6ac981e6eeee4e47fa47d2c2ecb7aa127b
+  ZVIEW.NAP after                      cebb3b1b6924e01cfed2e0f21138575fe325b30e6090fe4b34f676acc4d86475
+  custom_font.c pristine               99a95ed39eb5b1bf3d3bf7460cdd79e77ab51941c15962772b53de716296e5d5
+  custom_font.c overlay                2ad79c5222052be1788bdfd11f1e59e75d70073f540a0e71a90715f752cbef1b
+
+METHOD FILES
+  fontprobe/{general.h,main.c}  host probe around the unchanged draw_text()
+  zv-browser.actions, zv-samples.actions, zv01-runs.sh   this run
+  apply-injector-m3.py, gen_script.py, drive-m3.py, make-kernels.sh,
+  run-rpi4-drive-m3.sh (cp -c + delete of the run copy), run-rpi4.sh,
+  qmp_timed.py, evb-runs.sh, seed-card.sh, desk-arm-m3.py, evb-*.actions,
+  newdesk-template.inf, newdesk-evb-desk.inf, TERADESK.INF, checks.sh:
+  copied from measurement-2026-10-07-k1/method (changes named in headers).

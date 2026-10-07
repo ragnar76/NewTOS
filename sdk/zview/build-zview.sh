@@ -38,6 +38,7 @@
 #   zview/plugins.c       .NLD instead of .ldg (ADR-018 addendum)
 #   zview/main.c,winimg.c the two call sites into the PDF module removed
 #   zview/av_prot.c       VA_START pointer read as the hi/lo WORD pair
+#   zview/custom_font.c   draw_text glyph WORDs built endian-neutrally (ZVIEW01)
 #   zview/plugins/{degas,neochrome,godpaint,eureka,img}/*.c
 #                         big-endian file headers/palettes/pixel words
 #   zview/plugins/img/xp32.c   AArch64 equivalent of the m68k xp32.S

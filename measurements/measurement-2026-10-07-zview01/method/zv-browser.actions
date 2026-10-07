@@ -1,0 +1,26 @@
+# ZVIEW01: zView started by #Z (C:\ZVIEW\ZVIEW.NAP), File > Browser...
+# (menu " zView  File  Edit  View  Help", 640x480); the browser opens on
+# zView's start directory C:\ZVIEW (folders CODECS, ICONS, SAMPLES; files).
+# Ticks hz_200 after zView's first poll.
+100 parkbr
+3000 mark Z00_IDLE
+3100 move 76 8
+3400 mark Z01_MENU
+3500 move 100 28
+3700 down
+3703 up
+6000 mark Z02_BROWSER
+9000 mark Z03_LATER
+# a single click on the first tile (folder) selects it (its name drawn WHITE
+# on the selection, catalog.c:1020); a click on the tree's expander arrow of
+# drive C opens its folder list (catalog_mini_entry.c:192/195)
+9100 move 258 110
+9300 down
+9303 up
+10300 mark Z04_SELECTED
+10400 move 10 73
+10600 down
+10603 up
+12000 mark Z05_TREE
+12100 parkbr
+12400 mark END

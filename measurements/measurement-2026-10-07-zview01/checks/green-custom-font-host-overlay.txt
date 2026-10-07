@@ -1,0 +1,3 @@
+# green: against the overlay sdk/zview/overlay/zview/custom_font.c
+custom-font-host: 0 mismatches, 1545 glyph rows with pixels in the copied columns
+rc=0
