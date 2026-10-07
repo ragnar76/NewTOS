@@ -1,0 +1,65 @@
+NEWTOS-AESTRACE v3 le rec=128 cap=8192 pro=2048 n=4138 produced=4138 COMPLETE drop=0 hz=62500000 t0=944279062 ovh=351275/4132 ovhmax=13625 flovh=11029376/12
+*** COMPLETE: all 4138 records produced are in this file.
+... (records before the Quit pick omitted; full decode: tools/aestrace.py on the run's C:\AESTRACE.BIN, sha256 a53deeb34ec4f85f8582be995e56015c368885864dcafa6596a9d3d2a4fb9b1d)
+   4079   30474.548     19988   2   0   25 evnt_multi     16/7/1    want=0x0033(KEYBD|BUTTON|MESAG|TIMER) bclk=258 bmask=0x03 bstate=0x00 m1=enter(0, 0, 0, 0) m2=enter(0, 0, 0, 0) timer=20ms
+                                            -> fired=0x0020(TIMER) mx=100 my=28 mb=0x00 ks=0x00 key=0x0000 bret=0 [evals=13135 mb_or=0x00 mb_and=0x00]
+   4080   30494.540         0   2   0  104 wind_get       2/5/0     handle=0 field=10(WF_TOP) -> ret=1 (1,0,0,0)
+   4081   30494.544         0   2   0  106 wind_find      2/1/0     (100,28) -> handle=1
+   4082   34000.014             2   0      POST MN_SELECTED           msg=[10 1 0 4 30 435 8440 18] sender=1 wnd=4
+   4083   30494.548   3505499   2   0   25 evnt_multi     16/7/1    want=0x0033(KEYBD|BUTTON|MESAG|TIMER) bclk=258 bmask=0x03 bstate=0x00 m1=enter(0, 0, 0, 0) m2=enter(0, 0, 0, 0) timer=20ms
+                                            -> fired=0x0030(MESAG|TIMER) mx=100 my=204 mb=0x01 ks=0x00 key=0x0000 bret=0 [evals=2792 mb_or=0x00 mb_and=0x00] [moved 1x from (100,28) travel=44px maxstep=24]
+   4084   34000.047             2   0      RECV MN_SELECTED           msg=[10 1 0 4 30 435 8440 18] sender=1 wnd=4
+   4085   34000.456             2   0      POST 17408               msg=[17408 0 0 1 0 0 0 0] sender=0 wnd=1
+   4086   34000.338       207   2   0   12 appl_write     2/1/1     in=[0 16] ain0=0x1b2e750 -> out=[1 0 0 0 0 0 0]
+   4087   34000.573        28   2   0   25 evnt_multi     16/7/1    want=0x0013(KEYBD|BUTTON|MESAG) bclk=258 bmask=0x03 bstate=0x00 m1=enter(0, 0, 0, 0) m2=enter(0, 0, 0, 0) timer=20ms
+                                            -> fired=0x0010(MESAG) mx=100 my=204 mb=0x01 ks=0x00 key=0x0000 bret=0 [evals=1 mb_or=0x01 mb_and=0x01]
+   4088   34000.602             2   0      RECV 17408               msg=[17408 0 0 1 0 0 0 0] sender=0 wnd=1
+   4089   34000.637        10   2   0  112 rsrc_gaddr     2/1/0     type=0 index=0 -> ret=1 addr=0x1b320f8
+   4090   34000.678         5   2   0  104 wind_get       2/5/0     handle=1 field=5(WF_CURRXYWH) -> ret=1 (0,19,640,461)
+   4091   34001.063         6   2   0  104 wind_get       2/5/0     handle=1 field=5(WF_CURRXYWH) -> ret=1 (0,19,640,461)
+   4092   34001.103      1262   2   0  102 wind_close     1/1/0     handle=1 -> ret=1
+   4093   34002.401         2   2   0  104 wind_get       2/5/0     handle=0 field=10(WF_TOP) -> ret=1 (0,0,0,0)
+   4094   34002.482       100   2   0  103 wind_delete    1/1/0     handle=1 -> ret=1
+   4095   34002.782        12   2   0   32 menu_ienable   2/1/1     in=[24 0] ain0=0x1b320f8 -> out=[1 0 0 0 0 0 0]
+   4096   34002.801         2   2   0   32 menu_ienable   2/1/1     in=[28 0] ain0=0x1b320f8 -> out=[1 0 0 0 0 0 0]
+   4097   34002.810         1   2   0   32 menu_ienable   2/1/1     in=[22 0] ain0=0x1b320f8 -> out=[1 0 0 0 0 0 0]
+   4098   34002.817         0   2   0   32 menu_ienable   2/1/1     in=[34 0] ain0=0x1b320f8 -> out=[1 0 0 0 0 0 0]
+   4099   34002.823         0   2   0   32 menu_ienable   2/1/1     in=[38 0] ain0=0x1b320f8 -> out=[1 0 0 0 0 0 0]
+   4100   34002.829         0   2   0   32 menu_ienable   2/1/1     in=[39 0] ain0=0x1b320f8 -> out=[1 0 0 0 0 0 0]
+   4101   34002.835         0   2   0   32 menu_ienable   2/1/1     in=[40 0] ain0=0x1b320f8 -> out=[1 0 0 0 0 0 0]
+   4102   34002.841         0   2   0   32 menu_ienable   2/1/1     in=[44 0] ain0=0x1b320f8 -> out=[1 0 0 0 0 0 0]
+   4103   34002.847         0   2   0   32 menu_ienable   2/1/1     in=[42 0] ain0=0x1b320f8 -> out=[1 0 0 0 0 0 0]
+   4104   34002.853         0   2   0   32 menu_ienable   2/1/1     in=[32 0] ain0=0x1b320f8 -> out=[1 0 0 0 0 0 0]
+   4105   34002.860         1   2   0   32 menu_ienable   2/1/1     in=[47 0] ain0=0x1b320f8 -> out=[1 0 0 0 0 0 0]
+   4106   34002.866         1   2   0   32 menu_ienable   2/1/1     in=[46 0] ain0=0x1b320f8 -> out=[1 0 0 0 0 0 0]
+   4107   34002.872         1   2   0   32 menu_ienable   2/1/1     in=[19 1] ain0=0x1b320f8 -> out=[1 0 0 0 0 0 0]
+   4108   34002.889         0   2   0  104 wind_get       2/5/0     handle=0 field=10(WF_TOP) -> ret=1 (0,0,0,0)
+   4109   34002.894         3   2   0  106 wind_find      2/1/0     (100,204) -> handle=0
+   4110   34002.987         8   2   0  125 shel_envrn     0/1/2     in=[] ain0=0x1b2e668 -> out=[1 0 0 0 0 0 0]
+   4111   34006.809        78   2   0   30 menu_bar       1/1/1     tree=0x0 show=0 -> ret=1
+   4112   34006.977         4   2   0  112 rsrc_gaddr     2/1/0     type=0 index=0 -> ret=1 addr=0x1b320f8
+   4113   34007.023         0   2   0  112 rsrc_gaddr     2/1/0     type=0 index=1 -> ret=1 addr=0x1b32798
+   4114   34007.028         0   2   0  112 rsrc_gaddr     2/1/0     type=0 index=2 -> ret=1 addr=0x1b328d8
+   4115   34007.032         0   2   0  112 rsrc_gaddr     2/1/0     type=0 index=3 -> ret=1 addr=0x1b32938
+   4116   34007.035         0   2   0  112 rsrc_gaddr     2/1/0     type=0 index=4 -> ret=1 addr=0x1b32978
+   4117   34007.053         0   2   0  112 rsrc_gaddr     2/1/0     type=0 index=5 -> ret=1 addr=0x1b32a38
+   4118   34007.061         0   2   0  112 rsrc_gaddr     2/1/0     type=0 index=6 -> ret=1 addr=0x1b32ad8
+   4119   34007.076         0   2   0  112 rsrc_gaddr     2/1/0     type=0 index=7 -> ret=1 addr=0x1b32c18
+   4120   34007.081         0   2   0  112 rsrc_gaddr     2/1/0     type=0 index=8 -> ret=1 addr=0x1b32d58
+   4121   34007.088         0   2   0  112 rsrc_gaddr     2/1/0     type=0 index=9 -> ret=1 addr=0x1b33298
+   4122   34007.092         1   2   0  112 rsrc_gaddr     2/1/0     type=0 index=10 -> ret=1 addr=0x1b33358
+   4123   34007.098         1   2   0  112 rsrc_gaddr     2/1/0     type=0 index=11 -> ret=1 addr=0x1b33518
+   4124   34007.106         1   2   0  112 rsrc_gaddr     2/1/0     type=0 index=12 -> ret=1 addr=0x1b33778
+   4125   34007.110         0   2   0  112 rsrc_gaddr     2/1/0     type=0 index=13 -> ret=1 addr=0x1b33878
+   4126   34007.113         0   2   0  112 rsrc_gaddr     2/1/0     type=0 index=14 -> ret=1 addr=0x1b339d8
+   4127   34007.135       208   2   0  111 rsrc_free      0/1/0     in=[] -> out=[1 0 0 0 0 0 0]
+   4128   34007.590             2   0      POST AC_CLOSE            msg=[41 0 0 0 0 0 0 0] sender=0 wnd=0
+   4129   34007.608             2   0      POST AC_CLOSE            msg=[41 0 0 1 0 0 0 0] sender=0 wnd=1
+   4130   34007.547       180   2   0   19 appl_exit      0/1/0     in=[] -> out=[] [YIELDED — no result, svc will re-execute]
+   4131   34007.944        80   0   0   23 evnt_mesag     0/1/1     buf=0x1a2af00 -> ret=1 [evals=0 — fired without a sampled evaluation]
+   4132   34008.024             0   0      RECV AC_CLOSE            msg=[41 0 0 0 0 0 0 0] sender=0 wnd=0
+   4133   34008.043         4   0   0   23 evnt_mesag     0/1/1     buf=0x1a2af00 -> ret=0 [YIELDED — no result, svc will re-execute] [evals=0 — fired without a sampled evaluation]
+   4134   34008.105         4   1   0   23 evnt_mesag     0/1/1     buf=0x1a3af00 -> ret=1 [evals=0 — fired without a sampled evaluation]
+   4135   34008.109             1   0      RECV AC_CLOSE            msg=[41 0 0 1 0 0 0 0] sender=0 wnd=1
+   4136   34008.122         1   1   0   23 evnt_mesag     0/1/1     buf=0x1a3af00 -> ret=0 [YIELDED — no result, svc will re-execute] [evals=0 — fired without a sampled evaluation]
+   4137   34008.175       160   2   0   19 appl_exit      0/1/0     in=[] -> out=[1 0 0 0 0 0 0]

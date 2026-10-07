@@ -1,0 +1,201 @@
+diff --git a/docs/api/aes/menu.md b/docs/api/aes/menu.md
+index 11102545..5adc7480 100644
+--- a/docs/api/aes/menu.md
++++ b/docs/api/aes/menu.md
+@@ -673,6 +673,22 @@ message to the owning application's pipe. Built by `ct_msgup` →
+ > menu-tree pointer (hi/lo) and `msg[7]` the submenu parent object; without the
+ > extension all three are 0 (`gemctrl.c:347-368`). See D-051.
+ 
++> **NewTOS binding (TASK/ZVIEW04).** `tree` is the tree `mn_do` returns the
++> pick in (`*ptree`, `gemmnlib.c:494-500`): `gl_mntree` for a bar item, and —
++> as NewTOS delivers only submenus attached inside the bar's own tree (step 8
++> of the tracking loop below) — `gl_mntree` for those as well. `msg[5]`/`msg[6]`
++> are the high/low WORD of that pointer **as the client passed it to
++> `menu_bar`** (its own address, which is below 2 GiB for every NewTOS user
++> address, `docs/sdk/05-abi-pitfalls.md` A2, so the two WORDs carry it whole);
++> `msg[7]` is `get_par(tree, item)` (`gemobjop.c:145-161`), read through the
++> bar owner's accessor. An application that tells a desktop-menu pick from a
++> window-menu pick by these words depends on them: WinDom's `_do_evnt_msg`
++> compares `msg[5..6]` with every window's `menu.root`
++> (`sdk/windom/overlay/src/evnt_windom.c:74-83`, upstream line 56), so a zero there matched any
++> window *without* a menu (`menu.root == NULL`) and routed the pick to that
++> window's empty binding table — zView's *File > Quit* did nothing while its
++> browser window was open (TASK/ZVIEW04).
++
+ When the item picked is a **desk-accessory** entry (`title == THEDESK` and the
+ item is at/after `gl_dafirst`), the control manager instead sends **`AC_OPEN`**
+ (40) to the accessory owner, with the DA's menu id in `msg[4]` and `msg[5..7]=0`
+diff --git a/tos-api/src/aes/event.rs b/tos-api/src/aes/event.rs
+index 521d69b0..de69e2da 100644
+--- a/tos-api/src/aes/event.rs
++++ b/tos-api/src/aes/event.rs
+@@ -138,7 +138,7 @@ fn menu_intercept(idx: usize) -> bool {
+             // (`gemctrl.c:337`) — a pick in the Desk drop-down at or past the
+             // first accessory entry belongs to a desk accessory, not to the
+             // application that owns the bar.
+-            let (target, msg0, w3, w4) = match super::menu::desk_accessory_pick(title, item) {
++            let (target, msg0, w3, w4, ext) = match super::menu::desk_accessory_pick(title, item) {
+                 Some((owner, menu_id)) => {
+                     // `do_chg(gl_mntree, title, SELECTED, FALSE, TRUE, TRUE)`
+                     // (`gemctrl.c:341`) — un-highlight the *Desk* title, which
+@@ -150,15 +150,23 @@ fn menu_intercept(idx: usize) -> bool {
+                     // (`gemctrl.c:337-350`): the *title* (THEDESK) lands in
+                     // `msg[3]`, the accessory's **menu id** in `msg[4]` — the
+                     // asymmetry `AC_CLOSE` mirrors (`docs/api/aes/
+-                    // accessories.md` §3).
+-                    (owner, super::menu::AC_OPEN, title, menu_id)
++                    // accessories.md` §3). `treehi = treelo = parent = 0`
++                    // (`gemctrl.c:348`).
++                    (owner, super::menu::AC_OPEN, title, menu_id, [0; 3])
+                 }
+-                // `owner = gl_mnppd; mesag = MN_SELECTED;` (`gemctrl.c:352-354`)
+-                None => (idx, MN_SELECTED, title, item),
++                // `owner = gl_mnppd; mesag = MN_SELECTED;` plus the
++                // CONF_WITH_MENU_EXTENSION payload `treehi = HIWORD(tree);
++                // treelo = LOWORD(tree); parent = get_par(tree, item);`
++                // (`gemctrl.c:353-358,365`) — WinDom routes a pick by `msg[5..6]`
++                // (TASK/ZVIEW04).
++                None => (idx, MN_SELECTED, title, item, super::menu::mn_selected_ext(tree, item)),
+             };
+             msg[0] = msg0;
+             msg[3] = w3;
+             msg[4] = w4;
++            msg[5] = ext[0];
++            msg[6] = ext[1];
++            msg[7] = ext[2];
+             // SAFETY: single trap path; `post_msg` hands the message to the
+             // live slot (EmuTOS `aqueue`/`doq`, `gemqueue.c:85-125`).
+             unsafe {
+diff --git a/tos-api/src/aes/menu.rs b/tos-api/src/aes/menu.rs
+index bfd82c9a..399cd763 100644
+--- a/tos-api/src/aes/menu.rs
++++ b/tos-api/src/aes/menu.rs
+@@ -1556,6 +1556,30 @@ pub(super) fn normalize_title(title: i16) {
+     object::change_t(t, title, state & !SELECTED, true);
+ }
+ 
++/// `hctl_rect`'s `CONF_WITH_MENU_EXTENSION` payload of an application menu
++/// pick (`aes/gemctrl.c:353-358`):
++///
++/// ```c
++/// treehi = HIWORD(tree);
++/// treelo = LOWORD(tree);
++/// parent = get_par(tree, item);
++/// ```
++///
++/// returned as `[treehi, treelo, parent]` for `MN_SELECTED`'s `msg[5..7]`
++/// (`ct_msgup(mesag, owner, title, item, treehi, treelo, parent)`,
++/// `:365`). `tree` is the tree [`track`] picked `item` in — the installed bar
++/// (`gl_mntree`), which is also the tree of every submenu [`track`] delivers
++/// (`docs/api/aes/menu.md`, "`MN_SELECTED` message", NewTOS binding). The
++/// pointer is the client's own address as it passed it to [`menu_bar`]; the
++/// parent is read through the bar owner's accessor, like the track itself.
++pub(super) fn mn_selected_ext(tree: *mut Object, item: i16) -> [i16; 3] {
++    let addr = tree as u64;
++    let treehi = (addr >> 16) as u16 as i16; // HIWORD
++    let treelo = addr as u16 as i16; // LOWORD
++    let parent = object::parent_t(mntree_accessor(tree), item);
++    [treehi, treelo, parent]
++}
++
+ /// `mn_cleanup()` (`aes/gemmnlib.c:740-758`) — "tell all DAs that the
+ /// currently running application is about to terminate":
+ ///
+diff --git a/tos-api/src/aes/object.rs b/tos-api/src/aes/object.rs
+index d3eb03ac..bfd7f9a2 100644
+--- a/tos-api/src/aes/object.rs
++++ b/tos-api/src/aes/object.rs
+@@ -2553,6 +2553,12 @@ pub(crate) unsafe fn parent(tree: *const Object, obj: i16) -> i16 {
+     parent_of(ObjTree::new(tree), obj)
+ }
+ 
++/// [`parent`] through a tree accessor (EmuTOS `get_par`, `aes/gemobjop.c:
++/// 145-161`) — for trees read at their owner's ABI.
++pub(crate) fn parent_t(t: ObjTree, obj: i16) -> i16 {
++    parent_of(t, obj)
++}
++
+ /// Index of `obj`'s parent, or `NIL` for the root. The parent is the node
+ /// whose child chain reaches `obj` (TOS finds it via `ob_next` wrapping
+ /// back to the parent at the end of the sibling list).
+diff --git a/tos-api/tests/aes_menu_click_ownership.rs b/tos-api/tests/aes_menu_click_ownership.rs
+index ba32b80e..d5fccab5 100644
+--- a/tos-api/tests/aes_menu_click_ownership.rs
++++ b/tos-api/tests/aes_menu_click_ownership.rs
+@@ -499,6 +499,8 @@ const MN_SELECTED: i16 = 10;
+ /// the cases in this binary run one at a time.
+ static SERIAL: Mutex<()> = Mutex::new(());
+ static RIG: OnceLock<&'static ScriptHost> = OnceLock::new();
++/// The tree [`fresh`] installed with `menu_bar` (ZVIEW04).
++static LAST_TREE: AtomicUsize = AtomicUsize::new(0);
+ 
+ fn rig() -> &'static ScriptHost {
+     RIG.get_or_init(|| {
+@@ -521,7 +523,9 @@ fn fresh() -> (&'static ScriptHost, Aespb) {
+ 
+     pb.intin.fill(0);
+     pb.intin[0] = 1; // show
+-    pb.addrin[0] = menu_tree() as u64;
++    let tree = menu_tree();
++    LAST_TREE.store(tree as usize, Ordering::Relaxed); // ZVIEW04: for msg[5..6]
++    pb.addrin[0] = tree as u64;
+     pb.call(30, 1, 1, 1); // menu_bar
+     pb.addrin[0] = 0;
+     assert_eq!(pb.intout[0], 1, "menu_bar must install the tree");
+@@ -788,3 +792,56 @@ fn desktop_click_still_delivers_mu_button() {
+         "a desktop click must not come with a message; fired = {fired:#06x}, msg = {msg:?}"
+     );
+ }
++
++/// The *File* drop-down box (`themenus`' second child): the parent of *Open*.
++const FILE_BOX: i16 = 10;
++
++/// **Case 4 — ZVIEW04: the `CONF_WITH_MENU_EXTENSION` payload.** `hctl_rect`
++/// sends `ct_msgup(MN_SELECTED, gl_mnppd, title, item, HIWORD(tree),
++/// LOWORD(tree), get_par(tree, item))` (`aes/gemctrl.c:353-358,365`;
++/// `docs/api/aes/menu.md` "`MN_SELECTED` message"): `msg[5]`/`msg[6]` are the
++/// menu tree's address (high/low WORD, as the client passed it to `menu_bar`)
++/// and `msg[7]` the picked item's parent. WinDom routes a pick by comparing
++/// `msg[5..6]` with each window's `menu.root`, so zeros there sent zView's
++/// *File > Quit* to its menu-less browser window, where nothing is bound
++/// (`TASK/ZVIEW04`).
++#[test]
++fn mn_selected_carries_menu_tree_and_parent() {
++    let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
++    let (host, mut pb) = fresh();
++    let tree = LAST_TREE.load(Ordering::Relaxed) as u64;
++
++    move_to(host, &mut pb, ON_FILE.0, ON_FILE.1, 0);
++    let steps = (ON_OPEN.1 - ON_FILE.1) / 10;
++    for _ in 0..steps {
++        host.push(Packet { dx: 0, dy: 10, buttons: 0 });
++    }
++    let rest = ON_OPEN.1 - ON_FILE.1 - steps * 10;
++    host.push(Packet { dx: 0, dy: rest, buttons: 0 });
++    host.push(Packet { dx: 0, dy: 0, buttons: 1 }); // press → the selection
++    for _ in 0..3 {
++        host.push(Packet { dx: 0, dy: 0, buttons: 1 });
++    }
++    host.push(Packet { dx: 0, dy: 0, buttons: 0 }); // release
++    for _ in 0..8 {
++        host.push(Packet { dx: 0, dy: 0, buttons: 0 });
++    }
++
++    let (fired, _bret, _mb, msg) = evnt_multi_teradesk(&mut pb);
++    eprintln!("case 4: fired={fired:#06x} tree={tree:#x} msg={msg:?}");
++    assert_eq!(fired & MU_MESAG, MU_MESAG, "the pick must arrive as MU_MESAG");
++    assert_eq!(
++        (msg[0], msg[3], msg[4]),
++        (MN_SELECTED, TITLE_FILE, ITEM_OPEN),
++        "MN_SELECTED (File, Open) expected; msg = {msg:?}"
++    );
++    assert_eq!(
++        (msg[5] as u16, msg[6] as u16),
++        ((tree >> 16) as u16, tree as u16),
++        "msg[5]/msg[6] must be HIWORD/LOWORD of the menu tree ({tree:#x}); msg = {msg:?}"
++    );
++    assert_eq!(
++        msg[7], FILE_BOX,
++        "msg[7] must be get_par(tree, Open) = the File box; msg = {msg:?}"
++    );
++}

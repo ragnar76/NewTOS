@@ -1556,6 +1556,30 @@ pub(super) fn normalize_title(title: i16) {
     object::change_t(t, title, state & !SELECTED, true);
 }
 
+/// `hctl_rect`'s `CONF_WITH_MENU_EXTENSION` payload of an application menu
+/// pick (`aes/gemctrl.c:353-358`):
+///
+/// ```c
+/// treehi = HIWORD(tree);
+/// treelo = LOWORD(tree);
+/// parent = get_par(tree, item);
+/// ```
+///
+/// returned as `[treehi, treelo, parent]` for `MN_SELECTED`'s `msg[5..7]`
+/// (`ct_msgup(mesag, owner, title, item, treehi, treelo, parent)`,
+/// `:365`). `tree` is the tree [`track`] picked `item` in — the installed bar
+/// (`gl_mntree`), which is also the tree of every submenu [`track`] delivers
+/// (`docs/api/aes/menu.md`, "`MN_SELECTED` message", NewTOS binding). The
+/// pointer is the client's own address as it passed it to [`menu_bar`]; the
+/// parent is read through the bar owner's accessor, like the track itself.
+pub(super) fn mn_selected_ext(tree: *mut Object, item: i16) -> [i16; 3] {
+    let addr = tree as u64;
+    let treehi = (addr >> 16) as u16 as i16; // HIWORD
+    let treelo = addr as u16 as i16; // LOWORD
+    let parent = object::parent_t(mntree_accessor(tree), item);
+    [treehi, treelo, parent]
+}
+
 /// `mn_cleanup()` (`aes/gemmnlib.c:740-758`) — "tell all DAs that the
 /// currently running application is about to terminate":
 ///

@@ -138,7 +138,7 @@ fn menu_intercept(idx: usize) -> bool {
             // (`gemctrl.c:337`) — a pick in the Desk drop-down at or past the
             // first accessory entry belongs to a desk accessory, not to the
             // application that owns the bar.
-            let (target, msg0, w3, w4) = match super::menu::desk_accessory_pick(title, item) {
+            let (target, msg0, w3, w4, ext) = match super::menu::desk_accessory_pick(title, item) {
                 Some((owner, menu_id)) => {
                     // `do_chg(gl_mntree, title, SELECTED, FALSE, TRUE, TRUE)`
                     // (`gemctrl.c:341`) — un-highlight the *Desk* title, which
@@ -150,15 +150,23 @@ fn menu_intercept(idx: usize) -> bool {
                     // (`gemctrl.c:337-350`): the *title* (THEDESK) lands in
                     // `msg[3]`, the accessory's **menu id** in `msg[4]` — the
                     // asymmetry `AC_CLOSE` mirrors (`docs/api/aes/
-                    // accessories.md` §3).
-                    (owner, super::menu::AC_OPEN, title, menu_id)
+                    // accessories.md` §3). `treehi = treelo = parent = 0`
+                    // (`gemctrl.c:348`).
+                    (owner, super::menu::AC_OPEN, title, menu_id, [0; 3])
                 }
-                // `owner = gl_mnppd; mesag = MN_SELECTED;` (`gemctrl.c:352-354`)
-                None => (idx, MN_SELECTED, title, item),
+                // `owner = gl_mnppd; mesag = MN_SELECTED;` plus the
+                // CONF_WITH_MENU_EXTENSION payload `treehi = HIWORD(tree);
+                // treelo = LOWORD(tree); parent = get_par(tree, item);`
+                // (`gemctrl.c:353-358,365`) — WinDom routes a pick by `msg[5..6]`
+                // (TASK/ZVIEW04).
+                None => (idx, MN_SELECTED, title, item, super::menu::mn_selected_ext(tree, item)),
             };
             msg[0] = msg0;
             msg[3] = w3;
             msg[4] = w4;
+            msg[5] = ext[0];
+            msg[6] = ext[1];
+            msg[7] = ext[2];
             // SAFETY: single trap path; `post_msg` hands the message to the
             // live slot (EmuTOS `aqueue`/`doq`, `gemqueue.c:85-125`).
             unsafe {

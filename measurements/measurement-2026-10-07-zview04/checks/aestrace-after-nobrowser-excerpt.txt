@@ -1,0 +1,5 @@
+NEWTOS-AESTRACE v3 le rec=128 cap=8192 pro=2048 n=2279 produced=2279 COMPLETE drop=0 hz=62500000 t0=944155812 ovh=202526/2276 ovhmax=13062 flovh=5451063/11
+   2248   19000.716             2   0      POST MN_SELECTED           msg=[10 1 0 4 30 435 8440 18] sender=1 wnd=4
+   2250   19000.950             2   0      RECV MN_SELECTED           msg=[10 1 0 4 30 435 8440 18] sender=1 wnd=4
+   2271   19005.836       225   2   0   19 appl_exit      0/1/0     in=[] -> out=[] [YIELDED — no result, svc will re-execute]
+   2278   19006.504       166   2   0   19 appl_exit      0/1/0     in=[] -> out=[1 0 0 0 0 0 0]

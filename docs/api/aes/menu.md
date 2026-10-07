@@ -673,6 +673,22 @@ message to the owning application's pipe. Built by `ct_msgup` →
 > menu-tree pointer (hi/lo) and `msg[7]` the submenu parent object; without the
 > extension all three are 0 (`gemctrl.c:347-368`). See D-051.
 
+> **NewTOS binding (TASK/ZVIEW04).** `tree` is the tree `mn_do` returns the
+> pick in (`*ptree`, `gemmnlib.c:494-500`): `gl_mntree` for a bar item, and —
+> as NewTOS delivers only submenus attached inside the bar's own tree (step 8
+> of the tracking loop below) — `gl_mntree` for those as well. `msg[5]`/`msg[6]`
+> are the high/low WORD of that pointer **as the client passed it to
+> `menu_bar`** (its own address, which is below 2 GiB for every NewTOS user
+> address, `docs/sdk/05-abi-pitfalls.md` A2, so the two WORDs carry it whole);
+> `msg[7]` is `get_par(tree, item)` (`gemobjop.c:145-161`), read through the
+> bar owner's accessor. An application that tells a desktop-menu pick from a
+> window-menu pick by these words depends on them: WinDom's `_do_evnt_msg`
+> compares `msg[5..6]` with every window's `menu.root`
+> (`sdk/windom/overlay/src/evnt_windom.c:74-83`, upstream line 56), so a zero there matched any
+> window *without* a menu (`menu.root == NULL`) and routed the pick to that
+> window's empty binding table — zView's *File > Quit* did nothing while its
+> browser window was open (TASK/ZVIEW04).
+
 When the item picked is a **desk-accessory** entry (`title == THEDESK` and the
 item is at/after `gl_dafirst`), the control manager instead sends **`AC_OPEN`**
 (40) to the accessory owner, with the DA's menu id in `msg[4]` and `msg[5..7]=0`

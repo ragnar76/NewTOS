@@ -499,6 +499,8 @@ const MN_SELECTED: i16 = 10;
 /// the cases in this binary run one at a time.
 static SERIAL: Mutex<()> = Mutex::new(());
 static RIG: OnceLock<&'static ScriptHost> = OnceLock::new();
+/// The tree [`fresh`] installed with `menu_bar` (ZVIEW04).
+static LAST_TREE: AtomicUsize = AtomicUsize::new(0);
 
 fn rig() -> &'static ScriptHost {
     RIG.get_or_init(|| {
@@ -521,7 +523,9 @@ fn fresh() -> (&'static ScriptHost, Aespb) {
 
     pb.intin.fill(0);
     pb.intin[0] = 1; // show
-    pb.addrin[0] = menu_tree() as u64;
+    let tree = menu_tree();
+    LAST_TREE.store(tree as usize, Ordering::Relaxed); // ZVIEW04: for msg[5..6]
+    pb.addrin[0] = tree as u64;
     pb.call(30, 1, 1, 1); // menu_bar
     pb.addrin[0] = 0;
     assert_eq!(pb.intout[0], 1, "menu_bar must install the tree");
@@ -786,5 +790,58 @@ fn desktop_click_still_delivers_mu_button() {
         fired & MU_MESAG,
         0,
         "a desktop click must not come with a message; fired = {fired:#06x}, msg = {msg:?}"
+    );
+}
+
+/// The *File* drop-down box (`themenus`' second child): the parent of *Open*.
+const FILE_BOX: i16 = 10;
+
+/// **Case 4 — ZVIEW04: the `CONF_WITH_MENU_EXTENSION` payload.** `hctl_rect`
+/// sends `ct_msgup(MN_SELECTED, gl_mnppd, title, item, HIWORD(tree),
+/// LOWORD(tree), get_par(tree, item))` (`aes/gemctrl.c:353-358,365`;
+/// `docs/api/aes/menu.md` "`MN_SELECTED` message"): `msg[5]`/`msg[6]` are the
+/// menu tree's address (high/low WORD, as the client passed it to `menu_bar`)
+/// and `msg[7]` the picked item's parent. WinDom routes a pick by comparing
+/// `msg[5..6]` with each window's `menu.root`, so zeros there sent zView's
+/// *File > Quit* to its menu-less browser window, where nothing is bound
+/// (`TASK/ZVIEW04`).
+#[test]
+fn mn_selected_carries_menu_tree_and_parent() {
+    let _guard = SERIAL.lock().unwrap_or_else(|e| e.into_inner());
+    let (host, mut pb) = fresh();
+    let tree = LAST_TREE.load(Ordering::Relaxed) as u64;
+
+    move_to(host, &mut pb, ON_FILE.0, ON_FILE.1, 0);
+    let steps = (ON_OPEN.1 - ON_FILE.1) / 10;
+    for _ in 0..steps {
+        host.push(Packet { dx: 0, dy: 10, buttons: 0 });
+    }
+    let rest = ON_OPEN.1 - ON_FILE.1 - steps * 10;
+    host.push(Packet { dx: 0, dy: rest, buttons: 0 });
+    host.push(Packet { dx: 0, dy: 0, buttons: 1 }); // press → the selection
+    for _ in 0..3 {
+        host.push(Packet { dx: 0, dy: 0, buttons: 1 });
+    }
+    host.push(Packet { dx: 0, dy: 0, buttons: 0 }); // release
+    for _ in 0..8 {
+        host.push(Packet { dx: 0, dy: 0, buttons: 0 });
+    }
+
+    let (fired, _bret, _mb, msg) = evnt_multi_teradesk(&mut pb);
+    eprintln!("case 4: fired={fired:#06x} tree={tree:#x} msg={msg:?}");
+    assert_eq!(fired & MU_MESAG, MU_MESAG, "the pick must arrive as MU_MESAG");
+    assert_eq!(
+        (msg[0], msg[3], msg[4]),
+        (MN_SELECTED, TITLE_FILE, ITEM_OPEN),
+        "MN_SELECTED (File, Open) expected; msg = {msg:?}"
+    );
+    assert_eq!(
+        (msg[5] as u16, msg[6] as u16),
+        ((tree >> 16) as u16, tree as u16),
+        "msg[5]/msg[6] must be HIWORD/LOWORD of the menu tree ({tree:#x}); msg = {msg:?}"
+    );
+    assert_eq!(
+        msg[7], FILE_BOX,
+        "msg[7] must be get_par(tree, Open) = the File box; msg = {msg:?}"
     );
 }

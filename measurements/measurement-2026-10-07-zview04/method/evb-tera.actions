@@ -1,0 +1,19 @@
+# TeraDesk regression (#Z C:\Apps\TERADESK\DESKTOP.NAP; geometry from
+# measurement-2026-10-06-ldg-m3/screendumps/m3-on-teradesk-t35.png): a single
+# click on TRASH (36,125) selects it; a double click on the first HARD DISC
+# (195,38) opens its window (TeraDesk waits with 0x102/3/0).
+# Ticks hz_200 after TeraDesk's first poll.
+100 parkbr
+1600 mark T00_DESK
+1700 move 36 125
+1900 down
+1903 up
+2400 mark T01_TRASH_SELECTED
+2500 move 195 38
+2700 down
+2703 up
+2708 down
+2711 up
+4200 mark T02_DRIVE_OPEN
+4400 parkbr
+4800 mark END

@@ -1,0 +1,21 @@
+ZVIEW04 -- Pi-Paket (nur der Kernel; ZVIEW.NAP unveraendert)
+
+kernel8.img   release rpi4, desk-rebuild HEAD 8435cd2 + ZVIEW04 (nicht committet),
+              gebaut wie `cargo xtask build --board rpi4 --release`.
+              Ersetzt den kernel8.img der Boot-Partition. Alles andere bleibt.
+
+Was sich aendert: Die MN_SELECTED-Meldung einer Menueauswahl traegt jetzt
+wie EmuTOS die Adresse des Menuebaums in msg[5]/msg[6] und das Elternobjekt
+in msg[7] (gemctrl.c:353-358,365). WinDom-Programme (zView, LDGDEMO)
+ordnen eine Menueauswahl daran dem Desktop-Menue zu.
+
+Pruefen auf der Pi:
+  1. zView starten, File > Browser...
+  2. Bei offenem Browserfenster File > Quit
+     -> zView schliesst das Fenster und endet, der Desktop kommt zurueck.
+     (Vorher: nichts geschah, der Titel "File" blieb invertiert.)
+  3. Gegenprobe: andere Eintraege des zView-Menues bei offenem Browser.
+     Betroffen war JEDE Auswahl im Desktop-Menue von zView, nicht nur Quit.
+     In QEMU geprueft: zView > About (vorher nichts, Titel blieb invertiert;
+     jetzt oeffnet das About-Fenster). Weitere Eintraege (Close Window,
+     Select All, Sortierung ...) nicht einzeln geprueft.

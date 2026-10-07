@@ -1,0 +1,27 @@
+# ZVIEW02: as zv-samples.actions (ZVIEW01) up to the browser on C:\, then
+#  (1) double-click the "zview" tile (470,318) with two SHORT clicks:
+#      press 3 ticks, gap 5 ticks, press 3 ticks (hz_200 ticks = 5 ms)
+#      -> expected (EmuTOS): C:\ZVIEW\ (codecs, icons, samples)
+#  (2) double-click the "samples" tile (470,110) with the SECOND press HELD
+#      72 ticks (360 ms, beyond the 220 ms window)
+#      -> expected: C:\ZVIEW\SAMPLES\ thumbnails
+100 parkbr
+3100 move 76 8
+3500 move 100 28
+3700 down
+3703 up
+6000 mark Z02_BROWSER
+6100 move 470 318
+6300 down
+6303 up
+6308 down
+6311 up
+8500 mark Z06_ZVIEW_DIR
+8600 move 470 110
+8800 down
+8803 up
+8808 down
+8880 up
+14000 mark Z07_SAMPLES
+14100 parkbr
+14400 mark END

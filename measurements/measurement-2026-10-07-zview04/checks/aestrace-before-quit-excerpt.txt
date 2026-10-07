@@ -1,0 +1,98 @@
+NEWTOS-AESTRACE v3 le rec=128 cap=8192 pro=2048 n=8192 produced=10156 WRAPPED drop=1964 hz=62500000 t0=944700562 ovh=430480/10153 ovhmax=14312 flovh=10843813/12
+*** TRUNCATED: the ring wrapped, 1964 older records were dropped; this file holds the newest 8192.
+... (records before the Quit pick omitted; full decode: tools/aestrace.py on the run's C:\AESTRACE.BIN, sha256 4841de39c67d6c9a9809f4efda1f7464541d539a6cff664ea550ebc6c740938b)
+   4073   30472.802     19990   2   0   25 evnt_multi     16/7/1    want=0x0033(KEYBD|BUTTON|MESAG|TIMER) bclk=258 bmask=0x03 bstate=0x00 m1=enter(0, 0, 0, 0) m2=enter(0, 0, 0, 0) timer=20ms
+                                            -> fired=0x0020(TIMER) mx=100 my=28 mb=0x00 ks=0x00 key=0x0000 bret=0 [evals=13108 mb_or=0x00 mb_and=0x00]
+   4074   30492.798         1   2   0  104 wind_get       2/5/0     handle=0 field=10(WF_TOP) -> ret=1 (1,0,0,0)
+   4075   30492.801         0   2   0  106 wind_find      2/1/0     (100,28) -> handle=1
+   4076   33996.969             2   0      POST MN_SELECTED           msg=[10 1 0 4 30 0 0 0] sender=1 wnd=4
+   4077   30492.805   3504194   2   0   25 evnt_multi     16/7/1    want=0x0033(KEYBD|BUTTON|MESAG|TIMER) bclk=258 bmask=0x03 bstate=0x00 m1=enter(0, 0, 0, 0) m2=enter(0, 0, 0, 0) timer=20ms
+                                            -> fired=0x0030(MESAG|TIMER) mx=100 my=204 mb=0x01 ks=0x00 key=0x0000 bret=0 [evals=3167 mb_or=0x00 mb_and=0x00] [moved 1x from (100,28) travel=44px maxstep=24]
+   4078   33997.000             2   0      RECV MN_SELECTED           msg=[10 1 0 4 30 0 0 0] sender=1 wnd=4
+   4079   33997.135         8   2   0  104 wind_get       2/5/0     handle=0 field=10(WF_TOP) -> ret=1 (1,0,0,0)
+   4080   33997.149         2   2   0  106 wind_find      2/1/0     (100,204) -> handle=1
+   4081   33997.163        28   2   0   25 evnt_multi     16/7/1    want=0x0033(KEYBD|BUTTON|MESAG|TIMER) bclk=258 bmask=0x03 bstate=0x00 m1=enter(0, 0, 0, 0) m2=enter(0, 0, 0, 0) timer=20ms
+                                            -> fired=0x0002(BUTTON) mx=100 my=204 mb=0x01 ks=0x00 key=0x0000 bret=1 [evals=1 mb_or=0x01 mb_and=0x01]
+   4082   33997.196         0   2   0  104 wind_get       2/5/0     handle=0 field=10(WF_TOP) -> ret=1 (1,0,0,0)
+   4083   33997.199         0   2   0  106 wind_find      2/1/0     (100,204) -> handle=1
+   4084   33997.397       230   2   0   43 objc_find      4/1/1     tree=0x1d7f4f8 start=0 depth=8 at=(100,204) -> obj=-1
+   4085   33997.691         2   2   0  104 wind_get       2/5/0     handle=1 field=5(WF_CURRXYWH) -> ret=1 (0,19,640,461)
+   4086   33997.699         4   2   0  108 wind_calc      6/5/0     in=(1,16879,0,19,640,461) -> ret=1 (1,42,616,437)
+   4087   33997.773         0   2   0  104 wind_get       2/5/0     handle=1 field=5(WF_CURRXYWH) -> ret=1 (0,19,640,461)
+   4088   33997.777         0   2   0  108 wind_calc      6/5/0     in=(1,16879,0,19,640,461) -> ret=1 (1,42,616,437)
+   4089   33997.894        10   2   0  112 rsrc_gaddr     2/1/0     type=0 index=0 -> ret=1 addr=0x1b320f8
+   4090   33997.914         8   2   0   32 menu_ienable   2/1/1     in=[22 0] ain0=0x1b320f8 -> out=[1 0 0 0 0 0 0]
+   4091   33997.927         0   2   0  112 rsrc_gaddr     2/1/0     type=0 index=0 -> ret=1 addr=0x1b320f8
+   4092   33997.934         1   2   0   32 menu_ienable   2/1/1     in=[24 0] ain0=0x1b320f8 -> out=[1 0 0 0 0 0 0]
+   4093   33997.940         1   2   0  112 rsrc_gaddr     2/1/0     type=0 index=0 -> ret=1 addr=0x1b320f8
+   4094   33997.946         1   2   0   32 menu_ienable   2/1/1     in=[32 0] ain0=0x1b320f8 -> out=[1 0 0 0 0 0 0]
+   4095   33997.995        70   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4096   33998.098         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4097   33998.101         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4098   33998.104         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4099   33998.107         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4100   33998.110         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4101   33998.112         1   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4102   33998.115         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4103   33998.118         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4104   33998.121         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4105   33998.124         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4106   33998.126         1   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4107   33998.129         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4108   33998.132         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4109   33998.134         1   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4110   33998.137         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4111   33998.140         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4112   33998.142         1   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4113   33998.145         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4114   33998.148         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4115   33998.151         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4116   33998.154         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4117   33998.156         1   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4118   33998.159         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4119   33998.162         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4120   33998.164         1   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4121   33998.167         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4122   33998.170         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4123   33998.173         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4124   33998.176         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4125   33998.179         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4126   33998.181         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4127   33998.184         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4128   33998.187         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4129   33998.196         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4130   33998.199         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4131   33998.202         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4132   33998.204         1   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4133   33998.207         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4134   33998.210         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4135   33998.213         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4136   33998.215         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4137   33998.218         1   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4138   33998.221         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4139   33998.224         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4140   33998.226         1   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4141   33998.229         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4142   33998.232         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4143   33998.235         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4144   33998.237         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4145   33998.240         1   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4146   33998.243         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4147   33998.246         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4148   33998.248         1   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4149   33998.251         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4150   33998.254         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4151   33998.257         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4152   33998.259         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4153   33998.262         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4154   33998.265         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4155   33998.268         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4156   33998.270         1   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4157   33998.273         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4158   33998.276         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4159   33998.278         1   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4160   33998.281         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4161   33998.284         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4162   33998.287         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4163   33998.289         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00
+   4164   33998.292         0   2   0   79 graf_mkstate   0/5/0     -> ret=1 mx=100 my=204 mb=0x01 ks=0x00

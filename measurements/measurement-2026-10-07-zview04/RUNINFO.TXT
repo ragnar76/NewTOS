@@ -1,0 +1,127 @@
+measurement-2026-10-07-zview04 -- TASK/ZVIEW04 (zView: File > Quit does
+nothing while the browser window is open; it quits only after the browser
+was closed). Developer self-evidence; the Tester's verdict is separate.
+
+Date 2026-10-07/08, branch desk-rebuild, HEAD 8435cd2 plus this change,
+uncommitted (method/zview04-change.diff). QEMU raspi4b, -append serial=on,
+memprot default (on; LDGDEMO also strict), one QEMU at a time, host macOS.
+No SD card, Pi or TT touched. Scratch (kernels, cards, target dirs, traces,
+sockets) in the session scratchpad: peak 926 MB, deleted at the end (0 B).
+ZVIEW.NAP = sdk/zview/build/dist (sha256 2bf094ce...), unchanged.
+HEAD release kernel rebuilt here = 55eddb8f... = the user's Pi kernel.
+
+RESULT IN ONE LINE
+  NewTOS posted MN_SELECTED with msg[5..7] = 0. EmuTOS (CONF_WITH_MENU_
+  EXTENSION, the reference build) puts HIWORD/LOWORD of the menu tree there
+  and the item's parent in msg[7]. WinDom routes a pick by comparing
+  msg[5..6] with each window's menu.root, so 0 matched zView's menu-less
+  browser window (menu.root == NULL) and the pick went to that window's
+  empty binding table: EVERY desktop-menu pick of zView was dead while a
+  window was open (Quit, About, ...). NewTOS AES deviation; fixed 1:1.
+
+CAUSE (evidence)
+  zView's quit path: menu.c:638 ObjcAttach(OC_MENU, NULL, MENU_BAR_QUIT,
+    BIND_FUNC, applexit) -- a desktop-menu binding (app.mnbind).
+    applexit (main.c:38-62) sends WM_DESTROY to each window via appl_write
+    to itself and waits in EvntWindom(MU_MESAG) -- never reached.
+  WinDom: sdk/windom/overlay/src/evnt_windom.c:74-83 (_do_evnt_msg):
+      for (win = wglb.first; win; win = win->next)
+        if (win->menu.root == (OBJECT*)(msg[5]<<16 | msg[6])) { msg = EvntFind(win, MN_SELECTED); break; }
+    then :235-239 menu_bind(win, item, title) if win, else menu_bind(NULL, ...)
+    (app.mnbind); the desktop callback (zView's MenuHandle, menu.c:687,
+    which also menu_tnormal's the title) runs only if !win (:243-244).
+    WindCreate sets menu.root = NULL (windom src/wind_create.c:92), the
+    catalog window gets no window menu (catalog/catalog.c:174-258).
+    msg[5..6] = 0 -> match -> menu_bind(catalog, 30, 4) -> catalog's
+    menu.bind NULL -> nothing; title stays inverted. No window -> loop
+    finds nothing -> app binding -> applexit. Matches the report exactly.
+  AES trace (kernel --features aes-trace, injector; both-Shift flush request
+    so the ring holds the moment; checks/aestrace-*-excerpt.txt):
+    HEAD    POST/RECV MN_SELECTED msg=[10 1 0 4 30 0 0 0]; next calls are the
+            main loop's (want 0x33, timer 20) -- no appl_write, no
+            wind_close; File stays inverted (screendumps/before-quit-*).
+    fixed   msg=[10 1 0 4 30 435 8440 18] (0x01B3:0x20F8 = rsrc_gaddr(0,0)
+            = the bar; 18 = the File drop-down box) -> appl_write WM_DESTROY
+            (0x4400) to itself -> evnt_multi(MU_MESAG..) -> wind_close(1),
+            wind_delete(1) -> ... menu_bar(0) -> rsrc_free -> appl_exit
+            -> "[shell] ... ZVIEW.NAP exited with rc=0", desktop back.
+    no-browser control (HEAD and fixed): Quit works on both (msg[5..7] 0
+            resp. tree/parent) -- checks/aestrace-*-nobrowser-excerpt.txt.
+  EmuTOS: aes/gemctrl.c:353-358,365 hctl_rect: treehi = HIWORD(tree);
+    treelo = LOWORD(tree); parent = get_par(tree, item);
+    ct_msgup(MN_SELECTED, gl_mnppd, title, item, treehi, treelo, parent).
+    AC_OPEN keeps 0 (:348). Spec docs/api/aes/menu.md "MN_SELECTED message"
+    + edge case 7 + verification criterion already said so; the code did not.
+
+FIX (tos-api; spec note first)
+  docs/api/aes/menu.md  NewTOS binding paragraph under the MN_SELECTED
+      table: tree = the bar (also for the same-tree submenus NewTOS
+      delivers), the client's own address as passed to menu_bar (< 2 GiB,
+      docs/sdk/05-abi-pitfalls.md A2), parent via get_par; the WinDom
+      dependency and this ticket.
+  aes/menu.rs   mn_selected_ext(tree, item) -> [treehi, treelo, parent]
+      (parent through the bar owner's accessor, mntree_accessor).
+  aes/object.rs parent_t(ObjTree, obj) -- the accessor form of get_par.
+  aes/event.rs  menu_intercept: MN_SELECTED gets msg[5..7]; AC_OPEN 0.
+  tests/aes_menu_click_ownership.rs  +1 test
+      mn_selected_carries_menu_tree_and_parent (File > Open: msg[5]/[6] =
+      HIWORD/LOWORD of the installed tree, msg[7] = the File box);
+      red against HEAD (checks/red-before-fix.txt: msg[5..6] = (0,0)),
+      green after.
+
+QEMU RUNS (method/regr-all.sh; kernels method/make-kernels.sh: head- =
+  `git archive HEAD`, fix- = shared tree with this change; zView card
+  tools/make-sd-image.sh base.img 64; other cards evb-runs.sh/seed-card*.sh;
+  every run on a cp -c clone deleted after the run, sha256 in
+  checks/sha256-scratch-images.txt)
+  ACCEPTANCE zv-quit.actions (File > Browser..., then File > Quit with the
+    browser open):
+    head-zv-quit  Z04/Z05/END: browser still open, "File" inverted (defect)
+    fix-zv-quit   Z04/Z05/END: EmuDESK desktop; serial "ZVIEW.NAP exited
+                  with rc=0", "[desk] desktop up"
+  CROSS-CHECK zv-about.actions (browser open, zView > About):
+    head: nothing, "zView" title inverted; fix: the About window opens.
+    (zv-guide.actions = the first attempt, which hit Help > first row =
+    MENU_BAR_GUIDE: head title stays inverted, fix title normal -- zView's
+    desktop MN_SELECTED callback ran; nothing else to see, no ST-Guide.)
+  REGRESSION head vs fix, byte-compared (checks/shotcmp-head-vs-fix.txt):
+    LDGDEMO acc-on + acc-strict, EmuDESK desk, desk3a (ARCH03 3a),
+    TeraDesk tera, QED qed, APITEST api (t25/t40), zView zv-dclick
+    (ZVIEW02 acceptance), zv-browser (ZVIEW01): 60/60 identical.
+    The only differing dumps: zv-quit Z04/Z05/END (intended).
+    APITEST TOTAL 106/0/5 both; head-api and fix-api serial logs identical.
+    No panic/exception in any log (APITEST's own "Press any key" only).
+
+STATIC CHECKS (method/checks.sh final -> checks/final-*)
+  host tests 1249/0/1 (baseline 1248/0/1, +1 new)
+  release builds rpi4 + qemu-virt: tos-api 64 / kernel 94 (= baseline)
+  clippy rpi4 / qemu-virt: tos-api 76 / kernel 125 (= baseline)
+  desk drift probe 31 (= baseline); SDK host tests 18/0/0 (= baseline)
+  checks.sh overwrote the gitignored root kernel8.img; restored to the
+  previous file (55eddb8f) afterwards.
+
+PI PACKAGE (not copied to any card)
+  bin/kernel8.img a06d5210088b56cc72a734c6ab10477374be49a602466e5fe5954e05b77d3898
+  bin/LIESMICH.TXT, bin/SHA256SUMS. ZVIEW.NAP unchanged.
+
+OBSERVATIONS, NOT CHANGED
+  - In the HEAD trace the evnt_multi after MN_SELECTED returned MU_BUTTON
+    (bret 1, mb 1) because the selecting press was still held; WinDom then
+    gave it to the browser (rubber-band graf_mkstate loop). By source
+    reading EmuTOS's abutton (geminput.c:545-565) has no owner check either
+    and would also complete at once while `button` is 1 -- not verified
+    against a run; out of scope.
+  - The AES trace ring (6144 records) wraps over zView's 20-ms poll loop
+    in ~40 s; 16384 records do not fit under STRAM_OS_RESERVE (link
+    error). The runs used the tracer's both-Shift flush request instead.
+  - A submenu attached from a SEPARATE tree is still not delivered
+    (menu.md step 8, deferred) -- its msg[5..6] would be that tree.
+
+METHOD FILES
+  new: zv-quit.actions, zv-quit-nobrowser.actions, zv-about.actions,
+    zv-guide.actions, regr-all.sh, zview04-change.diff
+  copied from measurement-2026-10-07-zview02/method, changes named in the
+    headers: make-kernels.sh (FEAT=, no zv02 trace, trace.rs restored per
+    build), zv01-runs.sh (keeps the run copy until AESTRACE.BIN is copied
+    out, then deletes it), run-rpi4-drive-m3.sh (KEEP=1), evb-runs.sh (api
+    on ${KP}kernel8-evb.img); unchanged: the rest.

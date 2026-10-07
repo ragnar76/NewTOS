@@ -2553,6 +2553,12 @@ pub(crate) unsafe fn parent(tree: *const Object, obj: i16) -> i16 {
     parent_of(ObjTree::new(tree), obj)
 }
 
+/// [`parent`] through a tree accessor (EmuTOS `get_par`, `aes/gemobjop.c:
+/// 145-161`) — for trees read at their owner's ABI.
+pub(crate) fn parent_t(t: ObjTree, obj: i16) -> i16 {
+    parent_of(t, obj)
+}
+
 /// Index of `obj`'s parent, or `NIL` for the root. The parent is the node
 /// whose child chain reaches `obj` (TOS finds it via `ob_next` wrapping
 /// back to the parent at the end of the sibling list).

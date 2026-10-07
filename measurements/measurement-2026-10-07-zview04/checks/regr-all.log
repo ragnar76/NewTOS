@@ -1,0 +1,200 @@
+t=  23.5s head-acc-on-S00_WINDOW.png {"return": {}}
+t=  27.5s head-acc-on-S01_INFO_ALERT_KBD.png {"return": {}}
+t=  33.5s head-acc-on-S02_ALERT_GONE.png {"return": {}}
+t=  37.5s head-acc-on-S03_INFO_ALERT_LONGPRESS.png {"return": {}}
+t=  43.5s head-acc-on-S04_ALERT_GONE2.png {"return": {}}
+t=  47.0s head-acc-on-S05_SHORTCLICK.png {"return": {}}
+t=  50.5s head-acc-on-S05B_ALERT_GONE3.png {"return": {}}
+t=  54.0s head-acc-on-S06_VALUE_TYPED.png {"return": {}}
+t=  60.6s end marker seen
+t=  61.0s head-acc-on-END_CLOSED.png {"return": {}}
+t=  62.7s head-acc-on-end.png {"return": {}}
+prompts seen: 0
+run head-acc-on: rc=0
+t=  23.6s head-acc-strict-S00_WINDOW.png {"return": {}}
+t=  27.6s head-acc-strict-S01_INFO_ALERT_KBD.png {"return": {}}
+t=  33.6s head-acc-strict-S02_ALERT_GONE.png {"return": {}}
+t=  37.6s head-acc-strict-S03_INFO_ALERT_LONGPRESS.png {"return": {}}
+t=  43.6s head-acc-strict-S04_ALERT_GONE2.png {"return": {}}
+t=  47.1s head-acc-strict-S05_SHORTCLICK.png {"return": {}}
+t=  50.6s head-acc-strict-S05B_ALERT_GONE3.png {"return": {}}
+t=  54.1s head-acc-strict-S06_VALUE_TYPED.png {"return": {}}
+t=  60.7s end marker seen
+t=  61.1s head-acc-strict-END_CLOSED.png {"return": {}}
+t=  62.7s head-acc-strict-end.png {"return": {}}
+prompts seen: 0
+run head-acc-strict: rc=0
+t=  17.5s head-desk-A_IDLE.png {"return": {}}
+t=  26.5s head-desk-B_DRIVE_OPEN.png {"return": {}}
+t=  35.5s head-desk-C_FOLDER_OPEN.png {"return": {}}
+t=  38.5s head-desk-D_VIEW_OPEN.png {"return": {}}
+t=  44.5s head-desk-E_MENU_CLICKED.png {"return": {}}
+t=  47.1s end marker seen
+t=  47.5s head-desk-END.png {"return": {}}
+t=  48.1s head-desk-end.png {"return": {}}
+prompts seen: 0
+run head-desk: rc=0
+t=  23.5s head-tera-T00_DESK.png {"return": {}}
+t=  27.5s head-tera-T01_TRASH_SELECTED.png {"return": {}}
+t=  36.5s head-tera-T02_DRIVE_OPEN.png {"return": {}}
+t=  39.1s end marker seen
+t=  39.5s head-tera-END.png {"return": {}}
+t=  40.1s head-tera-end.png {"return": {}}
+prompts seen: 0
+run head-tera: rc=0
+t=  23.6s head-qed-Q00_UP.png {"return": {}}
+t=  25.6s head-qed-Q01_DATEI_OPEN.png {"return": {}}
+t=  32.6s head-qed-Q02_ITEM_CLICKED.png {"return": {}}
+t=  35.2s end marker seen
+t=  35.6s head-qed-END.png {"return": {}}
+t=  36.2s head-qed-end.png {"return": {}}
+prompts seen: 0
+run head-qed: rc=0
+t=  17.8s head-desk3a-A_IDLE.png {"return": {}}
+t=  25.8s head-desk3a-B_SUB.png {"return": {}}
+t=  32.8s head-desk3a-C_UP.png {"return": {}}
+t=  37.8s head-desk3a-D_SELECTED.png {"return": {}}
+t=  43.8s head-desk3a-E_INFO.png {"return": {}}
+t=  47.8s head-desk3a-F_TYPED.png {"return": {}}
+t=  54.8s head-desk3a-G_RENAMED.png {"return": {}}
+t=  63.2s end marker seen
+t=  63.8s head-desk3a-H_DRIVE_C.png {"return": {}}
+t=  64.2s head-desk3a-end.png {"return": {}}
+prompts seen: 0
+run head-desk3a: rc=0
+t=25.0s -> head-api-t25.png {"return": {}}
+t=40.0s -> head-api-t40.png {"return": {}}
+run head-api: rc=0
+t=  46.2s head-zv-dclick-Z02_BROWSER.png {"return": {}}
+t=  58.7s head-zv-dclick-Z06_ZVIEW_DIR.png {"return": {}}
+t=  86.2s head-zv-dclick-Z07_SAMPLES.png {"return": {}}
+t=  87.1s end marker seen
+t=  88.1s head-zv-dclick-END.png {"return": {}}
+t=  89.1s head-zv-dclick-end.png {"return": {}}
+prompts seen: 0
+run head-zv-dclick: rc=0
+c9dd23230bd24174d3a5a6fdbce29066905490ff907af4ab3b8540fa5c9f2720  run-head-zv-dclick.img (deleted)
+t=  31.2s head-zv-browser-Z00_IDLE.png {"return": {}}
+t=  33.2s head-zv-browser-Z01_MENU.png {"return": {}}
+t=  46.1s head-zv-browser-Z02_BROWSER.png {"return": {}}
+t=  61.2s head-zv-browser-Z03_LATER.png {"return": {}}
+t=  67.7s head-zv-browser-Z04_SELECTED.png {"return": {}}
+t=  76.2s head-zv-browser-Z05_TREE.png {"return": {}}
+t=  77.1s end marker seen
+t=  78.1s head-zv-browser-END.png {"return": {}}
+t=  79.1s head-zv-browser-end.png {"return": {}}
+prompts seen: 0
+run head-zv-browser: rc=0
+ecc5143961e6dd696d837a526de767ccdeb1bb6cb34a58c17dc8047d92cd28d1  run-head-zv-browser.img (deleted)
+t=  31.2s head-zv-quit-Z00_IDLE.png {"return": {}}
+t=  33.2s head-zv-quit-Z01_MENU.png {"return": {}}
+t=  46.2s head-zv-quit-Z02_BROWSER.png {"return": {}}
+t=  48.2s head-zv-quit-Z03_FILEMENU.png {"return": {}}
+t=  49.7s head-zv-quit-Z04_ONQUIT.png {"return": {}}
+t=  56.2s head-zv-quit-Z05_AFTERQUIT.png {"return": {}}
+t=  57.1s end marker seen
+t=  58.1s head-zv-quit-END.png {"return": {}}
+t=  59.1s head-zv-quit-end.png {"return": {}}
+prompts seen: 0
+run head-zv-quit: rc=0
+6586abb4db3b23753a999da6662b664e0b0b8daba7bf365e90db9ef0ecbc2791  run-head-zv-quit.img (deleted)
+t=  23.5s fix-acc-on-S00_WINDOW.png {"return": {}}
+t=  27.5s fix-acc-on-S01_INFO_ALERT_KBD.png {"return": {}}
+t=  33.5s fix-acc-on-S02_ALERT_GONE.png {"return": {}}
+t=  37.5s fix-acc-on-S03_INFO_ALERT_LONGPRESS.png {"return": {}}
+t=  43.5s fix-acc-on-S04_ALERT_GONE2.png {"return": {}}
+t=  47.0s fix-acc-on-S05_SHORTCLICK.png {"return": {}}
+t=  50.5s fix-acc-on-S05B_ALERT_GONE3.png {"return": {}}
+t=  54.0s fix-acc-on-S06_VALUE_TYPED.png {"return": {}}
+t=  60.6s end marker seen
+t=  61.0s fix-acc-on-END_CLOSED.png {"return": {}}
+t=  62.7s fix-acc-on-end.png {"return": {}}
+prompts seen: 0
+run fix-acc-on: rc=0
+t=  23.5s fix-acc-strict-S00_WINDOW.png {"return": {}}
+t=  27.5s fix-acc-strict-S01_INFO_ALERT_KBD.png {"return": {}}
+t=  33.5s fix-acc-strict-S02_ALERT_GONE.png {"return": {}}
+t=  37.5s fix-acc-strict-S03_INFO_ALERT_LONGPRESS.png {"return": {}}
+t=  43.5s fix-acc-strict-S04_ALERT_GONE2.png {"return": {}}
+t=  47.1s fix-acc-strict-S05_SHORTCLICK.png {"return": {}}
+t=  50.5s fix-acc-strict-S05B_ALERT_GONE3.png {"return": {}}
+t=  54.0s fix-acc-strict-S06_VALUE_TYPED.png {"return": {}}
+t=  60.6s end marker seen
+t=  61.0s fix-acc-strict-END_CLOSED.png {"return": {}}
+t=  62.7s fix-acc-strict-end.png {"return": {}}
+prompts seen: 0
+run fix-acc-strict: rc=0
+t=  17.5s fix-desk-A_IDLE.png {"return": {}}
+t=  26.5s fix-desk-B_DRIVE_OPEN.png {"return": {}}
+t=  35.5s fix-desk-C_FOLDER_OPEN.png {"return": {}}
+t=  38.5s fix-desk-D_VIEW_OPEN.png {"return": {}}
+t=  44.5s fix-desk-E_MENU_CLICKED.png {"return": {}}
+t=  47.1s end marker seen
+t=  47.5s fix-desk-END.png {"return": {}}
+t=  48.1s fix-desk-end.png {"return": {}}
+prompts seen: 0
+run fix-desk: rc=0
+t=  23.5s fix-tera-T00_DESK.png {"return": {}}
+t=  27.5s fix-tera-T01_TRASH_SELECTED.png {"return": {}}
+t=  36.5s fix-tera-T02_DRIVE_OPEN.png {"return": {}}
+t=  39.1s end marker seen
+t=  39.5s fix-tera-END.png {"return": {}}
+t=  40.2s fix-tera-end.png {"return": {}}
+prompts seen: 0
+run fix-tera: rc=0
+t=  23.6s fix-qed-Q00_UP.png {"return": {}}
+t=  25.6s fix-qed-Q01_DATEI_OPEN.png {"return": {}}
+t=  32.6s fix-qed-Q02_ITEM_CLICKED.png {"return": {}}
+t=  35.2s end marker seen
+t=  35.6s fix-qed-END.png {"return": {}}
+t=  36.2s fix-qed-end.png {"return": {}}
+prompts seen: 0
+run fix-qed: rc=0
+t=  17.8s fix-desk3a-A_IDLE.png {"return": {}}
+t=  25.8s fix-desk3a-B_SUB.png {"return": {}}
+t=  32.8s fix-desk3a-C_UP.png {"return": {}}
+t=  37.8s fix-desk3a-D_SELECTED.png {"return": {}}
+t=  43.8s fix-desk3a-E_INFO.png {"return": {}}
+t=  47.8s fix-desk3a-F_TYPED.png {"return": {}}
+t=  54.8s fix-desk3a-G_RENAMED.png {"return": {}}
+t=  63.2s end marker seen
+t=  63.8s fix-desk3a-H_DRIVE_C.png {"return": {}}
+t=  64.2s fix-desk3a-end.png {"return": {}}
+prompts seen: 0
+run fix-desk3a: rc=0
+t=25.0s -> fix-api-t25.png {"return": {}}
+t=40.0s -> fix-api-t40.png {"return": {}}
+run fix-api: rc=0
+t=  46.2s fix-zv-dclick-Z02_BROWSER.png {"return": {}}
+t=  58.7s fix-zv-dclick-Z06_ZVIEW_DIR.png {"return": {}}
+t=  86.3s fix-zv-dclick-Z07_SAMPLES.png {"return": {}}
+t=  87.1s end marker seen
+t=  88.1s fix-zv-dclick-END.png {"return": {}}
+t=  89.1s fix-zv-dclick-end.png {"return": {}}
+prompts seen: 0
+run fix-zv-dclick: rc=0
+7bb7d716328427c0f03321dcb0d25437d79e062dbe89004da57c3102e661c025  run-fix-zv-dclick.img (deleted)
+t=  31.2s fix-zv-browser-Z00_IDLE.png {"return": {}}
+t=  33.2s fix-zv-browser-Z01_MENU.png {"return": {}}
+t=  46.1s fix-zv-browser-Z02_BROWSER.png {"return": {}}
+t=  61.2s fix-zv-browser-Z03_LATER.png {"return": {}}
+t=  67.7s fix-zv-browser-Z04_SELECTED.png {"return": {}}
+t=  76.2s fix-zv-browser-Z05_TREE.png {"return": {}}
+t=  77.1s end marker seen
+t=  78.1s fix-zv-browser-END.png {"return": {}}
+t=  79.1s fix-zv-browser-end.png {"return": {}}
+prompts seen: 0
+run fix-zv-browser: rc=0
+12ae81218795e962e4350913d7dfcbbecfac8bb0f6e85c8d4fb3b674405671e1  run-fix-zv-browser.img (deleted)
+t=  31.2s fix-zv-quit-Z00_IDLE.png {"return": {}}
+t=  33.2s fix-zv-quit-Z01_MENU.png {"return": {}}
+t=  46.2s fix-zv-quit-Z02_BROWSER.png {"return": {}}
+t=  48.2s fix-zv-quit-Z03_FILEMENU.png {"return": {}}
+t=  49.7s fix-zv-quit-Z04_ONQUIT.png {"return": {}}
+t=  56.2s fix-zv-quit-Z05_AFTERQUIT.png {"return": {}}
+t=  57.1s end marker seen
+t=  58.1s fix-zv-quit-END.png {"return": {}}
+t=  59.1s fix-zv-quit-end.png {"return": {}}
+prompts seen: 0
+run fix-zv-quit: rc=0
+a9a17354a224d7a9344385b5cab16ff068fdc94b86938bf90649e105f3acf616  run-fix-zv-quit.img (deleted)

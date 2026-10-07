@@ -1,0 +1,29 @@
+# ZVIEW04: zView started by #Z (C:\ZVIEW\ZVIEW.NAP), File > Browser... (as
+# zview01's zv-browser.actions), then File > Quit WITH the browser open.
+# File menu rows (zview.rsh): Browser 19 (y 28), Open, -, Information, -, Save,
+# -, Print, -, Close, -, Quit 30 -> 11 rows of 16 px below Browser: y 204.
+# Expected (EmuTOS): zView exits, the desktop comes back.
+100 parkbr
+3000 mark Z00_IDLE
+3100 move 76 8
+3400 mark Z01_MENU
+3500 move 100 28
+3700 down
+3703 up
+6000 mark Z02_BROWSER
+6100 move 76 8
+6400 mark Z03_FILEMENU
+6500 move 100 204
+6700 mark Z04_ONQUIT
+6800 down
+6803 up
+# both Shift keys held 1.5 s = the AES tracer's manual flush request
+# (trace.rs SHIFT_HOLD_US 0.7 s, button quiet 0.6 s), so C:\AESTRACE.BIN holds
+# the Quit moment before the 20-ms poll loop wraps the ring
+7200 key 2A
+7201 key 36
+7500 key B6
+7501 key AA
+8000 mark Z05_AFTERQUIT
+8100 parkbr
+8400 mark END

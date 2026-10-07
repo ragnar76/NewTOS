@@ -1,0 +1,56 @@
+# scratch images of measurement-2026-10-07-zview04 (all deleted after the runs)
+# trace phase (aes-trace injector kernels; kinj-* = HEAD source, fix-* = this change; later renamed trace-*)
+55eddb8ff9ed169170e9a171a6f9923ff150743b2b73d40713cdad521df63f42  kernel8-evb.img
+eeba506110b108c253774afcd4fec9dc8776266b7abc197a970868a24df0c255  kinj-zv-quit.img
+daa20f1d523064a010e6c9adabc49d5fdce994c2d13b0dd145989d44e0ed7e43  kinj-zv-quit-nobrowser.img
+8fb3fb14b4c59734ef0c218796e754416a1e4e17b717e6204a0c8035b0137d5c  fix-kinj-zv-quit.img
+a1a90836dda70063d7c071514923aeb6f8d17341465901aa3c357648bb7d99da  fix-kinj-zv-quit-nobrowser.img
+ba8a6a19b3a623f3863206921eb18ea17ca58e7ca09b1f939b6d235a93628d2b  base.img
+304a9991ab4f6b011c55630826564adaa42f6481c102a8770ac9ce581cec6560  aestrace-after-nobrowser.bin
+a53deeb34ec4f85f8582be995e56015c368885864dcafa6596a9d3d2a4fb9b1d  aestrace-after-quit.bin
+7fd973f3e9aa3a301745bfcf747901862c25d96878c663a5e5a115143d9d80c0  aestrace-before-nobrowser.bin
+4841de39c67d6c9a9809f4efda1f7464541d539a6cff664ea550ebc6c740938b  aestrace-before-quit.bin
+# first zv-about build = zv-guide.actions
+e3e03ee97a28e8738cc0b24f75908b4202421b4915233c81c47acdc6c8d580bb  head-kinj-zv-about(=zv-guide.actions).img
+09db29b9501ba0ed3ab505db96a5119c5463cc58b64a7672b5c6b604ac13f229  fix-kinj-zv-about(=zv-guide.actions).img
+# regression/acceptance phase (no trace)
+ba8a6a19b3a623f3863206921eb18ea17ca58e7ca09b1f939b6d235a93628d2b  base.img
+a06d5210088b56cc72a734c6ab10477374be49a602466e5fe5954e05b77d3898  fix-kernel8-evb.img
+b388578b58dd2f68f8c944af7a2fce2580adc35330ec455ff791678231d93ecc  fix-kinj-evb-acc.img
+383afd4b1c7f2ec12e063d558bcada1c059759822a53c74dea6eef99c3a843f0  fix-kinj-evb-desk.img
+cc3602dd5375b6394b492882a42b8ea93cf264ef649275e8bf020d380605d73d  fix-kinj-evb-desk3a.img
+9485f0a387983d82b22c255fe1c5d1d4ec7e64bf19b40cd55f397e86b1d69055  fix-kinj-evb-qed.img
+9c26e9ae0273a6240252f5d10738dfbeb465c3274cdabcf600cebcc767307edf  fix-kinj-evb-tera.img
+32b4799699ec48a94238bcdeaa558e0503bff824e9ed9d5904170662508d76ef  fix-kinj-zv-about.img
+bc4abf433c900618035be4fa9638dd232dca64a755a013c561c6522f9d777870  fix-kinj-zv-browser.img
+c01d916ccd532f662eea1f84b4af0977d00bea8c4853b6bea07a5c2e82dbb2d8  fix-kinj-zv-dclick.img
+b387125bccda62faeaf1591b9c0dd91895ddb878064366b59cc8767ed658d765  fix-kinj-zv-quit.img
+2683ebe653b028f2db4e81961f37f363ab6c6eb00a4b9650fa607e2ca289cfeb  head-kinj-evb-acc.img
+cebf25405a4411757622a20b73833607fb54b5dd2dca93805a6a0e6bf5f25ac0  head-kinj-evb-desk.img
+662193dae24217de83d2a9d2e6fba7a7f2a472bb25c09a985850a1576f4ee4de  head-kinj-evb-desk3a.img
+c47d1fdf7a988612122a5019307f5e2d827dc3597edc85e97a092525c29c517f  head-kinj-evb-qed.img
+0fc1fab924f4306368b600913f0ce0945a218ae177c09bd0a7ab27ff65a68ff4  head-kinj-evb-tera.img
+ffc57521b9ee5a841ce0448c69e23c7512201185a8fbe54851bf1b63ee230b96  head-kinj-zv-about.img
+9cb9a878205beaa5590783467dcf1cf29784aff069c44d613c841f2a1a0d0cef  head-kinj-zv-browser.img
+b9275a683c601b58647de7d7f0318219b6ebef66cd793b1a50d89f6036e141e8  head-kinj-zv-dclick.img
+20320c331364bd8d38cf8a8ab770d3eaa981171a76dc485f13a545a8733960f2  head-kinj-zv-quit.img
+f6baffa60c48b68bbfe0a4dcb0a145a40281b464ca5ba15baa8f1741a7ac2718  kernel-virt-final.img
+55eddb8ff9ed169170e9a171a6f9923ff150743b2b73d40713cdad521df63f42  kernel8-evb.img
+a06d5210088b56cc72a734c6ab10477374be49a602466e5fe5954e05b77d3898  kernel8-final.img
+a1a90836dda70063d7c071514923aeb6f8d17341465901aa3c357648bb7d99da  trace-fix-kinj-zv-quit-nobrowser.img
+8fb3fb14b4c59734ef0c218796e754416a1e4e17b717e6204a0c8035b0137d5c  trace-fix-kinj-zv-quit.img
+daa20f1d523064a010e6c9adabc49d5fdce994c2d13b0dd145989d44e0ed7e43  trace-kinj-zv-quit-nobrowser.img
+eeba506110b108c253774afcd4fec9dc8776266b7abc197a970868a24df0c255  trace-kinj-zv-quit.img
+a911d9a41406270dd580a4920b4c79e939608bddc2133511f71a6b82d091bb1b  cards/apitest.img
+f4fce1130360fde63ba2345ffc845a1c353f407e3763577ddb0e03ce6871262e  cards/desk.img
+59c59471e9fd97fcb2a04a925e132f65feb708d4e04b2561ea678b90fb029177  cards/desk3a.img
+4259b54d3fa9e8d12ff5cfd57f39c46ed9ceb413175856bc8b47cb7d107dc130  cards/ldgdemo.img
+ecaf826d3bca5b61367b9ddaa699062ecde89c63bfc27228449ef3d2129c12da  cards/qed.img
+c757522584e921b1badfa11e07de7f9606e611444a49219c16bc7dac90d8c836  cards/teradesk.img
+# run copies (cp -c clones, deleted right after each run)
+c9dd23230bd24174d3a5a6fdbce29066905490ff907af4ab3b8540fa5c9f2720  run-head-zv-dclick.img (deleted)
+ecc5143961e6dd696d837a526de767ccdeb1bb6cb34a58c17dc8047d92cd28d1  run-head-zv-browser.img (deleted)
+6586abb4db3b23753a999da6662b664e0b0b8daba7bf365e90db9ef0ecbc2791  run-head-zv-quit.img (deleted)
+7bb7d716328427c0f03321dcb0d25437d79e062dbe89004da57c3102e661c025  run-fix-zv-dclick.img (deleted)
+12ae81218795e962e4350913d7dfcbbecfac8bb0f6e85c8d4fb3b674405671e1  run-fix-zv-browser.img (deleted)
+a9a17354a224d7a9344385b5cab16ff068fdc94b86938bf90649e105f3acf616  run-fix-zv-quit.img (deleted)
