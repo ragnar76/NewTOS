@@ -1,0 +1,29 @@
+# SYSINFO02 vs SYSINFO01 (measurement-2026-10-07-sysinfo): same actions files, same marks.
+# identical = pixel-identical; else the bounding box of the differing pixels.
+fix-desk-D00_IDLE                  s2-open-D00_IDLE                   identical
+fix-desk-D01_DESK_OPEN             s2-open-D01_DESK_OPEN              identical
+fix-desk-D02_DIALOG                s2-open-D02_DIALOG                 differs in (11, 20, 629, 478)
+fix-desk-D03_CLOSED                s2-open-D03_CLOSED                 identical
+fix-desk-END                       s2-open-END                        identical
+fix-tera-T00_UP                    s2-tera-T00_UP                     identical
+fix-tera-T01_DESK_OPEN             s2-tera-T01_DESK_OPEN              identical
+fix-tera-T02_DIALOG                s2-tera-T02_DIALOG                 differs in (11, 20, 629, 478)
+fix-tera-T03_CLOSED                s2-tera-T03_CLOSED                 identical
+fix-tera-END                       s2-tera-END                        identical
+fix-qed-Q00_UP                     s2-qed-Q00_UP                      identical
+fix-qed-Q01_DESK_OPEN              s2-qed-Q01_DESK_OPEN               identical
+fix-qed-Q02_DIALOG                 s2-qed-Q02_DIALOG                  differs in (11, 20, 629, 478)
+fix-qed-Q03_CLOSED                 s2-qed-Q03_CLOSED                  identical
+fix-qed-END                        s2-qed-END                         identical
+fix-ldg-S00_WINDOW                 s2-ldg-S00_WINDOW                  identical
+fix-ldg-S01_INFO_ALERT_KBD         s2-ldg-S01_INFO_ALERT_KBD          identical
+fix-ldg-S02_ALERT_GONE             s2-ldg-S02_ALERT_GONE              identical
+fix-ldg-S03_INFO_ALERT_LONGPRESS   s2-ldg-S03_INFO_ALERT_LONGPRESS    identical
+fix-ldg-S04_ALERT_GONE2            s2-ldg-S04_ALERT_GONE2             identical
+fix-ldg-S05_SHORTCLICK             s2-ldg-S05_SHORTCLICK              identical
+fix-ldg-S05B_ALERT_GONE3           s2-ldg-S05B_ALERT_GONE3            identical
+fix-ldg-S06_VALUE_TYPED            s2-ldg-S06_VALUE_TYPED             identical
+fix-ldg-END_CLOSED                 s2-ldg-END_CLOSED                  identical
+fix-ldg-end                        s2-ldg-end                         identical
+final-api-t25                      s2-api-t25                         identical
+final-api-t40                      s2-api-t40                         identical

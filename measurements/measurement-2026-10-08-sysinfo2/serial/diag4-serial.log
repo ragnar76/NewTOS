@@ -1,0 +1,251 @@
+RB2
+NewTOS booting on rpi4
+[serial] output on: boot arguments contain `serial=on`
+Phase 02 reached.
+[mm] DTB at 0x0000000000000100
+[mm] firmware: ARM memory bank 0: 0x0000000000000000 + 1006632960 bytes (960 MiB)
+[mm] firmware: VC memory: 0x000000003c000000 + 67108864 bytes (64 MiB)
+[mm] device tree: no usable /memory node (blob invalid or absent)
+[clock] ARM 700 -> 700 MHz (max 700, measured ?, SoC 25.0 C)
+[mm] memory map:
+[mm]   DRAM  : 0x0000000000000000..0x000000003c000000 (1006632960 bytes) — source: firmware
+[mm]   kernel: 0x0000000000080000..0x00000000002db000 (2469888 bytes)
+[mm]   ST-RAM: 0x0000000000400000..0x0000000000e00000 (10485760 bytes)
+[mm]   TT-RAM: 0x0000000001000000..0x0000000039e00000 (954204160 bytes)
+[mm]   OSrsvd: 0x0000000039e00000..0x000000003c000000 (35651584 bytes)
+[mm]     bcach: 0x0000000039e00000..0x000000003be00000 (33554432 bytes)
+[mm]     heap: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]   MMIO 00: 0x00000000fd500000..0x00000000fd510000
+[mm]   MMIO 01: 0x00000000fe000000..0x00000000ff000000
+[mm]   MMIO 02: 0x00000000ff800000..0x0000000100000000
+[mm] MMU reinstalled (high-half via TTBR1, TTBR0 deferred to Phase 06).
+[mm] frames ST-RAM: total=2560 used=0 free=2560 (10485760 B free)
+[mm] frames TT-RAM: total=232960 used=0 free=232960 (954204160 B free)
+[mm] alloc ST-RAM frame -> 0x0000000000400000
+[mm] alloc TT-RAM frame -> 0x0000000001000000
+[mm] heap after init: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[mm] heap smoke OK
+[mm] heap after smoke: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[fb] VideoCore display geometry detected: 640x480
+[fb] alpha mode = 2
+[fb] 640x480 pitch 2560 virtual height 960 -> 2 screen page(s), 2400 KiB
+[fb] VideoCore fb up: 640x480 stride 640px
+[mm] memory protection ON: table arena 0x01000000+2424 tables
+[mm] BDOS pools: ST-RAM 0x00400000+10485760 TT-RAM 0x01978000+944275456
+[mm] user address space: pools mapped VA = PA (456 shared L3 tables, 4-KiB pages, rights per process)
+[mm] BDOS ST-RAM after init: total=10485760 free=10485760 used=0 largest_free=10485760 (free_mds=1 alloc_mds=0)
+[mm] BDOS TT-RAM after init: total=944275456 free=944275456 used=0 largest_free=944275456 (free_mds=1 alloc_mds=0)
+[input] keyboard/mouse pump: AES waits and console reads; pointer motion also from the 200 Hz tick while a program runs (input=aes switches that off)
+[bcache] FS09 block read cache: 32768 KiB at 0x39e00000 (asked 32768 KiB, default), 61680 sectors of 512 B, linear-read share 5 % (default), write-through
+[emmc] SD card on controller @ 0xffff0000fe300000
+[emmc] M1 SLOTISR_VER=0x24020000 (SDHCI spec 0x02) CAPABILITIES=0x052134b4 (base 52 MHz)
+[emmc] M1 CONTROL0=0x00000f02 CONTROL1=0x000e0207 div=2 -> SDCLK ~13000000 Hz
+[emmc] M1 mailbox clock rate: EMMC(1)=50000000 Hz EMMC2(12)=700000000 Hz
+[emmc] FS08 mode: multi-block (CMD18/CMD25 + Auto CMD12) — bus 4-bit (ACMD6 ok, SCR SD_BUS_WIDTHS=0x5), CONTROL0[1] Data Transfer Width=1
+[emmc] M1 during identification: 2 error(s), 0 timeout(s), 2 recovery(ies) CTO=2
+[clock] seeded from kernel8.img: 2026-10-08 03:06:00
+[pcie] RC not present (no response at RC_BASE); USB disabled
+[proc] stand-in PDs: initial_basepage 0x00252000, AES PD 0x00252100 (read-only to all)
+[acc] loaded C:\ACC\SYSACC.NAC into slot 0 (entry 0x197a000)
+[acc] loaded C:\SYSACC2.NAC into slot 1 (entry 0x1988000)
+[acc] 2 file(s) found, 2 process(es) started
+[aes] gsx_malloc: screen buffer pa=0x01994000 len=614400 (kernel-owned, WF_SCREEN)
+[sched] switch -> slot 0
+[sched] running
+[m3] injector armed at hz_200 3020
+[sched] switch -> slot 1
+[sched] running
+[sched] switch -> kernel client
+[acc] all accessories have issued their message wait
+[shell] sh_ldapp: starting NEWDESK, sh_nextapp=3, sh_isgem=1
+[desk] desktop up (1 drives, 0 window(s) from the context)
+[m3] step 0 at +100 sched 100 irq=0 -> mouse (446,366) mb=0
+[m3] step 1 at +101 sched 101 irq=0 -> mouse (573,479) mb=0
+[m3] step 2 at +102 sched 102 irq=0 -> mouse (639,479) mb=0
+[m3] step 3 at +103 sched 103 irq=0 -> mouse (639,479) mb=0
+[m3] step 4 at +104 sched 104 irq=0 -> mouse (639,479) mb=0
+[m3] step 5 at +105 sched 105 irq=0 -> mouse (639,479) mb=0
+[m3] MARK E00_IDLE step 6 at +400 sched 400 irq=0 mouse (639,479) mb=0
+[m3] step 7 at +500 sched 500 irq=0 -> mouse (512,352) mb=0
+[m3] step 8 at +501 sched 501 irq=0 -> mouse (385,225) mb=0
+[m3] step 9 at +502 sched 502 irq=0 -> mouse (258,98) mb=0
+[m3] step 10 at +503 sched 503 irq=0 -> mouse (131,9) mb=0
+[m3] step 11 at +504 sched 504 irq=0 -> mouse (26,9) mb=0
+[m3] MARK E00_DESK_OPEN step 12 at +900 sched 900 irq=0 mouse (26,9) mb=0
+[m3] step 13 at +1000 sched 1000 irq=0 -> mouse (60,66) mb=0
+[m3] step 14 at +1200 sched 1200 irq=0 -> mouse (60,66) mb=1
+[sched] switch -> slot 0
+[sched] running
+[m3] step 15 at +1203 sched 1203 irq=0 -> mouse (60,66) mb=0
+[m3] MARK E01_DIALOG step 16 at +2200 sched 2200 irq=0 mouse (60,66) mb=0
+[m3] step 17 at +2300 sched 2300 irq=0 -> mouse (187,193) mb=0
+[m3] step 18 at +2301 sched 2301 irq=0 -> mouse (314,229) mb=0
+[m3] step 19 at +2302 sched 2302 irq=0 -> mouse (441,229) mb=0
+[m3] step 20 at +2303 sched 2303 irq=0 -> mouse (486,229) mb=0
+[m3] step 21 at +2400 sched 2400 irq=0 -> mouse (486,229) mb=1
+[m3] step 22 at +2403 sched 2403 irq=0 -> mouse (486,229) mb=0
+[sched] switch -> kernel client
+[sched] switch -> slot 0
+[sched] running
+[sched] switch -> kernel client
+[m3] step 23 at +2700 sched 2700 irq=0 -> mouse (486,245) mb=0
+[sched] switch -> slot 0
+[sched] running
+[sched] switch -> kernel client
+[m3] MARK E02_POPUP_MEMPROT step 24 at +2900 sched 2900 irq=0 mouse (486,245) mb=0
+[m3] step 25 at +3000 sched 3000 irq=0 -> mouse (486,245) mb=1
+[sched] switch -> slot 0
+[sched] running
+[sched] switch -> kernel client
+[m3] step 26 at +3003 sched 3003 irq=0 -> mouse (486,245) mb=0
+[sched] switch -> slot 0
+[sched] running
+[sched] switch -> kernel client
+[sched] switch -> slot 0
+[sched] running
+[m3] MARK E03_MEMPROT_STRICT step 27 at +3300 sched 3300 irq=0 mouse (486,245) mb=0
+[m3] step 28 at +3400 sched 3400 irq=0 -> mouse (486,317) mb=0
+[m3] step 29 at +3500 sched 3500 irq=0 -> mouse (486,317) mb=1
+[m3] step 30 at +3503 sched 3503 irq=0 -> mouse (486,317) mb=0
+[sched] switch -> kernel client
+[sched] switch -> slot 0
+[sched] running
+[sched] switch -> kernel client
+[m3] step 31 at +3800 sched 3800 irq=0 -> mouse (486,285) mb=0
+[sched] switch -> slot 0
+[sched] running
+[sched] switch -> kernel client
+[m3] MARK E04_POPUP_BCACHE step 32 at +4000 sched 4000 irq=0 mouse (486,285) mb=0
+[m3] step 33 at +4100 sched 4100 irq=0 -> mouse (486,285) mb=1
+[sched] switch -> slot 0
+[sched] running
+[sched] switch -> kernel client
+[m3] step 34 at +4103 sched 4103 irq=0 -> mouse (486,285) mb=0
+[sched] switch -> slot 0
+[sched] running
+[sched] switch -> kernel client
+[sched] switch -> slot 0
+[sched] running
+[m3] MARK E05_TWO_CHANGED step 35 at +4400 sched 4400 irq=0 mouse (486,285) mb=0
+[m3] step 36 at +4500 sched 4500 irq=0 -> mouse (486,383) mb=0
+[m3] step 37 at +4600 sched 4600 irq=0 -> mouse (486,383) mb=1
+[m3] step 38 at +4603 sched 4603 irq=0 -> mouse (486,383) mb=0
+[sched] switch -> kernel client
+[sched] switch -> slot 0
+[sched] running
+[sched] switch -> kernel client
+[m3] step 39 at +4900 sched 4900 irq=0 -> mouse (486,399) mb=0
+[sched] switch -> slot 0
+[sched] running
+[sched] switch -> kernel client
+[m3] MARK E06_POPUP_SERIAL step 40 at +5100 sched 5100 irq=0 mouse (486,399) mb=0
+[m3] step 41 at +5200 sched 5200 irq=0 -> mouse (359,383) mb=0
+[sched] switch -> slot 0
+[sched] running
+[sched] switch -> kernel client
+[m3] step 42 at +5201 sched 5201 irq=0 -> mouse (232,383) mb=0
+[sched] switch -> slot 0
+[sched] running
+[sched] switch -> kernel client
+[m3] step 43 at +5202 sched 5202 irq=0 -> mouse (200,383) mb=0
+[sched] switch -> slot 0
+[sched] running
+[sched] switch -> kernel client
+[m3] step 44 at +5300 sched 5300 irq=0 -> mouse (200,383) mb=1
+[sched] switch -> slot 0
+[sched] running
+[sched] switch -> kernel client
+[m3] step 45 at +5303 sched 5303 irq=0 -> mouse (200,383) mb=0
+[sched] switch -> slot 0
+[sched] running
+[sched] switch -> kernel client
+[sched] switch -> slot 0
+[sched] running
+[m3] step 46 at +5600 sched 5600 irq=0 -> mouse (73,455) mb=0
+[m3] step 47 at +5700 sched 5700 irq=0 -> mouse (73,455) mb=1
+[m3] step 48 at +5703 sched 5703 irq=0 -> mouse (73,455) mb=0
+[m3] MARK W5710 step 49 at +5710 sched 5710 irq=0 mouse (73,455) mb=0
+[m3] MARK W5730 step 50 at +5730 sched 5730 irq=0 mouse (73,455) mb=0
+[m3] MARK W5750 step 51 at +5750 sched 5750 irq=0 mouse (73,455) mb=0
+[m3] MARK W5770 step 52 at +5770 sched 5770 irq=0 mouse (73,455) mb=0
+[m3] MARK W5790 step 53 at +5790 sched 5790 irq=0 mouse (73,455) mb=0
+[m3] MARK W5810 step 54 at +5810 sched 5810 irq=0 mouse (73,455) mb=0
+[m3] MARK W5830 step 55 at +5830 sched 5830 irq=0 mouse (73,455) mb=0
+[m3] MARK W5850 step 56 at +5850 sched 5850 irq=0 mouse (73,455) mb=0
+[m3] MARK W5870 step 57 at +5870 sched 5870 irq=0 mouse (73,455) mb=0
+[m3] MARK W5890 step 58 at +5890 sched 5890 irq=0 mouse (73,455) mb=0
+[m3] MARK W5910 step 59 at +5910 sched 5910 irq=0 mouse (73,455) mb=0
+[m3] MARK W5930 step 60 at +5930 sched 5930 irq=0 mouse (73,455) mb=0
+[m3] MARK W5950 step 61 at +5950 sched 5950 irq=0 mouse (73,455) mb=0
+[m3] MARK W5970 step 62 at +5970 sched 5970 irq=0 mouse (73,455) mb=0
+[m3] MARK W5990 step 63 at +5990 sched 5990 irq=0 mouse (73,455) mb=0
+[m3] MARK W6010 step 64 at +6010 sched 6010 irq=0 mouse (73,455) mb=0
+[m3] MARK W6030 step 65 at +6030 sched 6030 irq=0 mouse (73,455) mb=0
+[m3] MARK W6050 step 66 at +6050 sched 6050 irq=0 mouse (73,455) mb=0
+[m3] MARK W6070 step 67 at +6070 sched 6070 irq=0 mouse (73,455) mb=0
+[m3] MARK W6090 step 68 at +6090 sched 6090 irq=0 mouse (73,455) mb=0
+[m3] MARK W6110 step 69 at +6110 sched 6110 irq=0 mouse (73,455) mb=0
+[m3] MARK W6130 step 70 at +6130 sched 6130 irq=0 mouse (73,455) mb=0
+[m3] MARK W6150 step 71 at +6150 sched 6150 irq=0 mouse (73,455) mb=0
+[m3] MARK W6170 step 72 at +6170 sched 6170 irq=0 mouse (73,455) mb=0
+[m3] MARK W6190 step 73 at +6190 sched 6190 irq=0 mouse (73,455) mb=0
+[m3] MARK W6210 step 74 at +6210 sched 6210 irq=0 mouse (73,455) mb=0
+[m3] MARK W6230 step 75 at +6230 sched 6230 irq=0 mouse (73,455) mb=0
+[m3] MARK W6250 step 76 at +6250 sched 6250 irq=0 mouse (73,455) mb=0
+[m3] MARK W6270 step 77 at +6270 sched 6270 irq=0 mouse (73,455) mb=0
+[m3] MARK W6290 step 78 at +6290 sched 6290 irq=0 mouse (73,455) mb=0
+[m3] MARK W6310 step 79 at +6310 sched 6310 irq=0 mouse (73,455) mb=0
+[m3] MARK W6330 step 80 at +6330 sched 6330 irq=0 mouse (73,455) mb=0
+[m3] MARK W6350 step 81 at +6350 sched 6350 irq=0 mouse (73,455) mb=0
+[m3] MARK W6370 step 82 at +6370 sched 6370 irq=0 mouse (73,455) mb=0
+[m3] MARK W6390 step 83 at +6390 sched 6390 irq=0 mouse (73,455) mb=0
+[m3] MARK W6410 step 84 at +6410 sched 6410 irq=0 mouse (73,455) mb=0
+[m3] MARK W6430 step 85 at +6430 sched 6430 irq=0 mouse (73,455) mb=0
+[m3] MARK W6450 step 86 at +6450 sched 6450 irq=0 mouse (73,455) mb=0
+[m3] MARK W6470 step 87 at +6470 sched 6470 irq=0 mouse (73,455) mb=0
+[m3] MARK W6490 step 88 at +6490 sched 6490 irq=0 mouse (73,455) mb=0
+[m3] step 89 at +6600 sched 6600 irq=0 -> mouse (73,455) mb=0
+[m3] step 90 at +6606 sched 6606 irq=0 -> mouse (73,455) mb=0
+[m3] MARK V6620 step 91 at +6620 sched 6620 irq=0 mouse (73,455) mb=0
+[m3] MARK V6640 step 92 at +6640 sched 6640 irq=0 mouse (73,455) mb=0
+[m3] MARK V6660 step 93 at +6660 sched 6660 irq=0 mouse (73,455) mb=0
+[m3] MARK V6680 step 94 at +6680 sched 6680 irq=0 mouse (73,455) mb=0
+[m3] MARK V6700 step 95 at +6700 sched 6700 irq=0 mouse (73,455) mb=0
+[m3] MARK V6720 step 96 at +6720 sched 6720 irq=0 mouse (73,455) mb=0
+[m3] MARK V6740 step 97 at +6740 sched 6740 irq=0 mouse (73,455) mb=0
+[m3] MARK V6760 step 98 at +6760 sched 6760 irq=0 mouse (73,455) mb=0
+[m3] MARK V6780 step 99 at +6780 sched 6780 irq=0 mouse (73,455) mb=0
+[m3] MARK V6800 step 100 at +6800 sched 6800 irq=0 mouse (73,455) mb=0
+[m3] MARK V6820 step 101 at +6820 sched 6820 irq=0 mouse (73,455) mb=0
+[m3] MARK V6840 step 102 at +6840 sched 6840 irq=0 mouse (73,455) mb=0
+[m3] MARK V6860 step 103 at +6860 sched 6860 irq=0 mouse (73,455) mb=0
+[m3] MARK V6880 step 104 at +6880 sched 6880 irq=0 mouse (73,455) mb=0
+[m3] MARK V6900 step 105 at +6900 sched 6900 irq=0 mouse (73,455) mb=0
+[m3] MARK V6920 step 106 at +6920 sched 6920 irq=0 mouse (73,455) mb=0
+[m3] MARK V6940 step 107 at +6940 sched 6940 irq=0 mouse (73,455) mb=0
+[m3] MARK V6960 step 108 at +6960 sched 6960 irq=0 mouse (73,455) mb=0
+[m3] MARK V6980 step 109 at +6980 sched 6980 irq=0 mouse (73,455) mb=0
+[m3] MARK V7000 step 110 at +7000 sched 7000 irq=0 mouse (73,455) mb=0
+[m3] step 111 at +7100 sched 7100 irq=0 -> mouse (73,455) mb=0
+[sched] switch -> kernel client
+[m3] step 112 at +7106 sched 7106 irq=0 -> mouse (73,455) mb=0
+[m3] MARK U7120 step 113 at +7120 sched 7120 irq=0 mouse (73,455) mb=0
+[m3] MARK U7160 step 114 at +7160 sched 7160 irq=0 mouse (73,455) mb=0
+[m3] MARK U7200 step 115 at +7200 sched 7200 irq=0 mouse (73,455) mb=0
+[m3] MARK U7240 step 116 at +7240 sched 7240 irq=0 mouse (73,455) mb=0
+[m3] MARK U7280 step 117 at +7280 sched 7280 irq=0 mouse (73,455) mb=0
+[m3] MARK U7320 step 118 at +7320 sched 7320 irq=0 mouse (73,455) mb=0
+[m3] MARK U7360 step 119 at +7360 sched 7360 irq=0 mouse (73,455) mb=0
+[m3] MARK U7400 step 120 at +7400 sched 7400 irq=0 mouse (73,455) mb=0
+[m3] MARK U7440 step 121 at +7440 sched 7440 irq=0 mouse (73,455) mb=0
+[m3] MARK U7480 step 122 at +7480 sched 7480 irq=0 mouse (73,455) mb=0
+[m3] MARK U7520 step 123 at +7520 sched 7520 irq=0 mouse (73,455) mb=0
+[m3] MARK U7560 step 124 at +7560 sched 7560 irq=0 mouse (73,455) mb=0
+[m3] MARK U7600 step 125 at +7600 sched 7600 irq=0 mouse (73,455) mb=0
+[m3] step 126 at +7700 sched 7700 irq=0 -> mouse (200,479) mb=0
+[m3] step 127 at +7701 sched 7701 irq=0 -> mouse (327,479) mb=0
+[m3] step 128 at +7702 sched 7702 irq=0 -> mouse (454,479) mb=0
+[m3] step 129 at +7703 sched 7703 irq=0 -> mouse (581,479) mb=0
+[m3] step 130 at +7704 sched 7704 irq=0 -> mouse (639,479) mb=0
+[m3] step 131 at +7705 sched 7705 irq=0 -> mouse (639,479) mb=0
+[m3] MARK END step 132 at +8000 sched 8000 irq=0 mouse (639,479) mb=0

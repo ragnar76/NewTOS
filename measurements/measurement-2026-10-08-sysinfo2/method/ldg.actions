@@ -1,0 +1,50 @@
+# TASK/ACCTITLE: the K1 LDGDEMO script (measurement-2026-10-07-k1/method/evb-acc.actions)
+# shifted by +2000 ticks -- the injector now arms at the first accessory, not
+# at LDGDEMO. Original header:
+# TASK/LDG-M3-B1 acceptance (LDGDEMO.NAP, WinDom client) -- the m3c script of
+# measurement-2026-10-06-ldg-m3 with step 3 changed: the SHORT click on
+# Compute now has to work (B1). Window geometry as there:
+#   Compute (236..303, 259..278)  Close (331..400, 259..278)
+# Ticks hz_200 after the client's first poll. IKBD: Alt 38, C 2E, Return 1C,
+# Esc 01, '1' 02, '2' 03, '3' 04; break = make | 0x80.
+#  1. Alt+C -> compute() -> FormAlert(mathinfo()) (keyboard path); Return.
+#  2. LONG press on Compute (0.8 s): same alert (mouse path, as before); Return.
+#  3. SHORT click on Compute (30 ms, inside the double-click window): the
+#     same alert must appear now (EV_MB = 1, B1); Return closes it.
+#  4. Esc 1 2 3 into the Value field (objc_edit; caret placement = O1).
+#  5. Return = DEFAULT Close -> exit(0) -> back on the desktop.
+100 parkbr
+3600 mark S00_WINDOW
+4000 key 38
+4005 key 2E
+4010 key AE
+4030 key B8
+4400 mark S01_INFO_ALERT_KBD
+5200 key 1C
+5206 key 9C
+5600 mark S02_ALERT_GONE
+5700 move 269 268
+5800 down
+5960 up
+6400 mark S03_INFO_ALERT_LONGPRESS
+7200 key 1C
+7206 key 9C
+7600 mark S04_ALERT_GONE2
+7700 down
+7706 up
+8300 mark S05_SHORTCLICK
+8600 key 1C
+8606 key 9C
+9000 mark S05B_ALERT_GONE3
+9100 key 01
+9106 key 81
+9120 key 02
+9126 key 82
+9140 key 03
+9146 key 83
+9160 key 04
+9166 key 84
+9700 mark S06_VALUE_TYPED
+10100 key 1C
+10106 key 9C
+11100 mark END_CLOSED

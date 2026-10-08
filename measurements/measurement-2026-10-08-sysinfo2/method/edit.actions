@@ -1,0 +1,62 @@
+# TASK/SYSINFO02, EmuDESK (no #Z), C:\CMDLINE.TXT seeded with cmdline-seed.txt:
+# open the System Info dialog from the Desk menu (as desk.actions), then
+#   Memory protection drop-down (486,229) -> hover "Strict" (486,245) -> click
+#   Block cache drop-down (486,317) -> hover "8 MB" (486,285) -> click
+#   Serial console drop-down (486,383) -> hover "Off" (486,399) -> click
+#   outside the box (200,383, the "Running now" column) = cancel
+#   Save (73,455) -> the confirmation alert -> Return (its default "Save")
+#   Return (the dialog's DEFAULT OK; nothing unsaved) closes the dialog.
+# Coordinates from the calibration dump cal-open-D02_DIALOG.png (dialog root
+# at (14,23); drop-down rows 22 px apart from y 221; a drop-down puts the
+# current choice over its button, items 16 px high).
+# Every mark lies >= 200 ticks before the next input: drive-m3.py takes the
+# dump --mark-delay host seconds AFTER the mark line (0.5 s = 100 ticks at
+# 200 Hz), so a mark closer to the next input may show the state after it
+# (the try1/try2 runs did -- see RUNINFO). Esc is not used: it does not reach
+# the accessory (diag.actions, RUNINFO "Esc").
+# Ticks hz_200 after "[desk] desktop up" (desk-arm-m3.py). IKBD Return 1C/9C.
+100 parkbr
+400 mark E00_IDLE
+500 move 26 9
+800 mark E00_DESK_OPEN
+1000 move 60 66
+1200 down
+1203 up
+2000 mark E01_DIALOG
+2300 move 486 229
+2400 down
+2403 up
+2700 move 486 245
+2800 mark E02_POPUP_MEMPROT
+3000 down
+3003 up
+3200 mark E03_MEMPROT_STRICT
+3400 move 486 317
+3500 down
+3503 up
+3800 move 486 285
+3900 mark E04_POPUP_BCACHE
+4100 down
+4103 up
+4300 mark E05_TWO_CHANGED
+4500 move 486 383
+4600 down
+4603 up
+4900 move 486 399
+5000 mark E06_POPUP_SERIAL
+5200 move 200 383
+5300 down
+5303 up
+5450 mark E07_OUTSIDE_CANCELLED
+5600 move 73 455
+5700 down
+5703 up
+5900 mark E08_CONFIRM
+6200 key 1C
+6206 key 9C
+6500 mark E09_SAVED
+6800 key 1C
+6806 key 9C
+7200 mark E10_CLOSED
+7300 parkbr
+7600 mark END

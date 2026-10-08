@@ -1,0 +1,36 @@
+# TASK/SYSINFO02 diagnosis of try1-edit (Esc in the drop-down had no effect,
+# the confirmation alert was not seen): dense marks around each key/click.
+# Open the dialog (Desk menu), open the Serial console drop-down (486,383),
+# Esc, Esc again, then Save (73,455), Return, Return.
+100 parkbr
+400 mark X00_IDLE
+500 move 26 9
+1000 move 60 66
+1200 down
+1203 up
+2200 mark X01_DIALOG
+2300 move 486 383
+2400 down
+2403 up
+2700 mark X02_POPUP
+2800 key 01
+2806 key 81
+2850 mark X03_ESC_50
+3000 mark X04_ESC_200
+3100 key 01
+3106 key 81
+3300 mark X05_ESC2_200
+3400 move 73 455
+3500 down
+3503 up
+3550 mark X06_SAVE_50
+3700 mark X07_SAVE_200
+3800 key 1C
+3806 key 9C
+3850 mark X08_RET_50
+4000 mark X09_RET_200
+4100 key 1C
+4106 key 9C
+4300 mark X10_RET2_200
+4400 parkbr
+4700 mark END

@@ -1,0 +1,72 @@
+SYSINFO02 -- "System Info", Version 2: Starteinstellungen auswaehlen und speichern
+==================================================================================
+
+Datei (nicht auf eine Karte kopiert; kopieren nur auf Ansage):
+  SYSACC.NAC   sha256 db2e325c5d4b47162c2ec6c1ee8c6640af86f67dc1003bc5cbd98d3b6ed36062
+
+Kein neuer Kernel noetig: die Aenderung liegt nur im Accessory. Es braucht
+einen Kernel mit den Ssystem-Nummern 2003-2019 (SYSINFO01, also den Kernel
+aus measurement-2026-10-07-sysinfo/bin oder neuer). Mit einem aelteren Kernel
+steht in der Spalte "Running now" fast ueberall "not available".
+
+Wohin auf der Karte:
+  SYSACC.NAC -> C:\ACC\SYSACC.NAC (und, falls dort eine zweite Kopie liegt,
+                C:\SYSACC2.NAC ersetzen)
+
+WAS MAN SIEHT
+  Desk-Menue -> " System Info" oeffnet den Dialog "NewTOS System
+  Information". Oben wie bisher die Maschine (Takt, Temperatur, Speicher,
+  Bildschirm, SD-Bus, Tastatur). Darunter die Gruppe "Settings" mit acht
+  Zeilen und drei Spalten:
+
+    Setting             Running now          Next start (Aufklappfeld)
+    Memory protection   womit der Kernel     Off / On / Strict
+    Address-space IDs   JETZT laeuft         Off / On / Test (rollover)
+    SD card mode                             Fast (multi-block) / Compatibility
+    CPU clock                                Fixed at maximum / Firmware-controlled
+    Block cache                              Off / 8 MB / 16 MB / 32 MB / 64 MB
+    Cache share                              5 % / 10 % / 25 % / 50 %
+    Mouse while busy    "not available"      On / Off
+    Serial console                           On / Off
+
+  "Mouse while busy" (input=aes) hat noch keine Ssystem-Nummer: die Spalte
+  "Running now" sagt deshalb ehrlich "not available".
+
+  Ein Klick auf einen Wert in "Next start" klappt eine kleine Liste auf; der
+  gueltige Wert hat einen Haken, der Wert unter dem Zeiger ist schwarz
+  hinterlegt. Klick auf einen Eintrag waehlt ihn, Klick daneben schliesst die
+  Liste ohne Aenderung.
+
+  Knoepfe:
+    Save    schreibt C:\CMDLINE.TXT und laesst den Dialog offen
+    OK      schliesst; wurde etwas geaendert und nicht gespeichert, kommt
+            zuerst dieselbe Rueckfrage wie bei Save
+    Cancel  schliesst ohne zu speichern
+  Vor jedem Schreiben eine Rueckfrage, die in Worten auflistet, was sich
+  aendert ("For the next start: Memory protection: Strict ...").
+  Unten steht immer "Changes take effect after restart." -- alles wirkt erst
+  beim naechsten Start.
+
+  Beim Speichern:
+    * alles in cmdline.txt, was das Werkzeug nicht verwaltet (Firmware- oder
+      Linux-Eintraege, Unbekanntes, auch memprot=verify), bleibt in seiner
+      Reihenfolge stehen; nur die acht Einstellungen werden ersetzt oder
+      entfernt; Werte gleich der Voreinstellung werden weggelassen
+    * vorher Sicherung der alten Datei als C:\CMDLINE.BAK
+    * neue Datei erst als C:\CMDLINE.NEW, dann CMDLINE.TXT loeschen und
+      CMDLINE.NEW umbenennen; eine Zeile, Leerzeichen getrennt, Zeilenende wie
+      in der alten Datei (CR LF oder LF)
+    * config.txt wird nie angefasst
+    * eine Datei, die nicht vollstaendig lesbar ist (Lesefehler, 4 KB oder
+      groesser), wird nicht ueberschrieben
+
+AUF DER PI ZU PRUEFEN (in QEMU nicht moeglich)
+  * QEMU nimmt die Startargumente aus -append, nicht aus der Datei. Auf der
+    Pi liest die Firmware C:\cmdline.txt: nach Save + Neustart muss "Running
+    now" die gespeicherten Werte zeigen.
+  * Die Datei auf der Karte heisst danach CMDLINE.TXT (Grossbuchstaben, 8.3);
+    die Firmware unterscheidet bei FAT nicht nach Gross-/Kleinschreibung.
+  * Falls die Karte nicht mehr startet: am Mac CMDLINE.BAK zurueck nach
+    cmdline.txt kopieren.
+  * Esc in der aufgeklappten Liste wirkt derzeit NICHT (die Taste erreicht
+    das Accessory nicht, siehe RUNINFO "Esc"); Klick daneben schliesst sie.

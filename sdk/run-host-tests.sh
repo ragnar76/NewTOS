@@ -185,6 +185,21 @@ else
   echo "FAIL  c2p-host (did not build)"; sed 's/^/      /' "$WORK/c2p-host.log"; fail=$((fail+1))
 fi
 
+# sysacc-cmdline-host (SYSINFO02): the System Info accessory's boot-argument
+# logic (sdk/examples/sysacc-cmdline.h, the header sysacc.c includes) -- the
+# parse reads C:\CMDLINE.TXT as kernel/src/bootargs.rs reads the boot
+# arguments; the merge keeps every unmanaged token in order, replaces managed
+# ones in place, drops defaults, keeps CR LF / LF, one line. Pure byte logic.
+SAT="$SDK/examples/tests"
+if "$CC" -O1 -g -fsanitize=address,undefined -Wall -Wextra -Werror \
+     -o "$WORK/sysacc-cmdline-host" "$SAT/sysacc-cmdline-host.c" > "$WORK/sysacc-cmdline-host.log" 2>&1; then
+  "$WORK/sysacc-cmdline-host" >> "$WORK/sysacc-cmdline-host.log" 2>&1; rc=$?
+  [ $rc -eq 0 ] || sed 's/^/      /' "$WORK/sysacc-cmdline-host.log"
+  report sysacc-cmdline-host $rc
+else
+  echo "FAIL  sysacc-cmdline-host (did not build)"; sed 's/^/      /' "$WORK/sysacc-cmdline-host.log"; fail=$((fail+1))
+fi
+
 # custom-font-host (ZVIEW01): zView's draw_text() (zview/custom_font.c as the
 # SDK builds it -- the overlay) hands vrt_cpyfm each glyph as host-order WORDs
 # with row r in bits 15..8, exactly the form the 68k original builds; the

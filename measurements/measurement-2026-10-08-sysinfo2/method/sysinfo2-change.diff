@@ -1,0 +1,1852 @@
+diff --git a/sdk/examples/sysacc.c b/sdk/examples/sysacc.c
+index 5219f21f..79fc699b 100644
+--- a/sdk/examples/sysacc.c
++++ b/sdk/examples/sysacc.c
+@@ -1,22 +1,27 @@
+ /*
+- * sysacc.c -- SYSINFO01: the "System Info" desk accessory, version 1.
++ * sysacc.c -- SYSINFO02: the "System Info" desk accessory, version 2.
+  *
+- * A read-only GEM dialog that shows the state the kernel actually runs with:
+- * the machine (CPU clock, temperature, kernel version, ST-RAM / TT-RAM), the
+- * memory protection and address-space IDs, the SD card's transfer mode and
+- * the block cache, the CPU clock policy, the display, the keyboard layout and
+- * the serial console. Every value is asked from the kernel through NewTOS's
+- * own Ssystem subfunctions (GEMDOS 0x154, modes 2000-2019,
+- * docs/api/gemdos/154-ssystem.md) at the moment the dialog opens -- it is the
+- * EFFECTIVE state (what the boot code did with cmdline.txt, what the card
+- * negotiated), never the text of a configuration file. A value the kernel
+- * does not know is shown as "not available", never as an invented number.
++ * A GEM dialog that shows the state the kernel actually runs with -- the
++ * machine (CPU clock, temperature, kernel version, ST-RAM / TT-RAM), the
++ * display, the SD bus and the keyboard layout -- and the eight start-up
++ * settings that live in the boot arguments (C:\CMDLINE.TXT on the Pi):
++ * memory protection, address-space IDs, SD card mode, CPU clock, block
++ * cache, cache share, pointer motion while a program computes, serial
++ * console. For each setting the dialog shows the value the kernel runs with
++ * NOW (asked through NewTOS's own Ssystem subfunctions, GEMDOS 0x154, modes
++ * 2000-2019, docs/api/gemdos/154-ssystem.md) and the value selected for the
++ * NEXT start (read from C:\CMDLINE.TXT the way the kernel reads its boot
++ * arguments). Clicking a next-start value opens a small drop-down list of
++ * the choices; Save writes C:\CMDLINE.TXT. The file's text is never shown:
++ * every value is a plain-language label (user, 2026-10-07/08).
+  *
+- * History: ACC06 built it as one form_alert with the ARM clock and the die
+- * temperature (Ssystem 2000/2001); SYSINFO01 (2026-10-07) turned it into this
+- * dialog. Editing comes later: each value is an object of its own in a fixed
+- * value column, so a later version can turn it into a selectable control
+- * (pop-up button, radio buttons) without moving the layout.
++ * A value the kernel does not report is shown as "not available", never as
++ * an invented one. (The pointer-motion mode, `input=aes`, has no Ssystem
++ * mode yet: its NOW column says so.)
++ *
++ * History: ACC06 built it as one form_alert (Ssystem 2000/2001); SYSINFO01
++ * (2026-10-07) turned it into a read-only dialog; SYSINFO02 (2026-10-08)
++ * made the start-up settings selectable and savable.
+  *
+  * FILE EXTENSION: `.NAC` (ADR-018, ACC05): a native AArch64 desk accessory.
+  * The AES loads it once from C:\ACC\*.NAC and C:\*.NAC at session start
+@@ -36,37 +41,69 @@
+  *       AC_OPEN  (40) with our menu id -> read the values, run the dialog
+  *       AC_CLOSE (41)                  -> nothing to tear down; keep running
+  *
+- * An accessory never terminates, so there is no appl_exit and no return out
+- * of the loop.
+- *
+  * The dialog is the classic modal sequence (EmuTOS gemfmlib.c / the AES
+  * reference): wind_update(BEG_UPDATE), form_center, form_dial(FMD_START),
+- * objc_draw, form_do, form_dial(FMD_FINISH), wind_update(END_UPDATE). The
+- * object tree is built in code -- the accessory is freestanding (no libc, no
+- * rsrc_load), and a tree in its own memory is what form_alert's caller-less
+- * kernel tree is not: something the next version can edit in place.
++ * objc_draw, form_do ..., form_dial(FMD_FINISH), wind_update(END_UPDATE).
++ * form_do is called again after every exit object that does not close the
++ * dialog (a drop-down button, Save).
++ *
++ * Buttons: Save writes the selection to C:\CMDLINE.TXT and keeps the dialog
++ * open; OK closes it, after the same save when something was changed and not
++ * yet saved; Cancel closes it and forgets unsaved selections. Before any
++ * write one form_alert lists the changes in plain words.
++ *
++ * The drop-down: the AES's menu_popup (36) is not implemented in NewTOS yet,
++ * so the accessory does what EmuTOS's mn_popup does (aes/gemmnext.c:302-345,
++ * handle_popup :240-293) with public AES calls only: take the mouse
++ * (wind_update BEG_MCTRL), wait for the button to go up, draw a small object
++ * tree of its own over the clicked button (the current choice over the
++ * button, CHECKED; the item under the pointer SELECTED), track the pointer
++ * with evnt_multi(MU_M1 | MU_BUTTON | MU_KEYBD) -- M1 leaves the item under
++ * the pointer or enters the box -- and end on a click (an item: choose it;
++ * elsewhere: cancel), Esc (cancel) or Return (the highlighted item); the
++ * cursor keys move the highlight. The box always lies inside the dialog, so
++ * the dialog's own objc_draw, clipped to the box, restores what it covered
++ * (EmuTOS saves and blits the background instead; the result on screen is
++ * the same). Then wait for the button to go up and give the mouse back
++ * (END_MCTRL).
++ *
++ * Saving (sysacc-cmdline.h has the token rules, tested on the host):
++ *   1. the new text = the old C:\CMDLINE.TXT with every token the accessory
++ *      does not manage kept in order, the managed ones replaced or removed,
++ *      kernel defaults omitted, one line;
++ *   2. C:\CMDLINE.BAK = a copy of the old file (when there was one);
++ *   3. C:\CMDLINE.NEW = the new text, written and closed;
++ *   4. Fdelete C:\CMDLINE.TXT, Frename C:\CMDLINE.NEW -> C:\CMDLINE.TXT
++ *      (GEMDOS Frename does not replace an existing target).
++ * A failure stops the sequence with an alert naming the step; the old file
++ * is then still either in place or in C:\CMDLINE.BAK. A file the accessory
++ * cannot read completely (read error, 4 KB or more) is never rewritten.
++ * config.txt is never touched.
+  *
+  * Look: the AES 3D style (memory note aes-dialog-3d-look; the same flags
+  * form_alert uses, tos-api/src/aes/form.rs): the root is an OUTLINED G_BOX
+- * with FL3DBAK (the grey 3D panel), the OK button a DEFAULT|EXIT G_BUTTON
+- * with FL3DACT. Groups are framed G_IBOXes. 8x16 system font, the whole
+- * dialog is 612 x 324 pixels -- it fits a 640 x 480 screen with its menu bar.
++ * with FL3DBAK, buttons FL3DACT, the drop-down box FL3DBAK + SHADOWED.
++ * 8x16 system font; the dialog is 612 x 452 pixels -- it fits a 640 x 480
++ * screen below its menu bar.
+  *
+  * Calls used, all against docs/api/ and the EmuTOS AES:
+- *   appl_init       AES  10
+- *   evnt_mesag      AES  23
+- *   menu_register   AES  35
+- *   objc_draw       AES  42
+- *   form_do         AES  50
+- *   form_dial       AES  51
+- *   form_center     AES  54
+- *   wind_update     AES 107
+- *   Ssystem         GEMDOS 0x154, modes 2000-2019
++ *   appl_init       AES  10      objc_change     AES  47
++ *   evnt_button     AES  21      form_do         AES  50
++ *   evnt_mesag      AES  23      form_dial       AES  51
++ *   evnt_multi      AES  25      form_alert      AES  52
++ *   menu_register   AES  35      form_center     AES  54
++ *   objc_draw       AES  42      graf_mkstate    AES  79
++ *   objc_find       AES  43      wind_update     AES 107
++ *   objc_offset     AES  44
++ *   Fcreate 0x3C, Fopen 0x3D, Fclose 0x3E, Fread 0x3F, Fwrite 0x40,
++ *   Fdelete 0x41, Frename 0x56, Ssystem 0x154 (modes 2000-2019)
+  */
+ #include <newtos.h>
+ 
++#include "sysacc-cmdline.h"
++
+ /* ------------------------------------------------------------------------- */
+-/* GEMDOS: Ssystem takes three arguments; newtos.h ships gemdos0/1/2 only.    */
++/* GEMDOS: newtos.h ships gemdos0/1/2 only.                                   */
+ /* ------------------------------------------------------------------------- */
+ 
+ static inline NLONG gemdos3(NLONG fn, NLONG a0, NLONG a1, NLONG a2)
+@@ -82,8 +119,19 @@ static inline NLONG gemdos3(NLONG fn, NLONG a0, NLONG a1, NLONG a2)
+     return r0;
+ }
+ 
+-#define SSYSTEM 0x154
+ #define E_OK    0L
++#define EFILNF  (-33L)
++
++/* File calls (docs/api/gemdos/file/). */
++#define Fcreate(n, a)    gemdos2(0x3C, (NLONG)(n), (NLONG)(a))
++#define Fopen(n, m)      gemdos2(0x3D, (NLONG)(n), (NLONG)(m))
++#define Fclose(h)        gemdos1(0x3E, (NLONG)(h))
++#define Fread(h, c, b)   gemdos3(0x3F, (NLONG)(h), (NLONG)(c), (NLONG)(b))
++#define Fwrite(h, c, b)  gemdos3(0x40, (NLONG)(h), (NLONG)(c), (NLONG)(b))
++#define Fdelete(n)       gemdos1(0x41, (NLONG)(n))
++#define Frename(o, n)    gemdos3(0x56, 0, (NLONG)(o), (NLONG)(n))
++
++#define SSYSTEM 0x154
+ 
+ /* NewTOS-own Ssystem modes (docs/api/gemdos/154-ssystem.md). */
+ #define S_NEWTOS_CPUCLOCK   2000 /* ARM clock, requested rate, Hz      */
+@@ -173,9 +221,22 @@ static short aes_call(short opcode, short nin, short nout, short naddrin)
+ #define FMD_FINISH   3
+ #define END_UPDATE   0
+ #define BEG_UPDATE   1
++#define END_MCTRL    2
++#define BEG_MCTRL    3
++
++/* evnt_multi flags (EmuTOS include/aesdefs.h). */
++#define MU_KEYBD   0x0001
++#define MU_BUTTON  0x0002
++#define MU_M1      0x0004
++
++/* Keys: evnt_multi's kreturn = scan code << 8 | ASCII. */
++#define K_ESC      0x1B
++#define K_RETURN   0x0D
++#define SC_UP      0x48
++#define SC_DOWN    0x50
+ 
+ /* ------------------------------------------------------------------------- */
+-/* The object tree.                                                           */
++/* Object trees.                                                              */
+ /* ------------------------------------------------------------------------- */
+ 
+ /* The 32-byte native (LP64) GEM OBJECT: ob_spec is 8 bytes at offset 16
+@@ -201,12 +262,14 @@ typedef struct {
+ #define FL3DACT    0x0600
+ 
+ #define SELECTED   0x0001
++#define CHECKED    0x0004
+ #define OUTLINED   0x0010
++#define SHADOWED   0x0020
+ 
+ /* Box ob_spec: thickness in bits 16..23 (signed), then the colour word
+  * (frame colour 1 = black in bits 12..15, text colour 1 in 8..11). The root
+- * carries form_alert's spec, 1 << 16; a group frame is -1 (one pixel inside)
+- * in black, hollow. */
++ * carries form_alert's spec, 1 << 16; a group frame and the drop-down box
++ * are -1 (one pixel) in black, hollow. */
+ #define ROOT_SPEC  (1UL << 16)
+ #define FRAME_SPEC (0x00FF1100UL)
+ 
+@@ -222,21 +285,33 @@ typedef struct {
+ #define DIALOG_W (MARGIN + GROUP_W + MARGIN + GROUP_W + MARGIN)          /* 612 */
+ #define ROW 16
+ 
+-#define MAX_OBJ 64
++/* The settings group: label | now | next-start drop-down button. */
++#define SET_W      (DIALOG_W - 2 * MARGIN)                               /* 588 */
++#define SLABEL_X   PAD
++#define SLABEL_W   (17 * CW)
++#define SNOW_X     (SLABEL_X + SLABEL_W + PAD)                           /* 152 */
++#define SNOW_W     (22 * CW)
++#define SBTN_X     (SNOW_X + SNOW_W + 3 * PAD)                           /* 352 */
++#define BTN_CHARS  27
++#define SBTN_W     (BTN_CHARS * CW)                                      /* 216 */
++#define SROW       22             /* a 3D button is drawn 2 px larger all round */
++#define SROW0      (PAD + ROW + 6)
++
++#define MAX_OBJ 96
+ 
+ static OBJECT tree[MAX_OBJ];
+ static int nobj;
+-static short ok_button;
+ 
+-/* Append an object under `parent` (-1 = the root) and link it as the
+- * parent's last child: ob_next of a last child points back at the parent,
+- * the classic GEM tree linkage. Coordinates are relative to the parent. */
+-static short add(short parent, unsigned short type, unsigned short flags,
+-                 unsigned short state, unsigned long spec,
+-                 short x, short y, short w, short h)
++/* Append an object under `parent` (-1 = the root) of tree `t` (with `*n`
++ * objects) and link it as the parent's last child: ob_next of a last child
++ * points back at the parent, the classic GEM tree linkage. Coordinates are
++ * relative to the parent. */
++static short add_to(OBJECT *t, int *n, short parent, unsigned short type,
++                    unsigned short flags, unsigned short state,
++                    unsigned long spec, short x, short y, short w, short h)
+ {
+-    short idx = (short)nobj++;
+-    OBJECT *o = &tree[idx];
++    short idx = (short)(*n)++;
++    OBJECT *o = &t[idx];
+ 
+     o->ob_next = -1;
+     o->ob_head = -1;
+@@ -251,37 +326,115 @@ static short add(short parent, unsigned short type, unsigned short flags,
+     o->ob_height = h;
+ 
+     if (parent >= 0) {
+-        OBJECT *p = &tree[parent];
++        OBJECT *p = &t[parent];
+         if (p->ob_head < 0)
+             p->ob_head = idx;
+         else
+-            tree[p->ob_tail].ob_next = idx;
++            t[p->ob_tail].ob_next = idx;
+         p->ob_tail = idx;
+         o->ob_next = parent;
+     }
+     return idx;
+ }
+ 
++static short add(short parent, unsigned short type, unsigned short flags,
++                 unsigned short state, unsigned long spec,
++                 short x, short y, short w, short h)
++{
++    return add_to(tree, &nobj, parent, type, flags, state, spec, x, y, w, h);
++}
++
++/* ------------------------------------------------------------------------- */
++/* AES helpers.                                                               */
++/* ------------------------------------------------------------------------- */
++
++static void objc_draw_clip(OBJECT *t, short start, short x, short y,
++                           short w, short h)
++{
++    aes_intin[0] = start;
++    aes_intin[1] = 8; /* depth */
++    aes_intin[2] = x; aes_intin[3] = y; aes_intin[4] = w; aes_intin[5] = h;
++    aes_addrin[0] = (long)t;
++    aes_call(42, 6, 1, 1);
++}
++
++/* Absolute screen position of object `obj`. */
++static void objc_abs(OBJECT *t, short obj, short *x, short *y)
++{
++    aes_intin[0] = obj;
++    aes_addrin[0] = (long)t;
++    aes_call(44, 1, 3, 1);
++    *x = aes_intout[1];
++    *y = aes_intout[2];
++}
++
++static short objc_find_at(OBJECT *t, short start, short depth, short mx, short my)
++{
++    aes_intin[0] = start;
++    aes_intin[1] = depth;
++    aes_intin[2] = mx;
++    aes_intin[3] = my;
++    aes_addrin[0] = (long)t;
++    return aes_call(43, 4, 1, 1);
++}
++
++static void objc_change_to(OBJECT *t, short obj, short cx, short cy, short cw,
++                           short ch, unsigned short state)
++{
++    aes_intin[0] = obj;
++    aes_intin[1] = 0;
++    aes_intin[2] = cx; aes_intin[3] = cy; aes_intin[4] = cw; aes_intin[5] = ch;
++    aes_intin[6] = (short)state;
++    aes_intin[7] = 1; /* redraw */
++    aes_addrin[0] = (long)t;
++    aes_call(47, 8, 1, 1);
++}
++
++static void wind_update(short mode)
++{
++    aes_intin[0] = mode;
++    aes_call(107, 1, 1, 0);
++}
++
++/* Wait until no mouse button is down (EmuTOS mn_popup's
++ * `ev_button(1, 0x00ff, 0x0000, rets)`; returns at once when already up). */
++static void wait_button_up(void)
++{
++    aes_intin[0] = 1;
++    aes_intin[1] = 0x00FF;
++    aes_intin[2] = 0;
++    aes_call(21, 3, 5, 0);
++}
++
++static short form_alert(short def, const char *text)
++{
++    aes_intin[0] = def;
++    aes_addrin[0] = (long)text;
++    return aes_call(52, 1, 1, 1);
++}
++
+ /* ------------------------------------------------------------------------- */
+ /* Text building -- no libc in a freestanding native program.                 */
+ /* ------------------------------------------------------------------------- */
+ 
+-static int sapp(char *dst, int j, const char *s)
++/* Append `s` to dst[j..] within a buffer of `cap` bytes; returns the new
++ * length. dst stays NUL-terminated. */
++static int sappn(char *dst, int cap, int j, const char *s)
+ {
+-    while (*s && j < VALUE_LEN - 1)
++    while (*s && j < cap - 1)
+         dst[j++] = *s++;
+     dst[j] = '\0';
+     return j;
+ }
+ 
+-static int napp(char *dst, int j, long v)
++static int napps(char *dst, int cap, int j, long v)
+ {
+     char tmp[24];
+     int i = 0;
+     unsigned long u;
+ 
+     if (v < 0) {
+-        j = sapp(dst, j, "-");
++        j = sappn(dst, cap, j, "-");
+         u = (unsigned long)(-v);
+     } else {
+         u = (unsigned long)v;
+@@ -290,12 +443,15 @@ static int napp(char *dst, int j, long v)
+         tmp[i++] = (char)('0' + (int)(u % 10));
+         u /= 10;
+     } while (u);
+-    while (i && j < VALUE_LEN - 1)
++    while (i && j < cap - 1)
+         dst[j++] = tmp[--i];
+     dst[j] = '\0';
+     return j;
+ }
+ 
++#define sapp(d, j, s) sappn((d), VALUE_LEN, (j), (s))
++#define napp(d, j, v) napps((d), VALUE_LEN, (j), (v))
++
+ /* `v / div` with one decimal, rounding down -- no floating point here. */
+ static int fix1app(char *dst, int j, long v, long div)
+ {
+@@ -314,38 +470,133 @@ static int fix1app(char *dst, int j, long v, long div)
+     return sapp(dst, j, d);
+ }
+ 
+-/* A size given in KiB as "N MB" (whole MiB), or "N KB" below one MiB. */
+-static void size_text(char *dst, long kib)
++/* A size given in KiB as "N MB" (whole MiB, rounded down), or "N KB" below
++ * one MiB -- or, with `exact`, "N KB" whenever it is not whole MiB (a
++ * block-cache size from the file is shown as it will be used). */
++static void size_textn(char *dst, int cap, long kib, int exact)
+ {
+     int j;
+-    if (kib >= 1024) {
+-        j = napp(dst, 0, kib / 1024);
+-        sapp(dst, j, " MB");
++    if (kib >= 1024 && (!exact || kib % 1024 == 0)) {
++        j = napps(dst, cap, 0, kib / 1024);
++        sappn(dst, cap, j, " MB");
+     } else {
+-        j = napp(dst, 0, kib);
+-        sapp(dst, j, " KB");
++        j = napps(dst, cap, 0, kib);
++        sappn(dst, cap, j, " KB");
+     }
+ }
+ 
+ static const char NA[] = "not available";
+ 
+ /* ------------------------------------------------------------------------- */
+-/* The rows.                                                                  */
++/* The read-only rows.                                                        */
+ /* ------------------------------------------------------------------------- */
+ 
+ enum {
+-    V_KERNEL,
+-    V_CLOCK, V_MEASURED, V_POLICY, V_TEMP, V_STRAM, V_TTRAM,
+-    V_RES, V_DEPTH, V_GPUMEM,
+-    V_MEMPROT, V_ASID,
+-    V_SDMODE, V_SDBUS, V_BCACHE, V_BCACHEPCT,
+-    V_KEYBOARD, V_SERIAL,
++    V_CLOCK, V_MEASURED, V_TEMP, V_STRAM, V_TTRAM,
++    V_RES, V_DEPTH, V_GPUMEM, V_SDBUS, V_KEYBOARD,
+     V_COUNT
+ };
+ 
+ static char value[V_COUNT][VALUE_LEN];
+ static char kernel_text[48];
+ 
++/* ------------------------------------------------------------------------- */
++/* The settings.                                                              */
++/* ------------------------------------------------------------------------- */
++
++#define MAX_CHOICES 5
++
++typedef struct {
++    const char *label;              /* row label and alert wording */
++    int nchoices;
++    const char *choice[MAX_CHOICES];
++    long val[MAX_CHOICES];          /* cl_settings value of each choice */
++} setting_def;
++
++/* Order = CL_* (sysacc-cmdline.h). Not const: a table of pointers in the
++ * read-only segment would need relocations there (-z text). */
++static setting_def defs[CL_COUNT] = {
++    { "Memory protection", 3, { "Off", "On", "Strict" }, { 0, 1, 2 } },
++    { "Address-space IDs", 3, { "Off", "On", "Test (rollover)" }, { 0, 1, 2 } },
++    { "SD card mode", 2, { "Fast (multi-block)", "Compatibility" }, { 0, 1 } },
++    { "CPU clock", 2, { "Fixed at maximum", "Firmware-controlled" }, { 1, 0 } },
++    { "Block cache", 5, { "Off", "8 MB", "16 MB", "32 MB", "64 MB" },
++      { 0, 8192, 16384, 32768, 65536 } },
++    { "Cache share", 4, { "5 %", "10 %", "25 %", "50 %" }, { 5, 10, 25, 50 } },
++    { "Mouse while busy", 2, { "On", "Off" }, { 1, 0 } },
++    { "Serial console", 2, { "On", "Off" }, { 1, 0 } },
++};
++
++static char now_text[CL_COUNT][VALUE_LEN];
++static char btn_text[CL_COUNT][BTN_CHARS + 1];
++static short btn_obj[CL_COUNT];
++
++static cl_settings file_set;   /* what C:\CMDLINE.TXT says now         */
++static cl_settings sel_set;    /* what the dialog has selected         */
++
++/* The file as read when the dialog opened (or as last saved). */
++#define FILE_CAP 4096
++static char file_buf[FILE_CAP];
++static int file_len;
++enum { FILE_MISSING, FILE_OK, FILE_BAD };
++static int file_state;
++static long file_err;
++
++static const char path_txt[] = "C:\\CMDLINE.TXT";
++static const char path_bak[] = "C:\\CMDLINE.BAK";
++static const char path_new[] = "C:\\CMDLINE.NEW";
++
++static char status_text[80];
++static short status_obj, save_button, cancel_button, ok_button;
++
++/* Index of value `v` among setting k's choices, or -1 (a value the file
++ * holds that the list does not offer, e.g. bcache=12288). */
++static int choice_index(int k, long v)
++{
++    int i;
++    for (i = 0; i < defs[k].nchoices; i++)
++        if (defs[k].val[i] == v)
++            return i;
++    return -1;
++}
++
++/* Plain-language text of value `v` of setting k. */
++static void value_textn(char *dst, int cap, int k, long v)
++{
++    int i = choice_index(k, v);
++    int j;
++    if (i >= 0) {
++        sappn(dst, cap, 0, defs[k].choice[i]);
++    } else if (k == CL_BCACHE) {
++        if (v == 0)
++            sappn(dst, cap, 0, "Off");
++        else
++            size_textn(dst, cap, v, 1);
++    } else if (k == CL_BCACHEPCT) {
++        j = napps(dst, cap, 0, v);
++        sappn(dst, cap, j, " %");
++    } else {
++        napps(dst, cap, 0, v);
++    }
++}
++
++/* The drop-down button's text: the value, padded, and the down arrow of
++ * the Atari character set (0x02) at the right edge. */
++static void set_btn_text(int k)
++{
++    char *b = btn_text[k];
++    int j;
++    value_textn(b, BTN_CHARS + 1, k, sel_set.v[k]);
++    j = 0;
++    while (b[j])
++        j++;
++    while (j < BTN_CHARS - 3)
++        b[j++] = ' ';
++    b[j++] = ' ';
++    b[j++] = '\x02';
++    b[j] = '\0';
++}
++
+ /* Ask the kernel for every value; called on each AC_OPEN, so the clock and
+  * the temperature are the readings of that moment. */
+ static void read_values(void)
+@@ -356,7 +607,7 @@ static void read_values(void)
+     /* Kernel version: Ssystem 2019 copies at most len-1 characters + NUL. */
+     if (gemdos3(SSYSTEM, S_NEWTOS_KVERSION, (NLONG)kernel_text,
+                 (NLONG)sizeof(kernel_text)) != E_OK)
+-        sapp(kernel_text, 0, NA);
++        sappn(kernel_text, (int)sizeof(kernel_text), 0, NA);
+ 
+     /* CPU clock: the rate the firmware was asked for (2000) and the rate it
+      * measured (2003). */
+@@ -372,12 +623,6 @@ static void read_values(void)
+     } else {
+         sapp(value[V_MEASURED], 0, NA);
+     }
+-    if (sys_value(S_NEWTOS_CPUPOLICY, &v))
+-        sapp(value[V_POLICY], 0,
+-             v == 1 ? "Fixed at maximum" :
+-             v == 2 ? "Firmware (max denied)" : "Firmware-controlled");
+-    else
+-        sapp(value[V_POLICY], 0, NA);
+ 
+     /* Temperature, 1/1000 degree C; 0xF8 is the degree sign of the Atari
+      * character set. */
+@@ -389,14 +634,14 @@ static void read_values(void)
+     }
+ 
+     if (sys_value(S_NEWTOS_STRAM, &v))
+-        size_text(value[V_STRAM], v);
++        size_textn(value[V_STRAM], VALUE_LEN, v, 0);
+     else
+         sapp(value[V_STRAM], 0, NA);
+     if (sys_value(S_NEWTOS_TTRAM, &v)) {
+         if (v == 0)
+             sapp(value[V_TTRAM], 0, "none");
+         else
+-            size_text(value[V_TTRAM], v);
++            size_textn(value[V_TTRAM], VALUE_LEN, v, 0);
+     } else {
+         sapp(value[V_TTRAM], 0, NA);
+     }
+@@ -416,48 +661,16 @@ static void read_values(void)
+         sapp(value[V_DEPTH], 0, NA);
+     }
+     if (sys_value(S_NEWTOS_GPUMEM, &v))
+-        size_text(value[V_GPUMEM], v);
++        size_textn(value[V_GPUMEM], VALUE_LEN, v, 0);
+     else
+         sapp(value[V_GPUMEM], 0, NA);
+ 
+-    /* Memory protection and address-space IDs. */
+-    if (sys_value(S_NEWTOS_MEMPROT, &v))
+-        sapp(value[V_MEMPROT], 0, v == 2 ? "Strict" : v == 1 ? "On" : "Off");
+-    else
+-        sapp(value[V_MEMPROT], 0, NA);
+-    if (sys_value(S_NEWTOS_ASID, &v))
+-        sapp(value[V_ASID], 0, v == 2 ? "Test (rollover)" : v == 1 ? "On" : "Off");
+-    else
+-        sapp(value[V_ASID], 0, NA);
+-
+-    /* SD card and block cache. */
+-    if (sys_value(S_NEWTOS_SDMODE, &v))
+-        sapp(value[V_SDMODE], 0, v ? "Compatibility" : "Fast (multi-block)");
+-    else
+-        sapp(value[V_SDMODE], 0, NA);
+     if (sys_value(S_NEWTOS_SDBUS, &v)) {
+         j = napp(value[V_SDBUS], 0, v);
+         sapp(value[V_SDBUS], j, "-bit");
+     } else {
+         sapp(value[V_SDBUS], 0, NA);
+     }
+-    if (sys_value(S_NEWTOS_BCACHE, &v)) {
+-        if (v == 0)
+-            sapp(value[V_BCACHE], 0, "Off");
+-        else
+-            size_text(value[V_BCACHE], v);
+-    } else {
+-        sapp(value[V_BCACHE], 0, NA);
+-    }
+-    if (sys_value(S_NEWTOS_BCACHEPCT, &v)) {
+-        j = napp(value[V_BCACHEPCT], 0, v);
+-        sapp(value[V_BCACHEPCT], j, " %");
+-    } else {
+-        /* No cache, no share: say so rather than a percentage of nothing. */
+-        sapp(value[V_BCACHEPCT], 0, "-");
+-    }
+-
+-    /* Keyboard and serial console. */
+     if (sys_value(S_NEWTOS_KEYBOARD, &v))
+         sapp(value[V_KEYBOARD], 0,
+              v == 0 ? "US (built-in)" :
+@@ -465,15 +678,121 @@ static void read_values(void)
+              v == 2 ? "KEYBOARD.KBD" : "Changed by program");
+     else
+         sapp(value[V_KEYBOARD], 0, NA);
++
++    /* The settings as the kernel runs them now. */
++    if (sys_value(S_NEWTOS_MEMPROT, &v))
++        value_textn(now_text[CL_MEMPROT], VALUE_LEN, CL_MEMPROT, v);
++    else
++        sapp(now_text[CL_MEMPROT], 0, NA);
++    if (sys_value(S_NEWTOS_ASID, &v))
++        value_textn(now_text[CL_ASID], VALUE_LEN, CL_ASID, v);
++    else
++        sapp(now_text[CL_ASID], 0, NA);
++    if (sys_value(S_NEWTOS_SDMODE, &v))
++        value_textn(now_text[CL_SDMODE], VALUE_LEN, CL_SDMODE, v ? 1 : 0);
++    else
++        sapp(now_text[CL_SDMODE], 0, NA);
++    /* 2004: 0 firmware, 1 fixed max, 2 = the maximum was asked for but the
++     * firmware refused it -- not a choice, a state of its own. */
++    if (sys_value(S_NEWTOS_CPUPOLICY, &v))
++        sapp(now_text[CL_CPUCLK], 0,
++             v == 1 ? "Fixed at maximum" :
++             v == 2 ? "Firmware (max denied)" : "Firmware-controlled");
++    else
++        sapp(now_text[CL_CPUCLK], 0, NA);
++    if (sys_value(S_NEWTOS_BCACHE, &v))
++        value_textn(now_text[CL_BCACHE], VALUE_LEN, CL_BCACHE, v);
++    else
++        sapp(now_text[CL_BCACHE], 0, NA);
++    if (sys_value(S_NEWTOS_BCACHEPCT, &v))
++        value_textn(now_text[CL_BCACHEPCT], VALUE_LEN, CL_BCACHEPCT, v);
++    else
++        /* No cache, no share: say so rather than a percentage of nothing. */
++        sapp(now_text[CL_BCACHEPCT], 0, "-");
++    /* No Ssystem mode reports the input mode (input=aes) yet. */
++    sapp(now_text[CL_INPUT], 0, NA);
+     if (sys_value(S_NEWTOS_SERIAL, &v))
+-        sapp(value[V_SERIAL], 0, v ? "On" : "Off");
++        value_textn(now_text[CL_SERIAL], VALUE_LEN, CL_SERIAL, v ? 1 : 0);
+     else
+-        sapp(value[V_SERIAL], 0, NA);
++        sapp(now_text[CL_SERIAL], 0, NA);
++}
++
++/* Read C:\CMDLINE.TXT into file_buf and parse it into file_set. */
++static void read_file(void)
++{
++    long h, n;
++
++    file_len = 0;
++    file_err = 0;
++    h = Fopen(path_txt, 0);
++    if (h < 0) {
++        if (h == EFILNF) {
++            file_state = FILE_MISSING;
++        } else {
++            file_state = FILE_BAD;
++            file_err = h;
++        }
++    } else {
++        n = Fread(h, FILE_CAP, file_buf);
++        Fclose(h);
++        if (n < 0) {
++            file_state = FILE_BAD;
++            file_err = n;
++        } else if (n >= FILE_CAP) {
++            /* 4 KB or more: the accessory could not keep all of it. */
++            file_state = FILE_BAD;
++        } else {
++            file_state = FILE_OK;
++            file_len = (int)n;
++        }
++    }
++    cl_parse(file_state == FILE_OK ? file_buf : 0, file_len, &file_set);
++}
++
++static void copy_settings(cl_settings *dst, const cl_settings *src)
++{
++    int k;
++    for (k = 0; k < CL_COUNT; k++)
++        dst->v[k] = src->v[k];
++}
++
++static int changes(void)
++{
++    int k, n = 0;
++    for (k = 0; k < CL_COUNT; k++)
++        if (sel_set.v[k] != file_set.v[k])
++            n++;
++    return n;
++}
++
++static void set_status(const char *a, long num, const char *b)
++{
++    int j = sappn(status_text, (int)sizeof(status_text), 0, a);
++    if (num) {
++        j = napps(status_text, (int)sizeof(status_text), j, num);
++        sappn(status_text, (int)sizeof(status_text), j, b);
++    }
+ }
+ 
+-/* One "label  value" row inside a group, row index `r` below its heading.
+- * The value is its own object in the value column -- the slot a later
+- * version turns into a control. */
++static void initial_status(void)
++{
++    if (file_state == FILE_OK)
++        set_status("Next start: as selected above, from C:\\CMDLINE.TXT.", 0, 0);
++    else if (file_state == FILE_MISSING)
++        set_status("No C:\\CMDLINE.TXT yet: the next start uses the defaults.", 0, 0);
++    else if (file_err)
++        set_status("C:\\CMDLINE.TXT cannot be read (error ", file_err,
++                   "): saving is off.");
++    else
++        set_status("C:\\CMDLINE.TXT is 4 KB or larger: saving is off.", 0, 0);
++}
++
++/* ------------------------------------------------------------------------- */
++/* The tree.                                                                  */
++/* ------------------------------------------------------------------------- */
++
++/* One "label  value" row inside an info group, row index `r` below its
++ * heading. */
+ static void row(short group, int r, const char *label, int v)
+ {
+     short y = (short)(PAD + ROW + r * ROW);
+@@ -495,77 +814,386 @@ static short group(short root, short x, short y, int rows, const char *title)
+ 
+ static void build_tree(void)
+ {
+-    short root, g;
+-    short top, lx, rx, ly, ry;
++    short root, g, s;
++    short top, y;
++    int k;
+ 
+     nobj = 0;
+     root = add(-1, G_BOX, FL3DBAK, OUTLINED, ROOT_SPEC, 0, 0, DIALOG_W, 0);
+ 
+     add(root, G_STRING, 0, 0, (unsigned long)"NewTOS System Information",
+-        (short)((DIALOG_W - 25 * CW) / 2), 8, 25 * CW, CH);
++        (short)((DIALOG_W - 25 * CW) / 2), 6, 25 * CW, CH);
+     add(root, G_STRING, 0, 0, (unsigned long)"Kernel",
+-        MARGIN + PAD, 32, LABEL_CHARS * CW, CH);
++        MARGIN + PAD, 26, LABEL_CHARS * CW, CH);
+     add(root, G_STRING, 0, 0, (unsigned long)kernel_text,
+-        MARGIN + PAD + LABEL_CHARS * CW + PAD, 32, 47 * CW, CH);
++        MARGIN + PAD + LABEL_CHARS * CW + PAD, 26, 47 * CW, CH);
+ 
+-    top = 56;
+-    lx = MARGIN;
+-    rx = MARGIN + GROUP_W + MARGIN;
+-
+-    /* Left column: System, Display. */
+-    ly = top;
+-    g = group(root, lx, ly, 6, "System");
+-    row(g, 0, "CPU clock", V_CLOCK);
++    top = 48;
++    g = group(root, MARGIN, top, 5, "System");
++    row(g, 0, "Clock rate", V_CLOCK);
+     row(g, 1, "Measured", V_MEASURED);
+-    row(g, 2, "Clock policy", V_POLICY);
+-    row(g, 3, "Temperature", V_TEMP);
+-    row(g, 4, "ST-RAM", V_STRAM);
+-    row(g, 5, "TT-RAM", V_TTRAM);
+-    ly = (short)(ly + tree[g].ob_height + 8);
+-    g = group(root, lx, ly, 3, "Display");
++    row(g, 2, "Temperature", V_TEMP);
++    row(g, 3, "ST-RAM", V_STRAM);
++    row(g, 4, "TT-RAM", V_TTRAM);
++    g = group(root, MARGIN + GROUP_W + MARGIN, top, 5, "Display and devices");
+     row(g, 0, "Resolution", V_RES);
+     row(g, 1, "Colour depth", V_DEPTH);
+     row(g, 2, "GPU memory", V_GPUMEM);
+-    ly = (short)(ly + tree[g].ob_height);
+-
+-    /* Right column: Memory protection, SD card, Input / output. */
+-    ry = top;
+-    g = group(root, rx, ry, 2, "Memory protection");
+-    row(g, 0, "Protection", V_MEMPROT);
+-    row(g, 1, "Address IDs", V_ASID);
+-    ry = (short)(ry + tree[g].ob_height + 8);
+-    g = group(root, rx, ry, 4, "SD card");
+-    row(g, 0, "Transfer", V_SDMODE);
+-    row(g, 1, "Bus width", V_SDBUS);
+-    row(g, 2, "Block cache", V_BCACHE);
+-    row(g, 3, "Cache share", V_BCACHEPCT);
+-    ry = (short)(ry + tree[g].ob_height + 8);
+-    g = group(root, rx, ry, 2, "Input / output");
+-    row(g, 0, "Keyboard", V_KEYBOARD);
+-    row(g, 1, "Serial port", V_SERIAL);
+-    ry = (short)(ry + tree[g].ob_height);
+-
+-    if (ry > ly)
+-        ly = ry;
++    row(g, 3, "SD bus width", V_SDBUS);
++    row(g, 4, "Keyboard", V_KEYBOARD);
++    y = (short)(top + tree[g].ob_height + 8);
++
++    /* The settings: label | running now | next start (drop-down). */
++    s = add(root, G_IBOX, 0, 0, FRAME_SPEC, MARGIN, y, SET_W,
++            (short)(SROW0 + CL_COUNT * SROW + 4));
++    add(s, G_STRING, 0, 0, (unsigned long)"Settings",
++        SLABEL_X, PAD - 4, SLABEL_W + PAD, CH);
++    add(s, G_STRING, 0, 0, (unsigned long)"Running now",
++        SNOW_X, PAD - 4, SNOW_W, CH);
++    add(s, G_STRING, 0, 0, (unsigned long)"Next start",
++        SBTN_X, PAD - 4, SBTN_W, CH);
++    for (k = 0; k < CL_COUNT; k++) {
++        short ry = (short)(SROW0 + k * SROW);
++        set_btn_text(k);
++        add(s, G_STRING, 0, 0, (unsigned long)defs[k].label,
++            SLABEL_X, ry, SLABEL_W, CH);
++        add(s, G_STRING, 0, 0, (unsigned long)now_text[k],
++            SNOW_X, ry, SNOW_W, CH);
++        btn_obj[k] = add(s, G_BUTTON, SELECTABLE | EXIT | FL3DACT, 0,
++                         (unsigned long)btn_text[k], SBTN_X, ry, SBTN_W, CH);
++    }
++    y = (short)(y + tree[s].ob_height + 6);
++
++    add(root, G_STRING, 0, 0,
++        (unsigned long)"Changes take effect after restart.",
++        MARGIN + PAD, y, 34 * CW, CH);
++    y = (short)(y + ROW);
++    status_obj = add(root, G_STRING, 0, 0, (unsigned long)status_text,
++                     MARGIN + PAD, y, (short)(SET_W - 2 * PAD), CH);
++    y = (short)(y + ROW + 8);
++
++    save_button = add(root, G_BUTTON, SELECTABLE | EXIT | FL3DACT, 0,
++                      (unsigned long)"Save", MARGIN + PAD, y, 10 * CW, CH + 2);
++    cancel_button = add(root, G_BUTTON, SELECTABLE | EXIT | FL3DACT, 0,
++                        (unsigned long)"Cancel",
++                        (short)(DIALOG_W - MARGIN - PAD - 22 * CW), y,
++                        10 * CW, CH + 2);
+     ok_button = add(root, G_BUTTON, SELECTABLE | DEFAULT | EXIT | FL3DACT, 0,
+                     (unsigned long)"OK",
+-                    (short)((DIALOG_W - 10 * CW) / 2), (short)(ly + 12),
+-                    10 * CW, CH + 6);
+-    tree[root].ob_height = (short)(ly + 12 + CH + 6 + 12);
++                    (short)(DIALOG_W - MARGIN - PAD - 10 * CW), y,
++                    10 * CW, CH + 2);
++    tree[root].ob_height = (short)(y + CH + 2 + 10);
+     tree[nobj - 1].ob_flags |= LASTOB;
+ }
+ 
+-/* Run the dialog once: the classic modal sequence. */
++/* Redraw the dialog inside the rectangle around object `obj` (with `m`
++ * pixels of margin for 3D edges): drawing from the root, clipped, so every
++ * layer under the object comes back as well. */
++static void redraw_obj(short obj, short m)
++{
++    short x, y;
++    objc_abs(tree, obj, &x, &y);
++    objc_draw_clip(tree, 0, (short)(x - m), (short)(y - m),
++                   (short)(tree[obj].ob_width + 2 * m),
++                   (short)(tree[obj].ob_height + 2 * m));
++}
++
++/* ------------------------------------------------------------------------- */
++/* The drop-down.                                                             */
++/* ------------------------------------------------------------------------- */
++
++static OBJECT pop[MAX_CHOICES + 1];
++static char pop_text[MAX_CHOICES][BTN_CHARS + 1];
++
++/* Run the drop-down of setting k over its button; `dx..dh` is the dialog's
++ * rectangle the box must stay inside. Returns the chosen choice index or -1
++ * (cancelled). */
++static int popup(int k, short dx, short dy, short dw, short dh)
++{
++    int n = 0, i, cur, nch = defs[k].nchoices;
++    short bx, by, px, py, pw, ph, cx, cy, cw, chh;
++    short mx, my, obj, oldobj, events, key;
++    short m1out, m1x, m1y, m1w, m1h;
++    short msg[8];
++    int result = -1;
++
++    wind_update(BEG_MCTRL);   /* take over the mouse */
++    wait_button_up();
++
++    cur = choice_index(k, sel_set.v[k]);
++    objc_abs(tree, btn_obj[k], &bx, &by);
++    pw = SBTN_W;
++    ph = (short)(nch * CH);
++    px = bx;
++    /* The current choice sits over the button, as mn_popup places it. */
++    py = (short)(by - (cur > 0 ? cur : 0) * CH);
++    if (py < dy + 8)
++        py = (short)(dy + 8);
++    if (py + ph > dy + dh - 12)
++        py = (short)(dy + dh - 12 - ph);
++    if (px + pw > dx + dw - 12)
++        px = (short)(dx + dw - 12 - pw);
++
++    add_to(pop, &n, -1, G_BOX, FL3DBAK, SHADOWED, FRAME_SPEC, px, py, pw, ph);
++    for (i = 0; i < nch; i++) {
++        int j = sappn(pop_text[i], BTN_CHARS + 1, 0, "  ");
++        sappn(pop_text[i], BTN_CHARS + 1, j, defs[k].choice[i]);
++        add_to(pop, &n, 0, G_STRING, SELECTABLE, i == cur ? CHECKED : 0,
++               (unsigned long)pop_text[i], 0, (short)(i * CH), pw, CH);
++    }
++    pop[n - 1].ob_flags |= LASTOB;
++
++    /* The area the box covers, 3D edge, frame and shadow included. */
++    cx = (short)(px - 6);
++    cy = (short)(py - 6);
++    cw = (short)(pw + 14);
++    chh = (short)(ph + 14);
++
++    /* Like handle_popup: the start item selected, then the whole box. */
++    oldobj = (short)(cur >= 0 ? cur + 1 : 1);
++    pop[oldobj].ob_state |= SELECTED;
++    objc_draw_clip(pop, 0, cx, cy, cw, chh);
++
++    aes_call(79, 0, 5, 0); /* graf_mkstate */
++    mx = aes_intout[1];
++    my = aes_intout[2];
++
++    for (;;) {
++        /* M1: leave the object under the pointer, or enter the box. */
++        obj = objc_find_at(pop, 0, 1, mx, my);
++        if (obj < 0) {
++            m1out = 0;
++            m1x = px; m1y = py; m1w = pw; m1h = ph;
++        } else {
++            m1out = 1;
++            objc_abs(pop, obj, &m1x, &m1y);
++            m1w = pop[obj].ob_width;
++            m1h = pop[obj].ob_height;
++        }
++        for (i = 0; i < 16; i++)
++            aes_intin[i] = 0;
++        aes_intin[0] = MU_KEYBD | MU_BUTTON | MU_M1;
++        aes_intin[1] = 1;      /* one click      */
++        aes_intin[2] = 1;      /* left button    */
++        aes_intin[3] = 1;      /* ... down       */
++        aes_intin[4] = m1out;
++        aes_intin[5] = m1x; aes_intin[6] = m1y;
++        aes_intin[7] = m1w; aes_intin[8] = m1h;
++        aes_addrin[0] = (long)msg;
++        events = aes_call(25, 16, 7, 1); /* evnt_multi */
++        mx = aes_intout[1];
++        my = aes_intout[2];
++        key = aes_intout[5];
++
++        obj = objc_find_at(pop, 0, 1, mx, my);
++
++        if (events & MU_KEYBD) {
++            int asc = key & 0xFF, sc = (key >> 8) & 0xFF;
++            short next = oldobj;
++            if (asc == K_ESC || sc == 0x01) {
++                result = -1;
++                break;
++            }
++            if (asc == K_RETURN) {
++                result = oldobj >= 1 ? oldobj - 1 : -1;
++                break;
++            }
++            if (sc == SC_UP && oldobj > 1)
++                next = (short)(oldobj - 1);
++            else if (sc == SC_DOWN && oldobj < nch)
++                next = (short)(oldobj + 1);
++            if (next != oldobj) {
++                objc_change_to(pop, oldobj, cx, cy, cw, chh,
++                               (unsigned short)(pop[oldobj].ob_state & ~SELECTED));
++                objc_change_to(pop, next, cx, cy, cw, chh,
++                               (unsigned short)(pop[next].ob_state | SELECTED));
++                oldobj = next;
++            }
++            continue;
++        }
++
++        if (events & MU_M1) {
++            /* The pointer moved: the item under it is highlighted. */
++            if (obj >= 1 && obj != oldobj) {
++                if (oldobj >= 1)
++                    objc_change_to(pop, oldobj, cx, cy, cw, chh,
++                                   (unsigned short)(pop[oldobj].ob_state & ~SELECTED));
++                objc_change_to(pop, obj, cx, cy, cw, chh,
++                               (unsigned short)(pop[obj].ob_state | SELECTED));
++                oldobj = obj;
++            }
++        }
++
++        if (events & MU_BUTTON) {
++            /* A click on an item chooses it, anywhere else cancels. */
++            result = obj >= 1 ? obj - 1 : -1;
++            break;
++        }
++    }
++
++    /* The box lies inside the dialog: the dialog redraws what it covered. */
++    objc_draw_clip(tree, 0, cx, cy, cw, chh);
++
++    wait_button_up();
++    wind_update(END_MCTRL);   /* give back the mouse */
++    return result;
++}
++
++/* ------------------------------------------------------------------------- */
++/* Saving.                                                                    */
++/* ------------------------------------------------------------------------- */
++
++/* Write `len` bytes as file `name` (created or truncated). 0 or an error. */
++static long write_file(const char *name, const char *buf, int len)
++{
++    long h = Fcreate(name, 0);
++    long w, c;
++    if (h < 0)
++        return h;
++    w = Fwrite(h, len, buf);
++    c = Fclose(h);
++    if (w < 0)
++        return w;
++    if (w != len)
++        return -1;  /* ERROR: short write (disk full) */
++    return c < 0 ? c : 0;
++}
++
++static char new_buf[FILE_CAP + 256];
++static char alert_buf[320];
++
++/* "[3][<what> failed|(GEMDOS error -N).|<hint>][ OK ]" */
++static void fail_alert(const char *what, long err, const char *hint)
++{
++    int c = (int)sizeof(alert_buf), j;
++    j = sappn(alert_buf, c, 0, "[3][");
++    j = sappn(alert_buf, c, j, what);
++    j = sappn(alert_buf, c, j, "|failed (GEMDOS error ");
++    j = napps(alert_buf, c, j, err);
++    j = sappn(alert_buf, c, j, ").|");
++    j = sappn(alert_buf, c, j, hint);
++    sappn(alert_buf, c, j, "][ OK ]");
++    form_alert(1, alert_buf);
++}
++
++/* Confirm and save. Returns 1 when the file now holds the selection (also
++ * when there was nothing to change), 0 when the user cancelled or a step
++ * failed. */
++static int save(void)
++{
++    int c = (int)sizeof(alert_buf), j, k, shown = 0, n, len;
++    long r;
++
++    n = changes();
++    if (n == 0) {
++        set_status("Nothing to save: C:\\CMDLINE.TXT already says this.", 0, 0);
++        redraw_obj(status_obj, 0);
++        return 1;
++    }
++    if (file_state == FILE_BAD) {
++        form_alert(1, "[3][C:\\CMDLINE.TXT cannot be read|completely, so it is not|"
++                      "changed. Nothing was saved.][ OK ]");
++        return 0;
++    }
++
++    /* One confirmation, the changes in plain words (form_alert: five lines
++     * of at most 40 characters). */
++    j = sappn(alert_buf, c, 0, "[2][For the next start:");
++    for (k = 0; k < CL_COUNT; k++) {
++        char v[BTN_CHARS + 1];
++        if (sel_set.v[k] == file_set.v[k])
++            continue;
++        if (shown == 3 && n > 4) {
++            j = sappn(alert_buf, c, j, "|... and ");
++            j = napps(alert_buf, c, j, n - 3);
++            j = sappn(alert_buf, c, j, " more");
++            break;
++        }
++        value_textn(v, (int)sizeof(v), k, sel_set.v[k]);
++        j = sappn(alert_buf, c, j, "|");
++        j = sappn(alert_buf, c, j, defs[k].label);
++        j = sappn(alert_buf, c, j, ": ");
++        j = sappn(alert_buf, c, j, v);
++        shown++;
++    }
++    sappn(alert_buf, c, j, "][Save|Cancel]");
++    if (form_alert(1, alert_buf) != 1)
++        return 0;
++
++    len = cl_merge(file_state == FILE_OK ? file_buf : 0, file_len, &sel_set,
++                   new_buf, FILE_CAP - 1);
++    if (len < 0) {
++        form_alert(1, "[3][The new C:\\CMDLINE.TXT would be|4 KB or larger. "
++                      "Nothing was saved.][ OK ]");
++        return 0;
++    }
++
++    /* 1. the backup of the old file */
++    if (file_state == FILE_OK) {
++        r = write_file(path_bak, file_buf, file_len);
++        if (r < 0) {
++            fail_alert("Writing C:\\CMDLINE.BAK", r,
++                       "C:\\CMDLINE.TXT is unchanged.");
++            return 0;
++        }
++    }
++    /* 2. the new text under a temporary name */
++    r = write_file(path_new, new_buf, len);
++    if (r < 0) {
++        Fdelete(path_new);
++        fail_alert("Writing C:\\CMDLINE.NEW", r, "C:\\CMDLINE.TXT is unchanged.");
++        return 0;
++    }
++    /* 3. the old file out of the way (Frename does not replace) */
++    if (file_state == FILE_OK) {
++        r = Fdelete(path_txt);
++        if (r < 0 && r != EFILNF) {
++            Fdelete(path_new);
++            fail_alert("Deleting C:\\CMDLINE.TXT", r,
++                       "C:\\CMDLINE.TXT is unchanged.");
++            return 0;
++        }
++    }
++    /* 4. the new file in its place */
++    r = Frename(path_new, path_txt);
++    if (r < 0) {
++        fail_alert("Renaming C:\\CMDLINE.NEW", r,
++                   file_state == FILE_OK ? "The old text is in C:\\CMDLINE.BAK."
++                                         : "Nothing else was changed.");
++        return 0;
++    }
++
++    /* The file now holds the selection. */
++    for (j = 0; j < len; j++)
++        file_buf[j] = new_buf[j];
++    file_len = len;
++    if (file_state == FILE_OK)
++        set_status("Saved to C:\\CMDLINE.TXT, the old one is C:\\CMDLINE.BAK.", 0, 0);
++    else
++        set_status("Saved to C:\\CMDLINE.TXT.", 0, 0);
++    file_state = FILE_OK;
++    cl_parse(file_buf, file_len, &file_set);
++    redraw_obj(status_obj, 0);
++    return 1;
++}
++
++/* ------------------------------------------------------------------------- */
++/* The dialog.                                                                */
++/* ------------------------------------------------------------------------- */
++
+ static void show_dialog(void)
+ {
+     short x, y, w, h;
+     short exitobj;
++    int k, done = 0;
+ 
+     read_values();
++    read_file();
++    copy_settings(&sel_set, &file_set);
++    initial_status();
+     build_tree();
+ 
+-    aes_intin[0] = BEG_UPDATE;
+-    aes_call(107, 1, 1, 0); /* wind_update */
++    wind_update(BEG_UPDATE);
+ 
+     aes_addrin[0] = (long)tree;
+     aes_call(54, 0, 5, 1); /* form_center */
+@@ -579,25 +1207,48 @@ static void show_dialog(void)
+     aes_intin[5] = x; aes_intin[6] = y; aes_intin[7] = w; aes_intin[8] = h;
+     aes_call(51, 9, 1, 0); /* form_dial */
+ 
+-    aes_intin[0] = 0;  /* start at the root */
+-    aes_intin[1] = 8;  /* depth */
+-    aes_intin[2] = x; aes_intin[3] = y; aes_intin[4] = w; aes_intin[5] = h;
+-    aes_addrin[0] = (long)tree;
+-    aes_call(42, 6, 1, 1); /* objc_draw */
++    objc_draw_clip(tree, 0, x, y, w, h);
+ 
+-    aes_intin[0] = 0;  /* no editable field */
+-    aes_addrin[0] = (long)tree;
+-    exitobj = (short)(aes_call(50, 1, 1, 1) & 0x7FFF); /* form_do */
+-    if (exitobj >= 0 && exitobj < nobj)
++    while (!done) {
++        aes_intin[0] = 0;  /* no editable field */
++        aes_addrin[0] = (long)tree;
++        exitobj = (short)(aes_call(50, 1, 1, 1) & 0x7FFF); /* form_do */
++        if (exitobj < 0 || exitobj >= nobj)
++            break;
+         tree[exitobj].ob_state &= (unsigned short)~SELECTED;
+ 
++        if (exitobj == cancel_button) {
++            break;
++        } else if (exitobj == ok_button) {
++            /* OK keeps the selection: save it first if it is not saved. */
++            if (changes() == 0 || save())
++                break;
++            redraw_obj(exitobj, 4);
++        } else if (exitobj == save_button) {
++            redraw_obj(exitobj, 4);
++            save();
++        } else {
++            for (k = 0; k < CL_COUNT; k++)
++                if (btn_obj[k] == exitobj)
++                    break;
++            redraw_obj(exitobj, 4);
++            if (k < CL_COUNT) {
++                int i = popup(k, x, y, w, h);
++                if (i >= 0 && defs[k].val[i] != sel_set.v[k]) {
++                    sel_set.v[k] = defs[k].val[i];
++                    set_btn_text(k);
++                    redraw_obj(exitobj, 4);
++                }
++            }
++        }
++    }
++
+     aes_intin[0] = FMD_FINISH;
+     aes_intin[1] = x; aes_intin[2] = y; aes_intin[3] = w; aes_intin[4] = h;
+     aes_intin[5] = x; aes_intin[6] = y; aes_intin[7] = w; aes_intin[8] = h;
+     aes_call(51, 9, 1, 0); /* form_dial */
+ 
+-    aes_intin[0] = END_UPDATE;
+-    aes_call(107, 1, 1, 0); /* wind_update */
++    wind_update(END_UPDATE);
+     aes_addrin[0] = 0;
+ }
+ 
+diff --git a/sdk/run-host-tests.sh b/sdk/run-host-tests.sh
+index bf7e318c..011a539b 100755
+--- a/sdk/run-host-tests.sh
++++ b/sdk/run-host-tests.sh
+@@ -185,6 +185,21 @@ else
+   echo "FAIL  c2p-host (did not build)"; sed 's/^/      /' "$WORK/c2p-host.log"; fail=$((fail+1))
+ fi
+ 
++# sysacc-cmdline-host (SYSINFO02): the System Info accessory's boot-argument
++# logic (sdk/examples/sysacc-cmdline.h, the header sysacc.c includes) -- the
++# parse reads C:\CMDLINE.TXT as kernel/src/bootargs.rs reads the boot
++# arguments; the merge keeps every unmanaged token in order, replaces managed
++# ones in place, drops defaults, keeps CR LF / LF, one line. Pure byte logic.
++SAT="$SDK/examples/tests"
++if "$CC" -O1 -g -fsanitize=address,undefined -Wall -Wextra -Werror \
++     -o "$WORK/sysacc-cmdline-host" "$SAT/sysacc-cmdline-host.c" > "$WORK/sysacc-cmdline-host.log" 2>&1; then
++  "$WORK/sysacc-cmdline-host" >> "$WORK/sysacc-cmdline-host.log" 2>&1; rc=$?
++  [ $rc -eq 0 ] || sed 's/^/      /' "$WORK/sysacc-cmdline-host.log"
++  report sysacc-cmdline-host $rc
++else
++  echo "FAIL  sysacc-cmdline-host (did not build)"; sed 's/^/      /' "$WORK/sysacc-cmdline-host.log"; fail=$((fail+1))
++fi
++
+ # custom-font-host (ZVIEW01): zView's draw_text() (zview/custom_font.c as the
+ # SDK builds it -- the overlay) hands vrt_cpyfm each glyph as host-order WORDs
+ # with row r in bits 15..8, exactly the form the 68k original builds; the
+--- /dev/null
++++ b/sdk/examples/sysacc-cmdline.h
+@@ -0,0 +1,373 @@
++/*
++ * sysacc-cmdline.h -- SYSINFO02: the boot-argument logic of the System Info
++ * accessory (sdk/examples/sysacc.c), as pure byte logic without libc, so the
++ * same code runs in the accessory and in the host test
++ * (sdk/examples/tests/sysacc-cmdline-host.c, sdk/run-host-tests.sh).
++ *
++ * Two jobs:
++ *
++ *  1. cl_parse(): what the NEXT start will run with, read from the text of
++ *     C:\CMDLINE.TXT exactly the way the kernel reads its boot arguments
++ *     (kernel/src/bootargs.rs + the switches in kernel/src/lib.rs):
++ *       - tokens are separated by any ASCII whitespace, the text ends at NUL;
++ *       - an on/off token matches only as a whole token (`has_token`);
++ *       - `memprot=off` wins over `memprot=strict` (memprot_switch);
++ *       - `asid=tiny` wins over `asid=on` (asid_switch);
++ *       - `bcache=` / `bcachepct=`: the FIRST token with that prefix decides;
++ *         its value is 1..10 decimal digits within the maximum, otherwise the
++ *         kernel default applies (numeric_setting, Setting::Invalid).
++ *
++ *  2. cl_merge(): the new file text. Every token the accessory does not
++ *     manage stays, in its order (firmware / Linux tokens, unknown ones,
++ *     `memprot=verify`, misspellings such as `cpuclk=max`). A managed token is
++ *     exactly one the kernel interprets for one of the eight settings:
++ *       memprot=off memprot=strict asid=on asid=tiny emmc=compat
++ *       cpuclk=firmware input=aes serial=on bcache=<any> bcachepct=<any>
++ *     (`bcache=`/`bcachepct=` with any value: the kernel reads the first of
++ *     them, even an invalid one). The first managed token of a setting is
++ *     replaced in place by the setting's new token, every further one is
++ *     dropped; a setting equal to the kernel default writes no token. A
++ *     setting with a token but none in the old text is appended at the end,
++ *     in the order of the table below. The result is one line (tokens joined
++ *     by one space, `references/circle/doc/cmdline.txt:3-4`: "Multiple
++ *     options must be placed on a single line delimited by a space
++ *     character"), ended by CR LF when the old text used CR LF, else by LF.
++ *
++ * Kernel defaults (kernel/src/bootargs.rs, kernel/src/lib.rs,
++ * tos-api/src/bios/bcache.rs DEFAULT_KIB / DEFAULT_PCT / MAX_KIB):
++ *   memory protection on, ASIDs off, SD fast mode, CPU clock raised to the
++ *   maximum, block cache 32768 KiB, cache share 5 %, pointer motion from the
++ *   timer tick (no input=aes), serial console off.
++ *
++ * Value codes follow the Ssystem modes of docs/api/gemdos/154-ssystem.md
++ * where one exists (2005 memprot, 2006 ASID, 2007 SD mode, 2009 KiB,
++ * 2010 percent, 2018 serial); CPU clock 1 = fixed at maximum, 0 = firmware
++ * (2004's 0/1); input 1 = pointer moves while busy, 0 = input=aes.
++ */
++#ifndef SYSACC_CMDLINE_H
++#define SYSACC_CMDLINE_H
++
++enum {
++    CL_MEMPROT,   /* 0 off, 1 on, 2 strict           */
++    CL_ASID,      /* 0 off, 1 on, 2 test (asid=tiny) */
++    CL_SDMODE,    /* 0 fast, 1 compatibility         */
++    CL_CPUCLK,    /* 0 firmware-controlled, 1 max    */
++    CL_BCACHE,    /* KiB, 0 = off                    */
++    CL_BCACHEPCT, /* percent                         */
++    CL_INPUT,     /* 1 moves while busy, 0 input=aes */
++    CL_SERIAL,    /* 0 off, 1 on                     */
++    CL_COUNT
++};
++
++#define CL_BCACHE_DEFAULT 32768L  /* bcache.rs DEFAULT_KIB  */
++#define CL_BCACHE_MAX     262144L /* bcache.rs MAX_KIB      */
++#define CL_PCT_DEFAULT    5L      /* bcache.rs DEFAULT_PCT  */
++#define CL_PCT_MAX        100L    /* lib.rs bcache_switch   */
++
++typedef struct {
++    long v[CL_COUNT];
++} cl_settings;
++
++static void cl_defaults(cl_settings *s)
++{
++    s->v[CL_MEMPROT] = 1;
++    s->v[CL_ASID] = 0;
++    s->v[CL_SDMODE] = 0;
++    s->v[CL_CPUCLK] = 1;
++    s->v[CL_BCACHE] = CL_BCACHE_DEFAULT;
++    s->v[CL_BCACHEPCT] = CL_PCT_DEFAULT;
++    s->v[CL_INPUT] = 1;
++    s->v[CL_SERIAL] = 0;
++}
++
++/* ------------------------------------------------------------------------- */
++/* Tokens                                                                     */
++/* ------------------------------------------------------------------------- */
++
++/* The ASCII whitespace of Rust's u8::is_ascii_whitespace (bootargs.rs):
++ * space, tab, LF, form feed, CR. (Vertical tab is NOT in that set.) */
++static int cl_ws(char c)
++{
++    return c == ' ' || c == '\t' || c == '\n' || c == '\f' || c == '\r';
++}
++
++/* Length of the text: `len` bytes or up to the first NUL. */
++static int cl_textlen(const char *t, int len)
++{
++    int n = 0;
++    while (n < len && t[n] != '\0')
++        n++;
++    return n;
++}
++
++/* Next token at or after *pos: its start in *start, length returned (0 = no
++ * more tokens). *pos moves behind it. */
++static int cl_next(const char *t, int n, int *pos, int *start)
++{
++    int i = *pos, s;
++    while (i < n && cl_ws(t[i]))
++        i++;
++    s = i;
++    while (i < n && !cl_ws(t[i]))
++        i++;
++    *pos = i;
++    *start = s;
++    return i - s;
++}
++
++static int cl_is(const char *tok, int tl, const char *lit)
++{
++    int i = 0;
++    while (i < tl && lit[i] != '\0' && tok[i] == lit[i])
++        i++;
++    return i == tl && lit[i] == '\0';
++}
++
++static int cl_prefix(const char *tok, int tl, const char *lit)
++{
++    int i = 0;
++    while (lit[i] != '\0') {
++        if (i >= tl || tok[i] != lit[i])
++            return 0;
++        i++;
++    }
++    return 1;
++}
++
++/* numeric_setting's value check: 1..10 decimal digits, <= max. Returns the
++ * value, or -1 when invalid. */
++static long cl_number(const char *d, int n, long max)
++{
++    long v = 0;
++    int i;
++    if (n < 1 || n > 10)
++        return -1;
++    for (i = 0; i < n; i++) {
++        if (d[i] < '0' || d[i] > '9')
++            return -1;
++        v = v * 10 + (d[i] - '0');
++        if (v > max)
++            return -1; /* also keeps v from overflowing */
++    }
++    return v;
++}
++
++/* Which setting a token is a managed token of, or -1. */
++static int cl_managed(const char *tok, int tl)
++{
++    if (cl_is(tok, tl, "memprot=off") || cl_is(tok, tl, "memprot=strict"))
++        return CL_MEMPROT;
++    if (cl_is(tok, tl, "asid=on") || cl_is(tok, tl, "asid=tiny"))
++        return CL_ASID;
++    if (cl_is(tok, tl, "emmc=compat"))
++        return CL_SDMODE;
++    if (cl_is(tok, tl, "cpuclk=firmware"))
++        return CL_CPUCLK;
++    if (cl_prefix(tok, tl, "bcachepct="))
++        return CL_BCACHEPCT;
++    if (cl_prefix(tok, tl, "bcache="))
++        return CL_BCACHE;
++    if (cl_is(tok, tl, "input=aes"))
++        return CL_INPUT;
++    if (cl_is(tok, tl, "serial=on"))
++        return CL_SERIAL;
++    return -1;
++}
++
++/* ------------------------------------------------------------------------- */
++/* Parse                                                                      */
++/* ------------------------------------------------------------------------- */
++
++/* The settings a boot with `text` (len bytes, or up to a NUL) runs with. */
++static void cl_parse(const char *text, int len, cl_settings *s)
++{
++    int n = text ? cl_textlen(text, len) : 0;
++    int pos = 0, st, tl;
++    int off = 0, strict = 0, on = 0, tiny = 0;
++    int seen_kib = 0, seen_pct = 0;
++
++    cl_defaults(s);
++    while ((tl = cl_next(text, n, &pos, &st)) > 0) {
++        const char *t = text + st;
++        if (cl_is(t, tl, "memprot=off"))
++            off = 1;
++        else if (cl_is(t, tl, "memprot=strict"))
++            strict = 1;
++        else if (cl_is(t, tl, "asid=on"))
++            on = 1;
++        else if (cl_is(t, tl, "asid=tiny"))
++            tiny = 1;
++        else if (cl_is(t, tl, "emmc=compat"))
++            s->v[CL_SDMODE] = 1;
++        else if (cl_is(t, tl, "cpuclk=firmware"))
++            s->v[CL_CPUCLK] = 0;
++        else if (cl_is(t, tl, "input=aes"))
++            s->v[CL_INPUT] = 0;
++        else if (cl_is(t, tl, "serial=on"))
++            s->v[CL_SERIAL] = 1;
++        else if (cl_prefix(t, tl, "bcachepct=")) {
++            if (!seen_pct) {
++                long v = cl_number(t + 10, tl - 10, CL_PCT_MAX);
++                if (v >= 0)
++                    s->v[CL_BCACHEPCT] = v;
++                seen_pct = 1;
++            }
++        } else if (cl_prefix(t, tl, "bcache=")) {
++            if (!seen_kib) {
++                long v = cl_number(t + 7, tl - 7, CL_BCACHE_MAX);
++                if (v >= 0)
++                    s->v[CL_BCACHE] = v;
++                seen_kib = 1;
++            }
++        }
++    }
++    s->v[CL_MEMPROT] = off ? 0 : strict ? 2 : 1;
++    s->v[CL_ASID] = tiny ? 2 : on ? 1 : 0;
++}
++
++/* ------------------------------------------------------------------------- */
++/* Merge                                                                      */
++/* ------------------------------------------------------------------------- */
++
++/* Output buffer with an overflow flag. */
++typedef struct {
++    char *b;
++    int n, cap, over;
++} cl_out;
++
++static void cl_put(cl_out *o, const char *s, int len)
++{
++    int i;
++    for (i = 0; i < len; i++) {
++        if (o->n >= o->cap) {
++            o->over = 1;
++            return;
++        }
++        o->b[o->n++] = s[i];
++    }
++}
++
++static void cl_puts(cl_out *o, const char *s)
++{
++    int n = 0;
++    while (s[n] != '\0')
++        n++;
++    cl_put(o, s, n);
++}
++
++static void cl_putnum(cl_out *o, long v)
++{
++    char tmp[24];
++    int i = 0;
++    unsigned long u = (unsigned long)(v < 0 ? 0 : v);
++    do {
++        tmp[i++] = (char)('0' + (int)(u % 10));
++        u /= 10;
++    } while (u);
++    while (i)
++        cl_put(o, &tmp[--i], 1);
++}
++
++/* Space between tokens: none before the first one. */
++static void cl_sep(cl_out *o, int *first)
++{
++    if (!*first)
++        cl_put(o, " ", 1);
++    *first = 0;
++}
++
++/* The token setting `k` writes for value `v`, or nothing for the default.
++ * Returns 1 if a token was written. */
++static int cl_token(cl_out *o, int *first, int k, long v)
++{
++    const char *lit = 0;
++    switch (k) {
++    case CL_MEMPROT:
++        lit = v == 0 ? "memprot=off" : v == 2 ? "memprot=strict" : 0;
++        break;
++    case CL_ASID:
++        lit = v == 1 ? "asid=on" : v == 2 ? "asid=tiny" : 0;
++        break;
++    case CL_SDMODE:
++        lit = v ? "emmc=compat" : 0;
++        break;
++    case CL_CPUCLK:
++        lit = v ? 0 : "cpuclk=firmware";
++        break;
++    case CL_INPUT:
++        lit = v ? 0 : "input=aes";
++        break;
++    case CL_SERIAL:
++        lit = v ? "serial=on" : 0;
++        break;
++    case CL_BCACHE:
++        if (v == CL_BCACHE_DEFAULT)
++            return 0;
++        cl_sep(o, first);
++        cl_puts(o, "bcache=");
++        cl_putnum(o, v);
++        return 1;
++    case CL_BCACHEPCT:
++        if (v == CL_PCT_DEFAULT)
++            return 0;
++        cl_sep(o, first);
++        cl_puts(o, "bcachepct=");
++        cl_putnum(o, v);
++        return 1;
++    default:
++        return 0;
++    }
++    if (!lit)
++        return 0;
++    cl_sep(o, first);
++    cl_puts(o, lit);
++    return 1;
++}
++
++/* Build the new file text from the old one (`old`, `oldlen` bytes or up to a
++ * NUL; NULL/0 = no file) and the settings `s` into `out` (capacity `cap`).
++ * Returns the length written, or -1 if `cap` is too small. No NUL is added. */
++static int cl_merge(const char *old, int oldlen, const cl_settings *s,
++                    char *out, int cap)
++{
++    cl_out o;
++    int n = old ? cl_textlen(old, oldlen) : 0;
++    int pos = 0, st, tl, k, i;
++    int first = 1, crlf = 0;
++    int done[CL_COUNT];
++
++    o.b = out;
++    o.n = 0;
++    o.cap = cap;
++    o.over = 0;
++    for (k = 0; k < CL_COUNT; k++)
++        done[k] = 0;
++    for (i = 0; i + 1 < n; i++) {
++        if (old[i] == '\r' && old[i + 1] == '\n') {
++            crlf = 1;
++            break;
++        }
++    }
++
++    while ((tl = cl_next(old, n, &pos, &st)) > 0) {
++        const char *t = old + st;
++        k = cl_managed(t, tl);
++        if (k < 0) {
++            cl_sep(&o, &first);
++            cl_put(&o, t, tl);
++        } else if (!done[k]) {
++            /* The setting's first managed token: its new value goes here. */
++            cl_token(&o, &first, k, s->v[k]);
++            done[k] = 1;
++        }
++        /* Further managed tokens of the same setting are dropped. */
++    }
++    for (k = 0; k < CL_COUNT; k++)
++        if (!done[k])
++            cl_token(&o, &first, k, s->v[k]);
++
++    cl_puts(&o, crlf ? "\r\n" : "\n");
++    return o.over ? -1 : o.n;
++}
++
++#endif /* SYSACC_CMDLINE_H */
+--- /dev/null
++++ b/sdk/examples/tests/sysacc-cmdline-host.c
+@@ -0,0 +1,207 @@
++/*
++ * sysacc-cmdline-host.c -- SYSINFO02 host test: the boot-argument parse and
++ * merge of the System Info accessory (sdk/examples/sysacc-cmdline.h), the
++ * very header the accessory includes, compiled for the host.
++ *
++ *   cc -O1 -g -fsanitize=address,undefined -Wall -Wextra -Werror \
++ *      -o /tmp/t sdk/examples/tests/sysacc-cmdline-host.c && /tmp/t
++ *
++ * (sdk/run-host-tests.sh runs exactly this.) The parse cases are the
++ * kernel's own bootargs.rs test inputs where they apply; the merge cases are
++ * the ticket's: unknown tokens kept in order, managed tokens replaced in
++ * place, defaults removed, empty and missing file, CRLF / LF, trailing
++ * blanks, duplicates, invalid numbers, a too-small buffer.
++ */
++#include <stdio.h>
++#include <string.h>
++
++#include "../sysacc-cmdline.h"
++
++static int fails, checks;
++
++static void expect_str(const char *what, const char *got, int gotlen,
++                       const char *want)
++{
++    checks++;
++    if (gotlen < 0 || (int)strlen(want) != gotlen ||
++        memcmp(got, want, (size_t)gotlen) != 0) {
++        fails++;
++        printf("FAIL %s\n  got  [%.*s] (%d)\n  want [%s]\n", what,
++               gotlen < 0 ? 0 : gotlen, got, gotlen, want);
++    }
++}
++
++static void expect_long(const char *what, long got, long want)
++{
++    checks++;
++    if (got != want) {
++        fails++;
++        printf("FAIL %s: got %ld, want %ld\n", what, got, want);
++    }
++}
++
++/* merge(old, settings) must give want. */
++static void merge_case(const char *what, const char *old, const cl_settings *s,
++                       const char *want)
++{
++    char out[512];
++    int n = cl_merge(old, old ? (int)strlen(old) : 0, s, out, (int)sizeof out);
++    expect_str(what, out, n, want);
++}
++
++/* parse(old) then merge with no change must keep the meaning: the parse of
++ * the merged text equals the parse of the original. */
++static void roundtrip(const char *what, const char *old)
++{
++    cl_settings a, b;
++    char out[512];
++    int n, k;
++    cl_parse(old, (int)strlen(old), &a);
++    n = cl_merge(old, (int)strlen(old), &a, out, (int)sizeof out);
++    checks++;
++    if (n < 0) {
++        fails++;
++        printf("FAIL %s: merge overflow\n", what);
++        return;
++    }
++    cl_parse(out, n, &b);
++    for (k = 0; k < CL_COUNT; k++)
++        expect_long(what, b.v[k], a.v[k]);
++}
++
++int main(void)
++{
++    cl_settings s, d;
++
++    /* --- parse: the kernel's reading -------------------------------------- */
++    cl_parse(NULL, 0, &s);
++    cl_defaults(&d);
++    expect_long("missing file = defaults", memcmp(&s, &d, sizeof s), 0);
++    cl_parse("", 0, &s);
++    expect_long("empty file = defaults", memcmp(&s, &d, sizeof s), 0);
++
++    cl_parse("serial=on memprot=off", 21, &s);
++    expect_long("memprot=off", s.v[CL_MEMPROT], 0);
++    expect_long("serial=on", s.v[CL_SERIAL], 1);
++    cl_parse("serial=on memprot=offx", 22, &s);
++    expect_long("memprot=offx is no token", s.v[CL_MEMPROT], 1);
++    cl_parse("memprot=strict\n", 15, &s);
++    expect_long("memprot=strict", s.v[CL_MEMPROT], 2);
++    cl_parse("memprot=strict memprot=off", 26, &s);
++    expect_long("off wins over strict", s.v[CL_MEMPROT], 0);
++    cl_parse("asid=tiny\r\n", 11, &s);
++    expect_long("asid=tiny", s.v[CL_ASID], 2);
++    cl_parse("asid=on asid=tiny", 17, &s);
++    expect_long("tiny wins over on", s.v[CL_ASID], 2);
++    cl_parse("serial=on asid=only", 19, &s);
++    expect_long("asid=only is no token", s.v[CL_ASID], 0);
++    cl_parse("emmc=COMPAT cpuclk=FIRMWARE input=aesx xinput=aes", 49, &s);
++    expect_long("case matters (emmc)", s.v[CL_SDMODE], 0);
++    expect_long("case matters (cpuclk)", s.v[CL_CPUCLK], 1);
++    expect_long("input=aesx is no token", s.v[CL_INPUT], 1);
++    cl_parse("\temmc=compat\tcpuclk=firmware\finput=aes", 38, &s);
++    expect_long("tab-separated emmc", s.v[CL_SDMODE], 1);
++    expect_long("cpuclk=firmware", s.v[CL_CPUCLK], 0);
++    expect_long("form-feed-separated input=aes", s.v[CL_INPUT], 0);
++    cl_parse("serial=on bcache=8192", 21, &s);
++    expect_long("bcache=8192", s.v[CL_BCACHE], 8192);
++    cl_parse("bcache=0\r\n", 10, &s);
++    expect_long("bcache=0", s.v[CL_BCACHE], 0);
++    cl_parse("bcache=262144", 13, &s);
++    expect_long("bcache=max", s.v[CL_BCACHE], 262144);
++    cl_parse("bcache=262145", 13, &s);
++    expect_long("bcache above max -> default", s.v[CL_BCACHE], 32768);
++    cl_parse("bcache=99999999999", 18, &s);
++    expect_long("bcache 11 digits -> default", s.v[CL_BCACHE], 32768);
++    cl_parse("bcache=", 7, &s);
++    expect_long("bcache= empty -> default", s.v[CL_BCACHE], 32768);
++    cl_parse("bcache=8M", 9, &s);
++    expect_long("bcache=8M -> default", s.v[CL_BCACHE], 32768);
++    cl_parse("bcache=-1", 9, &s);
++    expect_long("bcache=-1 -> default", s.v[CL_BCACHE], 32768);
++    cl_parse("bcache=16 bcache=32", 19, &s);
++    expect_long("first bcache decides", s.v[CL_BCACHE], 16);
++    cl_parse("bcache=x bcache=32", 18, &s);
++    expect_long("first bcache decides even invalid", s.v[CL_BCACHE], 32768);
++    cl_parse("bcachepct=20 bcache=4096", 24, &s);
++    expect_long("bcachepct is not bcache", s.v[CL_BCACHE], 4096);
++    expect_long("bcachepct=20", s.v[CL_BCACHEPCT], 20);
++    cl_parse("bcachepct=101", 13, &s);
++    expect_long("bcachepct above 100 -> default", s.v[CL_BCACHEPCT], 5);
++    cl_parse("serial=on\0memprot=off", 21, &s);
++    expect_long("text ends at NUL", s.v[CL_MEMPROT], 1);
++
++    /* --- merge -------------------------------------------------------------- */
++    cl_defaults(&s);
++    merge_case("missing file, defaults -> empty line", NULL, &s, "\n");
++    merge_case("empty file, defaults -> empty line", "", &s, "\n");
++    merge_case("blank file, defaults -> empty line", "  \r\n", &s, "\r\n");
++
++    s.v[CL_SERIAL] = 1;
++    s.v[CL_BCACHE] = 8192;
++    merge_case("missing file, two settings appended in table order", NULL, &s,
++               "bcache=8192 serial=on\n");
++
++    cl_defaults(&s);
++    merge_case("unknown tokens kept, defaults removed",
++               "console=serial0,115200 memprot=strict quiet bcache=32768 rootwait\n",
++               &s, "console=serial0,115200 quiet rootwait\n");
++
++    cl_parse("dwc_otg.lpm_enable=0 memprot=off quiet", 38, &s);
++    s.v[CL_MEMPROT] = 2;
++    merge_case("managed token replaced in place",
++               "dwc_otg.lpm_enable=0 memprot=off quiet", &s,
++               "dwc_otg.lpm_enable=0 memprot=strict quiet\n");
++
++    cl_parse("a serial=on b bcache=0 c", 24, &s);
++    s.v[CL_BCACHE] = 65536;
++    s.v[CL_ASID] = 1;
++    merge_case("replace in place, new setting appended, CRLF kept",
++               "a serial=on b bcache=0 c\r\n", &s,
++               "a serial=on b bcache=65536 c asid=on\r\n");
++
++    cl_parse("memprot=strict x memprot=off y", 30, &s);
++    s.v[CL_MEMPROT] = 2;
++    merge_case("duplicates collapse to the first position",
++               "memprot=strict x memprot=off y", &s,
++               "memprot=strict x y\n");
++
++    cl_parse("bcache=8M bcache=16 z", 21, &s);
++    merge_case("invalid first bcache (= default) removed with the rest",
++               "bcache=8M bcache=16 z", &s, "z\n");
++
++    cl_defaults(&s);
++    merge_case("unknown look-alikes and memprot=verify kept",
++               "cpuclk=max memprot=verify serial=off emmc=fast input=gate", &s,
++               "cpuclk=max memprot=verify serial=off emmc=fast input=gate\n");
++
++    cl_defaults(&s);
++    s.v[CL_CPUCLK] = 0;
++    s.v[CL_INPUT] = 0;
++    s.v[CL_SDMODE] = 1;
++    s.v[CL_BCACHEPCT] = 25;
++    merge_case("trailing blanks and tabs, multi-line, LF",
++               "  one\ttwo   \nthree  \n\n", &s,
++               "one two three emmc=compat cpuclk=firmware bcachepct=25 input=aes\n");
++
++    cl_defaults(&s);
++    s.v[CL_BCACHE] = 0;
++    merge_case("bcache off is written as bcache=0", "serial=on", &s,
++               "bcache=0\n");
++
++    {
++        char small[8];
++        cl_defaults(&s);
++        expect_long("too small a buffer -> -1",
++                    cl_merge("console=tty1 quiet", 18, &s, small, 8), -1);
++        expect_long("exact fit", cl_merge("abcdef", 6, &s, small, 7), 7);
++    }
++
++    roundtrip("roundtrip 1", "serial=on memprot=strict bcache=8192 bcachepct=20 x");
++    roundtrip("roundtrip 2", "asid=on asid=tiny emmc=compat cpuclk=firmware input=aes\r\n");
++    roundtrip("roundtrip 3", "bcache=junk bcachepct=1000 memprot=off memprot=strict");
++    roundtrip("roundtrip 4", "");
++
++    printf("sysacc-cmdline-host: %d checks, %d failed\n", checks, fails);
++    return fails ? 1 : 0;
++}

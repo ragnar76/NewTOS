@@ -1,0 +1,1 @@
+console=serial0,115200 serial=on cpuclk=max quiet memprot=strict bcache=8192

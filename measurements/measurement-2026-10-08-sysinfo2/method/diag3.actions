@@ -1,0 +1,81 @@
+# TASK/SYSINFO02 diagnosis 3: does a click OUTSIDE the drop-down (cancel)
+# disturb the screen afterwards? Serial console drop-down (486,383), click
+# outside at (200,383), marks every 40 ticks; Memory protection -> Strict
+# (item click), marks; Save (73,455), marks every 40 ticks; Return, marks.
+100 parkbr
+400 mark Z00_IDLE
+500 move 26 9
+1000 move 60 66
+1200 down
+1203 up
+2200 mark Z01_DIALOG
+2300 move 486 383
+2400 down
+2403 up
+2700 move 200 383
+2800 down
+2803 up
+2820 mark Z02_O2820
+2860 mark Z02_O2860
+2900 mark Z02_O2900
+2940 mark Z02_O2940
+2980 mark Z02_O2980
+3020 mark Z02_O3020
+3060 mark Z02_O3060
+3100 mark Z02_O3100
+3140 mark Z02_O3140
+3180 mark Z02_O3180
+3220 mark Z02_O3220
+3260 mark Z02_O3260
+3300 mark Z02_O3300
+3400 move 486 229
+3500 down
+3503 up
+3800 move 486 245
+3900 down
+3903 up
+3920 mark Z03_I3920
+3960 mark Z03_I3960
+4000 mark Z03_I4000
+4040 mark Z03_I4040
+4080 mark Z03_I4080
+4120 mark Z03_I4120
+4160 mark Z03_I4160
+4200 mark Z03_I4200
+4240 mark Z03_I4240
+4280 mark Z03_I4280
+4400 move 73 455
+4500 down
+4503 up
+4520 mark Z04_S4520
+4560 mark Z04_S4560
+4600 mark Z04_S4600
+4640 mark Z04_S4640
+4680 mark Z04_S4680
+4720 mark Z04_S4720
+4760 mark Z04_S4760
+4800 mark Z04_S4800
+4840 mark Z04_S4840
+4880 mark Z04_S4880
+4920 mark Z04_S4920
+4960 mark Z04_S4960
+5000 mark Z04_S5000
+5040 mark Z04_S5040
+5080 mark Z04_S5080
+5120 mark Z04_S5120
+5160 mark Z04_S5160
+5200 mark Z04_S5200
+5300 key 1C
+5306 key 9C
+5320 mark Z05_R5320
+5360 mark Z05_R5360
+5400 mark Z05_R5400
+5440 mark Z05_R5440
+5480 mark Z05_R5480
+5520 mark Z05_R5520
+5560 mark Z05_R5560
+5600 mark Z05_R5600
+5640 mark Z05_R5640
+5680 mark Z05_R5680
+5800 parkbr
+6100 mark END

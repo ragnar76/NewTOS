@@ -1,0 +1,14 @@
+# SYSINFO02 -- kernels and images of this run (scratch, deleted after the run).
+# No kernel source was changed; every kernel is HEAD 7615ed6 (rsync copy of the tree, no .git -> version "(unknown)").
+7ad5d5578580553ff7a3a53bfb5874e2eddf8e3deb5c4b7315b85c41e8017960  kernel8-plain.img   release board-rpi4, no injector; APITEST run
+d221dd7c3448f97a4b9fa0ea89bbcd80a15535705c4c3c1f4309fab62a56e857  k-kinj-edit.img     injector kernel, edit.actions (+desk-arm); run s2-edit
+0ccd4ae7f308fde1f0badd98425d06ffaabc26d14b82b16e53120208ed104e49  k-kinj-desk.img     injector kernel, desk.actions (+desk-arm); runs cal-open, s2-open, s2-reboot
+560390ec48c6a675cddcfd941fd70c551a700f6a10f5a75d5832e026e49933cf  k-kinj-tera.img     injector kernel, tera.actions; run s2-tera
+5aa2470fd56ef56d49f3a9157cac2e01a26b6d4d037438d3bddcfa59a252c2d0  k-kinj-qed.img      injector kernel, qed.actions; run s2-qed
+6deb617e04df072f97f9dbac903f03b2f63e9e41fb6e9afb39c740a653d85ba7  k-kinj-ldg.img      injector kernel, ldg.actions; run s2-ldg
+9d2fc723ef2df70ef85ae1adfab6a5a8c6fac3ab0fbbe36bcfbda48686a0826a  k-kinj-diag.img     injector kernel, diag.actions; run diag
+74dcebe7237d635cd9051f0d04a417311ccc4e1e29f8809e3b0e4aa389e08773  k-kinj-diag4.img    injector kernel, diag4.actions; run diag4
+a1b4741804fb5715ef7fa0856060940ac63ccc814f25bd8a3c27ab4df7075737  base.img            tools/make-sd-image.sh base.img 64 (QEMU card base; runs s2-*, diag, diag4)
+db2e325c5d4b47162c2ec6c1ee8c6640af86f67dc1003bc5cbd98d3b6ed36062  C:\ACC\SYSACC.NAC   on base.img (= C:\SYSACC2.NAC = bin/SYSACC.NAC)
+97e04c1cfc036eeb8fbb1f93b2baedc2f1f4f305a115a857bc101821b295298d  base.img (first)    the first base, only for the calibration run cal-open; its accessory
+                                     was the pre-final build (group heading "Start-up settings", TT-RAM as "922144 KB")

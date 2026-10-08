@@ -1,0 +1,65 @@
+# TASK/SYSINFO02 diagnosis 2 (try2-edit: the confirmation alert vanished
+# between +100 and +400 ticks after the Save click with no input; one Return
+# both answered OK and the alert): open the dialog, Memory protection ->
+# Strict, Save (73,455), marks every 40 ticks; Return, marks every 10 ticks.
+100 parkbr
+400 mark Y00_IDLE
+500 move 26 9
+1000 move 60 66
+1200 down
+1203 up
+2200 mark Y01_DIALOG
+2300 move 486 229
+2400 down
+2403 up
+2700 move 486 245
+3000 down
+3003 up
+3300 mark Y02_STRICT
+3400 move 73 455
+3500 down
+3503 up
+3520 mark Y03_S3520
+3560 mark Y03_S3560
+3600 mark Y03_S3600
+3640 mark Y03_S3640
+3680 mark Y03_S3680
+3720 mark Y03_S3720
+3760 mark Y03_S3760
+3800 mark Y03_S3800
+3840 mark Y03_S3840
+3880 mark Y03_S3880
+3920 mark Y03_S3920
+3960 mark Y03_S3960
+4000 mark Y03_S4000
+4040 mark Y03_S4040
+4080 mark Y03_S4080
+4120 mark Y03_S4120
+4160 mark Y03_S4160
+4200 mark Y03_S4200
+4240 mark Y03_S4240
+4280 mark Y03_S4280
+4400 key 1C
+4406 key 9C
+4410 mark Y04_R4410
+4420 mark Y04_R4420
+4430 mark Y04_R4430
+4440 mark Y04_R4440
+4450 mark Y04_R4450
+4460 mark Y04_R4460
+4470 mark Y04_R4470
+4480 mark Y04_R4480
+4490 mark Y04_R4490
+4500 mark Y04_R4500
+4510 mark Y04_R4510
+4520 mark Y04_R4520
+4530 mark Y04_R4530
+4540 mark Y04_R4540
+4550 mark Y04_R4550
+4560 mark Y04_R4560
+4570 mark Y04_R4570
+4580 mark Y04_R4580
+4590 mark Y04_R4590
+4600 mark Y04_R4600
+4700 parkbr
+5000 mark END

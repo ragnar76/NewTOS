@@ -1,0 +1,116 @@
+# TASK/SYSINFO02 diagnosis 4: edit.actions (try2) with dense marks from the
+# Save click on (every 20 ticks) and no Return for 4 s; seeded C:\CMDLINE.TXT.
+100 parkbr
+400 mark E00_IDLE
+500 move 26 9
+900 mark E00_DESK_OPEN
+1000 move 60 66
+1200 down
+1203 up
+2200 mark E01_DIALOG
+2300 move 486 229
+2400 down
+2403 up
+2700 move 486 245
+2900 mark E02_POPUP_MEMPROT
+3000 down
+3003 up
+3300 mark E03_MEMPROT_STRICT
+3400 move 486 317
+3500 down
+3503 up
+3800 move 486 285
+4000 mark E04_POPUP_BCACHE
+4100 down
+4103 up
+4400 mark E05_TWO_CHANGED
+4500 move 486 383
+4600 down
+4603 up
+4900 move 486 399
+5100 mark E06_POPUP_SERIAL
+5200 move 200 383
+5300 down
+5303 up
+5600 move 73 455
+5700 down
+5703 up
+5710 mark W5710
+5730 mark W5730
+5750 mark W5750
+5770 mark W5770
+5790 mark W5790
+5810 mark W5810
+5830 mark W5830
+5850 mark W5850
+5870 mark W5870
+5890 mark W5890
+5910 mark W5910
+5930 mark W5930
+5950 mark W5950
+5970 mark W5970
+5990 mark W5990
+6010 mark W6010
+6030 mark W6030
+6050 mark W6050
+6070 mark W6070
+6090 mark W6090
+6110 mark W6110
+6130 mark W6130
+6150 mark W6150
+6170 mark W6170
+6190 mark W6190
+6210 mark W6210
+6230 mark W6230
+6250 mark W6250
+6270 mark W6270
+6290 mark W6290
+6310 mark W6310
+6330 mark W6330
+6350 mark W6350
+6370 mark W6370
+6390 mark W6390
+6410 mark W6410
+6430 mark W6430
+6450 mark W6450
+6470 mark W6470
+6490 mark W6490
+6600 key 1C
+6606 key 9C
+6620 mark V6620
+6640 mark V6640
+6660 mark V6660
+6680 mark V6680
+6700 mark V6700
+6720 mark V6720
+6740 mark V6740
+6760 mark V6760
+6780 mark V6780
+6800 mark V6800
+6820 mark V6820
+6840 mark V6840
+6860 mark V6860
+6880 mark V6880
+6900 mark V6900
+6920 mark V6920
+6940 mark V6940
+6960 mark V6960
+6980 mark V6980
+7000 mark V7000
+7100 key 1C
+7106 key 9C
+7120 mark U7120
+7160 mark U7160
+7200 mark U7200
+7240 mark U7240
+7280 mark U7280
+7320 mark U7320
+7360 mark U7360
+7400 mark U7400
+7440 mark U7440
+7480 mark U7480
+7520 mark U7520
+7560 mark U7560
+7600 mark U7600
+7700 parkbr
+8000 mark END

@@ -1,0 +1,204 @@
+measurement-2026-10-08-sysinfo2 -- TASK/SYSINFO02: the System Info accessory,
+version 2 -- the eight start-up settings of C:\CMDLINE.TXT become selectable
+(drop-down per value) and savable. Developer self-evidence; the Tester's
+verdict is separate.
+
+Date 2026-10-08, branch desk-rebuild, HEAD 7615ed6 plus this change,
+uncommitted (method/sysinfo2-change.diff). Accessory/SDK only: no kernel,
+tos-api or Rust file touched. QEMU raspi4b, -append "serial=on" (the reboot
+run: the saved file's line), one QEMU at a time, host macOS. No SD card, Pi
+or TT touched. Scratch (kernels, cards, target dir, QMP/serial sockets) in
+the session scratchpad; every run card an APFS clone (cp -c) of one base,
+deleted after the run; hashes in checks/kernels-sha256.txt.
+
+RESULT IN ONE LINE
+  From EmuDESK: two values changed through the drop-downs (Memory protection
+  -> Strict, Block cache -> 8 MB), a third drop-down cancelled by a click
+  beside it, Save -> the confirmation alert lists exactly the two changes ->
+  C:\CMDLINE.TXT = the old line with the two tokens appended, every other
+  token kept in order, C:\CMDLINE.BAK = the old bytes; rebooted with that
+  line as -append, "Running now" shows Strict / 8 MB (TT-RAM 924 MB, the
+  kernel's own boot lines agree). Opened from TeraDesk and QED (no file:
+  "No C:\CMDLINE.TXT yet"). APITEST 106/0/5, LDGDEMO and the accessory-title
+  path pixel-identical to SYSINFO01 except the dialog itself. SDK host tests
+  19/0/0 (18 + the new one). ONE OPEN POINT: Esc in a drop-down does not
+  reach the accessory (kernel AES key routing, section "Esc").
+
+SPEC / SOURCES
+  - Ticket TASK/SYSINFO02.md (written first).
+  - Boot arguments and their defaults: kernel/src/bootargs.rs (tokens,
+    has_token, numeric_setting), kernel/src/lib.rs memprot_switch /
+    bcache_switch / asid_switch / the cpuclk and input switches,
+    tos-api/src/bios/bcache.rs DEFAULT_KIB 32768 / DEFAULT_PCT 5 / MAX_KIB.
+  - Running values: Ssystem 2004-2010, 2018 (docs/api/gemdos/154-ssystem.md,
+    SYSINFO01). The input mode (input=aes) has NO Ssystem mode -> "Running
+    now" for "Mouse while busy" says "not available" (no kernel change in
+    this ticket).
+  - cmdline.txt format: references/circle/doc/cmdline.txt:3-4 ("Multiple
+    options must be placed on a single line delimited by a space character").
+  - Drop-down model: EmuTOS mn_popup / handle_popup / setup_moblk
+    (aes/gemmnext.c:218-356): BEG_MCTRL, wait button up, current item over
+    the button + SELECTED, ev_multi(MU_M1|MU_BUTTON) with M1 = leave the item
+    under the pointer / enter the box, click ends, wait button up, END_MCTRL.
+    Added: MU_KEYBD (Esc cancels, Return picks, cursor keys move).
+  - GEMDOS calls: docs/api/gemdos/file/ (Fcreate/Fopen/Fclose/Fread/Fwrite/
+    Fdelete/Frename; Frename(0, old, new) refuses an existing target).
+
+CODE (method/sysinfo2-change.diff)
+  sdk/examples/sysacc-cmdline.h  NEW. Pure byte logic shared by the accessory
+                                 and the host test: cl_parse (reads the file
+                                 exactly as the kernel reads its boot args),
+                                 cl_merge (unmanaged tokens kept in order;
+                                 managed = memprot=off|strict asid=on|tiny
+                                 emmc=compat cpuclk=firmware input=aes
+                                 serial=on bcache=* bcachepct=*; first one of
+                                 a setting replaced in place, later ones
+                                 dropped, defaults omitted, missing ones
+                                 appended in table order; one line, CRLF if
+                                 the old text had CRLF, else LF).
+  sdk/examples/sysacc.c          version 2 of the dialog: info groups (System,
+                                 Display and devices) + the "Settings" group
+                                 (label | Running now | Next start drop-down
+                                 button G_BUTTON FL3DACT with value + 0x02
+                                 arrow), note "Changes take effect after
+                                 restart.", status line, Save / Cancel / OK.
+                                 Drop-down = own tree (G_BOX FL3DBAK SHADOWED,
+                                 G_STRING items, CHECKED current) drawn inside
+                                 the dialog; the dialog's objc_draw clipped to
+                                 the box restores it. Save: confirm alert (the
+                                 changes in words, <= 5 lines) -> CMDLINE.BAK
+                                 (old bytes) -> CMDLINE.NEW -> Fdelete TXT ->
+                                 Frename NEW -> TXT; any failure stops with an
+                                 alert naming the step; a file that cannot be
+                                 read completely (error, >= 4 KB) is never
+                                 rewritten. OK = save first if unsaved changes
+                                 (same alert), Cancel = close without saving.
+  sdk/examples/tests/sysacc-cmdline-host.c  NEW host test, 80 checks:
+                                 the kernel's own bootargs.rs inputs for the
+                                 parse; merge: unknown kept, replace in place,
+                                 defaults removed, missing/empty/blank file,
+                                 CRLF/LF, trailing blanks + tabs + several
+                                 lines, duplicates, invalid numbers, look-
+                                 alikes (cpuclk=max, memprot=verify, serial=
+                                 off) kept, buffer overflow, round trips.
+  sdk/run-host-tests.sh          runs it (ASan + UBSan, -Werror).
+
+QEMU RUNS (method/sysinfo2-runs.sh; injector kernels method/make-inj-input01.sh
+  + apply-injector-input01.py = the INPUT01 copies -- the SYSINFO01 injector
+  expects 3 usb::poll sites, the INPUT01 tree has 2; screendumps/, serial/,
+  checks/)
+  cal-open   calibration: desk.actions on the FIRST base (pre-final accessory:
+             heading "Start-up settings", TT-RAM "922144 KB" -- both fixed
+             after this dump); gave the coordinates for edit.actions.
+  s2-edit    edit.actions, C:\CMDLINE.TXT seeded with method/cmdline-seed.txt
+             "console=serial0,115200 serial=on cpuclk=max quiet\n" (LF).
+             E01 dialog: Next start = the file (On/Off/Fast/Fixed/32 MB/5 %/
+             On/On), status "Next start: as selected above, from
+             C:\CMDLINE.TXT." E02 Memory protection drop-down: Off / (check)
+             On / Strict highlighted under the pointer, box over the button,
+             3D grey, frame, shadow. E03 button "Strict". E04 Block cache
+             drop-down (Off, 8 MB highlighted, 16, check 32, 64). E05 two
+             changed. E06 Serial drop-down (check On, Off highlighted). E07
+             click beside it: closed, "On" unchanged, dialog intact. E08 the
+             alert "For the next start: | Memory protection: Strict | Block
+             cache: 8 MB" [Save|Cancel], Save default. E09 after Return:
+             status "Saved to C:\CMDLINE.TXT, the old one is C:\CMDLINE.BAK."
+             E10 Return = OK: closed, desktop restored.
+             checks/s2-edit-files.txt (hex dumps, from the run card):
+               CMDLINE.TXT 77 B "console=serial0,115200 serial=on cpuclk=max
+                 quiet memprot=strict bcache=8192\n"
+               CMDLINE.BAK 50 B = the seed byte for byte
+               CMDLINE.NEW absent (renamed)
+             checks/s2-edit-rootdir.txt: the root directory after the run.
+  s2-reboot  the same card, -append = that line (checks/s2-reboot-append.txt;
+             QEMU takes the boot arguments from -append, NOT from the file --
+             on the Pi the firmware reads the file). desk.actions. D02:
+             Running now Memory protection Strict, Block cache 8 MB, TT-RAM
+             924 MB (32 MB cache -> 8 MB: +24 MB pool); Next start = the same.
+             Boot lines: "[mm] memory protection ON (strict)", "[bcache] ...
+             8192 KiB (asked 8192 KiB, boot argument)".
+  s2-open    desk.actions, seeded file: dialog opens/closes from EmuDESK.
+  s2-tera    TeraDesk (#Z), no file: T02 dialog over TeraDesk, status "No
+             C:\CMDLINE.TXT yet: the next start uses the defaults.", Serial
+             Next start "Off" (default) while Running now "On" (-append
+             serial=on). T03 closed, TeraDesk restored.
+  s2-qed     QED (#Z), the same; Q03 QED restored.
+
+REGRESSION (checks/compare-v1.txt: same actions, same marks as SYSINFO01)
+  - EmuDESK/TeraDesk/QED accessory-title path: D00/D01/D03/END, T00/T01/T03/
+    END, Q00/Q01/Q03/END pixel-identical to measurement-2026-10-07-sysinfo;
+    D02/T02/Q02 differ inside the dialog box (11,20)-(629,478) (the new
+    dialog, intended).
+  - LDGDEMO (ldg.actions): all 10 dumps pixel-identical.
+  - APITEST (plain kernel, #Z): TOTAL 106/0/5 (= baseline); t25/t40 dumps
+    pixel-identical.
+
+STATIC CHECKS
+  SDK host tests (checks/sdk-host.txt): 19 passed, 0 failed, 0 skipped
+    (baseline 18/0/0 + sysacc-cmdline-host, 80 checks).
+  sdk/build.sh sysacc.c: clang -Wall -Wextra, 0 warnings.
+  No Rust touched -> cargo host tests / release builds / clippy not re-run
+  (the kernels above are HEAD built from a copy, unchanged source).
+
+Esc -- OPEN, needs a kernel AES change (not made: ticket rule "kernel AES
+  change required -> STOP and report")
+  diag.actions (screendumps/diag-*, serial/diag-serial.log): Serial console
+  drop-down open, Esc (IKBD 01/81) at 2800 and again at 3100: the box stays
+  (X03/X04/X05); the next click beside it closes it (X06). Cause, from the
+  code: while the accessory waits in its own evnt_multi it sleeps
+  (sched::sleep), the scheduler runs the in-kernel EmuDESK (serial
+  "[sched] switch -> kernel client"), whose evnt_multi(MU_KEYBD|...)
+  (kernel/src/desk/main.rs:89) takes the key from the ONE global console ring
+  (tos-api/src/aes/event.rs:556-560 console_try_read_key, first poller wins).
+  EmuTOS hands a key only to the mouse owner -- kchange -> post_keybd(
+  gl_mowner->p_cda, ch) (references/emutos/aes/geminput.c:288-307) -- which
+  under wind_update(BEG_MCTRL) is the accessory. The kernel's own form_do /
+  form_alert never sleep (busy loops, tos-api/src/aes/form.rs modal_loop /
+  form_do), so Return there works; that is why the dialog's OK/Return and
+  the alert's Return work. Same mechanism hits Return and the cursor keys
+  inside the drop-down. The accessory code for them is in place (EmuTOS
+  model); it works once keys follow the mouse owner. Not done: a polling
+  workaround (evnt_multi with a 0 ms timer so the accessory never sleeps) --
+  it would hide the kernel deviation and burn the CPU in an accessory.
+
+TIMING ARTEFACT OF THE FIRST TWO EDIT RUNS (dumps deleted, described here)
+  try1/try2 (earlier edit.actions) put marks 100 ticks before the next input
+  with --mark-delay 0.5 s (= 100 ticks at 200 Hz): those dumps showed the
+  state AFTER the next input (an alert "gone" before Return, the desktop
+  mid-redraw while the dialog was "open"). diag2/diag3 (no file, popup +
+  Save + Return, marks every 40 ticks, delay 0.05 s) and diag4 (exactly the
+  edit sequence, seeded file, marks every 20 ticks; checks/diag4-screen-
+  hashes.txt: one screen state from the Save click to Return 1 (W5710..W6500
+  alert up), one to Return 2 (V... saved), then closed (U...)) showed no
+  defect. The final edit.actions keeps >= 200 ticks between a mark and the
+  next input. Not a defect of the accessory or the kernel.
+
+NOT DONE / OPEN
+  - Esc in the drop-down (above): kernel AES key routing, own ticket.
+  - "Mouse while busy" Running now: no Ssystem mode for input=aes (a new mode,
+    e.g. 2020, is a kernel change -- own ticket if wanted).
+  - Real Pi 4: not run (workers take no HW actions). Pi-only: the firmware
+    reading the SAVED C:\cmdline.txt at the next boot; the file's name is then
+    CMDLINE.TXT (8.3 upper case; FAT is case-insensitive for the firmware);
+    writing on the boot partition of the real card (FAT16 per memory note,
+    FAT32 per a later diskutil reading -- unresolved there).
+  - Missing-file save: exercised in diag2/diag3 (status "Saved to
+    C:\CMDLINE.TXT.", no backup), file content not pulled from those cards;
+    the merge itself is host-tested for the missing file.
+  - CRLF in the file: host test only (the QEMU seed is LF).
+  - qemu-virt: no SD card, so no C:\CMDLINE.TXT; not run.
+  - AES menu_popup (36) EXISTS in this tree (tos-api/src/aes/menu.rs mn_popup,
+    A59); the ticket asked for the accessory's own drop-down, so it is not
+    used.
+
+method/ FILES
+  this run: sysinfo2-runs.sh, edit.actions, diag.actions, diag2/3/4.actions,
+    cmdline-seed.txt, sysinfo2-change.diff; run-rpi4.sh and
+    run-rpi4-drive-m3.sh (SYSINFO01 copies; sockets in the scratch card dir
+    under relative names, card used in place)
+  copied unchanged: from measurement-2026-10-07-sysinfo/method qmp_timed.py,
+    newdesk-template.inf, drive-m3.py, gen_script.py, desk-arm-m3.py,
+    desk/tera/qed/ldg.actions; from measurement-2026-10-08-input01/method
+    make-inj-input01.sh, apply-injector-input01.py.
+  bin/: SYSACC.NAC (db2e325c...), LIESMICH.TXT.
+  SHA256SUMS: every file of this run except itself.
