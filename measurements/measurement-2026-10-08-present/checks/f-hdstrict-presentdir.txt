@@ -1,0 +1,11 @@
+ Volume in drive : is NEWTOS     
+ Volume Serial Number is 37D2-0EFF
+Directory for ::/Apps/PRESENT
+
+PRESENT  NAP    416416 2026-10-08   7:21 
+PRESENT  LOG       486 2026-10-08   7:22 
+SLIDES   TXT      1491 2026-10-08   7:21 
+TEST     PNG     83863 2026-10-08   7:21 
+        4 files             502 256 bytes
+                         61 835 264 bytes free
+

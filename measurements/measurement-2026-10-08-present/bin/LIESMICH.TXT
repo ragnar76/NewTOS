@@ -1,0 +1,62 @@
+PRESENT01 -- PRESENT.NAP, die Praesentation (Folien im Vollbild)
+=================================================================
+
+Dateien (nicht auf eine Karte kopiert; kopieren nur auf Ansage):
+  PRESENT.NAP  sha256 94ebf10b2a5f8aaeba2aa2c89fdf2bde5cf161378f55013e874e26eef536ec29
+  SLIDES.TXT   sha256 73a24b063304f1b5f762894315e31424fb38d0e8ba7b89af5075c355e6a9a094
+               (nur die BEISPIEL-Folien zum Testen -- die echten Texte
+               kommen getrennt)
+  TEST.PNG     sha256 ad568f319441bf4bcdf689e998afc9e3ba69734f2dd701eb5f8ced5bfc356ed4
+               (Testbild der Beispiel-Folie 2, 800x600)
+
+Kein neuer Kernel noetig: reine Anwendung, kein Kernel-, AES- oder
+Rust-Code geaendert.
+
+Wohin auf der Karte:
+  C:\APPS\PRESENT\PRESENT.NAP
+  C:\APPS\PRESENT\SLIDES.TXT       die Folien (Text, mit jedem Editor aenderbar)
+  C:\APPS\PRESENT\<BILD>.PNG       die Bilder, die SLIDES.TXT mit @image nennt
+Starten: PRESENT.NAP im Desktop doppelklicken. Das Programm liest
+SLIDES.TXT aus seinem eigenen Ordner (sonst C:\APPS\PRESENT\SLIDES.TXT).
+
+TASTEN
+  naechste Folie    Pfeil rechts, Pfeil runter, Leertaste, Return, N,
+                    linke Maustaste
+  vorige Folie      Pfeil links, Pfeil hoch, Backspace, P, rechte Maustaste
+  erste / letzte    ClrHome (Pos1) / Shift + ClrHome
+  beenden           Esc oder Q  -> zurueck zum Desktop
+  ACHTUNG: Bild auf / Bild ab / Ende kommen bei NewTOS von einer USB-Tastatur
+  nicht an (Tastaturtabelle des Kernels) -- ein Praesentations-Klicker, der
+  Bild auf/ab sendet, tut daher nichts. Klicker mit Pfeiltasten gehen.
+
+FOLIENDATEI (SLIDES.TXT)
+  Alles vor der ersten "# "-Zeile ist Kopf/Kommentar und wird nicht gezeigt.
+  # Titel            neue Folie mit diesem Titel
+  - Text             Aufzaehlungspunkt
+    - Text           Unterpunkt (mit 2 Leerzeichen oder Tab eingerueckt)
+  Text               Absatz ohne Punkt
+  (Leerzeile)        Abstand
+  @image BILD.PNG    Bild zu dieser Folie (fehlt es: kleiner Hinweis, kein
+                     Absturz)
+  @center            Folie zentriert (Titelfolie)
+  @note Text         Sprechernotiz, wird nicht gezeigt
+  ; Text             Kommentar
+  Nur im Kopf:  @footer Text  (kleine Zeile unten links auf jeder Folie)
+                @log          (beim Beenden PRESENT.LOG mit Zeiten schreiben)
+  Lange Zeilen werden umbrochen; passt eine Folie nicht, wird ihre Schrift
+  eine Stufe kleiner. UTF-8 geht (Umlaute, ss, Anfuehrungszeichen,
+  Gedankenstriche). Hoechstens 64 Folien, 40 Zeilen je Folie.
+  Ausfuehrlich: docs/sdk/14-present.md.
+
+AUSSEHEN
+  Dunkelblauer Hintergrund, weisse Titel, orange Linie unter dem Titel,
+  helle Schrift, orange Punkte. Bei 1920x1080: Titel 64 Pixel hoch,
+  Punkte 48, Unterpunkte 32; die Folienzahl "n / N" unten rechts.
+  Bilder rechts neben dem Text (oder allein: ganze Flaeche), auf ganze
+  Vielfache vergroessert (scharfe Pixel, gut fuer Bildschirmfotos) oder
+  sauber verkleinert.
+
+GEPRUEFT (QEMU raspi4b, siehe ../RUNINFO.TXT)
+  640x480, 1024x768, 1920x1080, und 1920x1080 mit memprot=strict:
+  vor/zurueck/Anfang/Ende/Klick links/Klick rechts/Esc, Desktop danach
+  wieder da. Auf der echten Pi noch NICHT gelaufen.

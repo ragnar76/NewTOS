@@ -1,0 +1,126 @@
+measurement-2026-10-08-present -- TASK/PRESENT01: PRESENT.NAP, a native NewTOS
+GEM slide show (our own program). Developer self-evidence; the Tester's
+verdict is separate.
+
+Date 2026-10-08, branch desk-rebuild, HEAD 4d4c218 plus this change,
+uncommitted (method/present01-change.diff). SDK/app + image script + docs
+only: no kernel, tos-api or Rust file touched. QEMU 11.0.2 raspi4b,
+-append "serial=on" (one run "serial=on memprot=strict"), one QEMU at a
+time, host macOS. No SD card, Pi or TT touched. Scratch (kernels, cards,
+target dirs, sockets) in the session scratchpad; every run card an APFS clone
+(cp -c) of one base, deleted after the run; hashes in
+checks/kernels-sha256.txt.
+
+RESULT IN ONE LINE
+  PRESENT.NAP (autostarted by #Z) shows the 4 sample slides full screen at
+  640x480, 1024x768 and 1920x1080: large crisp text (Scale2x/3x of the system
+  font), the PNG placed and blended, a note for the missing picture, wrapped
+  long lines; Right/Space/left click forward, Left/right click back,
+  Shift+ClrHome last, ClrHome first, Esc quits -> the desktop is back with the
+  mouse; every step reached the expected slide (PRESENT.LOG counts match);
+  memprot=strict pixel-identical to the normal run; APITEST 106/0/5 as
+  before. Slide compose <= 5 ms, blit 15-20 ms at 1920x1080 (QEMU guest
+  time). ONE OPEN POINT for real use: PageUp/PageDown/End do not arrive from
+  a USB keyboard (kernel keymap), so clicker remotes that send them do
+  nothing.
+
+SPEC / SOURCES
+  - Ticket TASK/PRESENT01.md (written first); user decisions 2026-10-08
+    (English, full screen, large text, optional picture, slides from a text
+    file on the card).
+  - Memory-MFDB format = RGB565 chunky, fd_nplanes 16, row = fd_wdwidth*16 px:
+    tos-api/src/vdi/raster.rs header (used for the font read-back and the
+    frame blit).
+  - Button wait "any button down": clicks 0x101 / mask 3 / state 0,
+    tos-api/src/aes/input.rs downorup (EmuTOS ev_button flag); single click
+    -> no double-click window.
+  - Latin-1 -> Atari table: references/emutos/tools/bug.c i2a[] and
+    replacements[] (lines 2217-2278).
+  - Keys that reach an app from USB: kernel/src/drivers/usb/hid.rs
+    translate_key (0x4b PgUp, 0x4d End, 0x4e PgDn -> 0 = nothing sent).
+  - Link recipe: sdk/examples/libtest/build-libtest.sh (codec archives),
+    sdk/apps/chaintest/build-chaintest.sh (gemlib), docs/sdk/03, 11.
+
+CODE (method/present01-change.diff)
+  sdk/apps/present/present.c        NEW, the program (format + keys in its
+                                    header comment and docs/sdk/14-present.md)
+  sdk/apps/present/build-present.sh NEW, -> build/PRESENT.NAP + build/TEST.PNG
+  sdk/apps/present/sample/SLIDES.TXT  NEW, sample slides (4 slides: centred
+                                    title; bullets+sub-bullets+TEST.PNG;
+                                    missing NOPE.PNG; long lines, UTF-8
+                                    umlauts/quotes/ellipsis, a 100-char word)
+  sdk/apps/present/sample/gen-sample.py NEW, TEST.PNG (800x600 RGBA, grid,
+                                    alpha 0 band top left, alpha 128 bottom)
+  sdk/.gitignore                    track sdk/apps/present sources (like
+                                    chaintest), not build/ or TEST.PNG
+  tools/make-sd-image.sh            installs C:\Apps\PRESENT\{PRESENT.NAP,
+                                    SLIDES.TXT,TEST.PNG} (QEMU image only)
+  docs/sdk/14-present.md, docs/sdk/README.md  user/developer page + index
+  Build: checks/build-present.txt -- no compiler warning (-Wall -Wextra),
+  0 undefined symbols, only R_AARCH64_RELATIVE; two builds byte-identical
+  (PRESENT.NAP sha256 94ebf10b...ec29).
+
+QEMU RUNS (method/present-runs.sh, method/nav.actions; injector kernel
+  method/make-inj-input01.sh + apply-injector-input01.py (+ Step::Rdn, the
+  right button, IKBD header 0xF9) + gen_script.py (+ rdown/rup); the run
+  scripts take the screen size from XR/YR -> -global bcm2835-fb.xres/yres)
+  Card: base.img + C:\NEWDESK.INF "#Z 01 C:\Apps\PRESENT\PRESENT.NAP@".
+  nav.actions (ticks after the injector arms): 600 S1_TITLE, Right ->
+  S2_PICTURE, Space -> S3_MISSING, left click -> S4_WRAP_CLICK, Left ->
+  S3_LEFT, Shift+ClrHome -> S4_SHIFTHOME_LAST, ClrHome -> S1_HOME_FIRST,
+  Right -> S2_RIGHT, right click -> S1_RCLICK_PREV, Esc -> END_DESKTOP.
+  Screendump 0.1 s after each MARK line (screendumps/<label>-<part>-<MARK>.png).
+
+  FINAL binary (sha256 94ebf10b...ec29), label "f":
+    f-vga       640x480
+    f-xga       1024x768
+    f-hd        1920x1080
+    f-hdstrict  1920x1080, memprot=strict
+  Earlier iterations of the same program, kept as history:
+    r1-vga, r1-hd   first build. r1-vga dumps S3..S4 show TORN frames: the
+                    0.5 s mark delay equalled the gap to the next key, so the
+                    dump caught the next slide's blit half done (the serial
+                    log shows the right order). Mark delay -> 0.1 s since.
+    p-*             second build (bigger bullet dot, max timings in the log);
+                    p-api = APITEST, plain kernel (#Z C:\APITEST.NCP).
+    f differs from p only in the sub-bullet size at bullet size <= 2 (same
+    size instead of one smaller) and the log wording; f-hd == p-hd pixel for
+    pixel (all 10 dumps), as expected at bullet size 3.
+
+  What the dumps show (looked at in full size and as contact sheets):
+    S1  centred title "NewTOS" (x6 at 1080: 48x96 cells), orange bar, three
+        centred lines, footer left "NewTOS - PRESENT01 test slides", "1 / 4"
+        right. No mouse pointer.
+    S2  title x4 + orange rule, bullets x3 with orange dots, sub-bullets x2
+        with a dash in a dimmer blue-grey, wrapped bullet aligned to its text;
+        TEST.PNG right, reduced to fit (box filter), grid lines intact, top-
+        left alpha-0 band = background, bottom alpha-128 band blended.
+    S3  the bullets plus "[picture not found: NOPE.PNG]" centred in the
+        picture area, small; nothing else affected.
+    S4  wrapped long bullet (continuations under the text, not the dot),
+        wrapped sub-bullet, "aeoeue AEOEUE ss - "quoted" 'single' ... cafe"
+        rendered with the Atari glyphs (UTF-8 converted), the 100-char word
+        broken hard at the right margin, plain paragraph after the blank line.
+    Navigation dumps = the expected slide each time; END_DESKTOP = the
+    EmuDESK desktop with menu bar and mouse pointer.
+    640x480: bullets shrink to x1 on the full slides (auto-fit), x2 on S3.
+    1024x768: title x3, bullets/sub-bullets x2, footer x1.
+  checks/<run>-PRESENT.LOG (the sample file has @log): slide 1 shown 3x,
+    slides 2-4 2x each in every run = exactly the nav.actions sequence;
+    1920x1080: compose 0-5 ms, blit 15-20 ms, PNG decode+scale 40-45 ms
+    (once, cached); 640x480 blit <= 5 ms. hz_200 clock, QEMU guest time --
+    the Pi will differ, indicative only.
+  serial: 0 [EXC]/[PANIC] in all runs; "sh_ldapp: 'C:\Apps\PRESENT\
+    PRESENT.NAP' exited with rc=0", then NEWDESK starts.
+  memprot=strict: "[mm] memory protection ON (strict)"; all 10 f-hdstrict
+    dumps pixel-identical to f-hd.
+  APITEST (p-api): TOTAL 106 / 0 / 5 = the SYSINFO02 baseline.
+
+NOT COVERED HERE
+  - Real Pi 4 (USB keyboard/mouse, real HDMI size, real timing).
+  - Start by double-click from EmuDESK/TeraDesk (only the #Z autorun; the
+    log shows the program found SLIDES.TXT in its current directory, the
+    C:\APPS\PRESENT\SLIDES.TXT fallback covers a different directory).
+  - "Desktop restored" after Esc is the single-tasking shell restarting the
+    desktop; form_dial(FMD_FINISH)'s own redraw is not separately visible.
+  - No host unit test for the parser/wrap code.

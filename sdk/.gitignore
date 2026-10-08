@@ -90,6 +90,18 @@
 !/apps/chaintest/*.c
 !/apps/chaintest/*.sh
 
+# ...and present, OURS: PRESENT.NAP, the slide-show program (TASK/PRESENT01).
+# Source, build script and the sample slide file + picture generator are
+# tracked; build/ (PRESENT.NAP) and the generated sample/TEST.PNG are not.
+!/apps/present/
+/apps/present/*
+!/apps/present/*.c
+!/apps/present/*.sh
+!/apps/present/sample/
+/apps/present/sample/*
+!/apps/present/sample/SLIDES.TXT
+!/apps/present/sample/*.py
+
 # ...and doom, OURS as well: the GEM platform layer for doomgeneric
 # (TASK/PORT06). The doomgeneric tree itself is vendored, untracked, under
 # Applications/doomgeneric; the build output stays excluded.

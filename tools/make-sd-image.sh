@@ -522,6 +522,23 @@ else
   echo "note: sdk/apps/teradesk/build/dist not staged; C:\\Apps\\TERADESK skipped (run sdk/apps/build-teradesk.sh)"
 fi
 
+# PRESENT.NAP (TASK/PRESENT01) — our own full-screen slide show
+# (sdk/apps/present/, docs/sdk/14-present.md). C:\Apps\PRESENT\ gets the
+# program, the SAMPLE slide file SLIDES.TXT and its test picture TEST.PNG
+# (sdk/apps/present/build-present.sh writes build/PRESENT.NAP + build/TEST.PNG).
+# QEMU image only: the slides for a real card are copied there by hand.
+# Started by double-click (or #Z); it reads SLIDES.TXT from its folder.
+PRES_DIR="$SCRIPT_DIR/../sdk/apps/present"
+if [ -f "$PRES_DIR/build/PRESENT.NAP" ] && [ -f "$PRES_DIR/build/TEST.PNG" ]; then
+  mkdir -p "$V/Apps/PRESENT"
+  cp "$PRES_DIR/build/PRESENT.NAP" "$V/Apps/PRESENT/PRESENT.NAP"
+  cp "$PRES_DIR/sample/SLIDES.TXT" "$V/Apps/PRESENT/SLIDES.TXT"
+  cp "$PRES_DIR/build/TEST.PNG"    "$V/Apps/PRESENT/TEST.PNG"
+  echo "installed C:\\Apps\\PRESENT\\{PRESENT.NAP,SLIDES.TXT,TEST.PNG} (slide show + sample slides)"
+else
+  echo "note: sdk/apps/present/build/PRESENT.NAP not built; C:\\Apps\\PRESENT skipped (run sdk/apps/present/build-present.sh)"
+fi
+
 # ── TERADESK.INF: TeraDesk's own configuration — GENERATED here (DESK41) ────
 # TeraDesk does NOT know the NewTOS extensions by itself: its built-in defaults
 # (`prg_default`, sdk/apps/teradesk/prgtype.c:344-358) register *.PRG, *.APP,

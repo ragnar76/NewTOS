@@ -1,0 +1,36 @@
+# TASK/PRESENT01 navigation run. PRESENT.NAP is started by the #Z autorun
+# line; the injector clock starts at the first EL0 program (= PRESENT).
+# Ticks = hz_200 after arming. IKBD make codes, break = make | 0x80:
+# 4D Right, 4B Left, 39 Space, 47 ClrHome, 2A LShift, 01 Esc.
+# Slides of the sample file: 1 title (centred), 2 bullets + TEST.PNG,
+# 3 bullets + missing NOPE.PNG, 4 long lines / umlauts / hard break.
+600 mark S1_TITLE
+700 key 4D
+703 key CD
+1100 mark S2_PICTURE
+1200 key 39
+1203 key B9
+1600 mark S3_MISSING
+1700 down
+1703 up
+2100 mark S4_WRAP_CLICK
+2200 key 4B
+2203 key CB
+2600 mark S3_LEFT
+2700 key 2A
+2702 key 47
+2705 key C7
+2707 key AA
+3100 mark S4_SHIFTHOME_LAST
+3200 key 47
+3203 key C7
+3600 mark S1_HOME_FIRST
+3700 key 4D
+3703 key CD
+4100 mark S2_RIGHT
+4200 rdown
+4203 rup
+4600 mark S1_RCLICK_PREV
+4700 key 01
+4703 key 81
+6500 mark END_DESKTOP

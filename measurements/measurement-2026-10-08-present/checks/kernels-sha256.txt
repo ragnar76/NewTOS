@@ -1,0 +1,6 @@
+kernels (board-rpi4 release, built in the session scratch, deleted after the runs)
+850b760be8c385b75601291ec800f97644076253341ca66fb224ac22f34e0083  k-kinj-nav.img
+fe3ddf45af95e3dbef399e710e4baf4a9d4d6a834daee30799638bce7294106b  kernel8-plain.img
+base card: tools/make-sd-image.sh <S>/base.img 64 (QEMU image), sha256:
+615dc7b5ec263994ac0fe42b024e7913ead4ee50c9799aa0475fcba878d91784  base.img
+HEAD d6937614 + this change (uncommitted, method/present01-change.diff)

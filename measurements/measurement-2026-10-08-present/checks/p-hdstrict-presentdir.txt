@@ -1,0 +1,11 @@
+ Volume in drive : is NEWTOS     
+ Volume Serial Number is 6910-0EFB
+Directory for ::/Apps/PRESENT
+
+PRESENT  NAP    416432 2026-10-08   7:17 
+PRESENT  LOG       484 2026-10-08   7:17 
+SLIDES   TXT      1491 2026-10-08   7:17 
+TEST     PNG     83863 2026-10-08   7:17 
+        4 files             502 270 bytes
+                         61 835 264 bytes free
+
