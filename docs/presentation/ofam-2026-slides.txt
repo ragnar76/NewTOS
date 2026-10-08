@@ -1,12 +1,13 @@
 # NewTOS - Why and How
-- The idea is over 20 years old - as old as newtosworld.de
-- The plan then: bring TOS to ordinary PC hardware (no Pi, no ARM PCs yet)
-- For years it failed: I could not program, and found no one to build it with me
-- Now it exists - built together with Claude (Anthropic) as AI developer
-- Atari TOS, rebuilt from scratch as a native 64-bit OS - not an emulator
-- Same API: GEMDOS, BIOS, XBIOS, VDI, AES - EmuTOS is the specification
-- Atari programs are recompiled from their C sources, unmodified
-- Since May 2026: about 1,250 commits, 190,000 lines of Rust, 1,250+ tests
+- It started more than 20 years ago - the day I registered newtosworld.de
+- The dream back then: TOS on an ordinary PC.
+  - No Raspberry Pi, no ARM desktops - just a beige box and an idea
+- It never got built. I couldn't program, and I never found anyone to do it with me
+- This year that finally changed: I built it together with Claude, an AI
+- What came out is not an emulator - it is TOS itself, rewritten for today's hardware
+  - Same GEMDOS, BIOS, XBIOS, VDI and AES, checked line by line against EmuTOS
+- Atari programs are recompiled from their original sources, without changes
+- Since May: 1,250 commits, 190,000 lines of code, more than 1,250 tests
 
 # What it runs on
 - Raspberry Pi 4 (BCM2711, ARM Cortex-A72, 1.5 GHz)
@@ -48,13 +49,13 @@
 @image ZVIEW.PNG
 
 # Plans and Outlook
-- 68000 emulator in user space: run original .PRG files
-- FreeMiNT extensions: shared libraries (SLB), multitasking
+- A 68000 emulator, so your old .PRG files run too
+- Shared libraries and multitasking, the FreeMiNT way
 - Networking
-- Faster graphics: VDI drawing in hand-written ARM assembly
-- More applications: Thing, HighWire, newer zView
-- PiStorm: NewTOS inside a real Atari
-- newtosworld.de
+- Faster graphics: the VDI drawing code in hand-written ARM assembly
+- More software: Thing, HighWire, the newer zView
+- And one day NewTOS inside a real Atari, on a PiStorm
+- Follow along at newtosworld.de
 
 # Credits
 - EmuTOS - the reference for every TOS function
@@ -67,4 +68,4 @@
 - Rust, LLVM/clang, Raspberry Pi firmware, circle (reference)
 - Built with Claude Code (Anthropic)
   - Plugins: caveman, mattpocock-skills, rust-analyzer-lsp, clangd-lsp, graphify
-- Thanks to everyone who kept the Atari alive
+- And thank you - to everyone who kept the Atari alive all these years
