@@ -1,0 +1,80 @@
+### deck without the line '  - Plugins: caveman, ...'
+===== spacing 6
+S01 'NewTOS - Why and How': scale x3  body@x3 702px / room 806px  slack +104px
+S02 'What it runs on': scale x3  body@x3 682px / room 806px  slack +124px
+     wraps (bullet, 38 cols): The SD card is the hard disk: 10 MB/s, | 32 MB RAM cache
+     wraps (bullet, 38 cols): Memory protection per program: a crash | ends the program, not the system
+     wraps (bullet, 38 cols): Most of the work was done in QEMU on | the Mac, then on the real Pi
+S03 'BIOS and XBIOS': scale x3  body@x3 468px / room 806px  slack +338px
+S04 'VDI, AES and Desktop': scale x3  body@x3 520px / room 806px  slack +286px
+S05 'The Desktop': picture only (not modelled)
+S06 'Toolchain': scale x3  body@x3 364px / room 806px  slack +442px
+S07 'zView': picture only (not modelled)
+S08 'Plans and Outlook': scale x3  body@x3 468px / room 806px  slack +338px
+S09 'Credits': scale x3  body@x3 780px / room 806px  slack +26px
+===== spacing 7
+S01 'NewTOS - Why and How': scale x3  body@x3 738px / room 806px  slack +68px
+S02 'What it runs on': scale x3  body@x3 708px / room 806px  slack +98px
+     wraps (bullet, 38 cols): The SD card is the hard disk: 10 MB/s, | 32 MB RAM cache
+     wraps (bullet, 38 cols): Memory protection per program: a crash | ends the program, not the system
+     wraps (bullet, 38 cols): Most of the work was done in QEMU on | the Mac, then on the real Pi
+S03 'BIOS and XBIOS': scale x3  body@x3 492px / room 806px  slack +314px
+S04 'VDI, AES and Desktop': scale x3  body@x3 546px / room 806px  slack +260px
+S05 'The Desktop': picture only (not modelled)
+S06 'Toolchain': scale x3  body@x3 382px / room 806px  slack +424px
+S07 'zView': picture only (not modelled)
+S08 'Plans and Outlook': scale x3  body@x3 492px / room 806px  slack +314px
+S09 'Credits': scale x2  body@x3 820px / room 806px  slack -14px
+===== spacing 8
+S01 'NewTOS - Why and How': scale x3  body@x3 774px / room 806px  slack +32px
+S02 'What it runs on': scale x3  body@x3 735px / room 806px  slack +71px
+     wraps (bullet, 38 cols): The SD card is the hard disk: 10 MB/s, | 32 MB RAM cache
+     wraps (bullet, 38 cols): Memory protection per program: a crash | ends the program, not the system
+     wraps (bullet, 38 cols): Most of the work was done in QEMU on | the Mac, then on the real Pi
+S03 'BIOS and XBIOS': scale x3  body@x3 516px / room 806px  slack +290px
+S04 'VDI, AES and Desktop': scale x3  body@x3 573px / room 806px  slack +233px
+S05 'The Desktop': picture only (not modelled)
+S06 'Toolchain': scale x3  body@x3 401px / room 806px  slack +405px
+S07 'zView': picture only (not modelled)
+S08 'Plans and Outlook': scale x3  body@x3 516px / room 806px  slack +290px
+S09 'Credits': scale x2  body@x3 860px / room 806px  slack -54px
+### deck without '  - Plugins: ...' and '- zlib, libpng, IJG libjpeg, giflib, libexif'
+===== spacing 8
+S01 'NewTOS - Why and How': scale x3  body@x3 774px / room 806px  slack +32px
+S02 'What it runs on': scale x3  body@x3 735px / room 806px  slack +71px
+     wraps (bullet, 38 cols): The SD card is the hard disk: 10 MB/s, | 32 MB RAM cache
+     wraps (bullet, 38 cols): Memory protection per program: a crash | ends the program, not the system
+     wraps (bullet, 38 cols): Most of the work was done in QEMU on | the Mac, then on the real Pi
+S03 'BIOS and XBIOS': scale x3  body@x3 516px / room 806px  slack +290px
+S04 'VDI, AES and Desktop': scale x3  body@x3 573px / room 806px  slack +233px
+S05 'The Desktop': picture only (not modelled)
+S06 'Toolchain': scale x3  body@x3 401px / room 806px  slack +405px
+S07 'zView': picture only (not modelled)
+S08 'Plans and Outlook': scale x3  body@x3 516px / room 806px  slack +290px
+S09 'Credits': scale x3  body@x3 774px / room 806px  slack +32px
+===== spacing 9
+S01 'NewTOS - Why and How': scale x2  body@x3 810px / room 806px  slack -4px
+S02 'What it runs on': scale x3  body@x3 762px / room 806px  slack +44px
+     wraps (bullet, 38 cols): The SD card is the hard disk: 10 MB/s, | 32 MB RAM cache
+     wraps (bullet, 38 cols): Memory protection per program: a crash | ends the program, not the system
+     wraps (bullet, 38 cols): Most of the work was done in QEMU on | the Mac, then on the real Pi
+S03 'BIOS and XBIOS': scale x3  body@x3 540px / room 806px  slack +266px
+S04 'VDI, AES and Desktop': scale x3  body@x3 600px / room 806px  slack +206px
+S05 'The Desktop': picture only (not modelled)
+S06 'Toolchain': scale x3  body@x3 420px / room 806px  slack +386px
+S07 'zView': picture only (not modelled)
+S08 'Plans and Outlook': scale x3  body@x3 540px / room 806px  slack +266px
+S09 'Credits': scale x2  body@x3 810px / room 806px  slack -4px
+===== spacing 10
+S01 'NewTOS - Why and How': scale x2  body@x3 846px / room 806px  slack -40px
+S02 'What it runs on': scale x3  body@x3 788px / room 806px  slack +18px
+     wraps (bullet, 38 cols): The SD card is the hard disk: 10 MB/s, | 32 MB RAM cache
+     wraps (bullet, 38 cols): Memory protection per program: a crash | ends the program, not the system
+     wraps (bullet, 38 cols): Most of the work was done in QEMU on | the Mac, then on the real Pi
+S03 'BIOS and XBIOS': scale x3  body@x3 564px / room 806px  slack +242px
+S04 'VDI, AES and Desktop': scale x3  body@x3 626px / room 806px  slack +180px
+S05 'The Desktop': picture only (not modelled)
+S06 'Toolchain': scale x3  body@x3 438px / room 806px  slack +368px
+S07 'zView': picture only (not modelled)
+S08 'Plans and Outlook': scale x3  body@x3 564px / room 806px  slack +242px
+S09 'Credits': scale x2  body@x3 846px / room 806px  slack -40px

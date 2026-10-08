@@ -25,10 +25,13 @@
  *     ; text             comment -- ignored
  *
  *   Lines before the first "# " line are a free header (ignored), except
- *   two global directives there:
+ *   three global directives there:
  *     @footer text       small text bottom left on every slide
  *     @log               write render timings to PRESENT.LOG beside the
  *                        slide file on exit
+ *     @spacing N         extra space after each bullet/line, in twelfths of
+ *                        that item's character height (0..24, default 4);
+ *                        lines wrapped inside one item stay tighter
  *   Long lines wrap at word boundaries. Limits: 64 slides, 40 lines per slide;
  *   more are dropped. Text that does not fit is first shrunk (bullet size steps
  *   down), then clipped at the bottom.
@@ -102,6 +105,10 @@ static Slide slides[MAX_SLIDES];
 static int nslides;
 static int want_log;
 static char *footer;
+/* @spacing: extra space after an item in twelfths of its character height */
+#define SPACING_DEFAULT 4
+#define SPACING_MAX     24
+static int item_space = SPACING_DEFAULT;
 static char basedir[160];
 static char slidepath[200];
 
@@ -303,6 +310,11 @@ static void parse_slides(char *text)
 					footer = arg;
 				} else if (keyword(s, "@log", &arg)) {
 					want_log = 1;
+				} else if (keyword(s, "@spacing", &arg)) {
+					if (*arg >= '0' && *arg <= '9') {
+						int n = atoi(arg);
+						item_space = n > SPACING_MAX ? SPACING_MAX : n;
+					}
 				}
 				continue;
 			}
@@ -733,7 +745,7 @@ static int items_block(Slide *sl, int B, int x0, int x1, int y0, int draw,
 		} else {
 			y += text_block(it->text, B, x0, x1, y, lh, 0, C_TEXT, draw, ylimit);
 		}
-		y += (ch * k) / 3;       /* space after an item */
+		y += (ch * k * item_space) / 12;   /* space after an item (@spacing) */
 	}
 	return y - y0;
 }

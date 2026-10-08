@@ -47,12 +47,13 @@ becomes the middle dot; anything else becomes `?`). One line each:
 | `; text` | comment — ignored |
 
 Everything before the first `# ` line is a free header and is not shown,
-except two global directives that only work there:
+except three global directives that only work there:
 
 | Line | Meaning |
 |---|---|
 | `@footer text` | small text bottom left on every slide |
 | `@log` | write `PRESENT.LOG` (per slide: how often shown, longest render / picture / blit time) beside the slide file on exit |
+| `@spacing N` | extra space after each bullet, sub-bullet or text line, in twelfths of that item's character height, `0`..`24` (larger values are cut to 24; no number = ignored). Default `4` (a third of a line). Lines wrapped inside one item keep their tight distance (1/8), so a wrapped bullet still reads as one block. More spacing makes a full slide shrink to the next smaller size sooner |
 
 Unknown `@` directives are ignored. Limits: 64 slides, 40 lines per slide
 (more are dropped), file up to 256 KB. Long lines wrap at blanks; a word longer

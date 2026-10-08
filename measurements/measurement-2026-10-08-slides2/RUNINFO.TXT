@@ -1,0 +1,81 @@
+measurement-2026-10-08-slides2 -- "@spacing N" for PRESENT.NAP + the real deck
+rendered with more space between the lines (Atari meeting talk, 2026-10-09).
+
+Date 2026-10-08, branch desk-rebuild, HEAD 86f5f17b + the uncommitted change
+method/spacing-change.diff (sdk/apps/present/present.c, docs/sdk/14-present.md).
+QEMU raspi4b, -append serial=on, -global bcm2835-fb.xres=1920 yres=1080, one QEMU
+at a time, host macOS. No SD card, Pi or TT touched. Scratch in the session
+scratchpad, deleted at the end.
+
+WHAT CHANGED (method/spacing-change.diff)
+  New header directive (before the first "# " slide, like @footer/@log):
+    @spacing N   extra space after each item (bullet, sub-bullet, text line) in
+                 twelfths of that item's character height; 0..24 (more = 24,
+                 no number = ignored). Default 4 = the old fixed (ch*k)/3.
+  items_block(): y += (ch*k*item_space)/12 (floor(4x/12) == floor(x/3), so the
+  default is bit-identical). Lines wrapped inside one item are NOT spread:
+  they keep lineh() = ch*k + ch*k/8. Decision from the dumps: with 8/10 the
+  wrapped bullets of slide 2 read as one block only because their inner
+  distance stays tight while the item distance grows (spacing8-slide-02.png,
+  spacing10-slide-02.png).
+  Build: sdk/apps/present/build-present.sh -> no warnings, LINK OK, 0 undefined
+  symbols; PRESENT.NAP sha256 98043d74...b7e14c (checks/inputs.sha256).
+
+METHOD (method/)
+  base card: tools/make-sd-image.sh <S>/base.img 64 after the rebuild (carries
+  the new PRESENT.NAP). Injector kernel: make-inj-input01.sh <S> <repo> k- nav
+  (copy of measurement-2026-10-08-slides/method, nav.actions extended to the 9
+  slides of the deck at 86f5f17b). spacing-runs.sh <S> N: scratch copy of
+  docs/presentation/ofam-2026-slides.txt with "@spacing N" put in front (the
+  deck itself NOT edited), installed as C:\Apps\PRESENT\SLIDES.TXT + the three
+  images/*.PNG (PI4.PNG = the real Pi photo) on a cp -c clone of the base, #Z
+  autorun of PRESENT.NAP, Right key per slide, dump 0.1 s after each mark, Esc,
+  clone deleted. "none" = the deck unchanged without a directive.
+  layout-model.py = host transcription of render_slide()/items_block() at
+  1920x1080 (only an aid: slack in px; every scale it predicts was checked
+  against the dumps below -- all agree).
+
+RUNS: nodirective, spacing 4, 5, 6, 8, 10. All: 9 slides + end desktop,
+  "PRESENT.NAP exited with rc=0", 0 [EXC]/[PANIC] (checks/serial-summary.txt).
+  Control: nodirective-slide-01..09 == spacing4-slide-01..09 pixel-identical
+  (RGB sha) -> existing decks render unchanged.
+  Picture-only slides 5 (DESKTOP) and 7 (ZVIEW) are identical in every run.
+
+PER SLIDE (body scale; room for the body = 806 px; "slack" = room - body
+height at x3 incl. the space after the last item, checks/layout-model-deck.txt)
+            sp4         sp5         sp6         sp8         sp10
+  S1 Why    x3 +176     x3 +140     x3 +104     x3 +32      x2 (-40)
+  S2 Pi4    x3 +178     x3 +151     x3 +124     x3 +71      x3 +18
+  S3 BIOS   x3 +386     x3 +362     x3 +338     x3 +290     x3 +242
+  S4 VDI    x3 +340     x3 +313     x3 +286     x3 +233     x3 +180
+  S5 Desk   picture     picture     picture     picture     picture
+  S6 Tool   x3 +480     x3 +461     x3 +442     x3 +405     x3 +368
+  S7 zView  picture     picture     picture     picture     picture
+  S8 Plans  x3 +386     x3 +362     x3 +338     x3 +290     x3 +242
+  S9 Credit x3 +60      x3 +17      x2 (-26)    x2 (-111)   x2 (-196)
+  (sp7 model: S9 x2 -68; sp9 model: S1 x2 -4, S9 x2 -154 -- not run in QEMU)
+  Clipping: none in any run (lowest text row < 1000 = content bottom on every
+  text slide; footer "n / 9" intact). Wrapped lines: only S2 (picture column,
+  38 cols at x3): "...10 MB/s, | 32 MB RAM cache", "...a crash | ends the
+  program, not the system", "...in QEMU on | the Mac, then on the real Pi" --
+  no 1-3-word orphans; same wrap at every spacing. No other slide wraps.
+  Zero-margin lines: S9 "zView codecs: BMP ... Eureka IMG" is exactly 70 cols
+  = touches the right margin at x3 (spacing5-slide-09.png); S4 "The desktop is
+  EmuDESK, ... runs on top" ends 24 px before it.
+
+RECOMMENDATION: @spacing 5 is the largest value that keeps every text slide
+  of the unchanged deck at x3 (S9 Credits has 17 px left). 6, 8, 10 all drop
+  S9 to x2; 10 also drops S1.
+  S9 has no wrapped line, so SHORTENING lines does not help there -- a line has
+  to go (or two merged without wrapping):
+    @spacing 6: drop "  - Plugins: caveman, mattpocock-skills, rust-analyzer-lsp,
+                clangd-lsp, graphify"  -> S9 x3, +26 px (model; sp7 then -14)
+    @spacing 8: drop that line AND one single-line bullet, e.g.
+                "- zlib, libpng, IJG libjpeg, giflib, libexif" -> S9 x3, +32 px
+    @spacing 10: S9 needs one more bullet out, S1 one of its 9 bullets out.
+  Best set: screendumps/spacing5-slide-01..09.png. Visually 8 reads best
+  (spacing8-slide-0x) if the user accepts the two Credits removals.
+
+NOT COVERED: real Pi 4 / HDMI (font rendering and geometry are resolution-,
+  not machine-dependent; the meeting projector resolution is unknown -- at
+  another size Bpref and the room change). Spacing 7/9 only modelled.
