@@ -6,7 +6,8 @@
 - Not an emulator: TOS itself, rewritten for today's hardware
 - Same GEMDOS, BIOS, XBIOS, VDI, AES - checked against EmuTOS
 - Atari programs are recompiled from original sources, unchanged
-- Since May: 1,250 commits, 190,000 lines of code, 1,250+ tests
+- January 2026: PI-GEM, my feasibility test on the Pi
+- NewTOS since May: 1,250 commits, 190,000 lines, 1,250+ tests
 
 # What it runs on
 - Raspberry Pi 4: 4 ARM cores, 1.5 GHz
