@@ -1,0 +1,70 @@
+# NewTOS - Why and How
+- The idea is over 20 years old - as old as newtosworld.de
+- The plan then: bring TOS to ordinary PC hardware (no Pi, no ARM PCs yet)
+- For years it failed: I could not program, and found no one to build it with me
+- Now it exists - built together with Claude (Anthropic) as AI developer
+- Atari TOS, rebuilt from scratch as a native 64-bit OS - not an emulator
+- Same API: GEMDOS, BIOS, XBIOS, VDI, AES - EmuTOS is the specification
+- Atari programs are recompiled from their C sources, unmodified
+- Since May 2026: about 1,250 commits, 190,000 lines of Rust, 1,250+ tests
+
+# What it runs on
+- Raspberry Pi 4 (BCM2711, ARM Cortex-A72, 1.5 GHz)
+- HDMI: up to 1920 x 1080, true colour
+- SD card: 4-bit bus, multi-block transfers, ~10 MB/s
+- 32 MB block cache, read in RAM after the first access
+- USB keyboard and mouse
+- Serial console for debugging
+- MMU: every program gets memory protection, like FreeMiNT
+- Develop and test in QEMU, run on the real Pi
+@image PI4.PNG
+
+# BIOS and XBIOS
+- BIOS: console, character devices, Rwabs, Getbpb, Mediach
+- Drives C: to F: from the SD card partitions (FAT)
+- System variables and cookie jar as on a Falcon (TOS 4.04)
+- XBIOS: screen, palette, Keytbl, Kbdvbase, Supexec, timers
+- Keyboard layouts: German and US, loadable KEYBOARD.KBD
+- 200 Hz system timer (_hz_200), mouse moves while programs compute
+- NewTOS extensions via Ssystem: CPU clock, temperature, system info
+
+# VDI, AES and Desktop
+- VDI: about 70 functions, Falcon true-colour model
+- Checked pixel by pixel against real TT and Falcon dumps
+- AES: all 11 managers - windows, menus, dialogs, events, resources
+- 3D look as in TOS 4 / EmuTOS
+- Desk accessories (.NAC), e.g. System Info
+- Desktop: EmuDESK rebuilt 1:1 - TeraDesk runs on top
+@image DESKTOP.PNG
+
+# Toolchain
+- clang / LLVM for AArch64, own SDK
+- mintlib, gemlib, cflib ported - not rewritten
+- Native 64-bit programs: .NAP (GEM), .NCP (console), .NAC (accessory)
+- .PRG/.TOS/.ACC stay reserved for a future 68000 emulator
+- Running ports: QED, TeraDesk, zView with 10 image codecs, Doom, CoreMark
+- LDG libraries load natively (.NLD), WinDom, libpng, libjpeg, zlib
+- CoreMark: about 7,300 on the Pi 4
+@image ZVIEW.PNG
+
+# Plans and Outlook
+- 68000 emulator in user space: run original .PRG files
+- FreeMiNT extensions: shared libraries (SLB), multitasking
+- Networking
+- Faster graphics: VDI drawing in hand-written ARM assembly
+- More applications: Thing, HighWire, newer zView
+- PiStorm: NewTOS inside a real Atari
+- newtosworld.de
+
+# Credits
+- EmuTOS - the reference for every TOS function
+- FreeMiNT, mintlib, gemlib, cflib - libraries and the memory model
+- QED, TeraDesk, zView (z-tools), WinDom, LDG, libshare
+- zView codecs: BMP, TGA, PNG, GIF, JPEG, DEGAS, NEOchrome, GodPaint, Eureka, IMG
+- zlib, libpng, IJG libjpeg, giflib, libexif
+- Doom (id Software, doomgeneric), CoreMark (EEMBC)
+- Hatari and QEMU - reference machines and test bench
+- Rust, LLVM/clang, Raspberry Pi firmware, circle (reference)
+- Built with Claude Code (Anthropic)
+  - Plugins: caveman, mattpocock-skills, rust-analyzer-lsp, clangd-lsp, graphify
+- Thanks to everyone who kept the Atari alive
