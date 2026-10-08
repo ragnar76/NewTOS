@@ -215,8 +215,9 @@
  *     F11 = gamma, Undo is Pause), every other key by the character
  *     Keytbl()'s unshifted table gives it, so the keyboard's own layout
  *     still decides which key is 'y'; '+' counts as '=' (screen size up,
- *     map zoom in -- '=' is Shift+0 on the German layout), ',' and '.' are
- *     strafe left and right as in vanilla DOOM. The AES keyboard
+ *     map zoom in -- '=' is Shift+0 on the German layout). ',' and '.' stay
+ *     characters; DG_Init binds them to strafe left and right, as in
+ *     vanilla DOOM. The AES keyboard
  *     events the chained vector still produces are read and dropped, so they
  *     do not pile up for whoever owns the keyboard after DOOM.
  *     The hook comes out again on every way out: atexit() (a normal quit,
@@ -469,6 +470,7 @@ static void c2p_row(const uint8_t *src, int n, uint16_t *dst, long ps, long gs)
 #include "m_argv.h"
 #include "i_video.h"		/* colors[], palette_changed (CMAP256) */
 #include "i_system.h"		/* I_Error */
+#include "m_controls.h"		/* key_strafeleft / key_straferight */
 #include "doomgeneric_gem_kbdvec.h"
 
 #ifndef CMAP256
@@ -1577,6 +1579,18 @@ void DG_Init(void)
 
 	key_init();
 
+	/* Strafe left/right on ',' and '.', vanilla DOOM's own defaults.
+	 * doomgeneric's are KEY_STRAFE_L/R, codes no key produces; binding the
+	 * characters instead (rather than translating them in map_key) keeps
+	 * ',' and '.' typeable in a savegame name. DG_Init runs before
+	 * D_DoomMain; its D_BindVariables / M_LoadDefaults only register the
+	 * variable, and reading a config file is compiled out in this tree
+	 * (config.h: ORIGCODE undefined, m_config.c LoadDefaultCollection), so
+	 * nothing overwrites this. Were config loading ever on, a saved
+	 * binding would win -- as a user's config should. */
+	key_strafeleft = ',';
+	key_straferight = '.';
+
 	diag("DOOM: GEM platform up -- %dx%d, %d planes, lookup table %s, "
 	       "pixel %dx%d um, stage %d = %dx%d, route %s\n", scr_w, scr_h,
 	       nplanes, has_lut ? "yes" : "no", pix_w, pix_h, stage, out_w,
@@ -1802,12 +1816,6 @@ static unsigned char map_key(int scan, int ascii)
 	 * layout that is Shift+0, so '+' stands in for it on any layout. */
 	if (ascii == '+')
 		return KEY_EQUALS;
-	/* The vanilla strafe keys; doomgeneric binds strafe left/right to
-	 * KEY_STRAFE_L/R, which no key would produce otherwise. */
-	if (ascii == ',')
-		return KEY_STRAFE_L;
-	if (ascii == '.')
-		return KEY_STRAFE_R;
 	if (ascii >= 0x20 && ascii < 0x7f)
 		return (unsigned char)ascii;
 	return 0;
