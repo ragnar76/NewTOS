@@ -192,8 +192,13 @@ impl GicV2 {
 
 /// IRQ entry point. Acknowledges the IRQ, dispatches to the board's
 /// peripheral handler, then EOIs.
+///
+/// After a timer tick it runs the INPUT01 input pump
+/// ([`crate::host_env::irq_input_pump`]) — which itself pumps only when the
+/// tick interrupted a program at EL0 — after the EOI, still with IRQs masked
+/// (the exception entry masked them; nothing on the pump path opens them).
 #[unsafe(no_mangle)]
-pub extern "C" fn rust_irq_handler(_frame: &mut crate::arch::aarch64::exceptions::ExceptionFrame) {
+pub extern "C" fn rust_irq_handler(frame: &mut crate::arch::aarch64::exceptions::ExceptionFrame) {
     let gic = board_gic();
     let intid = gic.acknowledge();
 
@@ -201,10 +206,11 @@ pub extern "C" fn rust_irq_handler(_frame: &mut crate::arch::aarch64::exceptions
         return;
     }
 
+    let tick = intid == crate::drivers::timer::TIMER_INTID;
     if intid == BOARD_PL011_INTID {
         // Drain the PL011 RX FIFO into the console ringbuffer.
         crate::console::pl011_rx_drain();
-    } else if intid == crate::drivers::timer::TIMER_INTID {
+    } else if tick {
         // 200 Hz system tick — re-arm and advance `_hz_200`.
         crate::drivers::timer::handle_irq();
     }
@@ -212,6 +218,10 @@ pub extern "C" fn rust_irq_handler(_frame: &mut crate::arch::aarch64::exceptions
     // add a registration table for future peripherals.
 
     gic.end_of_interrupt(intid);
+
+    if tick {
+        crate::host_env::irq_input_pump(frame.spsr);
+    }
 }
 
 // ---------------------------------------------------------------------------

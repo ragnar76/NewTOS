@@ -6,9 +6,11 @@
 //! keyboard (`Bconin`) and the VDI mouse consume unchanged. (USB is to the
 //! keyboard what `emmc` is to the disk.)
 //!
-//! **Runtime:** polled from [`crate::host_env`]'s `pump_input` via
-//! `usb::poll()` once the controller lands — the same hook the removed
-//! `ikbd_uart` used. No IRQ for bring-up.
+//! **Runtime:** polled via `usb::poll()` from [`crate::host_env`]'s input
+//! pump — `pump_input`, the blocking console reads and (INPUT01, unless
+//! `input=aes`) the 200 Hz timer interrupt while a program runs at EL0
+//! (`crate::input_gate`). No USB interrupt of its own; never entered twice
+//! (the pump's one-at-a-time guard).
 //!
 //! **Build-up (QEMU-first):** D1 `xhci` + `pcie` (detect a device) → D2
 //! `core` (enumerate) → D3 `hub` → D4/D5 `hid` (keyboard/mouse → `ikbd::feed`)
@@ -124,8 +126,8 @@ pub fn tree(buf: &mut [DeviceInfo]) -> (u8, usize) {
 
 /// Pump USB HID input: drain a completed interrupt transfer (a HID report),
 /// translate it into the IKBD byte stream (`ikbd::feed`), and re-queue the
-/// next transfer for that device. Called from `host_env::pump_input` like the
-/// old IKBD poll. A no-op until a HID device is enumerated.
+/// next transfer for that device. Called from `host_env`'s input pump
+/// (`pump_devices`). A no-op until a HID device is enumerated.
 pub fn poll() {
     #[cfg(any(feature = "board-qemu-virt", feature = "board-rpi4"))]
     {

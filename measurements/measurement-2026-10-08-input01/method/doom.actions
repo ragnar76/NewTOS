@@ -1,0 +1,21 @@
+# OFAM freeze: DOOM (#Z C:\DOOM\DOOM.NAP). Screendumps while it runs (title/demo), then
+# Esc (menu), Up (wraps to Quit Game), Return, Y -> DOOM exits, desktop back.
+# (first attempt F10 + Y did not raise the quit prompt: checks/doom-first-attempt/)
+# Ticks hz_200 after the injector arms.
+100 parkbr
+2000 mark D00_START
+4000 mark D01_RUNNING
+6000 mark D02_RUNNING2
+8000 key 01
+8006 key 81
+8800 mark D03_MENU
+9000 key 48
+9006 key C8
+9400 mark D03B_QUIT_SELECTED
+9600 key 1C
+9606 key 9C
+10400 mark D04_QUITPROMPT
+10600 key 15
+10606 key 95
+12600 mark D05_AFTER_QUIT
+13000 mark END

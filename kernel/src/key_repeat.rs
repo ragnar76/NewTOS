@@ -34,7 +34,9 @@
 //! first decodes the pending input (a break stops the repeat), then calls
 //! [`KeyRepeat::poll`] with the current `_hz_200`, which credits the 50 Hz
 //! steps — the multiples of 4 that `_hz_200` crossed, the same phase as
-//! EmuTOS' `timer_c_sieve` — since the previous poll.
+//! EmuTOS' `timer_c_sieve` — since the previous poll. (INPUT01's
+//! timer-interrupt pump decodes pointer motion only and never runs the
+//! repeat — key bytes stay held for the trap-side pump, `crate::input_gate`.)
 //!
 //! **Burst guard:** one poll emits **at most one** repeat; the remaining
 //! elapsed steps are discarded and the next repeat is due `repeat` steps after

@@ -1,0 +1,112 @@
+measurement-2026-10-08-input01 -- TASK/INPUT01: the pointer moves while a program works
+Date 2026-10-08, branch desk-rebuild, base = tag ofam-2026 (10b1d302; HEAD 3ffb55fc = + docs only).
+Developer run (not the Tester's verdict). QEMU raspi4b, -append "serial=on[ ...]", memprot default (on);
+one QEMU at a time, host macOS. No SD card, Pi or TT touched. Scratch (kernels, cards, targets, sockets) in
+the session scratchpad; every run card is an APFS clone (cp -c) of one base card per content, deleted after
+the run (run-rpi4-drive-m3.sh / run-rpi4.sh); scratch deleted at the end.
+
+WHAT / WHY
+  INPUT01: the mouse pointer froze whenever no program waited in the AES -- the USB-HID mouse was drained
+  only in the trap-side pump (Host::pump_input from AES waits, the blocking console reads, Bconstat), and
+  IRQs are masked inside every trap. EmuTOS moves the pointer from interrupts (bios/aciavecs.S:249 ->
+  mouse_int, vdi/vdi_mouse.c:602,668-686 vb_draw) and its GEMDOS trap does not mask them (bdos/rwa.S:158-204).
+  Change (kernel/src/input_gate.rs has the full reasoning): the 200 Hz timer IRQ, when it interrupted a
+  program at EL0 (no trap in progress, no upcall in flight, AES fiber idle), drains ONE USB report like a
+  trap-side pump; a report that is pure pointer motion (relative-mouse packets at the unchanged button
+  state) is decoded at once -- cursor moves, AES user_mot/mchange runs -- anything else (button change,
+  wheel, key make/break) is HELD and the IRQ drains nothing more until the next trap-side pump decodes the
+  held report in place of a USB drain. So clicks, double-click window, wheel, keys, key repeat and kbdvec
+  delivery keep their pre-INPUT01 moment; only the pointer moves earlier. No IRQs are opened inside
+  kernel work and no pump runs inside long traps (Pexec, SD reads): a timer IRQ that fell due during a trap
+  is taken on the first EL0 instruction after it, so the pointer stands still for at most one trap.
+  Boot argument input=aes = exactly the old behaviour (no IRQ pump at all).
+
+EVIDENCE FIRST (method/: make-inj-input01.sh, apply-injector-input01.py, apply-trapprof-input01.py,
+  lag.py, stretches.py, strips.py, drive-m3.py --burst; actions zv-start-move / zv-thumb-move / zv-jpg-move)
+  Scratch injector kernels = a copy of the tree + the scripted IKBD injector hooked after every usb::poll()
+  (base: 3 sites of ofam-2026; new: 2 sites -- the trap-side pump and the IRQ pump's capture) + a long-trap
+  profiler (one serial line per synchronous exception >= 5 ms). Each script moves the pointer by 2 px every
+  10 ms without a pause; a step that runs late = the pump did not run. "base" = ofam-2026 source
+  (git archive ofam-2026), "new" = this tree. Logs serial/{base,new}-{zvmove,photomove,jpgmove}-serial.log,
+  analyses checks/lag-*.txt, checks/stretches.txt.
+
+  checks/stretches.txt (longest time without any input pump, during continuous movement):
+    zView start from EmuDESK (10 codecs: Pexec 3/4 + Mshrink)   base 830 ms         new 135 ms
+    zView browser thumbnails of 8 photos 2048x1536                base 180 ms (7x)    new  30 ms (0x >= 50 ms)
+    zView opens C:\PHOTO\BIG.JPG (2.2 MB)                         base  85 ms         new  85 ms
+  Where the base time went (lag.py, trap profiler):
+    zView start: the 830 ms gap is 96 % kernel traps -- 20 Pexec (635 ms, longest 136 ms) + 10 Mshrink
+      (159 ms) -- and 29 ms EL0. New: a pump after every trap; the remaining 135 ms is ONE Pexec(3) of the
+      largest codec (130 ms, IRQs masked) -- by design (no pump inside a trap).
+    Thumbnails: 180 ms per photo, 55 % Fread traps (each <= 8 ms) + 45 % EL0 decode. New: <= 30 ms.
+    BIG.JPG: the 85 ms are inside one AES call (svc 2) that works ~85 ms before its own wait loop pumps;
+      identical in both kernels, untouched by design.
+  Screendumps (host-timed bursts, independent of the guest): screendumps/{base,new}-zvmove-B_DCLICK-bNN.png
+  (20 x 0.15 s after the double click on ZVIEW.NAP), {base,new}-photomove-C_SAMPLES-bNN.png (30 x 0.2 s),
+  {base,new}-jpgmove-B_MOVE-bNN.png (30 x 0.3 s). Stacked pointer rows: screendumps/strips-zvmove-base.png
+  vs strips-zvmove-new.png -- base b01..b06 the pointer stands at x~143 while zView loads its codecs, new
+  it moves 143 -> 195 over the same frames (the injector advances one 2-px step per pump, so the strip
+  shows pump count, not hand speed; a real mouse report carries the accumulated motion).
+  strips-photomove-*.png: the 0.2 s burst is too coarse to show 180 ms stalls; the logs are the evidence.
+  base-thumbmove (small C:\ZVIEW\SAMPLES only): no stall even in base -- kept as the negative control.
+
+REGRESSION (method/regr-input01.sh = ofam-freeze group A + DOOM, ofam-strict.sh; kernels
+  method/make-kernels-input01.sh: new-kernel8-evb.img + injector kernels new-kinj-*.img, no profiler;
+  sha256 checks/kernels-cards-sha256.txt). Cards: evb-runs.sh/seed-card*.sh as ofam (64 MiB, seeded once
+  per content in the scratch dir), zv-* and DOOM on base64.img = tools/make-sd-image.sh 64.
+  Every run twice: "irq-" = default (new behaviour), "aes-" = -append "serial=on input=aes".
+  Screendump comparison method/shotdiff.py (connected differing regions; <= 20x20 px = CURSOR?, else
+  OTHER, every OTHER looked at), method/compare-input01.sh; checks/shotdiff-*.txt.
+                         irq vs aes (same cards)   aes vs ofam-2026            irq vs ofam-2026
+    acc-on  (LDGDEMO)    10/10 identical           10/10 identical             10/10 identical
+    acc-strict           10/10 identical           10/10 identical             10/10 identical
+    desk (EmuDESK)        6/6  identical            4/6, 2 OTHER = file dates   same as aes
+    tera (TeraDesk)       4/4  identical            4/4  identical             4/4  identical
+    qed                   4/4  identical            4/4  identical             4/4  identical
+    desk3a                9/9  identical            7/9, 2 = clock in Info box  same as aes
+    api (APITEST)         2/2  identical, TOTAL 106/0/5 both modes             2/2  identical
+    zv-dclick (ZVIEW02)   4/4  identical            4/4  identical             4/4  identical
+    zv-browser            7/7  identical            7/7  identical             7/7  identical
+    zv-quit (ZVIEW04)     7/7  identical, exits rc=0 7/7 identical             7/7  identical
+    doom                  6/8, 2 OTHER              3/8                         2/8
+      DOOM: start, demo, Esc menu, Up/Return/Y quit -> "exited with rc=0", desktop back in BOTH modes
+      (kbdvec route: key make via the trap pump, the break captured by the IRQ pump and held, released by
+      the next trap pump -- irq-doom serial shows it, "step 10 ... irq=1"). The differing dumps are other
+      frames of the same attract demo (looked at: same scene, a few tics apart); the demo's frame at a
+      host-timed dump depends on guest speed, which differs between two kernels.
+    "file dates" (desk): the "Show as text" columns 08/10/26 00:40 (ofam card) vs 02:17 (this run's card);
+    "clock" (desk3a E_INFO/F_TYPED): the time field of the Info dialog -- both known from the ofam run.
+  memprot=strict once (irq, ofam-strict.sh): desk-strict 4/6 identical + the same 2 file-date regions,
+    zv-browser-strict 7/7 identical, api-strict 2/2 identical + TOTAL 106/0/5.
+  Serial: 0 [EXC]/PANIC/"Memory violation" in all 39 logs of this run.
+  Package kernel itself (bin/kernel8.img, booted unchanged): serial/pkg-api-serial.log (default) and
+    pkg-aes-api-serial.log (input=aes): boot line "[input] ...", APITEST TOTAL 106/0/5 in both.
+
+STATIC CHECKS (method/checks.sh final -> checks/final-*.txt; the shared tree's target/ was used by
+  cargo xtask exactly as in the ofam run; the root kernel8.img (gitignored, 55eddb8f) was saved before and
+  restored afterwards)
+  host tests 1261/0/1 (baseline 1249/0/1: +11 input_gate, +1 bootargs)
+  release build rpi4 + qemu-virt: tos-api 64 / kernel 94, 0 errors (baseline 64/94)
+  clippy rpi4 + qemu-virt: tos-api 76 / kernel 125 (baseline 76/125; a first run showed 126 = one
+    doc_lazy_continuation in a new doc comment of input_gate.rs, fixed, clippy and both release builds
+    re-run after the fix -- the files above are the re-runs; host tests ran before that doc-only fix)
+  desk drift probe 31; SDK host tests 18/0/0.
+  qemu-virt release kernel built (3bc753de...), NOT booted.
+
+PI PACKAGE (not copied to any card): bin/kernel8.img (gitignored) sha256
+  50f922a804e56748bc6d6f57de15f00c847f6873f897864f55c1b2c996347e7c, cargo xtask build --board rpi4 --release
+  of this tree (banner "NewTOS 0.1 2026-10-08 (3ffb55fc)" -- uncommitted INPUT01 on top of 3ffb55fc);
+  bin/LIESMICH.TXT (German: what to try, how to switch off with input=aes in cmdline.txt).
+
+NOTES / LIMITS
+  - The evidence and regression kernels were built before three text-only edits (doc comments in
+    bootargs.rs/input_gate.rs/lib.rs and the wording of the "[input]" boot line); the package kernel and
+    the static checks are after them.
+  - QEMU raspi4b has no USB (no PCIe): the input source in every run is the scratch injector, which enters
+    exactly where usb::poll's reports enter (ikbd::feed inside the pump / the IRQ capture). The real USB
+    path (xHCI poll from the timer IRQ on the Pi) is HW-only. The timer PPI itself is delivered on the
+    Pi (FSBENCH timed with _hz_200 there, measurement-2026-10-07-fs08-pi).
+  - QEMU times are only indicative; on the Pi a Pexec of a codec reads its sectors from the card, so the
+    longest single trap (= the longest remaining stand-still) may be longer than QEMU's 130 ms.
+  - Not changed, measured: stand-stills inside one trap (Pexec, a long AES/VDI call such as the 85 ms
+    one in zView's picture window) and while the built-in desktop (EL1 code) works itself.

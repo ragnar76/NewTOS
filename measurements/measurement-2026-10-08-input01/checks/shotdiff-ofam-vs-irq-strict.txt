@@ -1,0 +1,9 @@
+DIFF END.png: CURSOR? (368,88)-(376,100)
+DIFF END.png: CURSOR? (368,104)-(376,120)
+DIFF END.png: OTHER (392,88)-(400,120)
+DIFF E_MENU_CLICKED.png: CURSOR? (368,88)-(376,100)
+DIFF E_MENU_CLICKED.png: CURSOR? (368,104)-(376,120)
+DIFF E_MENU_CLICKED.png: OTHER (392,88)-(400,120)
+desk-strict- vs irq-desk-strict-: same=4 cursor-only=0 other=2 missing=0
+zv-browser-strict- vs irq-zv-browser-strict-: same=7 cursor-only=0 other=0 missing=0
+api-strict- vs irq-api-strict-: same=2 cursor-only=0 other=0 missing=0

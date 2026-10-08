@@ -1,0 +1,9 @@
+zView start from EmuDESK (10 codecs, Pexec 3/4 + Mshrink)
+  base: stretches >= 100 ms:  2, >= 50 ms:  2, longest 830 ms
+  new : stretches >= 100 ms:  2, >= 50 ms:  3, longest 135 ms
+zView browser thumbnails of 8 photos 2048x1536
+  base: stretches >= 100 ms:  7, >= 50 ms:  7, longest 180 ms
+  new : stretches >= 100 ms:  0, >= 50 ms:  0, longest 30 ms
+zView opens BIG.JPG 2.2 MB
+  base: stretches >= 100 ms:  0, >= 50 ms: 30, longest 85 ms
+  new : stretches >= 100 ms:  0, >= 50 ms: 30, longest 85 ms

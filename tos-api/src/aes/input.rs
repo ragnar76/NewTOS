@@ -839,7 +839,9 @@ const WA_DNLINE: i16 = 3;
 /// `usb::poll` → `ikbd::feed` → `mousexvec` → `call_user_wheel` → here, and
 /// `pump_input` is only ever called **synchronously** from EL1 code running
 /// on behalf of a well-defined caller: an AES/GEMDOS trap of the running EL0
-/// process, or the kernel desktop's own loop. There is no point at which a
+/// process, or the kernel desktop's own loop. (INPUT01's timer-interrupt pump
+/// does not decode wheel detents — they are held for the trap-side pump,
+/// `kernel::input_gate`.) There is no point at which a
 /// "no running process" sentinel is installed, so the precondition of
 /// EmuTOS's comment simply does not arise. Its two concrete obstacles are
 /// gone with it:

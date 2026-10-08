@@ -1,0 +1,18 @@
+steps in window 206..4206: 2002, ran in IRQ: 74, in trap pump: 1928
+lag ticks: min 0 median 0 p95 7 max 15  (1 tick = 5 ms)
+longest stretches without a step (ticks, from, to): [(17, 2006, 2023), (16, 1946, 1962), (16, 1886, 1902), (16, 1828, 1844), (16, 866, 882)]
+  step 913: sched 2008 ran 2023 lag 15 ticks (75 ms) irq=0
+  step 343: sched 868 ran 882 lag 14 ticks (70 ms) irq=0
+  step 824: sched 1830 ran 1844 lag 14 ticks (70 ms) irq=0
+  step 853: sched 1888 ran 1902 lag 14 ticks (70 ms) irq=0
+  step 883: sched 1948 ran 1962 lag 14 ticks (70 ms) irq=0
+traps >= 5 ms starting in the window: 1033, sum 21689.8 ms, longest:
+  starts +2023: 100.1 ms from el0 svc 0x2 fn 0x0
+  starts +2081: 93.5 ms from el0 svc 0x2 fn 0x0
+  starts +521: 92.2 ms from el0 svc 0x2 fn 0x0
+  starts +1844: 91.9 ms from el0 svc 0x2 fn 0x0
+  starts +1061: 90.8 ms from el0 svc 0x2 fn 0x0
+  starts +761: 90.6 ms from el0 svc 0x2 fn 0x0
+  starts +1902: 90.3 ms from el0 svc 0x2 fn 0x0
+  starts +463: 90.2 ms from el0 svc 0x2 fn 0x0
+longest stretch 2006..2023 = 85 ms: traps >= 5 ms inside: 0, 0 ms (0 %); the rest (85 ms) = EL0 time + traps < 5 ms

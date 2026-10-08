@@ -28,6 +28,7 @@
 use core::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 use crate::console;
+use crate::input_gate::{HeldBytes, HELD_CAP};
 use crate::key_repeat::KeyRepeat;
 use crate::sync::SpinMutex;
 
@@ -71,8 +72,85 @@ static MS_BUTTONS: AtomicU8 = AtomicU8::new(0);
 /// First movement byte (`dx`), held until `dy` arrives.
 static MS_DX: AtomicU8 = AtomicU8::new(0);
 
-/// Feed one received IKBD byte to the decoder.
+// ── INPUT01: the timer-interrupt pump's capture ───────────────────────
+//
+// The interrupt pump (`host_env::irq_input_pump`) drains one USB report with
+// [`CAPTURE`] raised, so its bytes land in [`HELD`] instead of the decoder,
+// and then lets [`capture_end`] decide: pure pointer motion is decoded at
+// once, anything else stays held for the next trap-side pump
+// ([`release_held`]). Policy and reasons: `crate::input_gate`.
+
+/// Raised while the interrupt pump drains a report: [`feed`] collects.
+static CAPTURE: AtomicBool = AtomicBool::new(false);
+
+/// The report the interrupt pump drained but did not decode. Only touched
+/// inside the input pump, which never runs twice at once
+/// (`input_gate::PumpLock`), so the lock is never contended.
+static HELD: SpinMutex<HeldBytes> = SpinMutex::new(HeldBytes::new());
+
+/// Feed one received IKBD byte to the decoder — or, while the interrupt pump
+/// captures, to the held report.
 pub fn feed(byte: u8) {
+    if CAPTURE.load(Ordering::Relaxed) {
+        if HELD.lock().push(byte) {
+            return;
+        }
+        // Full — impossible for one boot report (`input_gate::HELD_CAP`).
+        // Never drop a byte: decode what is held, in order, then this one.
+        decode_held();
+    }
+    decode_byte(byte);
+}
+
+/// Start a capture for the interrupt pump. `false` — and nothing started —
+/// while an earlier report is still held: the interrupt then drains nothing,
+/// so the reports behind the held one stay in the USB controller, in order.
+pub fn capture_begin() -> bool {
+    if !HELD.lock().is_empty() {
+        return false;
+    }
+    CAPTURE.store(true, Ordering::Relaxed);
+    true
+}
+
+/// End the interrupt pump's capture: decode the captured report now if it is
+/// pure pointer motion at the current button state
+/// ([`crate::input_gate::pure_motion`]) and the decoder sits between packets;
+/// otherwise keep it held for [`release_held`].
+pub fn capture_end() {
+    CAPTURE.store(false, Ordering::Relaxed);
+    let idle = MS_STEP.load(Ordering::Relaxed) == 0 && PKT_REMAINING.load(Ordering::Relaxed) == 0;
+    let decode_now = {
+        let h = HELD.lock();
+        idle && crate::input_gate::pure_motion(h.as_slice(), MS_BUTTONS.load(Ordering::Relaxed))
+    };
+    if decode_now {
+        decode_held();
+    }
+}
+
+/// The trap-side pump: decode the report the interrupt pump held, in order,
+/// in place of draining a new one. `true` if there was one.
+pub fn release_held() -> bool {
+    if HELD.lock().is_empty() {
+        return false;
+    }
+    decode_held();
+    true
+}
+
+/// Decode and empty the held report (oldest byte first). The bytes are moved
+/// out before decoding, so the decoder never runs under the lock.
+fn decode_held() {
+    let mut bytes = [0u8; HELD_CAP];
+    let n = HELD.lock().take_into(&mut bytes);
+    for &b in &bytes[..n] {
+        decode_byte(b);
+    }
+}
+
+/// Decode one IKBD byte.
+fn decode_byte(byte: u8) {
     // Mid relative-mouse packet → collect dx, then dy, then dispatch.
     match MS_STEP.load(Ordering::Relaxed) {
         1 => {
@@ -225,7 +303,8 @@ fn key_word(code: u8) -> u16 {
 /// Key auto-repeat state (EmuTOS `kb_ticks`/`kb_last`/`kb_last_actual`).
 /// Touched only from the input pump — the decoder above (fed by
 /// `usb::poll`) and [`poll_repeat`] — never from an interrupt handler, so the
-/// lock is never contended.
+/// lock is never contended. (INPUT01's timer-interrupt pump decodes pointer
+/// motion only; key bytes and the repeat stay in the trap-side pump.)
 static REPEAT: SpinMutex<KeyRepeat> = SpinMutex::new(KeyRepeat::new());
 
 /// Run the key auto-repeat for this poll: credit the 50 Hz steps `_hz_200`

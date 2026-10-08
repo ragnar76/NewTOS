@@ -1033,7 +1033,9 @@ pub fn user_mot(x: i16, y: i16) {
 /// on the AES side of the interrupt, restore. The fork queue is an m68k-ISR
 /// deferral with no counterpart here — NewTOS reaches this function from the
 /// cooperative `pump_input`, already on the AES's own side — so what remains
-/// of `aes_wheel` is the call it defers: [`input::wheel_change`].
+/// of `aes_wheel` is the call it defers: [`input::wheel_change`]. (INPUT01's
+/// timer-interrupt pump does not decode wheel detents; they are held for the
+/// trap-side pump — `kernel::input_gate`.)
 pub fn aes_wheel(wheel_number: i16, wheel_amount: i16) {
     input::wheel_change(wheel_number, wheel_amount);
 }

@@ -1,0 +1,57 @@
+# ARCH03 3a desktop run (the in-kernel desktop is the F1 risk: it calls the
+# GEMDOS file surface with kernel pointers through `svc #1`, Space::Kernel).
+# Window C:\D3A\ restored from NEWDESK.INF (#W 02 04 26 0C, the DESK50 run-B
+# geometry), items SUB3A (folder) / HELLO.NCP / NOTE.TXT at the DESK50 run-B
+# slots: glyph centres (63,120) / (147,120) / (231,120); closer (27,74).
+# Ticks hz_200 (5 ms) after "[desk] desktop up".
+100 parkbr
+400 mark A_IDLE
+600 move 63 120
+800 down
+803 up
+808 down
+811 up
+2000 mark B_SUB
+2200 move 27 74
+2400 down
+2405 up
+3400 mark C_UP
+3600 move 231 120
+3800 down
+3805 up
+4000 parkbr
+4400 mark D_SELECTED
+# File > Show info: Ctrl-I (Ctrl 1D, I 17)
+4600 key 1D
+4610 key 17
+4620 key 97
+4630 key 9D
+5600 mark E_INFO
+# Esc clears the name field, then "REN.TXT"
+5800 key 01
+5805 key 81
+5900 key 13
+5905 key 93
+5920 key 12
+5925 key 92
+5940 key 31
+5945 key B1
+5960 key 34
+5965 key B4
+5980 key 14
+5985 key 94
+6000 key 2D
+6005 key AD
+6020 key 14
+6025 key 94
+6400 mark F_TYPED
+# Return = the default button (OK): the rename
+6600 key 1C
+6605 key 9C
+7800 mark G_RENAMED
+# Alt-C: open drive C in a second window
+8000 key 38
+8010 key 2E
+8020 key AE
+8030 key B8
+9600 mark H_DRIVE_C

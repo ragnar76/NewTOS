@@ -62,6 +62,16 @@ pub const EMMC_COMPAT: &[u8] = b"emmc=compat";
 /// and sets it (mailbox "Get max clock rate" / "Set clock rate").
 pub const CPUCLK_FIRMWARE: &[u8] = b"cpuclk=firmware";
 
+/// The fallback switch of the input pump (INPUT01): `input=aes` drains the
+/// keyboard/mouse (USB-HID) **only** where it was drained before INPUT01 —
+/// in the AES wait loops, the blocking console reads and `Bconstat` on an
+/// empty queue (`Host::pump_input`). Without it the 200 Hz timer interrupt
+/// additionally drains it whenever it interrupts a program at EL0 and moves
+/// the pointer, so the pointer also moves while a program computes or
+/// between its calls; buttons, wheel and keys keep their old moment
+/// (`kernel::input_gate`).
+pub const INPUT_AES: &[u8] = b"input=aes";
+
 /// The size of the block read cache in KiB (FS09): `bcache=<KiB>`, `0` = off.
 /// FreeMiNT's `CACHE=` / `FS_CACHE_SIZE=` (`references/freemint/sys/
 /// cnf_mint.c:97,128`), but a boot argument: the cache's memory is carved off
@@ -149,6 +159,16 @@ mod tests {
         assert!(!has_token(b"asid=tiny", ASID_ON));
         assert!(has_token(b"asid=tiny\r\n", ASID_TINY));
         assert!(!has_token(b"asid=on", ASID_TINY));
+    }
+
+    #[test]
+    fn input_aes_is_a_whole_token() {
+        assert!(has_token(b"serial=on input=aes", INPUT_AES));
+        assert!(has_token(b"input=aes\r\n", INPUT_AES));
+        assert!(!has_token(b"input=aesx", INPUT_AES));
+        assert!(!has_token(b"input=AES", INPUT_AES));
+        assert!(!has_token(b"xinput=aes", INPUT_AES));
+        assert!(!has_token(b"serial=on memprot=on", INPUT_AES));
     }
 
     #[test]

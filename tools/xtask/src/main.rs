@@ -36,6 +36,12 @@ mod kernel_bootargs;
 #[cfg(test)]
 #[path = "../../../kernel/src/key_repeat.rs"]
 mod kernel_key_repeat;
+/// INPUT01 — when the timer interrupt may run the input pump (the decision
+/// and the one-at-a-time guard). Pure, compiled here by path like
+/// `kernel_bootargs`.
+#[cfg(test)]
+#[path = "../../../kernel/src/input_gate.rs"]
+mod kernel_input_gate;
 /// FS08 — the SD driver's pure transfer planning (multi-block chunking,
 /// Transfer Mode bits, SCR bus widths, the CMD18 OUT_OF_RANGE rule).
 /// Dependency-free, compiled here by path like `kernel_bootargs`.

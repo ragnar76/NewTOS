@@ -1,0 +1,47 @@
+# TASK/LDG-M3-B1 acceptance (LDGDEMO.NAP, WinDom client) -- the m3c script of
+# measurement-2026-10-06-ldg-m3 with step 3 changed: the SHORT click on
+# Compute now has to work (B1). Window geometry as there:
+#   Compute (236..303, 259..278)  Close (331..400, 259..278)
+# Ticks hz_200 after the client's first poll. IKBD: Alt 38, C 2E, Return 1C,
+# Esc 01, '1' 02, '2' 03, '3' 04; break = make | 0x80.
+#  1. Alt+C -> compute() -> FormAlert(mathinfo()) (keyboard path); Return.
+#  2. LONG press on Compute (0.8 s): same alert (mouse path, as before); Return.
+#  3. SHORT click on Compute (30 ms, inside the double-click window): the
+#     same alert must appear now (EV_MB = 1, B1); Return closes it.
+#  4. Esc 1 2 3 into the Value field (objc_edit; caret placement = O1).
+#  5. Return = DEFAULT Close -> exit(0) -> back on the desktop.
+100 parkbr
+1600 mark S00_WINDOW
+2000 key 38
+2005 key 2E
+2010 key AE
+2030 key B8
+2400 mark S01_INFO_ALERT_KBD
+3200 key 1C
+3206 key 9C
+3600 mark S02_ALERT_GONE
+3700 move 269 268
+3800 down
+3960 up
+4400 mark S03_INFO_ALERT_LONGPRESS
+5200 key 1C
+5206 key 9C
+5600 mark S04_ALERT_GONE2
+5700 down
+5706 up
+6300 mark S05_SHORTCLICK
+6600 key 1C
+6606 key 9C
+7000 mark S05B_ALERT_GONE3
+7100 key 01
+7106 key 81
+7120 key 02
+7126 key 82
+7140 key 03
+7146 key 83
+7160 key 04
+7166 key 84
+7700 mark S06_VALUE_TYPED
+8100 key 1C
+8106 key 9C
+9100 mark END_CLOSED

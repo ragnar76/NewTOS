@@ -45,6 +45,7 @@ pub mod selftest_pexec_d4d5;
 pub mod bench;
 pub mod fbcon;
 pub mod ikbd;
+pub mod input_gate;
 pub mod key_repeat;
 pub mod keymap;
 pub mod shell;
@@ -261,6 +262,19 @@ extern "C" fn kernel_main_rust(dtb_phys: usize, entry_el: u64) -> ! {
     // FS09: the size of the block read cache (`bcache=` / `bcachepct=`);
     // its memory is carved off the top of DRAM with the other OS buffers.
     let bcache = bcache_switch(dtb);
+    // INPUT01: where the keyboard/mouse pump runs. Default: also from the
+    // timer interrupt while a program runs at EL0 (pointer motion only);
+    // `input=aes` keeps it in the trap-side pump sites only (the behaviour
+    // before INPUT01). Decided now, while the boot arguments are reachable,
+    // long before IRQs open.
+    let input_aes = boot_switch(dtb, false, |args: &[u8]| {
+        bootargs::has_token(args, bootargs::INPUT_AES)
+    });
+    input_gate::set_mode(if input_aes {
+        input_gate::InputMode::Aes
+    } else {
+        input_gate::InputMode::Irq
+    });
 
     // Discover the physical memory map and dump it for visibility.
     // Pure function of the board constants, the DTB and the firmware
@@ -347,6 +361,14 @@ extern "C" fn kernel_main_rust(dtb_phys: usize, entry_el: u64) -> ! {
         kprintln!("[timer] no usable CNTFRQ_EL0 — 200 Hz system tick is OFF");
     }
 
+    kprintln!(
+        "[input] keyboard/mouse pump: {}",
+        if input_aes {
+            "AES waits and console reads only (input=aes)"
+        } else {
+            "AES waits and console reads; pointer motion also from the 200 Hz tick while a program runs (input=aes switches that off)"
+        }
+    );
     drivers::gic::enable_irqs();
 
     // Bring up the microSD card and mount its partitions before the boot

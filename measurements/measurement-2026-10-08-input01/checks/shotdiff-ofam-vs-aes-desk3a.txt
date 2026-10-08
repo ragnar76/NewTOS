@@ -1,0 +1,5 @@
+DIFF E_INFO.png: CURSOR? (328,220)-(336,232)
+DIFF E_INFO.png: CURSOR? (344,216)-(360,232)
+DIFF F_TYPED.png: CURSOR? (328,220)-(336,232)
+DIFF F_TYPED.png: CURSOR? (344,216)-(360,232)
+desk3a- vs aes-desk3a-: same=7 cursor-only=2 other=0 missing=0

@@ -31,8 +31,12 @@ impl KernelHost {
     /// NewTOS' console input on `board-rpi4` is the USB-HID keyboard, which
     /// has no interrupt path: a report only reaches the queue when somebody
     /// runs [`crate::drivers::usb::poll`], and its only callers are
-    /// [`Host::pump_input`] (AES event manager, cooperative idle pass) and the
-    /// two blocking reads. Without pumping here, a program that polls
+    /// [`Host::pump_input`] (AES event manager, cooperative idle pass), the
+    /// two blocking reads and — since INPUT01, unless `input=aes` — the timer
+    /// interrupt while a program runs at EL0 ([`irq_input_pump`]). The trap
+    /// that runs this check is none of those (IRQs are masked inside it, and
+    /// a program spinning on `Bconstat(2)` spends most of its time in the
+    /// trap). Without pumping here, a program that polls
     /// `Bconstat(2)` and calls nothing else spins forever — nothing can make
     /// the queue non-empty. TeraDesk's "wait after a TOS program" is exactly
     /// that loop (`sdk/apps/teradesk/startprg.c:320-327`:
@@ -106,13 +110,11 @@ impl Host for KernelHost {
             );
         }
 
-        // Drain USB-HID interrupt transfers (keyboard/mouse) → ikbd::feed.
-        // On real Pi-4 this is the sole console input source; no-op until a
-        // HID device is enumerated (qemu-virt uses the PL011 RX IRQ instead).
-        crate::drivers::usb::poll();
-        // Key auto-repeat runs polled, after the input above (a break has
-        // been seen) — `docs/api/xbios/_state.md` §"Key-repeat handler".
-        crate::ikbd::poll_repeat();
+        // Drain USB-HID interrupt transfers (keyboard/mouse) → ikbd::feed,
+        // then the key repeat ([`pump_devices`]). On real Pi-4 this is the
+        // sole console input source; no-op until a HID device is enumerated
+        // (qemu-virt uses the PL011 RX IRQ instead).
+        pump_devices();
         core::hint::spin_loop();
 
         // SAFETY: restore the caller's original DAIF mask state.
@@ -160,9 +162,8 @@ impl Host for KernelHost {
             // loops; without it here the USB keyboard reaches the desktop
             // but never a blocking console read. No-op until a HID device
             // is enumerated (qemu-virt uses the PL011 RX IRQ instead).
-            crate::drivers::usb::poll();
-            // Key auto-repeat, polled after the input (see `pump_input`).
-            crate::ikbd::poll_repeat();
+            // Key auto-repeat after the input ([`pump_devices`]).
+            pump_devices();
 
             if let Some(b) = crate::console::rx_pop() {
                 break b;
@@ -425,6 +426,90 @@ pub fn record_gpu_memory(bytes: u64) {
     GPU_MEMORY_BYTES.store(bytes, Ordering::Relaxed);
 }
 
+/// The one-at-a-time guard of [`pump_devices`] (`crate::input_gate`).
+static PUMP: crate::input_gate::PumpLock = crate::input_gate::PumpLock::new();
+
+/// One pass of the trap-side input pump — the body behind
+/// [`Host::pump_input`] and both blocking console reads: decode one report
+/// (keyboard/mouse → [`crate::ikbd::feed`] → console ring, VDI cursor, AES
+/// button/motion handlers), then run the key repeat — after the input, so a
+/// break that arrived has already stopped it (`docs/api/xbios/_state.md`
+/// §"Key-repeat handler").
+///
+/// The report is the one the timer-interrupt pump held back (INPUT01: a
+/// button change, a wheel detent or a key — [`crate::ikbd::release_held`]),
+/// or else the next one drained from the USB controller. One report per pass
+/// either way, as before INPUT01.
+///
+/// Skipped if a pump is already running ([`crate::input_gate::PumpLock`]) —
+/// which by construction never happens: the interrupt pumps only from EL0,
+/// every other site runs in kernel code at EL1.
+fn pump_devices() {
+    let Some(_pump) = PUMP.try_enter() else {
+        return;
+    };
+    if !crate::ikbd::release_held() {
+        crate::drivers::usb::poll();
+    }
+    crate::ikbd::poll_repeat();
+}
+
+/// One pass of the timer-interrupt input pump ([`irq_input_pump`]): drain
+/// one USB report into the decoder's capture and decode it only if it is pure
+/// pointer motion; anything else is held for the next [`pump_devices`]
+/// (`crate::input_gate`, "Only the pointer moves from the interrupt"). While a
+/// report is held nothing is drained. No key repeat here — it stays with the
+/// trap-side pump, next to the key bytes it must follow.
+fn pump_devices_irq() {
+    let Some(_pump) = PUMP.try_enter() else {
+        return;
+    };
+    if !crate::ikbd::capture_begin() {
+        return;
+    }
+    crate::drivers::usb::poll();
+    crate::ikbd::capture_end();
+}
+
+/// INPUT01: the input pump of the 200 Hz timer interrupt. Called by the IRQ
+/// handler after the tick has been credited and EOIed, still with IRQs
+/// masked; `spsr` is the interrupted context's `SPSR_EL1`.
+///
+/// Pumps only when [`crate::input_gate::irq_pump_allowed`] says the
+/// interrupted context is a program at EL0 with no kernel operation
+/// suspended underneath it — the reasons are in `crate::input_gate`. Then the
+/// pointer moves on while the program computes or between its traps (a timer
+/// interrupt that fell due during a trap is taken on the first EL0
+/// instruction after it), as with EmuTOS' interrupt-driven IKBD path
+/// (`bios/aciavecs.S:249`, `vdi/vdi_mouse.c:668-686`).
+///
+/// Only pure pointer motion is decoded here ([`pump_devices_irq`]); button
+/// changes, the wheel and keys keep their pre-INPUT01 moment in the
+/// trap-side pump — so no key byte reaches a `kbdvec` hook's ring from the
+/// interrupt, and no upcall is ever delivered from it (the upcall does not
+/// save the FP/SIMD registers of the code it interrupts,
+/// `docs/api/xbios/22-kbdvbase.md` C3).
+pub fn irq_input_pump(spsr: u64) {
+    use crate::input_gate::{irq_pump_allowed, mode, spsr_is_el0, Interrupted};
+    use core::sync::atomic::Ordering;
+    use tos_api::bdos::process::{current, slot_for, PROCESS_TABLE};
+
+    let from_el0 = spsr_is_el0(spsr);
+    if !from_el0 {
+        return;
+    }
+    let slot = slot_for(current());
+    let ctx = Interrupted {
+        from_el0,
+        process: slot.is_some(),
+        upcall_depth: slot.map_or(0, |s| PROCESS_TABLE[s].upcall_depth.load(Ordering::Acquire)),
+        aes_suspended: tos_api::aes::thread::is_suspended(),
+    };
+    if irq_pump_allowed(mode(), ctx) {
+        pump_devices_irq();
+    }
+}
+
 /// The blocking key-word read shared by [`Host::console_read_key_blocking`]
 /// and [`Host::console_read_key_restartable`]: pops the whole key word
 /// (`scancode << 8 | ascii`) via `rx_pop_key` — it does *not* skip
@@ -457,10 +542,9 @@ fn read_key_loop(give_way: bool) -> Option<u16> {
         // Drain USB-HID interrupt transfers (keyboard) → ikbd::feed →
         // the key ring. On real Pi-4 this is the sole console input
         // source; no-op until a HID device is enumerated (qemu-virt
-        // uses the PL011 RX IRQ instead).
-        crate::drivers::usb::poll();
-        // Key auto-repeat, polled after the input (see `pump_input`).
-        crate::ikbd::poll_repeat();
+        // uses the PL011 RX IRQ instead). Key auto-repeat after the input
+        // ([`pump_devices`]).
+        pump_devices();
 
         if let Some(w) = crate::console::rx_pop_key() {
             break Some(w);

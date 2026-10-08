@@ -294,7 +294,14 @@ IKBD-Bytes und laeuft durch dieselben Slots — genau das Zielmodell fuer NewTOS
 * Eingabe wird **gepollt**: `host_env::pump_input` (`kernel/src/host_env.rs:84-123`)
   -> `usb::poll()` -> `ikbd::feed` -> `poll_repeat`, aus jeder AES-Warteschleife,
   jedem blockierenden Lesen, `Bconstat` bei leerer Schlange (KEYS01-STATUS).
-  Kein Interrupt.
+  Kein Interrupt. *(Nachtrag INPUT01, 2026-10-08: zusaetzlich pumpt der
+  200-Hz-Timer-Interrupt, wenn er ein Programm an EL0 unterbricht und kein
+  Upcall/kein angehaltener AES-Aufruf laeuft — `kernel/src/input_gate.rs`,
+  abschaltbar mit `input=aes`. Er dekodiert aber **nur reine Zeigerbewegung**;
+  ein Bericht mit Tastenbyte, Knopfwechsel oder Mausrad bleibt zurueckgehalten
+  bis zur naechsten Pumpe im Trap-Pfad. Tastenbytes erreichen `route_key` und
+  den Haken-Ring also weiter nur aus dem Trap-Pfad; aus dem Interrupt wird nie
+  zugestellt.)*
 * EL0-Rueckruf: `deliver_upcall` (`kernel/src/arch/aarch64/exceptions.rs:1310-1373`)
   sichert alle 30 GPRs + lr/elr/spsr/sp_el0 im Kernel, setzt `x0..x3` aus
   `UpcallDesc.args`, `elr = handler_va`, `lr = TRAMPOLINE_VA` (0x700, ruft

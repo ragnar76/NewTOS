@@ -1,0 +1,19 @@
+steps in window 8886..10886: 1001, ran in IRQ: 0, in trap pump: 1001
+lag ticks: min 0 median 0 p95 40 max 72  (1 tick = 5 ms)
+longest stretches without a step (ticks, from, to): [(36, 9061, 9097), (35, 8991, 9026), (34, 9027, 9061), (34, 8889, 8923), (33, 8924, 8957)]
+  step 119: sched 9058 ran 9130 lag 72 ticks (360 ms) irq=0
+  step 120: sched 9060 ran 9130 lag 70 ticks (350 ms) irq=0
+  step 121: sched 9062 ran 9130 lag 68 ticks (340 ms) irq=0
+  step 105: sched 9030 ran 9097 lag 67 ticks (335 ms) irq=0
+  step 122: sched 9064 ran 9130 lag 66 ticks (330 ms) irq=0
+traps >= 5 ms starting in the window: 632, sum 11424.9 ms, longest:
+  starts +9599: 20.4 ms from el0 svc 0x2 fn 0x0
+  starts +9319: 20.3 ms from el0 svc 0x2 fn 0x0
+  starts +9359: 20.3 ms from el0 svc 0x2 fn 0x0
+  starts +9559: 20.3 ms from el0 svc 0x2 fn 0x0
+  starts +9679: 20.2 ms from el0 svc 0x2 fn 0x0
+  starts +9519: 20.2 ms from el0 svc 0x2 fn 0x0
+  starts +9919: 20.2 ms from el0 svc 0x2 fn 0x0
+  starts +10323: 20.0 ms from el0 svc 0x2 fn 0x0
+longest stretch 9061..9097 = 180 ms: traps >= 5 ms inside: 13, 99 ms (55 %); the rest (81 ms) = EL0 time + traps < 5 ms
+  el0 svc 0x1 fn 0x3f: 13 traps, 99 ms, longest 7.9 ms

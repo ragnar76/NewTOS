@@ -155,7 +155,13 @@ one polls and so produce ghost keys after the release (user decision
 pending reports are decoded (so a break is seen), then the 50 Hz steps that
 elapsed since the previous poll are credited. Implementation:
 `kernel/src/key_repeat.rs` (state machine), `kernel/src/ikbd.rs`
-(`poll_repeat`, called from every `usb::poll` site in `kernel/src/host_env.rs`).
+(`poll_repeat`, called right after `usb::poll` in the one pump body
+`pump_devices` of `kernel/src/host_env.rs`). INPUT01 (2026-10-08) added a
+second, interrupt-side pump (`pump_devices_irq`, the 200 Hz timer interrupt
+while a program runs at EL0; `kernel/src/input_gate.rs`, off with `input=aes`):
+it decodes **pointer motion only** — a report holding a key byte is held for
+the next trap-side pump — and it does not run the repeat. This binding is
+therefore unchanged.
 
 - **Same semantics as the table**: start/stop/last-key-wins/modifier
   re-conversion/`conterm & 2` freeze/`kb_initial` and `kb_repeat` read at the

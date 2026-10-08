@@ -136,6 +136,14 @@ const AES_STATE_SUSPENDED: u8 = 1;
 /// on completion.
 static AES_THREAD_STATE: AtomicU8 = AtomicU8::new(AES_STATE_IDLE);
 
+/// `true` while an AES call is suspended inside a `G_USERDEF` callout — the
+/// fiber holds a half-finished draw. The kernel's timer-interrupt input pump
+/// (INPUT01, `kernel::input_gate`) does not run then: the AES button/motion
+/// handlers it would call must not interleave with a suspended AES call.
+pub fn is_suspended() -> bool {
+    AES_THREAD_STATE.load(Ordering::Acquire) == AES_STATE_SUSPENDED
+}
+
 // ─── Stall bookkeeping (step 2) ─────────────────────────────────────
 
 /// Sentinel for [`AES_CALL_ORIGIN_SLOT`]: no AES call currently has a saved

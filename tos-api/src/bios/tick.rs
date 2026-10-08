@@ -46,7 +46,9 @@
 //!     its break reaches the decoder only through polling — an
 //!     interrupt-driven repeat would emit ghost keys after the release.
 //!     Sanctioned deviation, `docs/api/xbios/_state.md` §"Key-repeat handler"
-//!     (KEYS01, 2026-10-03).
+//!     (KEYS01, 2026-10-03). INPUT01's pump in this interrupt (while a
+//!     program runs at EL0, `kernel::input_gate`) moves the pointer only:
+//!     key bytes stay held for the trap-side pump, and the repeat with them.
 //!   - `dosound` (no YM2149) and the `etv_timer` dispatch (`bios::vectors`
 //!     shadows the vector but never invokes it) have no NewTOS counterpart
 //!     yet. Tracked as a gap in `docs/api/bios/_state.md`, not silently

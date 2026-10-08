@@ -1,0 +1,1931 @@
+     0.002	RB2
+     0.003	NewTOS booting on rpi4
+     0.003	[serial] output on: boot arguments contain `serial=on`
+     0.003	Phase 02 reached.
+     0.003	[mm] DTB at 0x0000000000000100
+     0.004	[mm] firmware: ARM memory bank 0: 0x0000000000000000 + 1006632960 bytes (960 MiB)
+     0.004	[mm] firmware: VC memory: 0x000000003c000000 + 67108864 bytes (64 MiB)
+     0.004	[mm] device tree: no usable /memory node (blob invalid or absent)
+     0.005	[clock] ARM 700 -> 700 MHz (max 700, measured ?, SoC 25.0 C)
+     0.006	[mm] memory map:
+     0.006	[mm]   DRAM  : 0x0000000000000000..0x000000003c000000 (1006632960 bytes) — source: firmware
+     0.006	[mm]   kernel: 0x0000000000080000..0x00000000002e2000 (2498560 bytes)
+     0.006	[mm]   ST-RAM: 0x0000000000400000..0x0000000000e00000 (10485760 bytes)
+     0.006	[mm]   TT-RAM: 0x0000000001000000..0x0000000039e00000 (954204160 bytes)
+     0.006	[mm]   OSrsvd: 0x0000000039e00000..0x000000003c000000 (35651584 bytes)
+     0.006	[mm]     bcach: 0x0000000039e00000..0x000000003be00000 (33554432 bytes)
+     0.006	[mm]     heap: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+     0.007	[mm]   MMIO 00: 0x00000000fd500000..0x00000000fd510000
+     0.007	[mm]   MMIO 01: 0x00000000fe000000..0x00000000ff000000
+     0.007	[mm]   MMIO 02: 0x00000000ff800000..0x0000000100000000
+     0.007	[mm] MMU reinstalled (high-half via TTBR1, TTBR0 deferred to Phase 06).
+     0.007	[mm] frames ST-RAM: total=2560 used=0 free=2560 (10485760 B free)
+     0.007	[mm] frames TT-RAM: total=232960 used=0 free=232960 (954204160 B free)
+     0.007	[mm] alloc ST-RAM frame -> 0x0000000000400000
+     0.008	[mm] alloc TT-RAM frame -> 0x0000000001000000
+     0.008	[mm] heap after init: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+     0.009	[mm] heap smoke OK
+     0.009	[mm] heap after smoke: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+     0.009	[fb] VideoCore display geometry detected: 640x480
+     0.009	[fb] alpha mode = 2
+     0.009	[fb] 640x480 pitch 2560 virtual height 960 -> 2 screen page(s), 2400 KiB
+     0.009	[fb] VideoCore fb up: 640x480 stride 640px
+     0.013	[mm] memory protection ON: table arena 0x01000000+2424 tables
+     0.016	[mm] BDOS pools: ST-RAM 0x00400000+10485760 TT-RAM 0x01978000+944275456
+     0.017	[mm] user address space: pools mapped VA = PA (456 shared L3 tables, 4-KiB pages, rights per process)
+     0.017	[mm] BDOS ST-RAM after init: total=10485760 free=10485760 used=0 largest_free=10485760 (free_mds=1 alloc_mds=0)
+     0.018	[mm] BDOS TT-RAM after init: total=944275456 free=944275456 used=0 largest_free=944275456 (free_mds=1 alloc_mds=0)
+     0.018	[input] keyboard/mouse pump: AES waits, console reads and the 200 Hz tick while a program runs (input=aes switches the tick off)
+     0.019	[bcache] FS09 block read cache: 32768 KiB at 0x39e00000 (asked 32768 KiB, default), 61680 sectors of 512 B, linear-read share 5 % (default), write-through
+     0.021	[emmc] SD card on controller @ 0xffff0000fe300000
+     0.021	[emmc] M1 SLOTISR_VER=0x24020000 (SDHCI spec 0x02) CAPABILITIES=0x052134b4 (base 52 MHz)
+     0.021	[emmc] M1 CONTROL0=0x00000f02 CONTROL1=0x000e0207 div=2 -> SDCLK ~13000000 Hz
+     0.021	[emmc] M1 mailbox clock rate: EMMC(1)=50000000 Hz EMMC2(12)=700000000 Hz
+     0.021	[emmc] FS08 mode: multi-block (CMD18/CMD25 + Auto CMD12) — bus 4-bit (ACMD6 ok, SCR SD_BUS_WIDTHS=0x5), CONTROL0[1] Data Transfer Width=1
+     0.021	[emmc] M1 during identification: 2 error(s), 0 timeout(s), 2 recovery(ies) CTO=2
+     0.027	[clock] seeded from kernel8.img: 2026-10-08 01:45:34
+     0.028	[pcie] RC not present (no response at RC_BASE); USB disabled
+    15.037	[proc] stand-in PDs: initial_basepage 0x00259000, AES PD 0x00259100 (read-only to all)
+    15.079	[acc] loaded C:\ACC\SYSACC.NAC into slot 0 (entry 0x197a000)
+    15.110	[acc] loaded C:\SYSACC2.NAC into slot 1 (entry 0x1980000)
+    15.110	[acc] 2 file(s) found, 2 process(es) started
+    15.111	[aes] gsx_malloc: screen buffer pa=0x01984000 len=614400 (kernel-owned, WF_SCREEN)
+    15.112	[sched] switch -> slot 0
+    15.112	[sched] running
+    15.114	[sched] switch -> slot 1
+    15.114	[sched] running
+    15.114	[sched] switch -> kernel client
+    15.114	[acc] all accessories have issued their message wait
+    15.117	[shell] sh_ldapp: starting NEWDESK, sh_nextapp=3, sh_isgem=1
+    15.250	[i01] trap 119878 us from el1 ec 0x15 svc 0x2 fn 0xffff0000002dd550 x0 0xc8 hz 3046
+    15.260	[desk] desktop up (1 drives, 1 window(s) from the context)
+    15.260	[m3] injector armed at hz_200 3048
+    15.761	[m3] step 0 at +100 sched 100 irq=0 -> mouse (446,366) mb=0
+    15.765	[m3] step 1 at +101 sched 101 irq=0 -> mouse (573,479) mb=0
+    15.769	[m3] step 2 at +102 sched 102 irq=0 -> mouse (639,479) mb=0
+    15.776	[m3] step 3 at +103 sched 103 irq=0 -> mouse (639,479) mb=0
+    15.780	[m3] step 4 at +104 sched 104 irq=0 -> mouse (639,479) mb=0
+    15.785	[m3] step 5 at +105 sched 105 irq=0 -> mouse (639,479) mb=0
+    17.260	[m3] MARK A_IDLE step 6 at +400 sched 400 irq=0 mouse (639,479) mb=0
+    18.260	[m3] step 7 at +600 sched 600 irq=0 -> mouse (512,352) mb=0
+    18.265	[m3] step 8 at +601 sched 601 irq=0 -> mouse (385,225) mb=0
+    18.281	[m3] step 9 at +603 sched 602 irq=0 -> mouse (258,165) mb=0
+    18.281	[m3] step 10 at +603 sched 603 irq=0 -> mouse (131,165) mb=0
+    18.281	[m3] step 11 at +604 sched 604 irq=0 -> mouse (63,165) mb=0
+    19.261	[m3] step 12 at +800 sched 800 irq=0 -> mouse (63,165) mb=1
+    19.275	[m3] step 13 at +803 sched 803 irq=0 -> mouse (63,165) mb=0
+    19.300	[m3] step 14 at +808 sched 808 irq=0 -> mouse (63,165) mb=1
+    19.315	[m3] step 15 at +811 sched 811 irq=0 -> mouse (63,165) mb=0
+    19.321	[m3] MARK B_DCLICK step 16 at +812 sched 812 irq=0 mouse (63,165) mb=0
+    19.580	[i01] trap 4318600 us from el1 ec 0x15 svc 0x2 fn 0x1000100020013 x0 0xc8 hz 3911
+    19.726	[m3] step 17 at +891 sched 880 irq=0 -> mouse (100,292) mb=0
+    19.726	[i01] trap 134473 us from el1 ec 0x15 svc 0x2 fn 0xffff0000002dcdf0 x0 0xc8 hz 3939
+    19.726	[m3] step 18 at +891 sched 881 irq=0 -> mouse (100,300) mb=0
+    19.726	[m3] step 19 at +891 sched 886 irq=0 -> mouse (102,300) mb=0
+    19.726	[m3] step 20 at +891 sched 888 irq=0 -> mouse (104,300) mb=0
+    19.726	[m3] step 21 at +891 sched 890 irq=0 -> mouse (106,300) mb=0
+    19.726	[m3] step 22 at +893 sched 892 irq=0 -> mouse (108,300) mb=0
+    19.728	[sched] switch -> slot 0
+    19.728	[sched] running
+    19.728	[sched] switch -> slot 1
+    19.728	[sched] running
+    19.728	[sched] switch -> kernel client
+    19.730	[shell] sh_ldapp: starting C:\ZVIEW\ZVIEW.NAP, sh_nextapp=0, sh_isgem=1
+    19.835	[acc] launching with 2 accessory(s); AC_CLOSE seen by all: true
+    19.835	[launch] EL0: slot 2 entry 0x1a3d000
+    19.835	[m3] step 23 at +915 sched 894 irq=1 -> mouse (108,300) mb=0
+    19.844	[i01] trap 7720 us from el0 ec 0x15 svc 0x1 fn 0x4a x0 0x0 hz 3963
+    19.844	[m3] step 24 at +917 sched 896 irq=1 -> mouse (110,300) mb=0
+    19.844	[m3] step 25 at +917 sched 898 irq=0 -> mouse (114,300) mb=0
+    19.844	[m3] step 26 at +917 sched 900 irq=0 -> mouse (116,300) mb=0
+    19.845	[m3] step 27 at +917 sched 902 irq=0 -> mouse (118,300) mb=0
+    19.845	[m3] step 28 at +917 sched 904 irq=0 -> mouse (120,300) mb=0
+    19.846	[m3] step 29 at +917 sched 906 irq=0 -> mouse (122,300) mb=0
+    19.846	[m3] step 30 at +917 sched 908 irq=0 -> mouse (124,300) mb=0
+    19.846	[m3] step 31 at +917 sched 910 irq=0 -> mouse (126,300) mb=0
+    19.847	[m3] step 32 at +917 sched 912 irq=0 -> mouse (128,300) mb=0
+    19.847	[m3] step 33 at +917 sched 914 irq=0 -> mouse (130,300) mb=0
+    19.847	[m3] step 34 at +917 sched 916 irq=0 -> mouse (132,300) mb=0
+    19.856	[m3] step 35 at +919 sched 918 irq=0 -> mouse (134,300) mb=0
+    19.856	[i01] trap 7130 us from el0 ec 0x15 svc 0x2 fn 0x1b2e670 x0 0xc8 hz 3967
+    19.859	[m3] step 36 at +920 sched 920 irq=1 -> mouse (134,300) mb=0
+    19.870	[m3] step 37 at +922 sched 922 irq=1 -> mouse (136,300) mb=0
+    19.902	[i01] trap 25100 us from el0 ec 0x15 svc 0x1 fn 0x4b x0 0x3 hz 3970
+    19.902	[m3] step 38 at +927 sched 924 irq=1 -> mouse (138,300) mb=0
+    19.918	[exec] preparing program (slot 3)
+    19.918	[exec] launching
+    19.918	[i01] trap 22388 us from el0 ec 0x15 svc 0x1 fn 0x4b x0 0x4 hz 3975
+    19.918	[m3] step 39 at +931 sched 926 irq=1 -> mouse (140,300) mb=0
+    19.918	[m3] step 40 at +932 sched 928 irq=1 -> mouse (142,300) mb=0
+    19.934	[i01] trap 15024 us from el0 ec 0x15 svc 0x1 fn 0x4a x0 0x0 hz 3980
+    19.934	[m3] step 41 at +935 sched 930 irq=1 -> mouse (144,300) mb=0
+    19.958	[i01] trap 21452 us from el0 ec 0x15 svc 0x1 fn 0x4b x0 0x3 hz 3983
+    19.958	[m3] step 42 at +940 sched 932 irq=1 -> mouse (146,300) mb=0
+    19.975	[exec] preparing program (slot 3)
+    19.975	[exec] launching
+    19.975	[i01] trap 16643 us from el0 ec 0x15 svc 0x1 fn 0x4b x0 0x4 hz 3988
+    19.975	[m3] step 43 at +943 sched 934 irq=1 -> mouse (148,300) mb=0
+    19.990	[i01] trap 15056 us from el0 ec 0x15 svc 0x1 fn 0x4a x0 0x0 hz 3991
+    19.990	[m3] step 44 at +946 sched 936 irq=1 -> mouse (150,300) mb=0
+    20.069	[i01] trap 75722 us from el0 ec 0x15 svc 0x1 fn 0x4b x0 0x3 hz 3994
+    20.075	[m3] step 45 at +962 sched 938 irq=1 -> mouse (152,300) mb=0
+    20.091	[exec] preparing program (slot 3)
+    20.091	[exec] launching
+    20.091	[i01] trap 21560 us from el0 ec 0x15 svc 0x1 fn 0x4b x0 0x4 hz 4010
+    20.091	[m3] step 46 at +966 sched 940 irq=1 -> mouse (154,300) mb=0
+    20.107	[i01] trap 15655 us from el0 ec 0x15 svc 0x1 fn 0x4a x0 0x0 hz 4014
+    20.107	[m3] step 47 at +969 sched 942 irq=1 -> mouse (156,300) mb=0
+    20.245	[i01] trap 129998 us from el0 ec 0x15 svc 0x1 fn 0x4b x0 0x3 hz 4017
+    20.245	[m3] step 48 at +996 sched 944 irq=1 -> mouse (158,300) mb=0
+    20.261	[exec] preparing program (slot 3)
+    20.261	[exec] launching
+    20.261	[i01] trap 21560 us from el0 ec 0x15 svc 0x1 fn 0x4b x0 0x4 hz 4044
+    20.261	[m3] step 49 at +1000 sched 946 irq=1 -> mouse (160,300) mb=0
+    20.277	[i01] trap 15672 us from el0 ec 0x15 svc 0x1 fn 0x4a x0 0x0 hz 4048
+    20.277	[m3] step 50 at +1003 sched 948 irq=1 -> mouse (162,300) mb=0
+    20.279	[m3] step 51 at +1004 sched 950 irq=1 -> mouse (164,300) mb=0
+    20.304	[i01] trap 24000 us from el0 ec 0x15 svc 0x1 fn 0x4b x0 0x3 hz 4052
+    20.304	[m3] step 52 at +1009 sched 952 irq=1 -> mouse (166,300) mb=0
+    20.320	[exec] preparing program (slot 3)
+    20.320	[exec] launching
+    20.320	[i01] trap 16471 us from el0 ec 0x15 svc 0x1 fn 0x4b x0 0x4 hz 4057
+    20.320	[m3] step 53 at +1012 sched 954 irq=1 -> mouse (168,300) mb=0
+    20.342	[i01] trap 15224 us from el0 ec 0x15 svc 0x1 fn 0x4a x0 0x0 hz 4060
+    20.342	[m3] step 54 at +1015 sched 956 irq=1 -> mouse (170,300) mb=0
+    20.342	[m3] step 55 at +1016 sched 958 irq=1 -> mouse (172,300) mb=0
+    20.343	[m3] step 56 at +1017 sched 960 irq=1 -> mouse (174,300) mb=0
+    20.369	[i01] trap 25010 us from el0 ec 0x15 svc 0x1 fn 0x4b x0 0x3 hz 4065
+    20.369	[m3] step 57 at +1022 sched 962 irq=1 -> mouse (176,300) mb=0
+    20.386	[exec] preparing program (slot 3)
+    20.386	[exec] launching
+    20.386	[i01] trap 16772 us from el0 ec 0x15 svc 0x1 fn 0x4b x0 0x4 hz 4070
+    20.386	[m3] step 58 at +1025 sched 964 irq=1 -> mouse (178,300) mb=0
+    20.402	[i01] trap 15461 us from el0 ec 0x15 svc 0x1 fn 0x4a x0 0x0 hz 4073
+    20.402	[m3] step 59 at +1028 sched 966 irq=1 -> mouse (180,300) mb=0
+    20.404	[m3] step 60 at +1029 sched 968 irq=1 -> mouse (182,300) mb=0
+    20.429	[i01] trap 24922 us from el0 ec 0x15 svc 0x1 fn 0x4b x0 0x3 hz 4077
+    20.429	[m3] step 61 at +1034 sched 970 irq=1 -> mouse (184,300) mb=0
+    20.446	[exec] preparing program (slot 3)
+    20.446	[exec] launching
+    20.446	[i01] trap 16670 us from el0 ec 0x15 svc 0x1 fn 0x4b x0 0x4 hz 4082
+    20.446	[m3] step 62 at +1037 sched 972 irq=1 -> mouse (186,300) mb=0
+    20.461	[i01] trap 14798 us from el0 ec 0x15 svc 0x1 fn 0x4a x0 0x0 hz 4085
+    20.461	[m3] step 63 at +1040 sched 974 irq=1 -> mouse (188,300) mb=0
+    20.495	[i01] trap 25706 us from el0 ec 0x15 svc 0x1 fn 0x4b x0 0x3 hz 4088
+    20.495	[m3] step 64 at +1046 sched 976 irq=1 -> mouse (190,300) mb=0
+    20.510	[exec] preparing program (slot 3)
+    20.510	[exec] launching
+    20.510	[i01] trap 21059 us from el0 ec 0x15 svc 0x1 fn 0x4b x0 0x4 hz 4094
+    20.510	[m3] step 65 at +1050 sched 978 irq=1 -> mouse (192,300) mb=0
+    20.526	[i01] trap 15158 us from el0 ec 0x15 svc 0x1 fn 0x4a x0 0x0 hz 4098
+    20.526	[m3] step 66 at +1053 sched 980 irq=1 -> mouse (194,300) mb=0
+    20.552	[i01] trap 23742 us from el0 ec 0x15 svc 0x1 fn 0x4b x0 0x3 hz 4101
+    20.552	[m3] step 67 at +1058 sched 982 irq=1 -> mouse (196,300) mb=0
+    20.568	[exec] preparing program (slot 3)
+    20.568	[exec] launching
+    20.568	[i01] trap 16372 us from el0 ec 0x15 svc 0x1 fn 0x4b x0 0x4 hz 4106
+    20.568	[m3] step 68 at +1062 sched 984 irq=1 -> mouse (198,300) mb=0
+    20.584	[i01] trap 15161 us from el0 ec 0x15 svc 0x1 fn 0x4a x0 0x0 hz 4110
+    20.584	[m3] step 69 at +1065 sched 986 irq=1 -> mouse (200,300) mb=0
+    20.610	[i01] trap 24249 us from el0 ec 0x15 svc 0x1 fn 0x4b x0 0x3 hz 4113
+    20.610	[m3] step 70 at +1070 sched 988 irq=1 -> mouse (202,300) mb=0
+    20.627	[exec] preparing program (slot 3)
+    20.633	[exec] launching
+    20.633	[i01] trap 16450 us from el0 ec 0x15 svc 0x1 fn 0x4b x0 0x4 hz 4118
+    20.633	[m3] step 71 at +1073 sched 990 irq=1 -> mouse (204,300) mb=0
+    20.648	[i01] trap 20940 us from el0 ec 0x15 svc 0x1 fn 0x4a x0 0x0 hz 4121
+    20.648	[m3] step 72 at +1078 sched 992 irq=1 -> mouse (206,300) mb=0
+    20.650	[m3] step 73 at +1078 sched 994 irq=0 -> mouse (210,300) mb=0
+    20.650	[m3] step 74 at +1078 sched 996 irq=0 -> mouse (212,300) mb=0
+    20.650	[m3] step 75 at +1078 sched 998 irq=0 -> mouse (214,300) mb=0
+    20.651	[m3] step 76 at +1078 sched 1000 irq=0 -> mouse (216,300) mb=0
+    20.651	[m3] step 77 at +1078 sched 1002 irq=0 -> mouse (218,300) mb=0
+    20.651	[m3] step 78 at +1078 sched 1004 irq=0 -> mouse (220,300) mb=0
+    20.651	[m3] step 79 at +1078 sched 1006 irq=0 -> mouse (222,300) mb=0
+    20.651	[m3] step 80 at +1078 sched 1008 irq=0 -> mouse (224,300) mb=0
+    20.651	[m3] step 81 at +1078 sched 1010 irq=0 -> mouse (226,300) mb=0
+    20.651	[m3] step 82 at +1078 sched 1012 irq=0 -> mouse (228,300) mb=0
+    20.651	[m3] step 83 at +1078 sched 1014 irq=0 -> mouse (230,300) mb=0
+    20.651	[m3] step 84 at +1078 sched 1016 irq=0 -> mouse (232,300) mb=0
+    20.651	[m3] step 85 at +1078 sched 1018 irq=0 -> mouse (234,300) mb=0
+    20.651	[m3] step 86 at +1078 sched 1020 irq=0 -> mouse (236,300) mb=0
+    20.651	[m3] step 87 at +1078 sched 1022 irq=0 -> mouse (238,300) mb=0
+    20.651	[m3] step 88 at +1078 sched 1024 irq=0 -> mouse (240,300) mb=0
+    20.651	[m3] step 89 at +1078 sched 1026 irq=0 -> mouse (242,300) mb=0
+    20.651	[m3] step 90 at +1078 sched 1028 irq=0 -> mouse (244,300) mb=0
+    20.652	[m3] step 91 at +1078 sched 1030 irq=0 -> mouse (246,300) mb=0
+    20.652	[m3] step 92 at +1078 sched 1032 irq=0 -> mouse (248,300) mb=0
+    20.652	[m3] step 93 at +1078 sched 1034 irq=0 -> mouse (250,300) mb=0
+    20.652	[m3] step 94 at +1078 sched 1036 irq=0 -> mouse (252,300) mb=0
+    20.652	[m3] step 95 at +1078 sched 1038 irq=0 -> mouse (254,300) mb=0
+    20.652	[m3] step 96 at +1078 sched 1040 irq=0 -> mouse (256,300) mb=0
+    20.652	[m3] step 97 at +1078 sched 1042 irq=0 -> mouse (258,300) mb=0
+    20.652	[m3] step 98 at +1078 sched 1044 irq=0 -> mouse (260,300) mb=0
+    20.652	[m3] step 99 at +1078 sched 1046 irq=0 -> mouse (262,300) mb=0
+    20.652	[m3] step 100 at +1078 sched 1048 irq=0 -> mouse (264,300) mb=0
+    20.652	[m3] step 101 at +1078 sched 1050 irq=0 -> mouse (266,300) mb=0
+    20.652	[m3] step 102 at +1078 sched 1052 irq=0 -> mouse (268,300) mb=0
+    20.652	[m3] step 103 at +1078 sched 1054 irq=0 -> mouse (270,300) mb=0
+    20.652	[m3] step 104 at +1078 sched 1056 irq=0 -> mouse (272,300) mb=0
+    20.652	[m3] step 105 at +1078 sched 1058 irq=0 -> mouse (274,300) mb=0
+    20.653	[m3] step 106 at +1078 sched 1060 irq=0 -> mouse (276,300) mb=0
+    20.653	[m3] step 107 at +1078 sched 1062 irq=0 -> mouse (278,300) mb=0
+    20.653	[m3] step 108 at +1078 sched 1064 irq=0 -> mouse (280,300) mb=0
+    20.653	[m3] step 109 at +1078 sched 1066 irq=0 -> mouse (282,300) mb=0
+    20.653	[m3] step 110 at +1078 sched 1068 irq=0 -> mouse (284,300) mb=0
+    20.653	[m3] step 111 at +1078 sched 1070 irq=0 -> mouse (286,300) mb=0
+    20.653	[m3] step 112 at +1078 sched 1072 irq=0 -> mouse (288,300) mb=0
+    20.653	[m3] step 113 at +1078 sched 1074 irq=0 -> mouse (290,300) mb=0
+    20.653	[m3] step 114 at +1078 sched 1076 irq=0 -> mouse (292,300) mb=0
+    20.653	[m3] step 115 at +1078 sched 1078 irq=0 -> mouse (294,300) mb=0
+    20.660	[m3] step 116 at +1080 sched 1080 irq=0 -> mouse (296,300) mb=0
+    20.670	[i01] trap 19593 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4129
+    20.670	[m3] step 117 at +1082 sched 1082 irq=0 -> mouse (298,300) mb=0
+    20.680	[m3] step 118 at +1084 sched 1084 irq=0 -> mouse (300,300) mb=0
+    20.690	[i01] trap 19674 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4133
+    20.690	[m3] step 119 at +1086 sched 1086 irq=0 -> mouse (302,300) mb=0
+    20.701	[m3] step 120 at +1088 sched 1088 irq=0 -> mouse (304,300) mb=0
+    20.710	[m3] step 121 at +1090 sched 1090 irq=0 -> mouse (306,300) mb=0
+    20.710	[i01] trap 19988 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4138
+    20.720	[m3] step 122 at +1092 sched 1092 irq=0 -> mouse (308,300) mb=0
+    20.730	[i01] trap 19818 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4141
+    20.731	[m3] step 123 at +1094 sched 1094 irq=0 -> mouse (310,300) mb=0
+    20.740	[m3] step 124 at +1096 sched 1096 irq=0 -> mouse (312,300) mb=0
+    20.749	[m3] step 125 at +1098 sched 1098 irq=0 -> mouse (314,300) mb=0
+    20.750	[i01] trap 19930 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4146
+    20.760	[m3] step 126 at +1100 sched 1100 irq=0 -> mouse (316,300) mb=0
+    20.770	[i01] trap 19944 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4149
+    20.770	[m3] step 127 at +1102 sched 1102 irq=0 -> mouse (318,300) mb=0
+    20.787	[m3] step 128 at +1104 sched 1104 irq=0 -> mouse (320,300) mb=0
+    20.789	[m3] step 129 at +1106 sched 1106 irq=0 -> mouse (322,300) mb=0
+    20.790	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4154
+    20.800	[m3] step 130 at +1108 sched 1108 irq=0 -> mouse (324,300) mb=0
+    20.810	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4157
+    20.810	[m3] step 131 at +1110 sched 1110 irq=0 -> mouse (326,300) mb=0
+    20.821	[m3] step 132 at +1112 sched 1112 irq=0 -> mouse (328,300) mb=0
+    20.830	[i01] trap 19935 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4161
+    20.830	[m3] step 133 at +1114 sched 1114 irq=0 -> mouse (330,300) mb=0
+    20.841	[m3] step 134 at +1116 sched 1116 irq=0 -> mouse (332,300) mb=0
+    20.850	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4165
+    20.850	[m3] step 135 at +1118 sched 1118 irq=0 -> mouse (334,300) mb=0
+    20.861	[m3] step 136 at +1120 sched 1120 irq=0 -> mouse (336,300) mb=0
+    20.870	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4169
+    20.870	[m3] step 137 at +1122 sched 1122 irq=0 -> mouse (338,300) mb=0
+    20.879	[m3] step 138 at +1124 sched 1124 irq=0 -> mouse (340,300) mb=0
+    20.890	[i01] trap 19900 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4173
+    20.891	[m3] step 139 at +1126 sched 1126 irq=0 -> mouse (342,300) mb=0
+    20.900	[m3] step 140 at +1128 sched 1128 irq=0 -> mouse (344,300) mb=0
+    20.909	[m3] step 141 at +1130 sched 1130 irq=0 -> mouse (346,300) mb=0
+    20.910	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4178
+    20.921	[m3] step 142 at +1132 sched 1132 irq=0 -> mouse (348,300) mb=0
+    20.936	[i01] trap 19943 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4181
+    20.936	[m3] step 143 at +1134 sched 1134 irq=0 -> mouse (350,300) mb=0
+    20.939	[m3] step 144 at +1136 sched 1136 irq=0 -> mouse (352,300) mb=0
+    20.950	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4185
+    20.950	[m3] step 145 at +1138 sched 1138 irq=1 -> mouse (352,300) mb=0
+    20.959	[m3] step 146 at +1140 sched 1140 irq=0 -> mouse (356,300) mb=0
+    20.970	[m3] step 147 at +1142 sched 1142 irq=0 -> mouse (358,300) mb=0
+    20.970	[i01] trap 19738 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4190
+    20.980	[m3] step 148 at +1144 sched 1144 irq=0 -> mouse (360,300) mb=0
+    20.990	[m3] step 149 at +1146 sched 1146 irq=0 -> mouse (362,300) mb=0
+    20.990	[i01] trap 19877 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4194
+    21.000	[m3] step 150 at +1148 sched 1148 irq=0 -> mouse (364,300) mb=0
+    21.010	[i01] trap 19944 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4197
+    21.015	[m3] step 151 at +1150 sched 1150 irq=0 -> mouse (366,300) mb=0
+    21.020	[m3] step 152 at +1152 sched 1152 irq=0 -> mouse (368,300) mb=0
+    21.030	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4201
+    21.031	[m3] step 153 at +1154 sched 1154 irq=0 -> mouse (370,300) mb=0
+    21.040	[m3] step 154 at +1156 sched 1156 irq=0 -> mouse (372,300) mb=0
+    21.050	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4205
+    21.051	[m3] step 155 at +1158 sched 1158 irq=0 -> mouse (374,300) mb=0
+    21.060	[m3] step 156 at +1160 sched 1160 irq=0 -> mouse (376,300) mb=0
+    21.070	[i01] trap 19939 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4209
+    21.070	[m3] step 157 at +1162 sched 1162 irq=0 -> mouse (378,300) mb=0
+    21.088	[m3] step 158 at +1164 sched 1164 irq=0 -> mouse (380,300) mb=0
+    21.089	[m3] step 159 at +1166 sched 1166 irq=0 -> mouse (382,300) mb=0
+    21.090	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4214
+    21.100	[m3] step 160 at +1168 sched 1168 irq=0 -> mouse (384,300) mb=0
+    21.110	[i01] trap 19937 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4217
+    21.110	[m3] step 161 at +1170 sched 1170 irq=0 -> mouse (386,300) mb=0
+    21.121	[m3] step 162 at +1172 sched 1172 irq=0 -> mouse (388,300) mb=0
+    21.130	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4221
+    21.130	[m3] step 163 at +1174 sched 1174 irq=0 -> mouse (390,300) mb=0
+    21.140	[m3] step 164 at +1176 sched 1176 irq=0 -> mouse (392,300) mb=0
+    21.150	[i01] trap 19935 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4225
+    21.151	[m3] step 165 at +1178 sched 1178 irq=0 -> mouse (394,300) mb=0
+    21.160	[m3] step 166 at +1180 sched 1180 irq=0 -> mouse (396,300) mb=0
+    21.170	[i01] trap 19928 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4229
+    21.171	[m3] step 167 at +1182 sched 1182 irq=0 -> mouse (398,300) mb=0
+    21.181	[m3] step 168 at +1184 sched 1184 irq=0 -> mouse (400,300) mb=0
+    21.190	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4233
+    21.190	[m3] step 169 at +1186 sched 1186 irq=0 -> mouse (402,300) mb=0
+    21.201	[m3] step 170 at +1188 sched 1188 irq=0 -> mouse (404,300) mb=0
+    21.210	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4237
+    21.210	[m3] step 171 at +1190 sched 1190 irq=0 -> mouse (406,300) mb=0
+    21.221	[m3] step 172 at +1192 sched 1192 irq=0 -> mouse (408,300) mb=0
+    21.236	[i01] trap 19937 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4241
+    21.236	[m3] step 173 at +1194 sched 1194 irq=1 -> mouse (408,300) mb=0
+    21.239	[m3] step 174 at +1196 sched 1196 irq=0 -> mouse (412,300) mb=0
+    21.250	[i01] trap 19704 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4245
+    21.250	[m3] step 175 at +1198 sched 1198 irq=0 -> mouse (414,300) mb=0
+    21.261	[m3] step 176 at +1200 sched 1200 irq=0 -> mouse (416,300) mb=0
+    21.270	[m3] step 177 at +1202 sched 1202 irq=0 -> mouse (418,300) mb=0
+    21.270	[i01] trap 19983 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4250
+    21.281	[m3] step 178 at +1204 sched 1204 irq=0 -> mouse (420,300) mb=0
+    21.290	[m3] step 179 at +1206 sched 1206 irq=0 -> mouse (422,300) mb=0
+    21.290	[i01] trap 19896 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4254
+    21.300	[m3] step 180 at +1208 sched 1208 irq=0 -> mouse (424,300) mb=0
+    21.310	[i01] trap 19942 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4257
+    21.310	[m3] step 181 at +1210 sched 1210 irq=0 -> mouse (426,300) mb=0
+    21.321	[m3] step 182 at +1212 sched 1212 irq=0 -> mouse (428,300) mb=0
+    21.330	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4261
+    21.330	[m3] step 183 at +1214 sched 1214 irq=0 -> mouse (430,300) mb=0
+    21.341	[m3] step 184 at +1216 sched 1216 irq=0 -> mouse (432,300) mb=0
+    21.350	[m3] step 185 at +1218 sched 1218 irq=0 -> mouse (434,300) mb=0
+    21.350	[i01] trap 19941 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4266
+    21.360	[m3] step 186 at +1220 sched 1220 irq=0 -> mouse (436,300) mb=0
+    21.370	[i01] trap 19927 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4269
+    21.371	[m3] step 187 at +1222 sched 1222 irq=0 -> mouse (438,300) mb=0
+    21.386	[m3] step 188 at +1224 sched 1224 irq=0 -> mouse (440,300) mb=0
+    21.389	[m3] step 189 at +1226 sched 1226 irq=0 -> mouse (442,300) mb=0
+    21.390	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4274
+    21.400	[m3] step 190 at +1228 sched 1228 irq=0 -> mouse (444,300) mb=0
+    21.410	[i01] trap 19944 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4277
+    21.410	[m3] step 191 at +1230 sched 1230 irq=0 -> mouse (446,300) mb=0
+    21.421	[m3] step 192 at +1232 sched 1232 irq=0 -> mouse (448,300) mb=0
+    21.430	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4281
+    21.430	[m3] step 193 at +1234 sched 1234 irq=1 -> mouse (448,300) mb=0
+    21.439	[m3] step 194 at +1236 sched 1236 irq=0 -> mouse (452,300) mb=0
+    21.450	[i01] trap 19648 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4285
+    21.451	[m3] step 195 at +1238 sched 1238 irq=0 -> mouse (454,300) mb=0
+    21.460	[m3] step 196 at +1240 sched 1240 irq=0 -> mouse (456,300) mb=0
+    21.469	[m3] step 197 at +1242 sched 1242 irq=0 -> mouse (458,300) mb=0
+    21.470	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4290
+    21.480	[m3] step 198 at +1244 sched 1244 irq=0 -> mouse (460,300) mb=0
+    21.490	[i01] trap 19941 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4293
+    21.490	[m3] step 199 at +1246 sched 1246 irq=0 -> mouse (462,300) mb=0
+    21.502	[m3] step 200 at +1248 sched 1248 irq=0 -> mouse (464,300) mb=0
+    21.510	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4297
+    21.511	[m3] step 201 at +1250 sched 1250 irq=0 -> mouse (466,300) mb=0
+    21.521	[m3] step 202 at +1252 sched 1252 irq=0 -> mouse (468,300) mb=0
+    21.536	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4301
+    21.536	[m3] step 203 at +1254 sched 1254 irq=0 -> mouse (470,300) mb=0
+    21.539	[m3] step 204 at +1256 sched 1256 irq=0 -> mouse (472,300) mb=0
+    21.550	[m3] step 205 at +1258 sched 1258 irq=0 -> mouse (474,300) mb=0
+    21.550	[i01] trap 20204 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4306
+    21.560	[m3] step 206 at +1260 sched 1260 irq=0 -> mouse (476,300) mb=0
+    21.570	[i01] trap 19585 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4309
+    21.570	[m3] step 207 at +1262 sched 1262 irq=0 -> mouse (478,300) mb=0
+    21.580	[m3] step 208 at +1264 sched 1264 irq=0 -> mouse (480,300) mb=0
+    21.590	[i01] trap 19918 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4313
+    21.591	[m3] step 209 at +1266 sched 1266 irq=0 -> mouse (482,300) mb=0
+    21.600	[m3] step 210 at +1268 sched 1268 irq=0 -> mouse (484,300) mb=0
+    21.610	[i01] trap 19942 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4317
+    21.611	[m3] step 211 at +1270 sched 1270 irq=0 -> mouse (486,300) mb=0
+    21.620	[m3] step 212 at +1272 sched 1272 irq=0 -> mouse (488,300) mb=0
+    21.630	[i01] trap 19932 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4321
+    21.631	[m3] step 213 at +1274 sched 1274 irq=0 -> mouse (490,300) mb=0
+    21.640	[m3] step 214 at +1276 sched 1276 irq=0 -> mouse (492,300) mb=0
+    21.650	[i01] trap 19944 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4325
+    21.650	[m3] step 215 at +1278 sched 1278 irq=0 -> mouse (494,300) mb=0
+    21.660	[m3] step 216 at +1280 sched 1280 irq=0 -> mouse (496,300) mb=0
+    21.670	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4329
+    21.670	[m3] step 217 at +1282 sched 1282 irq=0 -> mouse (498,300) mb=0
+    21.687	[m3] step 218 at +1284 sched 1284 irq=0 -> mouse (500,300) mb=0
+    21.689	[m3] step 219 at +1286 sched 1286 irq=0 -> mouse (498,300) mb=0
+    21.690	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4334
+    21.700	[m3] step 220 at +1288 sched 1288 irq=0 -> mouse (496,300) mb=0
+    21.710	[i01] trap 19933 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4337
+    21.710	[m3] step 221 at +1290 sched 1290 irq=0 -> mouse (494,300) mb=0
+    21.720	[m3] step 222 at +1292 sched 1292 irq=0 -> mouse (492,300) mb=0
+    21.730	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4341
+    21.731	[m3] step 223 at +1294 sched 1294 irq=0 -> mouse (490,300) mb=0
+    21.740	[m3] step 224 at +1296 sched 1296 irq=0 -> mouse (488,300) mb=0
+    21.750	[i01] trap 19933 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4345
+    21.751	[m3] step 225 at +1298 sched 1298 irq=0 -> mouse (486,300) mb=0
+    21.761	[m3] step 226 at +1300 sched 1300 irq=0 -> mouse (484,300) mb=0
+    21.770	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4349
+    21.771	[m3] step 227 at +1302 sched 1302 irq=0 -> mouse (482,300) mb=0
+    21.781	[m3] step 228 at +1304 sched 1304 irq=0 -> mouse (480,300) mb=0
+    21.790	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4353
+    21.790	[m3] step 229 at +1306 sched 1306 irq=0 -> mouse (478,300) mb=0
+    21.800	[m3] step 230 at +1308 sched 1308 irq=0 -> mouse (476,300) mb=0
+    21.810	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4357
+    21.810	[m3] step 231 at +1310 sched 1310 irq=0 -> mouse (474,300) mb=0
+    21.821	[m3] step 232 at +1312 sched 1312 irq=0 -> mouse (472,300) mb=0
+    21.836	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4361
+    21.836	[m3] step 233 at +1314 sched 1314 irq=0 -> mouse (470,300) mb=0
+    21.839	[m3] step 234 at +1316 sched 1316 irq=0 -> mouse (468,300) mb=0
+    21.850	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4365
+    21.850	[m3] step 235 at +1318 sched 1318 irq=0 -> mouse (466,300) mb=0
+    21.859	[m3] step 236 at +1320 sched 1320 irq=0 -> mouse (464,300) mb=0
+    21.870	[i01] trap 19930 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4369
+    21.871	[m3] step 237 at +1322 sched 1322 irq=0 -> mouse (462,300) mb=0
+    21.880	[m3] step 238 at +1324 sched 1324 irq=0 -> mouse (460,300) mb=0
+    21.890	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4373
+    21.890	[m3] step 239 at +1326 sched 1326 irq=0 -> mouse (458,300) mb=0
+    21.901	[m3] step 240 at +1328 sched 1328 irq=0 -> mouse (456,300) mb=0
+    21.910	[i01] trap 19932 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4377
+    21.910	[m3] step 241 at +1330 sched 1330 irq=0 -> mouse (454,300) mb=0
+    21.921	[m3] step 242 at +1332 sched 1332 irq=0 -> mouse (452,300) mb=0
+    21.930	[i01] trap 19939 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4381
+    21.930	[m3] step 243 at +1334 sched 1334 irq=0 -> mouse (450,300) mb=0
+    21.941	[m3] step 244 at +1336 sched 1336 irq=0 -> mouse (448,300) mb=0
+    21.950	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4385
+    21.952	[m3] step 245 at +1338 sched 1338 irq=0 -> mouse (446,300) mb=0
+    21.961	[m3] step 246 at +1340 sched 1340 irq=0 -> mouse (444,300) mb=0
+    21.970	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4389
+    21.970	[m3] step 247 at +1342 sched 1342 irq=1 -> mouse (444,300) mb=0
+    21.987	[m3] step 248 at +1344 sched 1344 irq=0 -> mouse (440,300) mb=0
+    21.990	[i01] trap 19679 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4393
+    21.990	[m3] step 249 at +1346 sched 1346 irq=0 -> mouse (438,300) mb=0
+    22.001	[m3] step 250 at +1348 sched 1348 irq=0 -> mouse (436,300) mb=0
+    22.010	[i01] trap 19932 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4397
+    22.010	[m3] step 251 at +1350 sched 1350 irq=1 -> mouse (436,300) mb=0
+    22.020	[m3] step 252 at +1352 sched 1352 irq=0 -> mouse (432,300) mb=0
+    22.030	[i01] trap 19644 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4401
+    22.031	[m3] step 253 at +1354 sched 1354 irq=0 -> mouse (430,300) mb=0
+    22.040	[m3] step 254 at +1356 sched 1356 irq=0 -> mouse (428,300) mb=0
+    22.050	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4405
+    22.050	[m3] step 255 at +1358 sched 1358 irq=0 -> mouse (426,300) mb=0
+    22.061	[m3] step 256 at +1360 sched 1360 irq=0 -> mouse (424,300) mb=0
+    22.070	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4409
+    22.071	[m3] step 257 at +1362 sched 1362 irq=0 -> mouse (422,300) mb=0
+    22.080	[m3] step 258 at +1364 sched 1364 irq=0 -> mouse (420,300) mb=0
+    22.090	[i01] trap 19928 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4413
+    22.090	[m3] step 259 at +1366 sched 1366 irq=0 -> mouse (418,300) mb=0
+    22.101	[m3] step 260 at +1368 sched 1368 irq=0 -> mouse (416,300) mb=0
+    22.110	[i01] trap 19935 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4417
+    22.110	[m3] step 261 at +1370 sched 1370 irq=0 -> mouse (414,300) mb=0
+    22.119	[m3] step 262 at +1372 sched 1372 irq=0 -> mouse (412,300) mb=0
+    22.136	[i01] trap 19942 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4421
+    22.136	[m3] step 263 at +1374 sched 1374 irq=0 -> mouse (410,300) mb=0
+    22.139	[m3] step 264 at +1376 sched 1376 irq=0 -> mouse (408,300) mb=0
+    22.150	[i01] trap 19935 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4425
+    22.150	[m3] step 265 at +1378 sched 1378 irq=0 -> mouse (406,300) mb=0
+    22.161	[m3] step 266 at +1380 sched 1380 irq=0 -> mouse (404,300) mb=0
+    22.170	[i01] trap 19932 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4429
+    22.170	[m3] step 267 at +1382 sched 1382 irq=0 -> mouse (402,300) mb=0
+    22.181	[m3] step 268 at +1384 sched 1384 irq=0 -> mouse (400,300) mb=0
+    22.190	[i01] trap 19932 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4433
+    22.190	[m3] step 269 at +1386 sched 1386 irq=0 -> mouse (398,300) mb=0
+    22.201	[m3] step 270 at +1388 sched 1388 irq=0 -> mouse (396,300) mb=0
+    22.210	[i01] trap 19941 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4437
+    22.210	[m3] step 271 at +1390 sched 1390 irq=1 -> mouse (396,300) mb=0
+    22.219	[m3] step 272 at +1392 sched 1392 irq=0 -> mouse (392,300) mb=0
+    22.230	[m3] step 273 at +1394 sched 1394 irq=0 -> mouse (390,300) mb=0
+    22.230	[i01] trap 19727 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4442
+    22.241	[m3] step 274 at +1396 sched 1396 irq=0 -> mouse (388,300) mb=0
+    22.250	[i01] trap 19849 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4445
+    22.250	[m3] step 275 at +1398 sched 1398 irq=0 -> mouse (386,300) mb=0
+    22.261	[m3] step 276 at +1400 sched 1400 irq=0 -> mouse (384,300) mb=0
+    22.270	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4449
+    22.270	[m3] step 277 at +1402 sched 1402 irq=0 -> mouse (382,300) mb=0
+    22.287	[m3] step 278 at +1404 sched 1404 irq=0 -> mouse (380,300) mb=0
+    22.289	[m3] step 279 at +1406 sched 1406 irq=0 -> mouse (378,300) mb=0
+    22.290	[i01] trap 19942 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4454
+    22.299	[m3] step 280 at +1408 sched 1408 irq=0 -> mouse (376,300) mb=0
+    22.310	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4457
+    22.310	[m3] step 281 at +1410 sched 1410 irq=0 -> mouse (374,300) mb=0
+    22.321	[m3] step 282 at +1412 sched 1412 irq=0 -> mouse (372,300) mb=0
+    22.330	[m3] step 283 at +1414 sched 1414 irq=0 -> mouse (370,300) mb=0
+    22.330	[i01] trap 19989 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4462
+    22.341	[m3] step 284 at +1416 sched 1416 irq=0 -> mouse (368,300) mb=0
+    22.350	[m3] step 285 at +1418 sched 1418 irq=0 -> mouse (366,300) mb=0
+    22.350	[i01] trap 19889 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4466
+    22.360	[m3] step 286 at +1420 sched 1420 irq=0 -> mouse (364,300) mb=0
+    22.370	[i01] trap 19948 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4469
+    22.371	[m3] step 287 at +1422 sched 1422 irq=0 -> mouse (362,300) mb=0
+    22.380	[m3] step 288 at +1424 sched 1424 irq=0 -> mouse (360,300) mb=0
+    22.390	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4473
+    22.392	[m3] step 289 at +1426 sched 1426 irq=0 -> mouse (358,300) mb=0
+    22.401	[m3] step 290 at +1428 sched 1428 irq=0 -> mouse (356,300) mb=0
+    22.410	[i01] trap 19932 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4477
+    22.410	[m3] step 291 at +1430 sched 1430 irq=0 -> mouse (354,300) mb=0
+    22.421	[m3] step 292 at +1432 sched 1432 irq=0 -> mouse (352,300) mb=0
+    22.436	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4481
+    22.436	[m3] step 293 at +1434 sched 1434 irq=0 -> mouse (350,300) mb=0
+    22.439	[m3] step 294 at +1436 sched 1436 irq=0 -> mouse (348,300) mb=0
+    22.450	[i01] trap 19941 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4485
+    22.450	[m3] step 295 at +1438 sched 1438 irq=1 -> mouse (348,300) mb=0
+    22.461	[m3] step 296 at +1440 sched 1440 irq=0 -> mouse (344,300) mb=0
+    22.470	[m3] step 297 at +1442 sched 1442 irq=0 -> mouse (342,300) mb=0
+    22.470	[i01] trap 19944 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4490
+    22.480	[m3] step 298 at +1444 sched 1444 irq=0 -> mouse (340,300) mb=0
+    22.490	[m3] step 299 at +1446 sched 1446 irq=0 -> mouse (338,300) mb=0
+    22.490	[i01] trap 19806 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4494
+    22.501	[m3] step 300 at +1448 sched 1448 irq=0 -> mouse (336,300) mb=0
+    22.510	[i01] trap 19930 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4497
+    22.510	[m3] step 301 at +1450 sched 1450 irq=0 -> mouse (334,300) mb=0
+    22.520	[m3] step 302 at +1452 sched 1452 irq=0 -> mouse (332,300) mb=0
+    22.530	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4501
+    22.532	[m3] step 303 at +1454 sched 1454 irq=0 -> mouse (330,300) mb=0
+    22.540	[m3] step 304 at +1456 sched 1456 irq=0 -> mouse (328,300) mb=0
+    22.550	[i01] trap 19942 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4505
+    22.551	[m3] step 305 at +1458 sched 1458 irq=0 -> mouse (326,300) mb=0
+    22.560	[m3] step 306 at +1460 sched 1460 irq=0 -> mouse (324,300) mb=0
+    22.570	[i01] trap 19939 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4509
+    22.570	[m3] step 307 at +1462 sched 1462 irq=1 -> mouse (324,300) mb=0
+    22.586	[m3] step 308 at +1464 sched 1464 irq=0 -> mouse (320,300) mb=0
+    22.590	[i01] trap 19664 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4513
+    22.591	[m3] step 309 at +1466 sched 1466 irq=0 -> mouse (318,300) mb=0
+    22.600	[m3] step 310 at +1468 sched 1468 irq=0 -> mouse (316,300) mb=0
+    22.610	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4517
+    22.610	[m3] step 311 at +1470 sched 1470 irq=0 -> mouse (314,300) mb=0
+    22.620	[m3] step 312 at +1472 sched 1472 irq=0 -> mouse (312,300) mb=0
+    22.630	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4521
+    22.631	[m3] step 313 at +1474 sched 1474 irq=0 -> mouse (310,300) mb=0
+    22.640	[m3] step 314 at +1476 sched 1476 irq=0 -> mouse (308,300) mb=0
+    22.650	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4525
+    22.650	[m3] step 315 at +1478 sched 1478 irq=0 -> mouse (306,300) mb=0
+    22.661	[m3] step 316 at +1480 sched 1480 irq=0 -> mouse (304,300) mb=0
+    22.670	[i01] trap 19930 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4529
+    22.670	[m3] step 317 at +1482 sched 1482 irq=0 -> mouse (302,300) mb=0
+    22.681	[m3] step 318 at +1484 sched 1484 irq=0 -> mouse (300,300) mb=0
+    22.690	[i01] trap 19792 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4533
+    22.690	[m3] step 319 at +1486 sched 1486 irq=0 -> mouse (298,300) mb=0
+    22.701	[m3] step 320 at +1488 sched 1488 irq=0 -> mouse (296,300) mb=0
+    22.710	[i01] trap 19930 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4537
+    22.710	[m3] step 321 at +1490 sched 1490 irq=0 -> mouse (294,300) mb=0
+    22.721	[m3] step 322 at +1492 sched 1492 irq=0 -> mouse (292,300) mb=0
+    22.736	[i01] trap 19942 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4541
+    22.736	[m3] step 323 at +1494 sched 1494 irq=1 -> mouse (292,300) mb=0
+    22.739	[m3] step 324 at +1496 sched 1496 irq=0 -> mouse (288,300) mb=0
+    22.750	[i01] trap 19753 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4545
+    22.750	[m3] step 325 at +1498 sched 1498 irq=1 -> mouse (288,300) mb=0
+    22.761	[m3] step 326 at +1500 sched 1500 irq=0 -> mouse (284,300) mb=0
+    22.770	[m3] step 327 at +1502 sched 1502 irq=0 -> mouse (282,300) mb=0
+    22.770	[i01] trap 19693 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4550
+    22.780	[m3] step 328 at +1504 sched 1504 irq=0 -> mouse (280,300) mb=0
+    22.790	[i01] trap 19945 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4553
+    22.791	[m3] step 329 at +1506 sched 1506 irq=0 -> mouse (278,300) mb=0
+    22.800	[m3] step 330 at +1508 sched 1508 irq=0 -> mouse (276,300) mb=0
+    22.810	[i01] trap 19939 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4557
+    22.811	[m3] step 331 at +1510 sched 1510 irq=0 -> mouse (274,300) mb=0
+    22.820	[m3] step 332 at +1512 sched 1512 irq=0 -> mouse (272,300) mb=0
+    22.830	[m3] step 333 at +1514 sched 1514 irq=0 -> mouse (270,300) mb=0
+    22.830	[i01] trap 19985 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4562
+    22.840	[m3] step 334 at +1516 sched 1516 irq=0 -> mouse (268,300) mb=0
+    22.850	[i01] trap 19900 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4565
+    22.850	[m3] step 335 at +1518 sched 1518 irq=0 -> mouse (266,300) mb=0
+    22.860	[m3] step 336 at +1520 sched 1520 irq=0 -> mouse (264,300) mb=0
+    22.870	[i01] trap 19942 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4569
+    22.871	[m3] step 337 at +1522 sched 1522 irq=0 -> mouse (262,300) mb=0
+    22.880	[m3] step 338 at +1524 sched 1524 irq=0 -> mouse (260,300) mb=0
+    22.890	[i01] trap 19935 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4573
+    22.891	[m3] step 339 at +1526 sched 1526 irq=0 -> mouse (258,300) mb=0
+    22.900	[m3] step 340 at +1528 sched 1528 irq=0 -> mouse (256,300) mb=0
+    22.910	[i01] trap 19940 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4577
+    22.911	[m3] step 341 at +1530 sched 1530 irq=0 -> mouse (254,300) mb=0
+    22.920	[m3] step 342 at +1532 sched 1532 irq=0 -> mouse (252,300) mb=0
+    22.930	[i01] trap 19939 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4581
+    22.930	[m3] step 343 at +1534 sched 1534 irq=0 -> mouse (250,300) mb=0
+    22.941	[m3] step 344 at +1536 sched 1536 irq=0 -> mouse (248,300) mb=0
+    22.950	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4585
+    22.950	[m3] step 345 at +1538 sched 1538 irq=0 -> mouse (246,300) mb=0
+    22.961	[m3] step 346 at +1540 sched 1540 irq=0 -> mouse (244,300) mb=0
+    22.970	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4589
+    22.970	[m3] step 347 at +1542 sched 1542 irq=0 -> mouse (242,300) mb=0
+    22.979	[m3] step 348 at +1544 sched 1544 irq=0 -> mouse (240,300) mb=0
+    22.990	[m3] step 349 at +1546 sched 1546 irq=0 -> mouse (238,300) mb=0
+    22.990	[i01] trap 20022 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4594
+    23.000	[m3] step 350 at +1548 sched 1548 irq=0 -> mouse (236,300) mb=0
+    23.010	[i01] trap 19864 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4597
+    23.010	[m3] step 351 at +1550 sched 1550 irq=0 -> mouse (234,300) mb=0
+    23.021	[m3] step 352 at +1552 sched 1552 irq=0 -> mouse (232,300) mb=0
+    23.030	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4601
+    23.030	[m3] step 353 at +1554 sched 1554 irq=1 -> mouse (232,300) mb=0
+    23.040	[m3] step 354 at +1556 sched 1556 irq=0 -> mouse (228,300) mb=0
+    23.050	[i01] trap 19681 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4605
+    23.051	[m3] step 355 at +1558 sched 1558 irq=0 -> mouse (226,300) mb=0
+    23.060	[m3] step 356 at +1560 sched 1560 irq=0 -> mouse (224,300) mb=0
+    23.069	[m3] step 357 at +1562 sched 1562 irq=0 -> mouse (222,300) mb=0
+    23.070	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4610
+    23.080	[m3] step 358 at +1564 sched 1564 irq=0 -> mouse (220,300) mb=0
+    23.090	[i01] trap 19945 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4613
+    23.090	[m3] step 359 at +1566 sched 1566 irq=0 -> mouse (218,300) mb=0
+    23.100	[m3] step 360 at +1568 sched 1568 irq=0 -> mouse (216,300) mb=0
+    23.110	[m3] step 361 at +1570 sched 1570 irq=0 -> mouse (214,300) mb=0
+    23.110	[i01] trap 19990 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4618
+    23.121	[m3] step 362 at +1572 sched 1572 irq=0 -> mouse (212,300) mb=0
+    23.130	[i01] trap 19751 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4621
+    23.130	[m3] step 363 at +1574 sched 1574 irq=0 -> mouse (210,300) mb=0
+    23.141	[m3] step 364 at +1576 sched 1576 irq=0 -> mouse (208,300) mb=0
+    23.150	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4625
+    23.150	[m3] step 365 at +1578 sched 1578 irq=1 -> mouse (208,300) mb=0
+    23.159	[m3] step 366 at +1580 sched 1580 irq=0 -> mouse (204,300) mb=0
+    23.170	[m3] step 367 at +1582 sched 1582 irq=0 -> mouse (202,300) mb=0
+    23.170	[i01] trap 19857 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4630
+    23.180	[m3] step 368 at +1584 sched 1584 irq=0 -> mouse (200,300) mb=0
+    23.190	[m3] step 369 at +1586 sched 1586 irq=0 -> mouse (198,300) mb=0
+    23.190	[i01] trap 19930 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4634
+    23.200	[m3] step 370 at +1588 sched 1588 irq=0 -> mouse (196,300) mb=0
+    23.210	[i01] trap 19796 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4637
+    23.211	[m3] step 371 at +1590 sched 1590 irq=0 -> mouse (194,300) mb=0
+    23.220	[m3] step 372 at +1592 sched 1592 irq=0 -> mouse (192,300) mb=0
+    23.230	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4641
+    23.231	[m3] step 373 at +1594 sched 1594 irq=0 -> mouse (190,300) mb=0
+    23.240	[m3] step 374 at +1596 sched 1596 irq=0 -> mouse (188,300) mb=0
+    23.250	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4645
+    23.251	[m3] step 375 at +1598 sched 1598 irq=0 -> mouse (186,300) mb=0
+    23.260	[m3] step 376 at +1600 sched 1600 irq=0 -> mouse (184,300) mb=0
+    23.270	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4649
+    23.270	[m3] step 377 at +1602 sched 1602 irq=0 -> mouse (182,300) mb=0
+    23.281	[m3] step 378 at +1604 sched 1604 irq=0 -> mouse (180,300) mb=0
+    23.290	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4653
+    23.290	[m3] step 379 at +1606 sched 1606 irq=0 -> mouse (178,300) mb=0
+    23.301	[m3] step 380 at +1608 sched 1608 irq=0 -> mouse (176,300) mb=0
+    23.310	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4657
+    23.310	[m3] step 381 at +1610 sched 1610 irq=0 -> mouse (174,300) mb=0
+    23.319	[m3] step 382 at +1612 sched 1612 irq=0 -> mouse (172,300) mb=0
+    23.330	[i01] trap 19932 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4661
+    23.331	[m3] step 383 at +1614 sched 1614 irq=0 -> mouse (170,300) mb=0
+    23.340	[m3] step 384 at +1616 sched 1616 irq=0 -> mouse (168,300) mb=0
+    23.350	[i01] trap 19939 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4665
+    23.351	[m3] step 385 at +1618 sched 1618 irq=0 -> mouse (166,300) mb=0
+    23.360	[m3] step 386 at +1620 sched 1620 irq=0 -> mouse (164,300) mb=0
+    23.369	[m3] step 387 at +1622 sched 1622 irq=0 -> mouse (162,300) mb=0
+    23.370	[i01] trap 19940 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4670
+    23.379	[m3] step 388 at +1624 sched 1624 irq=0 -> mouse (160,300) mb=0
+    23.390	[m3] step 389 at +1626 sched 1626 irq=0 -> mouse (158,300) mb=0
+    23.390	[i01] trap 19924 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4674
+    23.400	[m3] step 390 at +1628 sched 1628 irq=0 -> mouse (156,300) mb=0
+    23.410	[i01] trap 19945 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4677
+    23.411	[m3] step 391 at +1630 sched 1630 irq=0 -> mouse (154,300) mb=0
+    23.420	[m3] step 392 at +1632 sched 1632 irq=0 -> mouse (152,300) mb=0
+    23.430	[i01] trap 19937 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4681
+    23.431	[m3] step 393 at +1634 sched 1634 irq=0 -> mouse (150,300) mb=0
+    23.440	[m3] step 394 at +1636 sched 1636 irq=0 -> mouse (148,300) mb=0
+    23.449	[m3] step 395 at +1638 sched 1638 irq=0 -> mouse (146,300) mb=0
+    23.450	[i01] trap 19940 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4686
+    23.460	[m3] step 396 at +1640 sched 1640 irq=0 -> mouse (144,300) mb=0
+    23.470	[i01] trap 19942 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4689
+    23.470	[m3] step 397 at +1642 sched 1642 irq=0 -> mouse (142,300) mb=0
+    23.481	[m3] step 398 at +1644 sched 1644 irq=0 -> mouse (140,300) mb=0
+    23.490	[i01] trap 19937 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4693
+    23.490	[m3] step 399 at +1646 sched 1646 irq=0 -> mouse (138,300) mb=0
+    23.501	[m3] step 400 at +1648 sched 1648 irq=0 -> mouse (136,300) mb=0
+    23.510	[i01] trap 19941 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4697
+    23.511	[m3] step 401 at +1650 sched 1650 irq=0 -> mouse (134,300) mb=0
+    23.520	[m3] step 402 at +1652 sched 1652 irq=0 -> mouse (132,300) mb=0
+    23.530	[i01] trap 19932 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4701
+    23.531	[m3] step 403 at +1654 sched 1654 irq=0 -> mouse (130,300) mb=0
+    23.540	[m3] step 404 at +1656 sched 1656 irq=0 -> mouse (128,300) mb=0
+    23.550	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4705
+    23.551	[m3] step 405 at +1658 sched 1658 irq=0 -> mouse (126,300) mb=0
+    23.560	[m3] step 406 at +1660 sched 1660 irq=0 -> mouse (124,300) mb=0
+    23.570	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4709
+    23.570	[m3] step 407 at +1662 sched 1662 irq=0 -> mouse (122,300) mb=0
+    23.580	[m3] step 408 at +1664 sched 1664 irq=0 -> mouse (120,300) mb=0
+    23.590	[i01] trap 19942 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4713
+    23.590	[m3] step 409 at +1666 sched 1666 irq=0 -> mouse (118,300) mb=0
+    23.601	[m3] step 410 at +1668 sched 1668 irq=0 -> mouse (116,300) mb=0
+    23.610	[m3] step 411 at +1670 sched 1670 irq=0 -> mouse (114,300) mb=0
+    23.610	[i01] trap 20017 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4718
+    23.621	[m3] step 412 at +1672 sched 1672 irq=0 -> mouse (112,300) mb=0
+    23.630	[i01] trap 19858 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4721
+    23.631	[m3] step 413 at +1674 sched 1674 irq=0 -> mouse (110,300) mb=0
+    23.640	[m3] step 414 at +1676 sched 1676 irq=0 -> mouse (108,300) mb=0
+    23.650	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4725
+    23.651	[m3] step 415 at +1678 sched 1678 irq=0 -> mouse (106,300) mb=0
+    23.660	[m3] step 416 at +1680 sched 1680 irq=0 -> mouse (104,300) mb=0
+    23.670	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4729
+    23.671	[m3] step 417 at +1682 sched 1682 irq=0 -> mouse (102,300) mb=0
+    23.681	[m3] step 418 at +1684 sched 1684 irq=0 -> mouse (100,300) mb=0
+    23.690	[i01] trap 19935 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4733
+    23.690	[m3] step 419 at +1686 sched 1686 irq=0 -> mouse (102,300) mb=0
+    23.701	[m3] step 420 at +1688 sched 1688 irq=0 -> mouse (104,300) mb=0
+    23.710	[i01] trap 19933 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4737
+    23.710	[m3] step 421 at +1690 sched 1690 irq=0 -> mouse (106,300) mb=0
+    23.721	[m3] step 422 at +1692 sched 1692 irq=0 -> mouse (108,300) mb=0
+    23.730	[i01] trap 19939 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4741
+    23.730	[m3] step 423 at +1694 sched 1694 irq=1 -> mouse (108,300) mb=0
+    23.740	[m3] step 424 at +1696 sched 1696 irq=0 -> mouse (112,300) mb=0
+    23.750	[m3] step 425 at +1698 sched 1698 irq=0 -> mouse (114,300) mb=0
+    23.750	[i01] trap 19679 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4746
+    23.761	[m3] step 426 at +1700 sched 1700 irq=0 -> mouse (116,300) mb=0
+    23.770	[i01] trap 19945 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4749
+    23.771	[m3] step 427 at +1702 sched 1702 irq=0 -> mouse (118,300) mb=0
+    23.781	[m3] step 428 at +1704 sched 1704 irq=0 -> mouse (120,300) mb=0
+    23.790	[i01] trap 19940 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4753
+    23.791	[m3] step 429 at +1706 sched 1706 irq=0 -> mouse (122,300) mb=0
+    23.800	[m3] step 430 at +1708 sched 1708 irq=0 -> mouse (124,300) mb=0
+    23.810	[i01] trap 19955 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4757
+    23.810	[m3] step 431 at +1710 sched 1710 irq=0 -> mouse (126,300) mb=0
+    23.823	[m3] step 432 at +1712 sched 1712 irq=0 -> mouse (128,300) mb=0
+    23.830	[i01] trap 19806 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4761
+    23.831	[m3] step 433 at +1714 sched 1714 irq=0 -> mouse (130,300) mb=0
+    23.874	[i01] trap 19912 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4762
+    23.874	[i01] trap 19943 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4762
+    23.875	[m3] step 434 at +1723 sched 1716 irq=0 -> mouse (132,300) mb=0
+    23.875	[m3] step 435 at +1723 sched 1718 irq=0 -> mouse (134,300) mb=0
+    23.875	[m3] step 436 at +1723 sched 1720 irq=0 -> mouse (136,300) mb=0
+    23.875	[m3] step 437 at +1723 sched 1722 irq=0 -> mouse (138,300) mb=0
+    23.881	[m3] step 438 at +1724 sched 1724 irq=0 -> mouse (140,300) mb=0
+    23.890	[i01] trap 19946 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4773
+    23.890	[m3] step 439 at +1726 sched 1726 irq=1 -> mouse (140,300) mb=0
+    23.901	[m3] step 440 at +1728 sched 1728 irq=0 -> mouse (144,300) mb=0
+    23.910	[m3] step 441 at +1730 sched 1730 irq=0 -> mouse (146,300) mb=0
+    23.910	[i01] trap 19676 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4778
+    23.920	[m3] step 442 at +1732 sched 1732 irq=0 -> mouse (148,300) mb=0
+    23.930	[m3] step 443 at +1734 sched 1734 irq=0 -> mouse (150,300) mb=0
+    23.930	[i01] trap 19779 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4782
+    23.940	[m3] step 444 at +1736 sched 1736 irq=0 -> mouse (152,300) mb=0
+    23.950	[i01] trap 19943 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4785
+    23.951	[m3] step 445 at +1738 sched 1738 irq=0 -> mouse (154,300) mb=0
+    23.960	[m3] step 446 at +1740 sched 1740 irq=0 -> mouse (156,300) mb=0
+    23.970	[i01] trap 19939 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4789
+    23.971	[m3] step 447 at +1742 sched 1742 irq=0 -> mouse (158,300) mb=0
+    23.980	[m3] step 448 at +1744 sched 1744 irq=0 -> mouse (160,300) mb=0
+    23.990	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4793
+    23.991	[m3] step 449 at +1746 sched 1746 irq=0 -> mouse (162,300) mb=0
+    24.000	[m3] step 450 at +1748 sched 1748 irq=0 -> mouse (164,300) mb=0
+    24.010	[i01] trap 19937 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4797
+    24.011	[m3] step 451 at +1750 sched 1750 irq=0 -> mouse (166,300) mb=0
+    24.020	[m3] step 452 at +1752 sched 1752 irq=0 -> mouse (168,300) mb=0
+    24.030	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4801
+    24.031	[m3] step 453 at +1754 sched 1754 irq=0 -> mouse (170,300) mb=0
+    24.040	[m3] step 454 at +1756 sched 1756 irq=0 -> mouse (172,300) mb=0
+    24.050	[i01] trap 19943 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4805
+    24.051	[m3] step 455 at +1758 sched 1758 irq=0 -> mouse (174,300) mb=0
+    24.060	[m3] step 456 at +1760 sched 1760 irq=0 -> mouse (176,300) mb=0
+    24.070	[i01] trap 19932 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4809
+    24.071	[m3] step 457 at +1762 sched 1762 irq=0 -> mouse (178,300) mb=0
+    24.080	[m3] step 458 at +1764 sched 1764 irq=0 -> mouse (180,300) mb=0
+    24.090	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4813
+    24.091	[m3] step 459 at +1766 sched 1766 irq=0 -> mouse (182,300) mb=0
+    24.100	[m3] step 460 at +1768 sched 1768 irq=0 -> mouse (184,300) mb=0
+    24.110	[i01] trap 19928 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4817
+    24.111	[m3] step 461 at +1770 sched 1770 irq=0 -> mouse (186,300) mb=0
+    24.120	[m3] step 462 at +1772 sched 1772 irq=0 -> mouse (188,300) mb=0
+    24.130	[i01] trap 19926 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4821
+    24.131	[m3] step 463 at +1774 sched 1774 irq=0 -> mouse (190,300) mb=0
+    24.140	[m3] step 464 at +1776 sched 1776 irq=0 -> mouse (192,300) mb=0
+    24.150	[i01] trap 19930 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4825
+    24.151	[m3] step 465 at +1778 sched 1778 irq=0 -> mouse (194,300) mb=0
+    24.160	[m3] step 466 at +1780 sched 1780 irq=0 -> mouse (196,300) mb=0
+    24.169	[m3] step 467 at +1782 sched 1782 irq=0 -> mouse (198,300) mb=0
+    24.170	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4830
+    24.180	[m3] step 468 at +1784 sched 1784 irq=0 -> mouse (200,300) mb=0
+    24.190	[i01] trap 19939 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4833
+    24.191	[m3] step 469 at +1786 sched 1786 irq=0 -> mouse (202,300) mb=0
+    24.200	[m3] step 470 at +1788 sched 1788 irq=0 -> mouse (204,300) mb=0
+    24.210	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4837
+    24.211	[m3] step 471 at +1790 sched 1790 irq=0 -> mouse (206,300) mb=0
+    24.220	[m3] step 472 at +1792 sched 1792 irq=0 -> mouse (208,300) mb=0
+    24.230	[i01] trap 19937 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4841
+    24.232	[m3] step 473 at +1794 sched 1794 irq=0 -> mouse (210,300) mb=0
+    24.241	[m3] step 474 at +1796 sched 1796 irq=0 -> mouse (212,300) mb=0
+    24.250	[m3] step 475 at +1798 sched 1798 irq=0 -> mouse (214,300) mb=0
+    24.250	[i01] trap 20044 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4846
+    24.260	[m3] step 476 at +1800 sched 1800 irq=0 -> mouse (216,300) mb=0
+    24.270	[m3] step 477 at +1802 sched 1802 irq=0 -> mouse (218,300) mb=0
+    24.270	[i01] trap 19704 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4850
+    24.280	[m3] step 478 at +1804 sched 1804 irq=0 -> mouse (220,300) mb=0
+    24.290	[i01] trap 19851 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4853
+    24.291	[m3] step 479 at +1806 sched 1806 irq=0 -> mouse (222,300) mb=0
+    24.300	[m3] step 480 at +1808 sched 1808 irq=0 -> mouse (224,300) mb=0
+    24.310	[i01] trap 19928 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4857
+    24.311	[m3] step 481 at +1810 sched 1810 irq=0 -> mouse (226,300) mb=0
+    24.320	[m3] step 482 at +1812 sched 1812 irq=0 -> mouse (228,300) mb=0
+    24.330	[i01] trap 19941 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4861
+    24.331	[m3] step 483 at +1814 sched 1814 irq=0 -> mouse (230,300) mb=0
+    24.342	[m3] step 484 at +1816 sched 1816 irq=0 -> mouse (232,300) mb=0
+    24.350	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4865
+    24.351	[m3] step 485 at +1818 sched 1818 irq=0 -> mouse (234,300) mb=0
+    24.360	[m3] step 486 at +1820 sched 1820 irq=0 -> mouse (236,300) mb=0
+    24.370	[i01] trap 19940 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4869
+    24.371	[m3] step 487 at +1822 sched 1822 irq=0 -> mouse (238,300) mb=0
+    24.380	[m3] step 488 at +1824 sched 1824 irq=0 -> mouse (240,300) mb=0
+    24.390	[i01] trap 19944 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4873
+    24.391	[m3] step 489 at +1826 sched 1826 irq=0 -> mouse (242,300) mb=0
+    24.401	[m3] step 490 at +1828 sched 1828 irq=0 -> mouse (244,300) mb=0
+    24.410	[i01] trap 19932 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4877
+    24.411	[m3] step 491 at +1830 sched 1830 irq=0 -> mouse (246,300) mb=0
+    24.421	[m3] step 492 at +1832 sched 1832 irq=0 -> mouse (248,300) mb=0
+    24.430	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4881
+    24.431	[m3] step 493 at +1834 sched 1834 irq=0 -> mouse (250,300) mb=0
+    24.441	[m3] step 494 at +1836 sched 1836 irq=0 -> mouse (252,300) mb=0
+    24.450	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4885
+    24.450	[m3] step 495 at +1838 sched 1838 irq=0 -> mouse (254,300) mb=0
+    24.461	[m3] step 496 at +1840 sched 1840 irq=0 -> mouse (256,300) mb=0
+    24.470	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4889
+    24.470	[m3] step 497 at +1842 sched 1842 irq=0 -> mouse (258,300) mb=0
+    24.481	[m3] step 498 at +1844 sched 1844 irq=0 -> mouse (260,300) mb=0
+    24.490	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4893
+    24.490	[m3] step 499 at +1846 sched 1846 irq=1 -> mouse (260,300) mb=0
+    24.499	[m3] step 500 at +1848 sched 1848 irq=0 -> mouse (264,300) mb=0
+    24.510	[m3] step 501 at +1850 sched 1850 irq=0 -> mouse (266,300) mb=0
+    24.510	[i01] trap 19685 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4898
+    24.521	[m3] step 502 at +1852 sched 1852 irq=0 -> mouse (268,300) mb=0
+    24.530	[m3] step 503 at +1854 sched 1854 irq=0 -> mouse (270,300) mb=0
+    24.530	[i01] trap 19852 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4902
+    24.540	[m3] step 504 at +1856 sched 1856 irq=0 -> mouse (272,300) mb=0
+    24.550	[i01] trap 19948 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4905
+    24.552	[m3] step 505 at +1858 sched 1858 irq=0 -> mouse (274,300) mb=0
+    24.561	[m3] step 506 at +1860 sched 1860 irq=0 -> mouse (276,300) mb=0
+    24.570	[m3] step 507 at +1862 sched 1862 irq=0 -> mouse (278,300) mb=0
+    24.570	[i01] trap 19937 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4910
+    24.580	[m3] step 508 at +1864 sched 1864 irq=0 -> mouse (280,300) mb=0
+    24.590	[i01] trap 19942 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4913
+    24.590	[m3] step 509 at +1866 sched 1866 irq=0 -> mouse (282,300) mb=0
+    24.601	[m3] step 510 at +1868 sched 1868 irq=0 -> mouse (284,300) mb=0
+    24.610	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4917
+    24.610	[m3] step 511 at +1870 sched 1870 irq=1 -> mouse (284,300) mb=0
+    24.621	[m3] step 512 at +1872 sched 1872 irq=0 -> mouse (288,300) mb=0
+    24.630	[m3] step 513 at +1874 sched 1874 irq=0 -> mouse (290,300) mb=0
+    24.630	[i01] trap 19718 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4922
+    24.640	[m3] step 514 at +1876 sched 1876 irq=0 -> mouse (292,300) mb=0
+    24.650	[i01] trap 19948 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4925
+    24.651	[m3] step 515 at +1878 sched 1878 irq=0 -> mouse (294,300) mb=0
+    24.660	[m3] step 516 at +1880 sched 1880 irq=0 -> mouse (296,300) mb=0
+    24.670	[i01] trap 19937 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4929
+    24.671	[m3] step 517 at +1882 sched 1882 irq=0 -> mouse (298,300) mb=0
+    24.680	[m3] step 518 at +1884 sched 1884 irq=0 -> mouse (300,300) mb=0
+    24.690	[i01] trap 19940 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4933
+    24.690	[m3] step 519 at +1886 sched 1886 irq=0 -> mouse (302,300) mb=0
+    24.701	[m3] step 520 at +1888 sched 1888 irq=0 -> mouse (304,300) mb=0
+    24.710	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4937
+    24.710	[m3] step 521 at +1890 sched 1890 irq=0 -> mouse (306,300) mb=0
+    24.721	[m3] step 522 at +1892 sched 1892 irq=0 -> mouse (308,300) mb=0
+    24.730	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4941
+    24.730	[m3] step 523 at +1894 sched 1894 irq=0 -> mouse (310,300) mb=0
+    24.740	[m3] step 524 at +1896 sched 1896 irq=0 -> mouse (312,300) mb=0
+    24.750	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4945
+    24.750	[m3] step 525 at +1898 sched 1898 irq=0 -> mouse (314,300) mb=0
+    24.761	[m3] step 526 at +1900 sched 1900 irq=0 -> mouse (316,300) mb=0
+    24.770	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4949
+    24.770	[m3] step 527 at +1902 sched 1902 irq=0 -> mouse (318,300) mb=0
+    24.781	[m3] step 528 at +1904 sched 1904 irq=0 -> mouse (320,300) mb=0
+    24.790	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4953
+    24.790	[m3] step 529 at +1906 sched 1906 irq=0 -> mouse (322,300) mb=0
+    24.801	[m3] step 530 at +1908 sched 1908 irq=0 -> mouse (324,300) mb=0
+    24.810	[i01] trap 19942 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4957
+    24.810	[m3] step 531 at +1910 sched 1910 irq=1 -> mouse (324,300) mb=0
+    24.821	[m3] step 532 at +1912 sched 1912 irq=0 -> mouse (328,300) mb=0
+    24.830	[m3] step 533 at +1914 sched 1914 irq=0 -> mouse (330,300) mb=0
+    24.830	[i01] trap 19838 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4962
+    24.840	[m3] step 534 at +1916 sched 1916 irq=0 -> mouse (332,300) mb=0
+    24.850	[i01] trap 19925 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4965
+    24.850	[m3] step 535 at +1918 sched 1918 irq=0 -> mouse (334,300) mb=0
+    24.861	[m3] step 536 at +1920 sched 1920 irq=0 -> mouse (336,300) mb=0
+    24.870	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4969
+    24.870	[m3] step 537 at +1922 sched 1922 irq=0 -> mouse (338,300) mb=0
+    24.881	[m3] step 538 at +1924 sched 1924 irq=0 -> mouse (340,300) mb=0
+    24.890	[i01] trap 19932 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4973
+    24.890	[m3] step 539 at +1926 sched 1926 irq=0 -> mouse (342,300) mb=0
+    24.902	[m3] step 540 at +1928 sched 1928 irq=0 -> mouse (344,300) mb=0
+    24.910	[i01] trap 19940 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4977
+    24.911	[m3] step 541 at +1930 sched 1930 irq=0 -> mouse (346,300) mb=0
+    24.920	[m3] step 542 at +1932 sched 1932 irq=0 -> mouse (348,300) mb=0
+    24.930	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4981
+    24.930	[m3] step 543 at +1934 sched 1934 irq=0 -> mouse (350,300) mb=0
+    24.941	[m3] step 544 at +1936 sched 1936 irq=0 -> mouse (352,300) mb=0
+    24.950	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4985
+    24.950	[m3] step 545 at +1938 sched 1938 irq=0 -> mouse (354,300) mb=0
+    24.962	[m3] step 546 at +1940 sched 1940 irq=0 -> mouse (356,300) mb=0
+    24.970	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4989
+    24.971	[m3] step 547 at +1942 sched 1942 irq=0 -> mouse (358,300) mb=0
+    24.980	[m3] step 548 at +1944 sched 1944 irq=0 -> mouse (360,300) mb=0
+    24.990	[i01] trap 19932 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4993
+    24.991	[m3] step 549 at +1946 sched 1946 irq=0 -> mouse (362,300) mb=0
+    24.999	[m3] step 550 at +1948 sched 1948 irq=0 -> mouse (364,300) mb=0
+    25.009	[m3] step 551 at +1950 sched 1950 irq=0 -> mouse (366,300) mb=0
+    25.010	[i01] trap 19940 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 4998
+    25.020	[m3] step 552 at +1952 sched 1952 irq=0 -> mouse (368,300) mb=0
+    25.029	[m3] step 553 at +1954 sched 1954 irq=0 -> mouse (370,300) mb=0
+    25.030	[i01] trap 19942 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5002
+    25.040	[m3] step 554 at +1956 sched 1956 irq=0 -> mouse (372,300) mb=0
+    25.050	[i01] trap 19940 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5005
+    25.050	[m3] step 555 at +1958 sched 1958 irq=0 -> mouse (374,300) mb=0
+    25.061	[m3] step 556 at +1960 sched 1960 irq=0 -> mouse (376,300) mb=0
+    25.070	[i01] trap 19937 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5009
+    25.071	[m3] step 557 at +1962 sched 1962 irq=0 -> mouse (378,300) mb=0
+    25.080	[m3] step 558 at +1964 sched 1964 irq=0 -> mouse (380,300) mb=0
+    25.090	[i01] trap 19940 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5013
+    25.090	[m3] step 559 at +1966 sched 1966 irq=0 -> mouse (382,300) mb=0
+    25.100	[m3] step 560 at +1968 sched 1968 irq=0 -> mouse (384,300) mb=0
+    25.110	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5017
+    25.110	[m3] step 561 at +1970 sched 1970 irq=0 -> mouse (386,300) mb=0
+    25.121	[m3] step 562 at +1972 sched 1972 irq=0 -> mouse (388,300) mb=0
+    25.130	[i01] trap 19924 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5021
+    25.131	[m3] step 563 at +1974 sched 1974 irq=0 -> mouse (390,300) mb=0
+    25.141	[m3] step 564 at +1976 sched 1976 irq=0 -> mouse (392,300) mb=0
+    25.150	[m3] step 565 at +1978 sched 1978 irq=0 -> mouse (394,300) mb=0
+    25.150	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5026
+    25.160	[m3] step 566 at +1980 sched 1980 irq=0 -> mouse (396,300) mb=0
+    25.170	[m3] step 567 at +1982 sched 1982 irq=0 -> mouse (398,300) mb=0
+    25.170	[i01] trap 19945 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5030
+    25.180	[m3] step 568 at +1984 sched 1984 irq=0 -> mouse (400,300) mb=0
+    25.190	[i01] trap 19948 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5033
+    25.191	[m3] step 569 at +1986 sched 1986 irq=0 -> mouse (402,300) mb=0
+    25.200	[m3] step 570 at +1988 sched 1988 irq=0 -> mouse (404,300) mb=0
+    25.210	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5037
+    25.211	[m3] step 571 at +1990 sched 1990 irq=0 -> mouse (406,300) mb=0
+    25.220	[m3] step 572 at +1992 sched 1992 irq=0 -> mouse (408,300) mb=0
+    25.230	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5041
+    25.231	[m3] step 573 at +1994 sched 1994 irq=0 -> mouse (410,300) mb=0
+    25.240	[m3] step 574 at +1996 sched 1996 irq=0 -> mouse (412,300) mb=0
+    25.250	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5045
+    25.250	[m3] step 575 at +1998 sched 1998 irq=0 -> mouse (414,300) mb=0
+    25.260	[m3] step 576 at +2000 sched 2000 irq=0 -> mouse (416,300) mb=0
+    25.270	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5049
+    25.271	[m3] step 577 at +2002 sched 2002 irq=0 -> mouse (418,300) mb=0
+    25.281	[m3] step 578 at +2004 sched 2004 irq=0 -> mouse (420,300) mb=0
+    25.290	[m3] step 579 at +2006 sched 2006 irq=0 -> mouse (422,300) mb=0
+    25.290	[i01] trap 19990 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5054
+    25.300	[m3] step 580 at +2008 sched 2008 irq=0 -> mouse (424,300) mb=0
+    25.310	[m3] step 581 at +2010 sched 2010 irq=0 -> mouse (426,300) mb=0
+    25.310	[i01] trap 19968 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5058
+    25.320	[m3] step 582 at +2012 sched 2012 irq=0 -> mouse (428,300) mb=0
+    25.330	[i01] trap 19862 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5061
+    25.331	[m3] step 583 at +2014 sched 2014 irq=0 -> mouse (430,300) mb=0
+    25.340	[m3] step 584 at +2016 sched 2016 irq=0 -> mouse (432,300) mb=0
+    25.350	[i01] trap 19942 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5065
+    25.350	[m3] step 585 at +2018 sched 2018 irq=0 -> mouse (434,300) mb=0
+    25.360	[m3] step 586 at +2020 sched 2020 irq=0 -> mouse (436,300) mb=0
+    25.370	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5069
+    25.370	[m3] step 587 at +2022 sched 2022 irq=0 -> mouse (438,300) mb=0
+    25.381	[m3] step 588 at +2024 sched 2024 irq=0 -> mouse (440,300) mb=0
+    25.390	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5073
+    25.390	[m3] step 589 at +2026 sched 2026 irq=0 -> mouse (442,300) mb=0
+    25.401	[m3] step 590 at +2028 sched 2028 irq=0 -> mouse (444,300) mb=0
+    25.410	[m3] step 591 at +2030 sched 2030 irq=0 -> mouse (446,300) mb=0
+    25.410	[i01] trap 19942 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5078
+    25.420	[m3] step 592 at +2032 sched 2032 irq=0 -> mouse (448,300) mb=0
+    25.430	[m3] step 593 at +2034 sched 2034 irq=0 -> mouse (450,300) mb=0
+    25.430	[i01] trap 19940 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5082
+    25.440	[m3] step 594 at +2036 sched 2036 irq=0 -> mouse (452,300) mb=0
+    25.450	[i01] trap 19951 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5085
+    25.451	[m3] step 595 at +2038 sched 2038 irq=0 -> mouse (454,300) mb=0
+    25.460	[m3] step 596 at +2040 sched 2040 irq=0 -> mouse (456,300) mb=0
+    25.469	[m3] step 597 at +2042 sched 2042 irq=0 -> mouse (458,300) mb=0
+    25.470	[i01] trap 19935 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5090
+    25.480	[m3] step 598 at +2044 sched 2044 irq=0 -> mouse (460,300) mb=0
+    25.490	[i01] trap 19940 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5093
+    25.490	[m3] step 599 at +2046 sched 2046 irq=0 -> mouse (462,300) mb=0
+    25.501	[m3] step 600 at +2048 sched 2048 irq=0 -> mouse (464,300) mb=0
+    25.510	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5097
+    25.510	[m3] step 601 at +2050 sched 2050 irq=0 -> mouse (466,300) mb=0
+    25.521	[m3] step 602 at +2052 sched 2052 irq=0 -> mouse (468,300) mb=0
+    25.530	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5101
+    25.530	[m3] step 603 at +2054 sched 2054 irq=0 -> mouse (470,300) mb=0
+    25.541	[m3] step 604 at +2056 sched 2056 irq=0 -> mouse (472,300) mb=0
+    25.550	[i01] trap 19926 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5105
+    25.550	[m3] step 605 at +2058 sched 2058 irq=0 -> mouse (474,300) mb=0
+    25.561	[m3] step 606 at +2060 sched 2060 irq=0 -> mouse (476,300) mb=0
+    25.570	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5109
+    25.571	[m3] step 607 at +2062 sched 2062 irq=0 -> mouse (478,300) mb=0
+    25.580	[m3] step 608 at +2064 sched 2064 irq=0 -> mouse (480,300) mb=0
+    25.590	[i01] trap 19935 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5113
+    25.591	[m3] step 609 at +2066 sched 2066 irq=0 -> mouse (482,300) mb=0
+    25.600	[m3] step 610 at +2068 sched 2068 irq=0 -> mouse (484,300) mb=0
+    25.610	[m3] step 611 at +2070 sched 2070 irq=0 -> mouse (486,300) mb=0
+    25.610	[i01] trap 19997 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5118
+    25.620	[m3] step 612 at +2072 sched 2072 irq=0 -> mouse (488,300) mb=0
+    25.630	[i01] trap 19886 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5121
+    25.631	[m3] step 613 at +2074 sched 2074 irq=0 -> mouse (490,300) mb=0
+    25.640	[m3] step 614 at +2076 sched 2076 irq=0 -> mouse (492,300) mb=0
+    25.649	[m3] step 615 at +2078 sched 2078 irq=0 -> mouse (494,300) mb=0
+    25.650	[i01] trap 19944 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5126
+    25.660	[m3] step 616 at +2080 sched 2080 irq=0 -> mouse (496,300) mb=0
+    25.670	[i01] trap 19935 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5129
+    25.671	[m3] step 617 at +2082 sched 2082 irq=0 -> mouse (498,300) mb=0
+    25.680	[m3] step 618 at +2084 sched 2084 irq=0 -> mouse (500,300) mb=0
+    25.690	[i01] trap 19930 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5133
+    25.691	[m3] step 619 at +2086 sched 2086 irq=0 -> mouse (498,300) mb=0
+    25.701	[m3] step 620 at +2088 sched 2088 irq=0 -> mouse (496,300) mb=0
+    25.710	[i01] trap 19937 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5137
+    25.711	[m3] step 621 at +2090 sched 2090 irq=0 -> mouse (494,300) mb=0
+    25.720	[m3] step 622 at +2092 sched 2092 irq=0 -> mouse (492,300) mb=0
+    25.730	[i01] trap 19935 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5141
+    25.731	[m3] step 623 at +2094 sched 2094 irq=0 -> mouse (490,300) mb=0
+    25.740	[m3] step 624 at +2096 sched 2096 irq=0 -> mouse (488,300) mb=0
+    25.750	[i01] trap 19931 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5145
+    25.751	[m3] step 625 at +2098 sched 2098 irq=0 -> mouse (486,300) mb=0
+    25.760	[m3] step 626 at +2100 sched 2100 irq=0 -> mouse (484,300) mb=0
+    25.770	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5149
+    25.771	[m3] step 627 at +2102 sched 2102 irq=0 -> mouse (482,300) mb=0
+    25.780	[m3] step 628 at +2104 sched 2104 irq=0 -> mouse (480,300) mb=0
+    25.790	[i01] trap 19939 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5153
+    25.791	[m3] step 629 at +2106 sched 2106 irq=0 -> mouse (478,300) mb=0
+    25.800	[m3] step 630 at +2108 sched 2108 irq=0 -> mouse (476,300) mb=0
+    25.809	[m3] step 631 at +2110 sched 2110 irq=0 -> mouse (474,300) mb=0
+    25.810	[i01] trap 19940 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5158
+    25.820	[m3] step 632 at +2112 sched 2112 irq=0 -> mouse (472,300) mb=0
+    25.830	[i01] trap 19944 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5161
+    25.830	[m3] step 633 at +2114 sched 2114 irq=0 -> mouse (470,300) mb=0
+    25.841	[m3] step 634 at +2116 sched 2116 irq=0 -> mouse (468,300) mb=0
+    25.850	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5165
+    25.850	[m3] step 635 at +2118 sched 2118 irq=0 -> mouse (466,300) mb=0
+    25.861	[m3] step 636 at +2120 sched 2120 irq=0 -> mouse (464,300) mb=0
+    25.870	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5169
+    25.871	[m3] step 637 at +2122 sched 2122 irq=0 -> mouse (462,300) mb=0
+    25.880	[m3] step 638 at +2124 sched 2124 irq=0 -> mouse (460,300) mb=0
+    25.890	[m3] step 639 at +2126 sched 2126 irq=0 -> mouse (458,300) mb=0
+    25.890	[i01] trap 20077 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5174
+    25.900	[m3] step 640 at +2128 sched 2128 irq=0 -> mouse (456,300) mb=0
+    25.910	[i01] trap 19734 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5177
+    25.911	[m3] step 641 at +2130 sched 2130 irq=0 -> mouse (454,300) mb=0
+    25.920	[m3] step 642 at +2132 sched 2132 irq=0 -> mouse (452,300) mb=0
+    25.930	[i01] trap 19937 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5181
+    25.931	[m3] step 643 at +2134 sched 2134 irq=0 -> mouse (450,300) mb=0
+    25.940	[m3] step 644 at +2136 sched 2136 irq=0 -> mouse (448,300) mb=0
+    25.950	[i01] trap 19937 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5185
+    25.951	[m3] step 645 at +2138 sched 2138 irq=0 -> mouse (446,300) mb=0
+    25.960	[m3] step 646 at +2140 sched 2140 irq=0 -> mouse (444,300) mb=0
+    25.970	[i01] trap 19942 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5189
+    25.970	[m3] step 647 at +2142 sched 2142 irq=0 -> mouse (442,300) mb=0
+    25.981	[m3] step 648 at +2144 sched 2144 irq=0 -> mouse (440,300) mb=0
+    25.990	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5193
+    25.990	[m3] step 649 at +2146 sched 2146 irq=0 -> mouse (438,300) mb=0
+    26.001	[m3] step 650 at +2148 sched 2148 irq=0 -> mouse (436,300) mb=0
+    26.010	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5197
+    26.010	[m3] step 651 at +2150 sched 2150 irq=0 -> mouse (434,300) mb=0
+    26.020	[m3] step 652 at +2152 sched 2152 irq=0 -> mouse (432,300) mb=0
+    26.030	[i01] trap 19943 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5201
+    26.031	[m3] step 653 at +2154 sched 2154 irq=0 -> mouse (430,300) mb=0
+    26.040	[m3] step 654 at +2156 sched 2156 irq=0 -> mouse (428,300) mb=0
+    26.050	[i01] trap 19933 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5205
+    26.050	[m3] step 655 at +2158 sched 2158 irq=0 -> mouse (426,300) mb=0
+    26.062	[m3] step 656 at +2160 sched 2160 irq=0 -> mouse (424,300) mb=0
+    26.070	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5209
+    26.070	[m3] step 657 at +2162 sched 2162 irq=0 -> mouse (422,300) mb=0
+    26.081	[m3] step 658 at +2164 sched 2164 irq=0 -> mouse (420,300) mb=0
+    26.090	[i01] trap 19935 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5213
+    26.090	[m3] step 659 at +2166 sched 2166 irq=0 -> mouse (418,300) mb=0
+    26.101	[m3] step 660 at +2168 sched 2168 irq=0 -> mouse (416,300) mb=0
+    26.110	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5217
+    26.110	[m3] step 661 at +2170 sched 2170 irq=0 -> mouse (414,300) mb=0
+    26.119	[m3] step 662 at +2172 sched 2172 irq=0 -> mouse (412,300) mb=0
+    26.130	[m3] step 663 at +2174 sched 2174 irq=0 -> mouse (410,300) mb=0
+    26.130	[i01] trap 20172 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5222
+    26.140	[m3] step 664 at +2176 sched 2176 irq=0 -> mouse (408,300) mb=0
+    26.150	[i01] trap 19568 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5225
+    26.151	[m3] step 665 at +2178 sched 2178 irq=0 -> mouse (406,300) mb=0
+    26.160	[m3] step 666 at +2180 sched 2180 irq=0 -> mouse (404,300) mb=0
+    26.170	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5229
+    26.170	[m3] step 667 at +2182 sched 2182 irq=0 -> mouse (402,300) mb=0
+    26.181	[m3] step 668 at +2184 sched 2184 irq=0 -> mouse (400,300) mb=0
+    26.190	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5233
+    26.191	[m3] step 669 at +2186 sched 2186 irq=0 -> mouse (398,300) mb=0
+    26.200	[m3] step 670 at +2188 sched 2188 irq=0 -> mouse (396,300) mb=0
+    26.210	[i01] trap 19940 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5237
+    26.210	[m3] step 671 at +2190 sched 2190 irq=0 -> mouse (394,300) mb=0
+    26.221	[m3] step 672 at +2192 sched 2192 irq=0 -> mouse (392,300) mb=0
+    26.230	[i01] trap 19940 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5241
+    26.231	[m3] step 673 at +2194 sched 2194 irq=0 -> mouse (390,300) mb=0
+    26.240	[m3] step 674 at +2196 sched 2196 irq=0 -> mouse (388,300) mb=0
+    26.250	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5245
+    26.251	[m3] step 675 at +2198 sched 2198 irq=0 -> mouse (386,300) mb=0
+    26.260	[m3] step 676 at +2200 sched 2200 irq=0 -> mouse (384,300) mb=0
+    26.270	[i01] trap 19933 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5249
+    26.271	[m3] step 677 at +2202 sched 2202 irq=0 -> mouse (382,300) mb=0
+    26.280	[m3] step 678 at +2204 sched 2204 irq=0 -> mouse (380,300) mb=0
+    26.290	[i01] trap 19939 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5253
+    26.291	[m3] step 679 at +2206 sched 2206 irq=0 -> mouse (378,300) mb=0
+    26.300	[m3] step 680 at +2208 sched 2208 irq=0 -> mouse (376,300) mb=0
+    26.310	[i01] trap 19930 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5257
+    26.311	[m3] step 681 at +2210 sched 2210 irq=0 -> mouse (374,300) mb=0
+    26.320	[m3] step 682 at +2212 sched 2212 irq=0 -> mouse (372,300) mb=0
+    26.330	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5261
+    26.331	[m3] step 683 at +2214 sched 2214 irq=0 -> mouse (370,300) mb=0
+    26.341	[m3] step 684 at +2216 sched 2216 irq=0 -> mouse (368,300) mb=0
+    26.350	[i01] trap 19932 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5265
+    26.351	[m3] step 685 at +2218 sched 2218 irq=0 -> mouse (366,300) mb=0
+    26.361	[m3] step 686 at +2220 sched 2220 irq=0 -> mouse (364,300) mb=0
+    26.370	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5269
+    26.371	[m3] step 687 at +2222 sched 2222 irq=0 -> mouse (362,300) mb=0
+    26.380	[m3] step 688 at +2224 sched 2224 irq=0 -> mouse (360,300) mb=0
+    26.390	[i01] trap 19935 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5273
+    26.391	[m3] step 689 at +2226 sched 2226 irq=0 -> mouse (358,300) mb=0
+    26.399	[m3] step 690 at +2228 sched 2228 irq=0 -> mouse (356,300) mb=0
+    26.410	[m3] step 691 at +2230 sched 2230 irq=0 -> mouse (354,300) mb=0
+    26.410	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5278
+    26.421	[m3] step 692 at +2232 sched 2232 irq=0 -> mouse (352,300) mb=0
+    26.430	[i01] trap 19932 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5281
+    26.430	[m3] step 693 at +2234 sched 2234 irq=0 -> mouse (350,300) mb=0
+    26.441	[m3] step 694 at +2236 sched 2236 irq=0 -> mouse (348,300) mb=0
+    26.450	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5285
+    26.450	[m3] step 695 at +2238 sched 2238 irq=0 -> mouse (346,300) mb=0
+    26.461	[m3] step 696 at +2240 sched 2240 irq=0 -> mouse (344,300) mb=0
+    26.470	[i01] trap 19932 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5289
+    26.470	[m3] step 697 at +2242 sched 2242 irq=0 -> mouse (342,300) mb=0
+    26.481	[m3] step 698 at +2244 sched 2244 irq=0 -> mouse (340,300) mb=0
+    26.490	[i01] trap 19944 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5293
+    26.490	[m3] step 699 at +2246 sched 2246 irq=0 -> mouse (338,300) mb=0
+    26.501	[m3] step 700 at +2248 sched 2248 irq=0 -> mouse (336,300) mb=0
+    26.510	[i01] trap 19928 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5297
+    26.510	[m3] step 701 at +2250 sched 2250 irq=0 -> mouse (334,300) mb=0
+    26.521	[m3] step 702 at +2252 sched 2252 irq=0 -> mouse (332,300) mb=0
+    26.530	[i01] trap 19935 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5301
+    26.530	[m3] step 703 at +2254 sched 2254 irq=0 -> mouse (330,300) mb=0
+    26.541	[m3] step 704 at +2256 sched 2256 irq=0 -> mouse (328,300) mb=0
+    26.550	[m3] step 705 at +2258 sched 2258 irq=0 -> mouse (326,300) mb=0
+    26.550	[i01] trap 20034 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5306
+    26.561	[m3] step 706 at +2260 sched 2260 irq=0 -> mouse (324,300) mb=0
+    26.570	[m3] step 707 at +2262 sched 2262 irq=0 -> mouse (322,300) mb=0
+    26.570	[i01] trap 19849 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5310
+    26.580	[m3] step 708 at +2264 sched 2264 irq=0 -> mouse (320,300) mb=0
+    26.590	[i01] trap 19948 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5313
+    26.591	[m3] step 709 at +2266 sched 2266 irq=0 -> mouse (318,300) mb=0
+    26.600	[m3] step 710 at +2268 sched 2268 irq=0 -> mouse (316,300) mb=0
+    26.610	[i01] trap 19941 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5317
+    26.611	[m3] step 711 at +2270 sched 2270 irq=0 -> mouse (314,300) mb=0
+    26.620	[m3] step 712 at +2272 sched 2272 irq=0 -> mouse (312,300) mb=0
+    26.630	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5321
+    26.631	[m3] step 713 at +2274 sched 2274 irq=0 -> mouse (310,300) mb=0
+    26.640	[m3] step 714 at +2276 sched 2276 irq=0 -> mouse (308,300) mb=0
+    26.650	[i01] trap 19940 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5325
+    26.650	[m3] step 715 at +2278 sched 2278 irq=0 -> mouse (306,300) mb=0
+    26.661	[m3] step 716 at +2280 sched 2280 irq=0 -> mouse (304,300) mb=0
+    26.670	[i01] trap 19931 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5329
+    26.671	[m3] step 717 at +2282 sched 2282 irq=0 -> mouse (302,300) mb=0
+    26.681	[m3] step 718 at +2284 sched 2284 irq=0 -> mouse (300,300) mb=0
+    26.690	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5333
+    26.691	[m3] step 719 at +2286 sched 2286 irq=0 -> mouse (298,300) mb=0
+    26.701	[m3] step 720 at +2288 sched 2288 irq=0 -> mouse (296,300) mb=0
+    26.710	[m3] step 721 at +2290 sched 2290 irq=0 -> mouse (294,300) mb=0
+    26.710	[i01] trap 19942 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5338
+    26.720	[m3] step 722 at +2292 sched 2292 irq=0 -> mouse (292,300) mb=0
+    26.730	[i01] trap 19946 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5341
+    26.731	[m3] step 723 at +2294 sched 2294 irq=0 -> mouse (290,300) mb=0
+    26.740	[m3] step 724 at +2296 sched 2296 irq=0 -> mouse (288,300) mb=0
+    26.750	[i01] trap 19939 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5345
+    26.751	[m3] step 725 at +2298 sched 2298 irq=0 -> mouse (286,300) mb=0
+    26.760	[m3] step 726 at +2300 sched 2300 irq=0 -> mouse (284,300) mb=0
+    26.770	[i01] trap 19944 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5349
+    26.771	[m3] step 727 at +2302 sched 2302 irq=0 -> mouse (282,300) mb=0
+    26.780	[m3] step 728 at +2304 sched 2304 irq=0 -> mouse (280,300) mb=0
+    26.790	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5353
+    26.790	[m3] step 729 at +2306 sched 2306 irq=0 -> mouse (278,300) mb=0
+    26.801	[m3] step 730 at +2308 sched 2308 irq=0 -> mouse (276,300) mb=0
+    26.810	[i01] trap 19937 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5357
+    26.810	[m3] step 731 at +2310 sched 2310 irq=0 -> mouse (274,300) mb=0
+    26.820	[m3] step 732 at +2312 sched 2312 irq=0 -> mouse (272,300) mb=0
+    26.830	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5361
+    26.831	[m3] step 733 at +2314 sched 2314 irq=0 -> mouse (270,300) mb=0
+    26.840	[m3] step 734 at +2316 sched 2316 irq=0 -> mouse (268,300) mb=0
+    26.850	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5365
+    26.851	[m3] step 735 at +2318 sched 2318 irq=0 -> mouse (266,300) mb=0
+    26.860	[m3] step 736 at +2320 sched 2320 irq=0 -> mouse (264,300) mb=0
+    26.869	[m3] step 737 at +2322 sched 2322 irq=0 -> mouse (262,300) mb=0
+    26.870	[i01] trap 19940 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5370
+    26.881	[m3] step 738 at +2324 sched 2324 irq=0 -> mouse (260,300) mb=0
+    26.890	[i01] trap 19937 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5373
+    26.890	[m3] step 739 at +2326 sched 2326 irq=0 -> mouse (258,300) mb=0
+    26.901	[m3] step 740 at +2328 sched 2328 irq=0 -> mouse (256,300) mb=0
+    26.910	[m3] step 741 at +2330 sched 2330 irq=0 -> mouse (254,300) mb=0
+    26.910	[i01] trap 20027 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5378
+    26.921	[m3] step 742 at +2332 sched 2332 irq=0 -> mouse (252,300) mb=0
+    26.930	[i01] trap 19778 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5381
+    26.930	[m3] step 743 at +2334 sched 2334 irq=0 -> mouse (250,300) mb=0
+    26.941	[m3] step 744 at +2336 sched 2336 irq=0 -> mouse (248,300) mb=0
+    26.950	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5385
+    26.950	[m3] step 745 at +2338 sched 2338 irq=0 -> mouse (246,300) mb=0
+    26.959	[m3] step 746 at +2340 sched 2340 irq=0 -> mouse (244,300) mb=0
+    26.970	[m3] step 747 at +2342 sched 2342 irq=0 -> mouse (242,300) mb=0
+    26.970	[i01] trap 20016 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5390
+    26.981	[m3] step 748 at +2344 sched 2344 irq=0 -> mouse (240,300) mb=0
+    26.990	[m3] step 749 at +2346 sched 2346 irq=0 -> mouse (238,300) mb=0
+    26.990	[i01] trap 19870 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5394
+    27.000	[m3] step 750 at +2348 sched 2348 irq=0 -> mouse (236,300) mb=0
+    27.010	[i01] trap 19948 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5397
+    27.010	[m3] step 751 at +2350 sched 2350 irq=0 -> mouse (234,300) mb=0
+    27.020	[m3] step 752 at +2352 sched 2352 irq=0 -> mouse (232,300) mb=0
+    27.030	[i01] trap 19932 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5401
+    27.031	[m3] step 753 at +2354 sched 2354 irq=0 -> mouse (230,300) mb=0
+    27.040	[m3] step 754 at +2356 sched 2356 irq=0 -> mouse (228,300) mb=0
+    27.050	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5405
+    27.051	[m3] step 755 at +2358 sched 2358 irq=0 -> mouse (226,300) mb=0
+    27.060	[m3] step 756 at +2360 sched 2360 irq=0 -> mouse (224,300) mb=0
+    27.070	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5409
+    27.071	[m3] step 757 at +2362 sched 2362 irq=0 -> mouse (222,300) mb=0
+    27.080	[m3] step 758 at +2364 sched 2364 irq=0 -> mouse (220,300) mb=0
+    27.090	[i01] trap 19941 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5413
+    27.090	[m3] step 759 at +2366 sched 2366 irq=0 -> mouse (218,300) mb=0
+    27.101	[m3] step 760 at +2368 sched 2368 irq=0 -> mouse (216,300) mb=0
+    27.110	[i01] trap 19937 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5417
+    27.110	[m3] step 761 at +2370 sched 2370 irq=0 -> mouse (214,300) mb=0
+    27.121	[m3] step 762 at +2372 sched 2372 irq=0 -> mouse (212,300) mb=0
+    27.130	[i01] trap 19937 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5421
+    27.130	[m3] step 763 at +2374 sched 2374 irq=0 -> mouse (210,300) mb=0
+    27.139	[m3] step 764 at +2376 sched 2376 irq=0 -> mouse (208,300) mb=0
+    27.150	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5425
+    27.150	[m3] step 765 at +2378 sched 2378 irq=1 -> mouse (208,300) mb=0
+    27.161	[m3] step 766 at +2380 sched 2380 irq=0 -> mouse (204,300) mb=0
+    27.170	[i01] trap 19816 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5429
+    27.171	[m3] step 767 at +2382 sched 2382 irq=0 -> mouse (202,300) mb=0
+    27.180	[m3] step 768 at +2384 sched 2384 irq=0 -> mouse (200,300) mb=0
+    27.190	[i01] trap 19933 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5433
+    27.191	[m3] step 769 at +2386 sched 2386 irq=0 -> mouse (198,300) mb=0
+    27.200	[m3] step 770 at +2388 sched 2388 irq=0 -> mouse (196,300) mb=0
+    27.209	[m3] step 771 at +2390 sched 2390 irq=0 -> mouse (194,300) mb=0
+    27.210	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5438
+    27.220	[m3] step 772 at +2392 sched 2392 irq=0 -> mouse (192,300) mb=0
+    27.230	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5441
+    27.230	[m3] step 773 at +2394 sched 2394 irq=0 -> mouse (190,300) mb=0
+    27.241	[m3] step 774 at +2396 sched 2396 irq=0 -> mouse (188,300) mb=0
+    27.250	[i01] trap 19942 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5445
+    27.250	[m3] step 775 at +2398 sched 2398 irq=0 -> mouse (186,300) mb=0
+    27.260	[m3] step 776 at +2400 sched 2400 irq=0 -> mouse (184,300) mb=0
+    27.270	[i01] trap 19935 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5449
+    27.271	[m3] step 777 at +2402 sched 2402 irq=0 -> mouse (182,300) mb=0
+    27.280	[m3] step 778 at +2404 sched 2404 irq=0 -> mouse (180,300) mb=0
+    27.290	[i01] trap 19933 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5453
+    27.291	[m3] step 779 at +2406 sched 2406 irq=0 -> mouse (178,300) mb=0
+    27.302	[m3] step 780 at +2408 sched 2408 irq=0 -> mouse (176,300) mb=0
+    27.310	[i01] trap 19935 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5457
+    27.311	[m3] step 781 at +2410 sched 2410 irq=0 -> mouse (174,300) mb=0
+    27.320	[m3] step 782 at +2412 sched 2412 irq=0 -> mouse (172,300) mb=0
+    27.330	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5461
+    27.330	[m3] step 783 at +2414 sched 2414 irq=0 -> mouse (170,300) mb=0
+    27.341	[m3] step 784 at +2416 sched 2416 irq=0 -> mouse (168,300) mb=0
+    27.350	[i01] trap 19941 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5465
+    27.350	[m3] step 785 at +2418 sched 2418 irq=0 -> mouse (166,300) mb=0
+    27.362	[m3] step 786 at +2420 sched 2420 irq=0 -> mouse (164,300) mb=0
+    27.370	[i01] trap 19937 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5469
+    27.371	[m3] step 787 at +2422 sched 2422 irq=0 -> mouse (162,300) mb=0
+    27.380	[m3] step 788 at +2424 sched 2424 irq=0 -> mouse (160,300) mb=0
+    27.390	[i01] trap 19928 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5473
+    27.390	[m3] step 789 at +2426 sched 2426 irq=0 -> mouse (158,300) mb=0
+    27.401	[m3] step 790 at +2428 sched 2428 irq=0 -> mouse (156,300) mb=0
+    27.410	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5477
+    27.411	[m3] step 791 at +2430 sched 2430 irq=0 -> mouse (154,300) mb=0
+    27.421	[m3] step 792 at +2432 sched 2432 irq=0 -> mouse (152,300) mb=0
+    27.430	[m3] step 793 at +2434 sched 2434 irq=0 -> mouse (150,300) mb=0
+    27.430	[i01] trap 20028 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5482
+    27.440	[m3] step 794 at +2436 sched 2436 irq=0 -> mouse (148,300) mb=0
+    27.450	[i01] trap 19756 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5485
+    27.451	[m3] step 795 at +2438 sched 2438 irq=0 -> mouse (146,300) mb=0
+    27.460	[m3] step 796 at +2440 sched 2440 irq=0 -> mouse (144,300) mb=0
+    27.470	[i01] trap 19797 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5489
+    27.471	[m3] step 797 at +2442 sched 2442 irq=0 -> mouse (142,300) mb=0
+    27.480	[m3] step 798 at +2444 sched 2444 irq=0 -> mouse (140,300) mb=0
+    27.490	[i01] trap 19930 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5493
+    27.490	[m3] step 799 at +2446 sched 2446 irq=0 -> mouse (138,300) mb=0
+    27.501	[m3] step 800 at +2448 sched 2448 irq=0 -> mouse (136,300) mb=0
+    27.510	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5497
+    27.512	[m3] step 801 at +2450 sched 2450 irq=0 -> mouse (134,300) mb=0
+    27.521	[m3] step 802 at +2452 sched 2452 irq=0 -> mouse (132,300) mb=0
+    27.530	[m3] step 803 at +2454 sched 2454 irq=0 -> mouse (130,300) mb=0
+    27.530	[i01] trap 20022 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5502
+    27.540	[m3] step 804 at +2456 sched 2456 irq=0 -> mouse (128,300) mb=0
+    27.550	[m3] step 805 at +2458 sched 2458 irq=0 -> mouse (126,300) mb=0
+    27.550	[i01] trap 19860 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5506
+    27.560	[m3] step 806 at +2460 sched 2460 irq=0 -> mouse (124,300) mb=0
+    27.570	[i01] trap 19948 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5509
+    27.571	[m3] step 807 at +2462 sched 2462 irq=0 -> mouse (122,300) mb=0
+    27.580	[m3] step 808 at +2464 sched 2464 irq=0 -> mouse (120,300) mb=0
+    27.590	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5513
+    27.591	[m3] step 809 at +2466 sched 2466 irq=0 -> mouse (118,300) mb=0
+    27.602	[m3] step 810 at +2468 sched 2468 irq=0 -> mouse (116,300) mb=0
+    27.610	[i01] trap 19932 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5517
+    27.611	[m3] step 811 at +2470 sched 2470 irq=0 -> mouse (114,300) mb=0
+    27.620	[m3] step 812 at +2472 sched 2472 irq=0 -> mouse (112,300) mb=0
+    27.630	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5521
+    27.631	[m3] step 813 at +2474 sched 2474 irq=0 -> mouse (110,300) mb=0
+    27.641	[m3] step 814 at +2476 sched 2476 irq=0 -> mouse (108,300) mb=0
+    27.650	[m3] step 815 at +2478 sched 2478 irq=0 -> mouse (106,300) mb=0
+    27.650	[i01] trap 20025 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5526
+    27.661	[m3] step 816 at +2480 sched 2480 irq=0 -> mouse (104,300) mb=0
+    27.670	[m3] step 817 at +2482 sched 2482 irq=0 -> mouse (102,300) mb=0
+    27.670	[i01] trap 19854 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5530
+    27.680	[m3] step 818 at +2484 sched 2484 irq=0 -> mouse (100,300) mb=0
+    27.690	[i01] trap 19944 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5533
+    27.691	[m3] step 819 at +2486 sched 2486 irq=0 -> mouse (102,300) mb=0
+    27.701	[m3] step 820 at +2488 sched 2488 irq=0 -> mouse (104,300) mb=0
+    27.710	[i01] trap 19937 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5537
+    27.710	[m3] step 821 at +2490 sched 2490 irq=0 -> mouse (106,300) mb=0
+    27.721	[m3] step 822 at +2492 sched 2492 irq=0 -> mouse (108,300) mb=0
+    27.730	[i01] trap 19942 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5541
+    27.730	[m3] step 823 at +2494 sched 2494 irq=0 -> mouse (110,300) mb=0
+    27.739	[m3] step 824 at +2496 sched 2496 irq=0 -> mouse (112,300) mb=0
+    27.750	[i01] trap 19939 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5545
+    27.750	[m3] step 825 at +2498 sched 2498 irq=1 -> mouse (112,300) mb=0
+    27.761	[m3] step 826 at +2500 sched 2500 irq=0 -> mouse (116,300) mb=0
+    27.770	[i01] trap 19660 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5549
+    27.771	[m3] step 827 at +2502 sched 2502 irq=0 -> mouse (118,300) mb=0
+    27.780	[m3] step 828 at +2504 sched 2504 irq=0 -> mouse (120,300) mb=0
+    27.790	[i01] trap 19937 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5553
+    27.791	[m3] step 829 at +2506 sched 2506 irq=0 -> mouse (122,300) mb=0
+    27.800	[m3] step 830 at +2508 sched 2508 irq=0 -> mouse (124,300) mb=0
+    27.810	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5557
+    27.812	[m3] step 831 at +2510 sched 2510 irq=0 -> mouse (126,300) mb=0
+    27.821	[m3] step 832 at +2512 sched 2512 irq=0 -> mouse (128,300) mb=0
+    27.830	[i01] trap 19935 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5561
+    27.830	[m3] step 833 at +2514 sched 2514 irq=1 -> mouse (128,300) mb=0
+    27.841	[m3] step 834 at +2516 sched 2516 irq=0 -> mouse (132,300) mb=0
+    27.850	[m3] step 835 at +2518 sched 2518 irq=0 -> mouse (134,300) mb=0
+    27.850	[i01] trap 19812 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5566
+    27.860	[m3] step 836 at +2520 sched 2520 irq=0 -> mouse (136,300) mb=0
+    27.870	[i01] trap 19908 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5569
+    27.871	[m3] step 837 at +2522 sched 2522 irq=0 -> mouse (138,300) mb=0
+    27.880	[m3] step 838 at +2524 sched 2524 irq=0 -> mouse (140,300) mb=0
+    27.890	[i01] trap 19932 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5573
+    27.891	[m3] step 839 at +2526 sched 2526 irq=0 -> mouse (142,300) mb=0
+    27.902	[m3] step 840 at +2528 sched 2528 irq=0 -> mouse (144,300) mb=0
+    27.910	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5577
+    27.911	[m3] step 841 at +2530 sched 2530 irq=0 -> mouse (146,300) mb=0
+    27.919	[m3] step 842 at +2532 sched 2532 irq=0 -> mouse (148,300) mb=0
+    27.929	[m3] step 843 at +2534 sched 2534 irq=0 -> mouse (150,300) mb=0
+    27.930	[i01] trap 19935 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5582
+    27.940	[m3] step 844 at +2536 sched 2536 irq=0 -> mouse (152,300) mb=0
+    27.950	[i01] trap 19941 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5585
+    27.951	[m3] step 845 at +2538 sched 2538 irq=0 -> mouse (154,300) mb=0
+    27.961	[m3] step 846 at +2540 sched 2540 irq=0 -> mouse (156,300) mb=0
+    27.970	[m3] step 847 at +2542 sched 2542 irq=0 -> mouse (158,300) mb=0
+    27.970	[i01] trap 19996 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5590
+    27.981	[m3] step 848 at +2544 sched 2544 irq=0 -> mouse (160,300) mb=0
+    27.990	[m3] step 849 at +2546 sched 2546 irq=0 -> mouse (162,300) mb=0
+    27.990	[i01] trap 19890 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5594
+    28.000	[m3] step 850 at +2548 sched 2548 irq=0 -> mouse (164,300) mb=0
+    28.010	[i01] trap 19944 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5597
+    28.011	[m3] step 851 at +2550 sched 2550 irq=0 -> mouse (166,300) mb=0
+    28.020	[m3] step 852 at +2552 sched 2552 irq=0 -> mouse (168,300) mb=0
+    28.030	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5601
+    28.031	[m3] step 853 at +2554 sched 2554 irq=0 -> mouse (170,300) mb=0
+    28.040	[m3] step 854 at +2556 sched 2556 irq=0 -> mouse (172,300) mb=0
+    28.049	[m3] step 855 at +2558 sched 2558 irq=0 -> mouse (174,300) mb=0
+    28.050	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5606
+    28.060	[m3] step 856 at +2560 sched 2560 irq=0 -> mouse (176,300) mb=0
+    28.070	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5609
+    28.071	[m3] step 857 at +2562 sched 2562 irq=0 -> mouse (178,300) mb=0
+    28.080	[m3] step 858 at +2564 sched 2564 irq=0 -> mouse (180,300) mb=0
+    28.090	[i01] trap 19941 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5613
+    28.090	[m3] step 859 at +2566 sched 2566 irq=0 -> mouse (182,300) mb=0
+    28.101	[m3] step 860 at +2568 sched 2568 irq=0 -> mouse (184,300) mb=0
+    28.110	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5617
+    28.111	[m3] step 861 at +2570 sched 2570 irq=0 -> mouse (186,300) mb=0
+    28.120	[m3] step 862 at +2572 sched 2572 irq=0 -> mouse (188,300) mb=0
+    28.130	[i01] trap 19932 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5621
+    28.130	[m3] step 863 at +2574 sched 2574 irq=0 -> mouse (190,300) mb=0
+    28.141	[m3] step 864 at +2576 sched 2576 irq=0 -> mouse (192,300) mb=0
+    28.150	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5625
+    28.151	[m3] step 865 at +2578 sched 2578 irq=0 -> mouse (194,300) mb=0
+    28.161	[m3] step 866 at +2580 sched 2580 irq=0 -> mouse (196,300) mb=0
+    28.170	[m3] step 867 at +2582 sched 2582 irq=0 -> mouse (198,300) mb=0
+    28.170	[i01] trap 19944 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5630
+    28.180	[m3] step 868 at +2584 sched 2584 irq=0 -> mouse (200,300) mb=0
+    28.190	[i01] trap 19940 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5633
+    28.191	[m3] step 869 at +2586 sched 2586 irq=0 -> mouse (202,300) mb=0
+    28.200	[m3] step 870 at +2588 sched 2588 irq=0 -> mouse (204,300) mb=0
+    28.210	[i01] trap 19940 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5637
+    28.211	[m3] step 871 at +2590 sched 2590 irq=0 -> mouse (206,300) mb=0
+    28.220	[m3] step 872 at +2592 sched 2592 irq=0 -> mouse (208,300) mb=0
+    28.230	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5641
+    28.231	[m3] step 873 at +2594 sched 2594 irq=0 -> mouse (210,300) mb=0
+    28.240	[m3] step 874 at +2596 sched 2596 irq=0 -> mouse (212,300) mb=0
+    28.250	[m3] step 875 at +2598 sched 2598 irq=0 -> mouse (214,300) mb=0
+    28.250	[i01] trap 19972 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5646
+    28.261	[m3] step 876 at +2600 sched 2600 irq=0 -> mouse (216,300) mb=0
+    28.270	[m3] step 877 at +2602 sched 2602 irq=0 -> mouse (218,300) mb=0
+    28.270	[i01] trap 19940 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5650
+    28.280	[m3] step 878 at +2604 sched 2604 irq=0 -> mouse (220,300) mb=0
+    28.290	[i01] trap 19812 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5653
+    28.292	[m3] step 879 at +2606 sched 2606 irq=0 -> mouse (222,300) mb=0
+    28.301	[m3] step 880 at +2608 sched 2608 irq=0 -> mouse (224,300) mb=0
+    28.310	[m3] step 881 at +2610 sched 2610 irq=0 -> mouse (226,300) mb=0
+    28.310	[i01] trap 20010 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5658
+    28.321	[m3] step 882 at +2612 sched 2612 irq=0 -> mouse (228,300) mb=0
+    28.330	[i01] trap 19871 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5661
+    28.331	[m3] step 883 at +2614 sched 2614 irq=0 -> mouse (230,300) mb=0
+    28.341	[m3] step 884 at +2616 sched 2616 irq=0 -> mouse (232,300) mb=0
+    28.350	[m3] step 885 at +2618 sched 2618 irq=0 -> mouse (234,300) mb=0
+    28.350	[i01] trap 19996 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5666
+    28.361	[m3] step 886 at +2620 sched 2620 irq=0 -> mouse (236,300) mb=0
+    28.370	[m3] step 887 at +2622 sched 2622 irq=0 -> mouse (238,300) mb=0
+    28.370	[i01] trap 19792 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5670
+    28.380	[m3] step 888 at +2624 sched 2624 irq=0 -> mouse (240,300) mb=0
+    28.390	[m3] step 889 at +2626 sched 2626 irq=0 -> mouse (242,300) mb=0
+    28.390	[i01] trap 19930 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5674
+    28.402	[m3] step 890 at +2628 sched 2628 irq=0 -> mouse (244,300) mb=0
+    28.410	[i01] trap 19823 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5677
+    28.411	[m3] step 891 at +2630 sched 2630 irq=0 -> mouse (246,300) mb=0
+    28.420	[m3] step 892 at +2632 sched 2632 irq=0 -> mouse (248,300) mb=0
+    28.430	[i01] trap 19932 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5681
+    28.430	[m3] step 893 at +2634 sched 2634 irq=0 -> mouse (250,300) mb=0
+    28.441	[m3] step 894 at +2636 sched 2636 irq=0 -> mouse (252,300) mb=0
+    28.450	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5685
+    28.450	[m3] step 895 at +2638 sched 2638 irq=0 -> mouse (254,300) mb=0
+    28.461	[m3] step 896 at +2640 sched 2640 irq=0 -> mouse (256,300) mb=0
+    28.470	[i01] trap 19943 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5689
+    28.470	[m3] step 897 at +2642 sched 2642 irq=0 -> mouse (258,300) mb=0
+    28.480	[m3] step 898 at +2644 sched 2644 irq=0 -> mouse (260,300) mb=0
+    28.490	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5693
+    28.491	[m3] step 899 at +2646 sched 2646 irq=0 -> mouse (262,300) mb=0
+    28.500	[m3] step 900 at +2648 sched 2648 irq=0 -> mouse (264,300) mb=0
+    28.510	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5697
+    28.511	[m3] step 901 at +2650 sched 2650 irq=0 -> mouse (266,300) mb=0
+    28.520	[m3] step 902 at +2652 sched 2652 irq=0 -> mouse (268,300) mb=0
+    28.529	[m3] step 903 at +2654 sched 2654 irq=0 -> mouse (270,300) mb=0
+    28.530	[i01] trap 19942 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5702
+    28.540	[m3] step 904 at +2656 sched 2656 irq=0 -> mouse (272,300) mb=0
+    28.550	[i01] trap 19937 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5705
+    28.551	[m3] step 905 at +2658 sched 2658 irq=0 -> mouse (274,300) mb=0
+    28.560	[m3] step 906 at +2660 sched 2660 irq=0 -> mouse (276,300) mb=0
+    28.570	[i01] trap 19939 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5709
+    28.570	[m3] step 907 at +2662 sched 2662 irq=0 -> mouse (278,300) mb=0
+    28.581	[m3] step 908 at +2664 sched 2664 irq=0 -> mouse (280,300) mb=0
+    28.590	[i01] trap 19935 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5713
+    28.590	[m3] step 909 at +2666 sched 2666 irq=0 -> mouse (282,300) mb=0
+    28.601	[m3] step 910 at +2668 sched 2668 irq=0 -> mouse (284,300) mb=0
+    28.610	[i01] trap 19939 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5717
+    28.610	[m3] step 911 at +2670 sched 2670 irq=0 -> mouse (286,300) mb=0
+    28.619	[m3] step 912 at +2672 sched 2672 irq=0 -> mouse (288,300) mb=0
+    28.630	[m3] step 913 at +2674 sched 2674 irq=0 -> mouse (290,300) mb=0
+    28.630	[i01] trap 20000 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5722
+    28.641	[m3] step 914 at +2676 sched 2676 irq=0 -> mouse (292,300) mb=0
+    28.650	[m3] step 915 at +2678 sched 2678 irq=0 -> mouse (294,300) mb=0
+    28.650	[i01] trap 19884 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5726
+    28.660	[m3] step 916 at +2680 sched 2680 irq=0 -> mouse (296,300) mb=0
+    28.670	[i01] trap 19948 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5729
+    28.671	[m3] step 917 at +2682 sched 2682 irq=0 -> mouse (298,300) mb=0
+    28.680	[m3] step 918 at +2684 sched 2684 irq=0 -> mouse (300,300) mb=0
+    28.689	[m3] step 919 at +2686 sched 2686 irq=0 -> mouse (302,300) mb=0
+    28.690	[i01] trap 19940 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5734
+    28.700	[m3] step 920 at +2688 sched 2688 irq=0 -> mouse (304,300) mb=0
+    28.710	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5737
+    28.710	[m3] step 921 at +2690 sched 2690 irq=0 -> mouse (306,300) mb=0
+    28.721	[m3] step 922 at +2692 sched 2692 irq=0 -> mouse (308,300) mb=0
+    28.730	[i01] trap 19942 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5741
+    28.730	[m3] step 923 at +2694 sched 2694 irq=0 -> mouse (310,300) mb=0
+    28.741	[m3] step 924 at +2696 sched 2696 irq=0 -> mouse (312,300) mb=0
+    28.750	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5745
+    28.750	[m3] step 925 at +2698 sched 2698 irq=0 -> mouse (314,300) mb=0
+    28.760	[m3] step 926 at +2700 sched 2700 irq=0 -> mouse (316,300) mb=0
+    28.770	[i01] trap 19942 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5749
+    28.770	[m3] step 927 at +2702 sched 2702 irq=0 -> mouse (318,300) mb=0
+    28.781	[m3] step 928 at +2704 sched 2704 irq=0 -> mouse (320,300) mb=0
+    28.790	[i01] trap 19935 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5753
+    28.790	[m3] step 929 at +2706 sched 2706 irq=0 -> mouse (322,300) mb=0
+    28.801	[m3] step 930 at +2708 sched 2708 irq=0 -> mouse (324,300) mb=0
+    28.810	[i01] trap 19930 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5757
+    28.811	[m3] step 931 at +2710 sched 2710 irq=0 -> mouse (326,300) mb=0
+    28.820	[m3] step 932 at +2712 sched 2712 irq=0 -> mouse (328,300) mb=0
+    28.830	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5761
+    28.831	[m3] step 933 at +2714 sched 2714 irq=0 -> mouse (330,300) mb=0
+    28.840	[m3] step 934 at +2716 sched 2716 irq=0 -> mouse (332,300) mb=0
+    28.850	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5765
+    28.850	[m3] step 935 at +2718 sched 2718 irq=0 -> mouse (334,300) mb=0
+    28.861	[m3] step 936 at +2720 sched 2720 irq=0 -> mouse (336,300) mb=0
+    28.870	[i01] trap 19924 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5769
+    28.870	[m3] step 937 at +2722 sched 2722 irq=0 -> mouse (338,300) mb=0
+    28.881	[m3] step 938 at +2724 sched 2724 irq=0 -> mouse (340,300) mb=0
+    28.890	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5773
+    28.890	[m3] step 939 at +2726 sched 2726 irq=0 -> mouse (342,300) mb=0
+    28.899	[m3] step 940 at +2728 sched 2728 irq=0 -> mouse (344,300) mb=0
+    28.910	[m3] step 941 at +2730 sched 2730 irq=0 -> mouse (346,300) mb=0
+    28.910	[i01] trap 20086 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5778
+    28.920	[m3] step 942 at +2732 sched 2732 irq=0 -> mouse (348,300) mb=0
+    28.930	[i01] trap 19717 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5781
+    28.931	[m3] step 943 at +2734 sched 2734 irq=0 -> mouse (350,300) mb=0
+    28.940	[m3] step 944 at +2736 sched 2736 irq=0 -> mouse (352,300) mb=0
+    28.950	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5785
+    28.951	[m3] step 945 at +2738 sched 2738 irq=0 -> mouse (354,300) mb=0
+    28.960	[m3] step 946 at +2740 sched 2740 irq=0 -> mouse (356,300) mb=0
+    28.970	[i01] trap 19942 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5789
+    28.970	[m3] step 947 at +2742 sched 2742 irq=0 -> mouse (358,300) mb=0
+    28.981	[m3] step 948 at +2744 sched 2744 irq=0 -> mouse (360,300) mb=0
+    28.990	[i01] trap 19937 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5793
+    28.990	[m3] step 949 at +2746 sched 2746 irq=0 -> mouse (362,300) mb=0
+    29.001	[m3] step 950 at +2748 sched 2748 irq=0 -> mouse (364,300) mb=0
+    29.010	[m3] step 951 at +2750 sched 2750 irq=0 -> mouse (366,300) mb=0
+    29.010	[i01] trap 19987 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5798
+    29.022	[m3] step 952 at +2752 sched 2752 irq=0 -> mouse (368,300) mb=0
+    29.030	[i01] trap 19810 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5801
+    29.031	[m3] step 953 at +2754 sched 2754 irq=0 -> mouse (370,300) mb=0
+    29.039	[m3] step 954 at +2756 sched 2756 irq=0 -> mouse (372,300) mb=0
+    29.050	[m3] step 955 at +2758 sched 2758 irq=0 -> mouse (374,300) mb=0
+    29.050	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5806
+    29.060	[m3] step 956 at +2760 sched 2760 irq=0 -> mouse (376,300) mb=0
+    29.070	[i01] trap 19946 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5809
+    29.070	[m3] step 957 at +2762 sched 2762 irq=0 -> mouse (378,300) mb=0
+    29.081	[m3] step 958 at +2764 sched 2764 irq=0 -> mouse (380,300) mb=0
+    29.090	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5813
+    29.090	[m3] step 959 at +2766 sched 2766 irq=0 -> mouse (382,300) mb=0
+    29.100	[m3] step 960 at +2768 sched 2768 irq=0 -> mouse (384,300) mb=0
+    29.110	[i01] trap 19937 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5817
+    29.111	[m3] step 961 at +2770 sched 2770 irq=0 -> mouse (386,300) mb=0
+    29.120	[m3] step 962 at +2772 sched 2772 irq=0 -> mouse (388,300) mb=0
+    29.130	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5821
+    29.130	[m3] step 963 at +2774 sched 2774 irq=0 -> mouse (390,300) mb=0
+    29.142	[m3] step 964 at +2776 sched 2776 irq=0 -> mouse (392,300) mb=0
+    29.150	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5825
+    29.151	[m3] step 965 at +2778 sched 2778 irq=0 -> mouse (394,300) mb=0
+    29.160	[m3] step 966 at +2780 sched 2780 irq=0 -> mouse (396,300) mb=0
+    29.170	[i01] trap 19944 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5829
+    29.171	[m3] step 967 at +2782 sched 2782 irq=0 -> mouse (398,300) mb=0
+    29.180	[m3] step 968 at +2784 sched 2784 irq=0 -> mouse (400,300) mb=0
+    29.190	[m3] step 969 at +2786 sched 2786 irq=0 -> mouse (402,300) mb=0
+    29.190	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5834
+    29.200	[m3] step 970 at +2788 sched 2788 irq=0 -> mouse (404,300) mb=0
+    29.210	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5837
+    29.211	[m3] step 971 at +2790 sched 2790 irq=0 -> mouse (406,300) mb=0
+    29.221	[m3] step 972 at +2792 sched 2792 irq=0 -> mouse (408,300) mb=0
+    29.230	[i01] trap 19940 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5841
+    29.231	[m3] step 973 at +2794 sched 2794 irq=0 -> mouse (410,300) mb=0
+    29.240	[m3] step 974 at +2796 sched 2796 irq=0 -> mouse (412,300) mb=0
+    29.250	[i01] trap 19932 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5845
+    29.250	[m3] step 975 at +2798 sched 2798 irq=0 -> mouse (414,300) mb=0
+    29.261	[m3] step 976 at +2800 sched 2800 irq=0 -> mouse (416,300) mb=0
+    29.270	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5849
+    29.272	[m3] step 977 at +2802 sched 2802 irq=0 -> mouse (418,300) mb=0
+    29.281	[m3] step 978 at +2804 sched 2804 irq=0 -> mouse (420,300) mb=0
+    29.290	[m3] step 979 at +2806 sched 2806 irq=0 -> mouse (422,300) mb=0
+    29.290	[i01] trap 19954 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5854
+    29.301	[m3] step 980 at +2808 sched 2808 irq=0 -> mouse (424,300) mb=0
+    29.310	[m3] step 981 at +2810 sched 2810 irq=0 -> mouse (426,300) mb=0
+    29.310	[i01] trap 19928 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5858
+    29.320	[m3] step 982 at +2812 sched 2812 irq=0 -> mouse (428,300) mb=0
+    29.330	[i01] trap 19944 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5861
+    29.331	[m3] step 983 at +2814 sched 2814 irq=0 -> mouse (430,300) mb=0
+    29.340	[m3] step 984 at +2816 sched 2816 irq=0 -> mouse (432,300) mb=0
+    29.350	[i01] trap 19930 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5865
+    29.351	[m3] step 985 at +2818 sched 2818 irq=0 -> mouse (434,300) mb=0
+    29.360	[m3] step 986 at +2820 sched 2820 irq=0 -> mouse (436,300) mb=0
+    29.369	[m3] step 987 at +2822 sched 2822 irq=0 -> mouse (438,300) mb=0
+    29.370	[i01] trap 19942 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5870
+    29.380	[m3] step 988 at +2824 sched 2824 irq=0 -> mouse (440,300) mb=0
+    29.390	[i01] trap 19939 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5873
+    29.390	[m3] step 989 at +2826 sched 2826 irq=0 -> mouse (442,300) mb=0
+    29.401	[m3] step 990 at +2828 sched 2828 irq=0 -> mouse (444,300) mb=0
+    29.410	[i01] trap 19928 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5877
+    29.410	[m3] step 991 at +2830 sched 2830 irq=0 -> mouse (446,300) mb=0
+    29.421	[m3] step 992 at +2832 sched 2832 irq=0 -> mouse (448,300) mb=0
+    29.430	[i01] trap 19943 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5881
+    29.430	[m3] step 993 at +2834 sched 2834 irq=0 -> mouse (450,300) mb=0
+    29.441	[m3] step 994 at +2836 sched 2836 irq=0 -> mouse (452,300) mb=0
+    29.450	[m3] step 995 at +2838 sched 2838 irq=0 -> mouse (454,300) mb=0
+    29.450	[i01] trap 19952 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5886
+    29.461	[m3] step 996 at +2840 sched 2840 irq=0 -> mouse (456,300) mb=0
+    29.470	[i01] trap 19928 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5889
+    29.471	[m3] step 997 at +2842 sched 2842 irq=0 -> mouse (458,300) mb=0
+    29.480	[m3] step 998 at +2844 sched 2844 irq=0 -> mouse (460,300) mb=0
+    29.490	[i01] trap 19940 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5893
+    29.491	[m3] step 999 at +2846 sched 2846 irq=0 -> mouse (462,300) mb=0
+    29.500	[m3] step 1000 at +2848 sched 2848 irq=0 -> mouse (464,300) mb=0
+    29.510	[i01] trap 19932 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5897
+    29.511	[m3] step 1001 at +2850 sched 2850 irq=0 -> mouse (466,300) mb=0
+    29.520	[m3] step 1002 at +2852 sched 2852 irq=0 -> mouse (468,300) mb=0
+    29.530	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5901
+    29.531	[m3] step 1003 at +2854 sched 2854 irq=0 -> mouse (470,300) mb=0
+    29.541	[m3] step 1004 at +2856 sched 2856 irq=0 -> mouse (472,300) mb=0
+    29.550	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5905
+    29.551	[m3] step 1005 at +2858 sched 2858 irq=0 -> mouse (474,300) mb=0
+    29.560	[m3] step 1006 at +2860 sched 2860 irq=0 -> mouse (476,300) mb=0
+    29.570	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5909
+    29.570	[m3] step 1007 at +2862 sched 2862 irq=0 -> mouse (478,300) mb=0
+    29.581	[m3] step 1008 at +2864 sched 2864 irq=0 -> mouse (480,300) mb=0
+    29.590	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5913
+    29.590	[m3] step 1009 at +2866 sched 2866 irq=0 -> mouse (482,300) mb=0
+    29.601	[m3] step 1010 at +2868 sched 2868 irq=0 -> mouse (484,300) mb=0
+    29.610	[i01] trap 19939 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5917
+    29.610	[m3] step 1011 at +2870 sched 2870 irq=0 -> mouse (486,300) mb=0
+    29.622	[m3] step 1012 at +2872 sched 2872 irq=0 -> mouse (488,300) mb=0
+    29.630	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5921
+    29.631	[m3] step 1013 at +2874 sched 2874 irq=0 -> mouse (490,300) mb=0
+    29.640	[m3] step 1014 at +2876 sched 2876 irq=0 -> mouse (492,300) mb=0
+    29.650	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5925
+    29.651	[m3] step 1015 at +2878 sched 2878 irq=0 -> mouse (494,300) mb=0
+    29.660	[m3] step 1016 at +2880 sched 2880 irq=0 -> mouse (496,300) mb=0
+    29.670	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5929
+    29.670	[m3] step 1017 at +2882 sched 2882 irq=0 -> mouse (498,300) mb=0
+    29.681	[m3] step 1018 at +2884 sched 2884 irq=0 -> mouse (500,300) mb=0
+    29.690	[i01] trap 19937 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5933
+    29.690	[m3] step 1019 at +2886 sched 2886 irq=0 -> mouse (498,300) mb=0
+    29.710	[i01] trap 19931 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5937
+    29.730	[i01] trap 19933 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5941
+    29.750	[i01] trap 19932 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5945
+    29.770	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5949
+    29.790	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5953
+    29.810	[i01] trap 19940 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5958
+    29.830	[i01] trap 19940 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5962
+    29.850	[i01] trap 19942 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5965
+    29.870	[i01] trap 19935 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5969
+    29.890	[i01] trap 19933 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5973
+    29.910	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5977
+    29.930	[i01] trap 19932 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5981
+    29.950	[i01] trap 19939 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5985
+    29.970	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5989
+    29.990	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5994
+    30.010	[i01] trap 19911 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 5998
+    30.030	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6001
+    30.050	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6006
+    30.070	[i01] trap 19937 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6009
+    30.090	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6013
+    30.110	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6017
+    30.130	[i01] trap 19935 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6021
+    30.150	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6025
+    30.170	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6029
+    30.190	[i01] trap 19954 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6034
+    30.210	[i01] trap 19924 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6038
+    30.230	[i01] trap 19940 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6041
+    30.250	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6045
+    30.260	[m3] MARK C_AFTER_MOVE step 1020 at +3000 sched 3000 irq=0 mouse (498,300) mb=0
+    30.270	[i01] trap 19940 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6049
+    30.290	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6053
+    30.310	[i01] trap 19935 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6057
+    30.330	[i01] trap 19932 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6061
+    30.350	[i01] trap 19944 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6065
+    30.370	[i01] trap 19928 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6069
+    30.390	[i01] trap 19738 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6074
+    30.410	[i01] trap 19923 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6078
+    30.430	[i01] trap 19940 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6081
+    30.450	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6085
+    30.470	[i01] trap 19937 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6089
+    30.490	[i01] trap 19930 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6094
+    30.510	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6097
+    30.530	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6101
+    30.550	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6105
+    30.577	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6109
+    30.590	[i01] trap 19933 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6114
+    30.610	[i01] trap 19941 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6117
+    30.630	[i01] trap 19932 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6121
+    30.650	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6125
+    30.670	[i01] trap 19944 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6130
+    30.690	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6133
+    30.710	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6137
+    30.730	[i01] trap 19930 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6141
+    30.750	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6146
+    30.770	[i01] trap 19945 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6149
+    30.790	[i01] trap 19923 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6153
+    30.810	[i01] trap 19940 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6157
+    30.830	[i01] trap 19946 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6162
+    30.850	[i01] trap 19715 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6165
+    30.870	[i01] trap 19878 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6170
+    30.890	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6174
+    30.910	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6177
+    30.930	[i01] trap 19937 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6181
+    30.950	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6186
+    30.970	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6189
+    30.990	[i01] trap 19935 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6193
+    31.010	[i01] trap 19929 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6197
+    31.030	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6201
+    31.050	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6205
+    31.070	[i01] trap 19689 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6210
+    31.090	[i01] trap 19895 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6214
+    31.110	[i01] trap 19937 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6217
+    31.130	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6221
+    31.150	[i01] trap 19932 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6225
+    31.170	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6229
+    31.190	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6233
+    31.210	[i01] trap 19930 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6237
+    31.230	[i01] trap 19929 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6241
+    31.250	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6245
+    31.270	[i01] trap 19718 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6249
+    31.290	[i01] trap 19879 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6254
+    31.310	[i01] trap 19920 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6258
+    31.330	[i01] trap 19939 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6261
+    31.350	[i01] trap 19931 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6265
+    31.370	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6270
+    31.390	[i01] trap 19940 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6273
+    31.410	[i01] trap 19937 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6277
+    31.430	[i01] trap 19937 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6281
+    31.450	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6285
+    31.470	[i01] trap 19933 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6289
+    31.490	[i01] trap 19930 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6294
+    31.510	[i01] trap 19939 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6297
+    31.530	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6301
+    31.550	[i01] trap 19932 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6305
+    31.570	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6309
+    31.590	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6313
+    31.610	[i01] trap 19890 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6318
+    31.630	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6322
+    31.650	[i01] trap 19943 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6325
+    31.670	[i01] trap 19941 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6329
+    31.690	[i01] trap 19928 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6334
+    31.710	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6337
+    31.730	[i01] trap 19923 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6341
+    31.750	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6345
+    31.770	[i01] trap 19930 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6349
+    31.790	[i01] trap 19926 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6353
+    31.810	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6358
+    31.830	[i01] trap 19940 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6362
+    31.850	[i01] trap 19939 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6365
+    31.870	[i01] trap 19933 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6369
+    31.890	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6374
+    31.910	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6377
+    31.930	[i01] trap 19940 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6381
+    31.950	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6385
+    31.970	[i01] trap 19937 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6389
+    31.990	[i01] trap 19940 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6393
+    32.010	[i01] trap 19932 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6397
+    32.030	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6402
+    32.050	[i01] trap 19943 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6405
+    32.070	[i01] trap 19937 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6409
+    32.090	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6414
+    32.110	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6417
+    32.130	[i01] trap 19937 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6421
+    32.150	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6425
+    32.170	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6429
+    32.190	[i01] trap 19940 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6433
+    32.210	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6437
+    32.230	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6441
+    32.250	[i01] trap 19932 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6445
+    32.270	[i01] trap 19937 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6449
+    32.290	[i01] trap 19928 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6454
+    32.310	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6457
+    32.330	[i01] trap 19941 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6462
+    32.350	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6466
+    32.370	[i01] trap 19944 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6469
+    32.390	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6473
+    32.410	[i01] trap 19932 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6478
+    32.430	[i01] trap 19940 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6481
+    32.450	[i01] trap 19935 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6485
+    32.470	[i01] trap 19935 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6489
+    32.490	[i01] trap 19940 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6493
+    32.510	[i01] trap 19935 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6497
+    32.530	[i01] trap 19939 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6501
+    32.550	[i01] trap 19935 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6506
+    32.570	[i01] trap 19745 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6510
+    32.590	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6513
+    32.610	[i01] trap 19937 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6517
+    32.630	[i01] trap 19935 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6521
+    32.650	[i01] trap 19933 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6526
+    32.670	[i01] trap 19943 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6529
+    32.690	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6533
+    32.710	[i01] trap 19935 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6537
+    32.730	[i01] trap 19930 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6541
+    32.750	[i01] trap 19930 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6545
+    32.770	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6549
+    32.790	[i01] trap 19937 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6553
+    32.810	[i01] trap 19933 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6557
+    32.830	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6561
+    32.850	[i01] trap 19942 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6565
+    32.870	[i01] trap 19924 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6569
+    32.890	[i01] trap 19933 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6573
+    32.910	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6577
+    32.930	[i01] trap 19933 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6581
+    32.950	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6585
+    32.970	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6589
+    32.990	[i01] trap 19932 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6593
+    33.010	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6597
+    33.030	[i01] trap 19930 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6601
+    33.050	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6605
+    33.070	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6609
+    33.090	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6613
+    33.110	[i01] trap 19933 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6617
+    33.130	[i01] trap 19937 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6621
+    33.150	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6625
+    33.170	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6629
+    33.190	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6633
+    33.210	[i01] trap 19904 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6638
+    33.230	[i01] trap 19937 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6641
+    33.250	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6645
+    33.270	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6649
+    33.290	[i01] trap 19928 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6653
+    33.310	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6657
+    33.330	[i01] trap 19932 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6661
+    33.350	[i01] trap 19932 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6665
+    33.370	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6669
+    33.390	[i01] trap 19963 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6674
+    33.410	[i01] trap 19883 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6678
+    33.430	[i01] trap 19932 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6682
+    33.450	[i01] trap 19939 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6685
+    33.470	[i01] trap 19935 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6689
+    33.490	[i01] trap 19940 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6693
+    33.510	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6697
+    33.530	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6701
+    33.550	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6705
+    33.570	[i01] trap 19940 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6709
+    33.590	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6713
+    33.610	[i01] trap 19935 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6717
+    33.630	[i01] trap 19933 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6721
+    33.650	[i01] trap 19943 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6725
+    33.670	[i01] trap 19932 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6729
+    33.690	[i01] trap 19884 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6734
+    33.710	[i01] trap 19955 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6737
+    33.730	[i01] trap 19922 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6741
+    33.750	[i01] trap 19935 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6745
+    33.770	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6750
+    33.790	[i01] trap 19937 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6753
+    33.810	[i01] trap 19939 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6757
+    33.830	[i01] trap 19929 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6761
+    33.850	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6765
+    33.870	[i01] trap 19964 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6770
+    33.890	[i01] trap 19896 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6774
+    33.910	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6777
+    33.930	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6781
+    33.950	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6786
+    33.970	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6789
+    33.990	[i01] trap 19940 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6793
+    34.010	[i01] trap 19937 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6797
+    34.030	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6801
+    34.050	[i01] trap 19940 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6805
+    34.070	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6810
+    34.090	[i01] trap 19937 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6813
+    34.110	[i01] trap 19935 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6817
+    34.130	[i01] trap 19926 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6822
+    34.150	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6825
+    34.170	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6829
+    34.190	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6833
+    34.210	[i01] trap 19882 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6838
+    34.230	[i01] trap 19947 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6841
+    34.250	[i01] trap 19927 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6845
+    34.270	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6849
+    34.290	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6853
+    34.310	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6857
+    34.330	[i01] trap 19932 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6861
+    34.350	[i01] trap 19940 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6865
+    34.370	[i01] trap 19930 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6870
+    34.390	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6873
+    34.410	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6877
+    34.430	[i01] trap 19929 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6881
+    34.450	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6885
+    34.470	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6889
+    34.490	[i01] trap 19892 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6894
+    34.510	[i01] trap 19940 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6898
+    34.530	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6901
+    34.550	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6905
+    34.570	[i01] trap 19931 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6909
+    34.590	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6913
+    34.610	[i01] trap 19940 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6917
+    34.630	[i01] trap 19933 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6921
+    34.650	[i01] trap 19932 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6925
+    34.670	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6930
+    34.690	[i01] trap 19932 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6933
+    34.710	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6937
+    34.730	[i01] trap 19924 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6941
+    34.750	[i01] trap 19933 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6945
+    34.770	[i01] trap 19954 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6950
+    34.790	[i01] trap 19648 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6954
+    34.810	[i01] trap 19932 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6958
+    34.830	[i01] trap 19940 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6961
+    34.850	[i01] trap 19937 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6965
+    34.870	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6970
+    34.890	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6973
+    34.910	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6977
+    34.930	[i01] trap 19940 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6981
+    34.950	[i01] trap 19942 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6985
+    34.970	[i01] trap 19963 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6990
+    34.990	[i01] trap 19894 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6994
+    35.010	[i01] trap 19943 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 6998
+    35.030	[i01] trap 19939 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 7001
+    35.050	[i01] trap 19937 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 7005
+    35.070	[i01] trap 19932 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 7009
+    35.090	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 7013
+    35.110	[i01] trap 19932 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 7017
+    35.130	[i01] trap 19940 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 7021
+    35.150	[i01] trap 19935 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 7026
+    35.170	[i01] trap 19926 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 7029
+    35.190	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 7033
+    35.210	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 7037
+    35.230	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 7042
+    35.250	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 7045
+    35.260	[m3] MARK D_ZV_UP step 1021 at +4000 sched 4000 irq=0 mouse (498,300) mb=0
+    35.270	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 7049
+    35.290	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 7053
+    35.310	[i01] trap 19943 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 7057
+    35.330	[i01] trap 19937 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 7061
+    35.350	[i01] trap 19878 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 7065
+    35.370	[i01] trap 19933 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 7069
+    35.390	[i01] trap 19932 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 7073
+    35.410	[i01] trap 19940 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 7077
+    35.430	[i01] trap 19926 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 7081
+    35.450	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 7085
+    35.470	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 7089
+    35.490	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 7093
+    35.510	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 7097
+    35.530	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 7101
+    35.550	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 7105
+    35.576	[i01] trap 19936 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 7109
+    35.590	[i01] trap 19904 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 7113
+    35.610	[i01] trap 19938 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 7117
+    35.630	[i01] trap 19935 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 7121
+    35.650	[i01] trap 19937 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 7125
+    35.670	[i01] trap 19934 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 7129
+    35.690	[i01] trap 19930 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 7133
+    35.710	[i01] trap 19942 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 7137
+    35.730	[i01] trap 19945 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 7142
+    35.750	[i01] trap 19800 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 7145
+    35.761	[m3] step 1022 at +4100 sched 4100 irq=0 -> mouse (371,173) mb=0
+    35.765	[m3] step 1023 at +4101 sched 4101 irq=0 -> mouse (244,46) mb=0
+    35.770	[m3] step 1024 at +4102 sched 4102 irq=0 -> mouse (117,8) mb=0
+    35.770	[i01] trap 19970 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 7150
+    35.776	[m3] step 1025 at +4103 sched 4103 irq=0 -> mouse (76,8) mb=0
+    37.259	[m3] step 1026 at +4400 sched 4400 irq=0 -> mouse (104,135) mb=0
+    37.265	[m3] step 1027 at +4401 sched 4401 irq=0 -> mouse (104,203) mb=0
+    38.261	[m3] step 1028 at +4600 sched 4600 irq=0 -> mouse (104,203) mb=1
+    38.262	[i01] trap 2491831 us from el0 ec 0x15 svc 0x2 fn 0x0 x0 0xc8 hz 7648
+    38.272	[i01] trap 9044 us from el0 ec 0x15 svc 0x1 fn 0x3c x0 0x1b2e0b0 hz 7648
+    38.274	[m3] step 1029 at +4603 sched 4603 irq=1 -> mouse (104,203) mb=1
+    38.276	[sched] switch -> slot 0
+    38.276	[sched] running
+    38.276	[sched] switch -> slot 1
+    38.276	[sched] running
+    38.276	[sched] switch -> slot 2
+    38.276	[sched] running
+    38.277	[launch] returned (program Pterm'd)
+    38.277	[shell] sh_ldapp: 'C:\ZVIEW\ZVIEW.NAP' exited with rc=0
+    38.278	[shell] sh_ldapp: starting NEWDESK, sh_nextapp=3, sh_isgem=1
+    38.401	[i01] trap 119263 us from el1 ec 0x15 svc 0x2 fn 0xffff0000002dd550 x0 0xc8 hz 7676
+    38.405	[desk] desktop up (1 drives, 1 window(s) from the context)
+    45.261	[m3] MARK E_DESK_AGAIN step 1030 at +6000 sched 6000 irq=0 mouse (104,203) mb=0
+    46.261	[m3] step 1031 at +6200 sched 6200 irq=0 -> mouse (231,330) mb=0
+    46.264	[m3] step 1032 at +6201 sched 6201 irq=0 -> mouse (358,457) mb=0
+    46.268	[m3] step 1033 at +6202 sched 6202 irq=0 -> mouse (485,479) mb=0
+    46.276	[m3] step 1034 at +6203 sched 6203 irq=0 -> mouse (612,479) mb=0
+    46.281	[m3] step 1035 at +6204 sched 6204 irq=0 -> mouse (639,479) mb=0
+    46.285	[m3] step 1036 at +6205 sched 6205 irq=0 -> mouse (639,479) mb=0
+    47.259	[m3] MARK END step 1037 at +6400 sched 6400 irq=0 mouse (639,479) mb=0

@@ -1,0 +1,7 @@
+DIFF END.png: CURSOR? (368,92)-(376,104)
+DIFF END.png: CURSOR? (368,108)-(376,120)
+DIFF END.png: OTHER (384,88)-(400,120)
+DIFF E_MENU_CLICKED.png: CURSOR? (368,92)-(376,104)
+DIFF E_MENU_CLICKED.png: CURSOR? (368,108)-(376,120)
+DIFF E_MENU_CLICKED.png: OTHER (384,88)-(400,120)
+desk- vs irq-desk-: same=4 cursor-only=0 other=2 missing=0

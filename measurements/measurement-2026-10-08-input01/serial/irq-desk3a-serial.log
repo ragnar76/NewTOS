@@ -1,0 +1,114 @@
+RB2
+NewTOS booting on rpi4
+[serial] output on: boot arguments contain `serial=on`
+Phase 02 reached.
+[mm] DTB at 0x0000000000000100
+[mm] firmware: ARM memory bank 0: 0x0000000000000000 + 1006632960 bytes (960 MiB)
+[mm] firmware: VC memory: 0x000000003c000000 + 67108864 bytes (64 MiB)
+[mm] device tree: no usable /memory node (blob invalid or absent)
+[clock] ARM 700 -> 700 MHz (max 700, measured ?, SoC 25.0 C)
+[mm] memory map:
+[mm]   DRAM  : 0x0000000000000000..0x000000003c000000 (1006632960 bytes) — source: firmware
+[mm]   kernel: 0x0000000000080000..0x00000000002da000 (2465792 bytes)
+[mm]   ST-RAM: 0x0000000000400000..0x0000000000e00000 (10485760 bytes)
+[mm]   TT-RAM: 0x0000000001000000..0x0000000039e00000 (954204160 bytes)
+[mm]   OSrsvd: 0x0000000039e00000..0x000000003c000000 (35651584 bytes)
+[mm]     bcach: 0x0000000039e00000..0x000000003be00000 (33554432 bytes)
+[mm]     heap: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]   MMIO 00: 0x00000000fd500000..0x00000000fd510000
+[mm]   MMIO 01: 0x00000000fe000000..0x00000000ff000000
+[mm]   MMIO 02: 0x00000000ff800000..0x0000000100000000
+[mm] MMU reinstalled (high-half via TTBR1, TTBR0 deferred to Phase 06).
+[mm] frames ST-RAM: total=2560 used=0 free=2560 (10485760 B free)
+[mm] frames TT-RAM: total=232960 used=0 free=232960 (954204160 B free)
+[mm] alloc ST-RAM frame -> 0x0000000000400000
+[mm] alloc TT-RAM frame -> 0x0000000001000000
+[mm] heap after init: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[mm] heap smoke OK
+[mm] heap after smoke: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[fb] VideoCore display geometry detected: 640x480
+[fb] alpha mode = 2
+[fb] 640x480 pitch 2560 virtual height 960 -> 2 screen page(s), 2400 KiB
+[fb] VideoCore fb up: 640x480 stride 640px
+[mm] memory protection ON: table arena 0x01000000+2424 tables
+[mm] BDOS pools: ST-RAM 0x00400000+10485760 TT-RAM 0x01978000+944275456
+[mm] user address space: pools mapped VA = PA (456 shared L3 tables, 4-KiB pages, rights per process)
+[mm] BDOS ST-RAM after init: total=10485760 free=10485760 used=0 largest_free=10485760 (free_mds=1 alloc_mds=0)
+[mm] BDOS TT-RAM after init: total=944275456 free=944275456 used=0 largest_free=944275456 (free_mds=1 alloc_mds=0)
+[input] keyboard/mouse pump: AES waits, console reads and the 200 Hz tick while a program runs (input=aes switches the tick off)
+[bcache] FS09 block read cache: 32768 KiB at 0x39e00000 (asked 32768 KiB, default), 61680 sectors of 512 B, linear-read share 5 % (default), write-through
+[emmc] SD card on controller @ 0xffff0000fe300000
+[emmc] M1 SLOTISR_VER=0x24020000 (SDHCI spec 0x02) CAPABILITIES=0x052134b4 (base 52 MHz)
+[emmc] M1 CONTROL0=0x00000f02 CONTROL1=0x000e0207 div=2 -> SDCLK ~13000000 Hz
+[emmc] M1 mailbox clock rate: EMMC(1)=50000000 Hz EMMC2(12)=700000000 Hz
+[emmc] FS08 mode: multi-block (CMD18/CMD25 + Auto CMD12) — bus 4-bit (ACMD6 ok, SCR SD_BUS_WIDTHS=0x5), CONTROL0[1] Data Transfer Width=1
+[emmc] M1 during identification: 2 error(s), 0 timeout(s), 2 recovery(ies) CTO=2
+[clock] no kernel8.img FAT date on C: — clock stays at 1980-01-01
+[pcie] RC not present (no response at RC_BASE); USB disabled
+[proc] stand-in PDs: initial_basepage 0x00251000, AES PD 0x00251100 (read-only to all)
+[aes] gsx_malloc: screen buffer pa=0x01978000 len=614400 (kernel-owned, WF_SCREEN)
+[shell] sh_ldapp: starting NEWDESK, sh_nextapp=3, sh_isgem=1
+[desk] desktop up (1 drives, 1 window(s) from the context)
+[m3] injector armed at hz_200 3033
+[m3] step 0 at +100 sched 100 irq=0 -> mouse (446,366) mb=0
+[m3] step 1 at +101 sched 101 irq=0 -> mouse (573,479) mb=0
+[m3] step 2 at +102 sched 102 irq=0 -> mouse (639,479) mb=0
+[m3] step 3 at +103 sched 103 irq=0 -> mouse (639,479) mb=0
+[m3] step 4 at +104 sched 104 irq=0 -> mouse (639,479) mb=0
+[m3] step 5 at +105 sched 105 irq=0 -> mouse (639,479) mb=0
+[m3] MARK A_IDLE step 6 at +400 sched 400 irq=0 mouse (639,479) mb=0
+[m3] step 7 at +600 sched 600 irq=0 -> mouse (512,352) mb=0
+[m3] step 8 at +601 sched 601 irq=0 -> mouse (385,225) mb=0
+[m3] step 9 at +602 sched 602 irq=0 -> mouse (258,120) mb=0
+[m3] step 10 at +603 sched 603 irq=0 -> mouse (131,120) mb=0
+[m3] step 11 at +604 sched 604 irq=0 -> mouse (63,120) mb=0
+[m3] step 12 at +800 sched 800 irq=0 -> mouse (63,120) mb=1
+[m3] step 13 at +803 sched 803 irq=0 -> mouse (63,120) mb=0
+[m3] step 14 at +808 sched 808 irq=0 -> mouse (63,120) mb=1
+[m3] step 15 at +811 sched 811 irq=0 -> mouse (63,120) mb=0
+[m3] MARK B_SUB step 16 at +2000 sched 2000 irq=0 mouse (63,120) mb=0
+[m3] step 17 at +2200 sched 2200 irq=0 -> mouse (27,74) mb=0
+[m3] step 18 at +2400 sched 2400 irq=0 -> mouse (27,74) mb=1
+[m3] step 19 at +2405 sched 2405 irq=0 -> mouse (27,74) mb=0
+[m3] MARK C_UP step 20 at +3400 sched 3400 irq=0 mouse (27,74) mb=0
+[m3] step 21 at +3600 sched 3600 irq=0 -> mouse (154,120) mb=0
+[m3] step 22 at +3601 sched 3601 irq=0 -> mouse (231,120) mb=0
+[m3] step 23 at +3800 sched 3800 irq=0 -> mouse (231,120) mb=1
+[m3] step 24 at +3805 sched 3805 irq=0 -> mouse (231,120) mb=0
+[m3] step 25 at +4000 sched 4000 irq=0 -> mouse (358,247) mb=0
+[m3] step 26 at +4001 sched 4001 irq=0 -> mouse (485,374) mb=0
+[m3] step 27 at +4002 sched 4002 irq=0 -> mouse (612,479) mb=0
+[m3] step 28 at +4003 sched 4003 irq=0 -> mouse (639,479) mb=0
+[m3] step 29 at +4004 sched 4004 irq=0 -> mouse (639,479) mb=0
+[m3] step 30 at +4005 sched 4005 irq=0 -> mouse (639,479) mb=0
+[m3] MARK D_SELECTED step 31 at +4400 sched 4400 irq=0 mouse (639,479) mb=0
+[m3] step 32 at +4600 sched 4600 irq=0 -> mouse (639,479) mb=0
+[m3] step 33 at +4610 sched 4610 irq=0 -> mouse (639,479) mb=0
+[m3] step 34 at +4620 sched 4620 irq=0 -> mouse (639,479) mb=0
+[m3] step 35 at +4630 sched 4630 irq=0 -> mouse (639,479) mb=0
+[m3] MARK E_INFO step 36 at +5600 sched 5600 irq=0 mouse (639,479) mb=0
+[m3] step 37 at +5800 sched 5800 irq=0 -> mouse (639,479) mb=0
+[m3] step 38 at +5805 sched 5805 irq=0 -> mouse (639,479) mb=0
+[m3] step 39 at +5900 sched 5900 irq=0 -> mouse (639,479) mb=0
+[m3] step 40 at +5905 sched 5905 irq=0 -> mouse (639,479) mb=0
+[m3] step 41 at +5920 sched 5920 irq=0 -> mouse (639,479) mb=0
+[m3] step 42 at +5925 sched 5925 irq=0 -> mouse (639,479) mb=0
+[m3] step 43 at +5940 sched 5940 irq=0 -> mouse (639,479) mb=0
+[m3] step 44 at +5945 sched 5945 irq=0 -> mouse (639,479) mb=0
+[m3] step 45 at +5960 sched 5960 irq=0 -> mouse (639,479) mb=0
+[m3] step 46 at +5965 sched 5965 irq=0 -> mouse (639,479) mb=0
+[m3] step 47 at +5980 sched 5980 irq=0 -> mouse (639,479) mb=0
+[m3] step 48 at +5985 sched 5985 irq=0 -> mouse (639,479) mb=0
+[m3] step 49 at +6000 sched 6000 irq=0 -> mouse (639,479) mb=0
+[m3] step 50 at +6005 sched 6005 irq=0 -> mouse (639,479) mb=0
+[m3] step 51 at +6020 sched 6020 irq=0 -> mouse (639,479) mb=0
+[m3] step 52 at +6025 sched 6025 irq=0 -> mouse (639,479) mb=0
+[m3] MARK F_TYPED step 53 at +6400 sched 6400 irq=0 mouse (639,479) mb=0
+[m3] step 54 at +6600 sched 6600 irq=0 -> mouse (639,479) mb=0
+[m3] step 55 at +6605 sched 6605 irq=0 -> mouse (639,479) mb=0
+[m3] MARK G_RENAMED step 56 at +7800 sched 7800 irq=0 mouse (639,479) mb=0
+[m3] step 57 at +8000 sched 8000 irq=0 -> mouse (639,479) mb=0
+[m3] step 58 at +8010 sched 8010 irq=0 -> mouse (639,479) mb=0
+[m3] step 59 at +8037 sched 8020 irq=0 -> mouse (639,479) mb=0
+[m3] step 60 at +8037 sched 8030 irq=0 -> mouse (639,479) mb=0
+[m3] MARK H_DRIVE_C step 61 at +9600 sched 9600 irq=0 mouse (639,479) mb=0

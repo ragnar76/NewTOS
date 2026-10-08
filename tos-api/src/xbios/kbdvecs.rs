@@ -250,6 +250,8 @@ impl Ring {
 /// One ring per process slot. Producer is the input pump (`route_key`),
 /// consumer the trap return path (`pop`); both run on the single CPU in the
 /// synchronous trap context, never in an interrupt, so they never overlap.
+/// (INPUT01's timer-interrupt pump decodes pointer motion only; key bytes
+/// stay held for the trap-side pump — `kernel::input_gate`.)
 static RINGS: [Ring; MAX_PROCESSES] = [const { Ring::new() }; MAX_PROCESSES];
 
 /// Append `byte` to `slot`'s ring. A full ring drops the **newest** byte

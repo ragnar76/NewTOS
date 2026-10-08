@@ -1,0 +1,63 @@
+INPUT01 -- Mauszeiger bewegt sich auch, waehrend ein Programm arbeitet (2026-10-08)
+==================================================================================
+
+Was ist das?
+  kernel8.img in diesem Ordner ist der normale NewTOS-Kernel (Stand
+  ofam-2026 + INPUT01, release, board-rpi4), OHNE Messwerkzeug. Neu: der
+  200-Hz-Zeitgeber-Interrupt fragt die USB-Maus auch dann ab, wenn gerade
+  ein Programm rechnet oder zwischen zwei Systemaufrufen steht. Bisher
+  wurde die Maus nur abgefragt, wenn ein Programm im AES wartete -- daher
+  stand der Zeiger z.B. beim zView-Start rund 1 s still.
+  sha256 kernel8.img:
+  50f922a804e56748bc6d6f57de15f00c847f6873f897864f55c1b2c996347e7c
+  (Startzeile zeigt "NewTOS 0.1 2026-10-08 (3ffb55fc)" -- gebaut auf ofam-2026+Doku
+  mit den noch nicht committeten INPUT01-Aenderungen)
+
+  Was sich NICHT aendert: Klicks, Doppelklick, Mausrad und Tastatur
+  werden genau wie bisher zugestellt (im AES-Warten / beim Lesen der
+  Konsole). Neu ist nur, dass der ZEIGER sich bewegt.
+  Restliche Stillstaende sind erwartet: waehrend EINES langen
+  Systemaufrufs (z.B. ein Pexec, der einen Codec laedt, oder ein grosser
+  Bildschirm-Blit) steht der Zeiger weiterhin -- danach springt er an die
+  aktuelle Position. Ebenso, solange der eingebaute Desktop (EmuDESK)
+  selbst arbeitet (z.B. Dateien kopiert).
+
+Einspielen
+  1. Auf der Karte (Boot-Partition) den vorhandenen kernel8.img in
+     kernel8.org umbenennen.
+  2. Diesen kernel8.img dorthin kopieren.
+  3. Karte in die Pi, einschalten.
+  Beim Booten steht (nur mit serial=on auf der seriellen Leitung) eine Zeile
+  "[input] keyboard/mouse pump: ...".
+
+Was bitte ausprobieren
+  P1  zView per Doppelklick starten und SOFORT die Maus kreisen lassen.
+      Erwartet: der Zeiger folgt waehrend des Ladens (ggf. leicht ruckelnd,
+      einzelne kurze Haenger beim Laden eines grossen Codecs), statt ~1 s
+      stillzustehen.
+  P2  zView: File > Browser, einen Ordner mit grossen Fotos oeffnen und
+      waehrend die Vorschaubilder entstehen die Maus bewegen.
+      Erwartet: der Zeiger bewegt sich fluessig (vorher: Stillstand je Bild).
+  P3  Klicks und Doppelklicks wie gewohnt (Desktop, zView, TeraDesk, QED):
+      alles muss genau wie vorher funktionieren -- Menues, Doppelklick auf
+      Ordner, Fenster schieben, Rollpfeile.
+  P4  DOOM starten, spielen (Tastatur), beenden: wie vorher.
+  P5  Tastatur in QED / EmuCON tippen, Taste gedrueckt halten
+      (Wiederholung): wie vorher.
+  Bitte melden: Zeichenfehler am Mauszeiger (Reste/"Schmierspuren"),
+  verlorene oder doppelte Klicks/Tasten, Haenger.
+
+Abschalten, falls etwas nicht stimmt (ohne Kernelwechsel)
+  In cmdline.txt auf der Boot-Partition (eine Zeile, Optionen durch
+  Leerzeichen getrennt) das Wort
+      input=aes
+  anhaengen, z.B.:   serial=on input=aes
+  Dann verhaelt sich die Maus genau wie im Stand ofam-2026 (Abfrage nur
+  im AES-Warten). Wort wieder entfernen = neues Verhalten.
+
+Zurueck auf den alten Kernel
+  kernel8.img loeschen, kernel8.org wieder in kernel8.img umbenennen.
+
+Hintergrund
+  TASK/INPUT01.md, TASK/INPUT01-STATUS-*.MD,
+  measurements/measurement-2026-10-08-input01/RUNINFO.TXT

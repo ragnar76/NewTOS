@@ -1,0 +1,172 @@
+t=  46.2s irq-zv-dclick-Z02_BROWSER.png {"return": {}}
+t=  58.7s irq-zv-dclick-Z06_ZVIEW_DIR.png {"return": {}}
+t=  86.2s irq-zv-dclick-Z07_SAMPLES.png {"return": {}}
+t=  87.1s end marker seen
+t=  88.1s irq-zv-dclick-END.png {"return": {}}
+t=  89.1s irq-zv-dclick-end.png {"return": {}}
+prompts seen: 0
+run irq-zv-dclick: rc=0
+f0574450b06ef8fa5616e8de13f6697b9ede780eff57a1d3d64a49b1e2fa6ad7  run-irq-zv-dclick.img (deleted)
+t=  31.2s irq-zv-browser-Z00_IDLE.png {"return": {}}
+t=  33.2s irq-zv-browser-Z01_MENU.png {"return": {}}
+t=  46.1s irq-zv-browser-Z02_BROWSER.png {"return": {}}
+t=  61.2s irq-zv-browser-Z03_LATER.png {"return": {}}
+t=  67.7s irq-zv-browser-Z04_SELECTED.png {"return": {}}
+t=  76.2s irq-zv-browser-Z05_TREE.png {"return": {}}
+t=  77.1s end marker seen
+t=  78.1s irq-zv-browser-END.png {"return": {}}
+t=  79.1s irq-zv-browser-end.png {"return": {}}
+prompts seen: 0
+run irq-zv-browser: rc=0
+ed896ed9cd55045d873cbc501e21b6adfe4335638147e8028e72503182ae07e4  run-irq-zv-browser.img (deleted)
+t=  31.2s irq-zv-quit-Z00_IDLE.png {"return": {}}
+t=  33.2s irq-zv-quit-Z01_MENU.png {"return": {}}
+t=  46.2s irq-zv-quit-Z02_BROWSER.png {"return": {}}
+t=  48.2s irq-zv-quit-Z03_FILEMENU.png {"return": {}}
+t=  49.7s irq-zv-quit-Z04_ONQUIT.png {"return": {}}
+t=  56.2s irq-zv-quit-Z05_AFTERQUIT.png {"return": {}}
+t=  57.1s end marker seen
+t=  58.1s irq-zv-quit-END.png {"return": {}}
+t=  59.1s irq-zv-quit-end.png {"return": {}}
+prompts seen: 0
+run irq-zv-quit: rc=0
+8e618d5f3648e8aab175c2f58e9de8d75fef6a3aa6d666113e50426004d75b65  run-irq-zv-quit.img (deleted)
+t=  23.5s aes-acc-on-S00_WINDOW.png {"return": {}}
+t=  27.5s aes-acc-on-S01_INFO_ALERT_KBD.png {"return": {}}
+t=  33.5s aes-acc-on-S02_ALERT_GONE.png {"return": {}}
+t=  37.5s aes-acc-on-S03_INFO_ALERT_LONGPRESS.png {"return": {}}
+t=  43.5s aes-acc-on-S04_ALERT_GONE2.png {"return": {}}
+t=  47.0s aes-acc-on-S05_SHORTCLICK.png {"return": {}}
+t=  50.5s aes-acc-on-S05B_ALERT_GONE3.png {"return": {}}
+t=  54.0s aes-acc-on-S06_VALUE_TYPED.png {"return": {}}
+t=  60.6s end marker seen
+t=  61.0s aes-acc-on-END_CLOSED.png {"return": {}}
+t=  62.7s aes-acc-on-end.png {"return": {}}
+prompts seen: 0
+run aes-acc-on: rc=0
+t=  23.5s aes-acc-strict-S00_WINDOW.png {"return": {}}
+t=  27.5s aes-acc-strict-S01_INFO_ALERT_KBD.png {"return": {}}
+t=  33.5s aes-acc-strict-S02_ALERT_GONE.png {"return": {}}
+t=  37.5s aes-acc-strict-S03_INFO_ALERT_LONGPRESS.png {"return": {}}
+t=  43.5s aes-acc-strict-S04_ALERT_GONE2.png {"return": {}}
+t=  47.0s aes-acc-strict-S05_SHORTCLICK.png {"return": {}}
+t=  50.5s aes-acc-strict-S05B_ALERT_GONE3.png {"return": {}}
+t=  54.0s aes-acc-strict-S06_VALUE_TYPED.png {"return": {}}
+t=  60.6s end marker seen
+t=  61.0s aes-acc-strict-END_CLOSED.png {"return": {}}
+t=  62.7s aes-acc-strict-end.png {"return": {}}
+prompts seen: 0
+run aes-acc-strict: rc=0
+t=  17.5s aes-desk-A_IDLE.png {"return": {}}
+t=  26.5s aes-desk-B_DRIVE_OPEN.png {"return": {}}
+t=  35.5s aes-desk-C_FOLDER_OPEN.png {"return": {}}
+t=  38.5s aes-desk-D_VIEW_OPEN.png {"return": {}}
+t=  44.5s aes-desk-E_MENU_CLICKED.png {"return": {}}
+t=  47.1s end marker seen
+t=  47.5s aes-desk-END.png {"return": {}}
+t=  48.1s aes-desk-end.png {"return": {}}
+prompts seen: 0
+run aes-desk: rc=0
+t=  23.5s aes-tera-T00_DESK.png {"return": {}}
+t=  27.5s aes-tera-T01_TRASH_SELECTED.png {"return": {}}
+t=  36.5s aes-tera-T02_DRIVE_OPEN.png {"return": {}}
+t=  39.1s end marker seen
+t=  39.5s aes-tera-END.png {"return": {}}
+t=  40.2s aes-tera-end.png {"return": {}}
+prompts seen: 0
+run aes-tera: rc=0
+t=  23.6s aes-qed-Q00_UP.png {"return": {}}
+t=  25.6s aes-qed-Q01_DATEI_OPEN.png {"return": {}}
+t=  32.6s aes-qed-Q02_ITEM_CLICKED.png {"return": {}}
+t=  35.2s end marker seen
+t=  35.6s aes-qed-END.png {"return": {}}
+t=  36.2s aes-qed-end.png {"return": {}}
+prompts seen: 0
+run aes-qed: rc=0
+t=  17.8s aes-desk3a-A_IDLE.png {"return": {}}
+t=  25.8s aes-desk3a-B_SUB.png {"return": {}}
+t=  32.8s aes-desk3a-C_UP.png {"return": {}}
+t=  37.8s aes-desk3a-D_SELECTED.png {"return": {}}
+t=  43.8s aes-desk3a-E_INFO.png {"return": {}}
+t=  47.8s aes-desk3a-F_TYPED.png {"return": {}}
+t=  54.8s aes-desk3a-G_RENAMED.png {"return": {}}
+t=  63.2s end marker seen
+t=  63.8s aes-desk3a-H_DRIVE_C.png {"return": {}}
+t=  64.2s aes-desk3a-end.png {"return": {}}
+prompts seen: 0
+run aes-desk3a: rc=0
+t=25.0s -> aes-api-t25.png {"return": {}}
+t=40.0s -> aes-api-t40.png {"return": {}}
+run aes-api: rc=0
+t=  46.2s aes-zv-dclick-Z02_BROWSER.png {"return": {}}
+t=  58.7s aes-zv-dclick-Z06_ZVIEW_DIR.png {"return": {}}
+t=  86.2s aes-zv-dclick-Z07_SAMPLES.png {"return": {}}
+t=  87.1s end marker seen
+t=  88.1s aes-zv-dclick-END.png {"return": {}}
+t=  89.1s aes-zv-dclick-end.png {"return": {}}
+prompts seen: 0
+run aes-zv-dclick: rc=0
+18cef1680384a9476164ffb1db387b5e93967d3af23d0bc3dc701baa2aa3e644  run-aes-zv-dclick.img (deleted)
+t=  31.2s aes-zv-browser-Z00_IDLE.png {"return": {}}
+t=  33.2s aes-zv-browser-Z01_MENU.png {"return": {}}
+t=  46.1s aes-zv-browser-Z02_BROWSER.png {"return": {}}
+t=  61.2s aes-zv-browser-Z03_LATER.png {"return": {}}
+t=  67.7s aes-zv-browser-Z04_SELECTED.png {"return": {}}
+t=  76.2s aes-zv-browser-Z05_TREE.png {"return": {}}
+t=  77.1s end marker seen
+t=  78.1s aes-zv-browser-END.png {"return": {}}
+t=  79.1s aes-zv-browser-end.png {"return": {}}
+prompts seen: 0
+run aes-zv-browser: rc=0
+0916f9b6d13dc67a5fc7603cf93570a948e5633375b710e7ac71af2bc9719aec  run-aes-zv-browser.img (deleted)
+t=  31.2s aes-zv-quit-Z00_IDLE.png {"return": {}}
+t=  33.2s aes-zv-quit-Z01_MENU.png {"return": {}}
+t=  46.2s aes-zv-quit-Z02_BROWSER.png {"return": {}}
+t=  48.2s aes-zv-quit-Z03_FILEMENU.png {"return": {}}
+t=  49.7s aes-zv-quit-Z04_ONQUIT.png {"return": {}}
+t=  56.2s aes-zv-quit-Z05_AFTERQUIT.png {"return": {}}
+t=  57.1s end marker seen
+t=  58.1s aes-zv-quit-END.png {"return": {}}
+t=  59.1s aes-zv-quit-end.png {"return": {}}
+prompts seen: 0
+run aes-zv-quit: rc=0
+f6ea5cfd04b4918fd5bb5a79c77b85dba31b4b1653b9d264089e89f589ecd645  run-aes-zv-quit.img (deleted)
+t=  25.7s aes-doom-D00_START.png {"return": {}}
+t=  35.7s aes-doom-D01_RUNNING.png {"return": {}}
+t=  45.7s aes-doom-D02_RUNNING2.png {"return": {}}
+t=  59.7s aes-doom-D03_MENU.png {"return": {}}
+t=  62.7s aes-doom-D03B_QUIT_SELECTED.png {"return": {}}
+t=  67.7s aes-doom-D04_QUITPROMPT.png {"return": {}}
+t=  78.7s aes-doom-D05_AFTER_QUIT.png {"return": {}}
+t=  80.1s end marker seen
+t=  80.7s aes-doom-END.png {"return": {}}
+t=  81.1s aes-doom-end.png {"return": {}}
+prompts seen: 0
+run aes-doom: rc=0
+=== regression aes done
+t=  17.5s irq-desk-strict-A_IDLE.png {"return": {}}
+t=  26.5s irq-desk-strict-B_DRIVE_OPEN.png {"return": {}}
+t=  35.5s irq-desk-strict-C_FOLDER_OPEN.png {"return": {}}
+t=  38.5s irq-desk-strict-D_VIEW_OPEN.png {"return": {}}
+t=  44.5s irq-desk-strict-E_MENU_CLICKED.png {"return": {}}
+t=  47.1s end marker seen
+t=  47.5s irq-desk-strict-END.png {"return": {}}
+t=  48.1s irq-desk-strict-end.png {"return": {}}
+prompts seen: 0
+run irq-desk-strict: rc=0
+t=  31.2s irq-zv-browser-strict-Z00_IDLE.png {"return": {}}
+t=  33.2s irq-zv-browser-strict-Z01_MENU.png {"return": {}}
+t=  46.1s irq-zv-browser-strict-Z02_BROWSER.png {"return": {}}
+t=  61.2s irq-zv-browser-strict-Z03_LATER.png {"return": {}}
+t=  67.7s irq-zv-browser-strict-Z04_SELECTED.png {"return": {}}
+t=  76.2s irq-zv-browser-strict-Z05_TREE.png {"return": {}}
+t=  77.1s end marker seen
+t=  78.1s irq-zv-browser-strict-END.png {"return": {}}
+t=  79.1s irq-zv-browser-strict-end.png {"return": {}}
+prompts seen: 0
+run irq-zv-browser-strict: rc=0
+bca5b8a942ef41385ac49590d4c1faa2d65fcad761055f13350a7486d0d100d4  run-irq-zv-browser-strict.img (deleted)
+t=25.0s -> irq-api-strict-t25.png {"return": {}}
+t=40.0s -> irq-api-strict-t40.png {"return": {}}
+run irq-api-strict: rc=0
+=== all done
