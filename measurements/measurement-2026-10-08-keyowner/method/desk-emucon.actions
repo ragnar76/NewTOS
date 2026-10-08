@@ -1,0 +1,48 @@
+# TASK/KEYOWNER, the console path (Cconin/kernel console read) with the
+# accessories loaded: EmuDESK (no #Z), card = tools/make-sd-image.sh 64 MiB
+# (C:\ACC\SYSACC.NAC + C:\SYSACC2.NAC alive in their evnt_multi(MU_MESAG)).
+# Ctrl-Z = File > Execute EmuCON (the CLIITEM shortcut, as
+# measurement-2026-10-05-arch03-3a/method/emucon-schedule.py), then type
+# "ver" Return, "dir" Return, "exit" Return (back to the desktop).
+# Ticks hz_200 after "[desk] desktop up" (desk-arm-m3.py). IKBD make codes:
+# Ctrl 1D, Z 2C, v 2F, e 12, r 13, d 20, i 17, x 2D, t 14, Return 1C;
+# break = make | 0x80.
+100 parkbr
+400 mark C00_IDLE
+600 key 1D
+610 key 2C
+620 key AC
+630 key 9D
+1600 mark C01_EMUCON
+1800 key 2F
+1806 key AF
+1820 key 12
+1826 key 92
+1840 key 13
+1846 key 93
+2000 mark C02_TYPED_VER
+2200 key 1C
+2206 key 9C
+2700 mark C03_VER
+2900 key 20
+2906 key A0
+2920 key 17
+2926 key 97
+2940 key 13
+2946 key 93
+2960 key 1C
+2966 key 9C
+3600 mark C04_DIR
+3800 key 12
+3806 key 92
+3820 key 2D
+3826 key AD
+3840 key 17
+3846 key 97
+3860 key 14
+3866 key 94
+3880 key 1C
+3886 key 9C
+5000 mark C05_EXIT_DESKTOP
+5100 parkbr
+5400 mark END

@@ -397,6 +397,13 @@ impl Host for KernelHost {
         Some(crate::console::serial_tx_enabled())
     }
 
+    fn input_mode(&self) -> Option<tos_api::host::InputMode> {
+        Some(match crate::input_gate::mode() {
+            crate::input_gate::InputMode::Irq => tos_api::host::InputMode::TimerPump,
+            crate::input_gate::InputMode::Aes => tos_api::host::InputMode::Aes,
+        })
+    }
+
     fn os_version(&self) -> Option<&'static str> {
         Some(crate::initinfo::VERSION_STRING)
     }

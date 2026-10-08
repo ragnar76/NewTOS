@@ -1,0 +1,1 @@
+head-zvfull- vs new-zvfull-: same=6 cursor-only=0 other=0 missing=0

@@ -1,0 +1,51 @@
+KEYOWNER -- Tasten gehen an den, dem Maus und Tastatur gehoeren (wie EmuTOS)
+===========================================================================
+
+Dateien (NICHT auf eine Karte kopiert; kopieren nur auf Ansage):
+  kernel8.img  sha256 6314c8006a25f0a761f86d0de128459cd169ce2e326eb29b2b1a939eb5cf17f8
+               cargo xtask build --board rpi4 --release dieses Baums,
+               Banner "NewTOS 0.1 2026-10-08 (e3400de9)" (KEYOWNER liegt unkommittiert
+               auf e3400de9)
+  SYSACC.NAC   sha256 812ddd574dda3f854ad5d11274abf6741dea23c8231163a11b49dbdca85602d6
+
+Wohin auf der Karte:
+  kernel8.img -> Boot-Partition (ersetzt den bisherigen Kernel)
+  SYSACC.NAC  -> C:\ACC\SYSACC.NAC (und, falls dort eine zweite Kopie liegt,
+                 C:\SYSACC2.NAC ersetzen)
+Beide gehoeren zusammen: der neue SYSACC fragt Ssystem 2020, das nur dieser
+Kernel kennt (mit einem aelteren Kernel zeigt er dort "not available", sonst
+laeuft er unveraendert).
+
+WAS SICH AENDERT
+  1. Tasten gehen jetzt an das Programm, dem gerade Maus und Tastatur gehoeren
+     -- so wie EmuTOS es macht --, nicht mehr an den, der zuerst fragt.
+     Sichtbar im "System Info"-Accessory: ein aufgeklapptes Feld unter
+     "Next start" reagiert jetzt auf die Tastatur:
+       Esc        schliesst die Liste, nichts aendert sich
+       Pfeil hoch / Pfeil runter   bewegt die Markierung
+       Return     waehlt den markierten Eintrag
+     Vorher hat der Desktop diese Tasten weggenommen, die Liste blieb offen.
+  2. "Mouse while busy" zeigt in der Spalte "Running now" jetzt den echten
+     Wert: "On" (Normalfall: die Maus bewegt sich auch, waehrend ein Programm
+     rechnet) oder "Off" (wenn in cmdline.txt "input=aes" steht).
+
+WAS GLEICH BLEIBT (in QEMU je Lauf gegen den bisherigen Stand verglichen,
+Bildschirmfotos byte-gleich)
+  Tippen und Kuerzel im Desktop (Alt-C, Ctrl-I-Info-Dialog, Umbenennen) -- auch
+  mit geladenem Accessory --, TeraDesk, QED (Tippen, Speichern, Datei oeffnen),
+  LDGDEMO, zView (Vollbild mit Esc verlassen), DOOM (Esc-Menue, Beenden),
+  EmuCON (Ctrl-Z, Befehle tippen, exit), APITEST 106/0/5.
+
+AUF DER PI AUSPROBIEREN
+  Desk -> " System Info" -> auf einen Wert unter "Next start" klicken ->
+  Esc druecken: die Liste muss zugehen. Nochmal aufklappen, Pfeil hoch/runter,
+  Return: der Wert wechselt. Danach "Cancel" (nichts wird gespeichert).
+  Danach einmal normal im Desktop tippen (Alt-C) und in QED/TeraDesk tippen.
+
+ZURUECK
+  Den bisherigen kernel8.img wieder auf die Boot-Partition legen; den alten
+  SYSACC.NAC (measurement-2026-10-08-sysinfo2/bin) zurueckkopieren, falls
+  gewuenscht -- der neue laeuft aber auch mit dem alten Kernel.
+
+Nur QEMU geprueft (raspi4b, Tastatur ueber den Test-Injektor); die echte
+USB-Tastatur der Pi ist HW-only. Beleg: ../RUNINFO.TXT.

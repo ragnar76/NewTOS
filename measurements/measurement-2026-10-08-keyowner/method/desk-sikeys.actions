@@ -1,0 +1,54 @@
+# TASK/KEYOWNER, EmuDESK (in-kernel desktop, no #Z), card = tools/make-sd-image.sh
+# 64 MiB (C:\ACC\SYSACC.NAC + C:\SYSACC2.NAC), no C:\CMDLINE.TXT (so "Next start"
+# shows the defaults; Serial console = Off). Open the System Info dialog from
+# the Desk menu (26,9) -> first " System Info" (60,66), as desk-si.actions.
+# Then the "Serial console" drop-down (486,383; coordinates from
+# measurement-2026-10-08-sysinfo2/screendumps/diag-X02_POPUP.png) three times,
+# keys only inside the drop-down (the accessory holds wind_update(BEG_MCTRL)):
+#   1. open -> Esc                    : closed, Next start still "Off"
+#   2. open -> Up -> Return           : "On" highlighted, then chosen
+#   3. open -> Down -> Esc            : "Off" highlighted, then cancelled ("On" kept)
+# then Cancel (468,455) closes the dialog without saving.
+# HEAD (before KEYOWNER): the keys go to EmuDESK's own evnt_multi, the box stays
+# open (measurement-2026-10-08-sysinfo2, RUNINFO "Esc").
+# Every mark >= 200 ticks before the next input (drive-m3.py dumps 0.5 s after
+# the mark line). Ticks hz_200 after "[desk] desktop up" (desk-arm-m3.py).
+# IKBD make codes: Esc 01, Return 1C, Up 48, Down 50; break = make | 0x80.
+100 parkbr
+400 mark K00_IDLE
+500 move 26 9
+1000 move 60 66
+1200 down
+1203 up
+2200 mark K01_DIALOG
+2400 move 486 383
+2500 down
+2503 up
+2800 mark K02_POPUP1
+3100 key 01
+3106 key 81
+3400 mark K03_ESC_CLOSED
+3700 down
+3703 up
+4000 mark K04_POPUP2
+4300 key 48
+4306 key C8
+4600 mark K05_UP_ON
+4900 key 1C
+4906 key 9C
+5200 mark K06_RETURN_ON
+5500 down
+5503 up
+5800 mark K07_POPUP3
+6100 key 50
+6106 key D0
+6400 mark K08_DOWN_OFF
+6700 key 01
+6706 key 81
+7000 mark K09_ESC_KEPT_ON
+7200 move 468 455
+7300 down
+7303 up
+7700 mark K10_CANCELLED
+7800 parkbr
+8100 mark END

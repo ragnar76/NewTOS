@@ -1,0 +1,20 @@
+# OFAM freeze: zView opens C:\PHOTO\BIG.JPG (ZVLAUNCH, as zvw.actions), then the toolbar's
+# full-screen icon (185,72) -> pseudo full screen; Esc (01) releases; then File (76,8) > Quit
+# (100,204) with the image window open. Ticks hz_200 after the injector arms.
+100 parkbr
+4000 mark S00_IMAGE
+4200 move 185 72
+4400 down
+4403 up
+5600 mark F00_FULLSCREEN
+5800 key 01
+5806 key 81
+6600 mark F01_AFTER_ESC
+6800 move 76 8
+7000 mark F02_FILEMENU
+7200 move 100 204
+7400 down
+7403 up
+8600 mark F03_AFTER_QUIT
+8800 parkbr
+9000 mark END

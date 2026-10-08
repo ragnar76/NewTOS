@@ -1,0 +1,13 @@
+== aes_key_owner against HEAD e3400de9281bc9819af59b51da952dac11c96572
+test evnt_keybd_follows_the_owner ... FAILED
+test typing_goes_to_the_top_window_owner_not_to_an_idle_accessory ... FAILED
+test an_accessory_dialog_reads_its_keys_and_gives_them_back ... FAILED
+test an_accessory_window_on_top_gets_the_keys ... FAILED
+test desktop_shortcuts_reach_the_desktop_with_an_accessory_loaded ... FAILED
+test keys_go_to_the_accessory_inside_its_beg_mctrl ... FAILED
+test result: FAILED. 0 passed; 6 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p tos-api --test aes_key_owner`
+== gemdos_ssystem_sysinfo against HEAD e3400de9281bc9819af59b51da952dac11c96572
+error[E0432]: unresolved import `tos_api::host::InputMode`
+error[E0407]: method `input_mode` is not a member of trait `Host`
+error: could not compile `tos-api` (test "gemdos_ssystem_sysinfo") due to 2 previous errors

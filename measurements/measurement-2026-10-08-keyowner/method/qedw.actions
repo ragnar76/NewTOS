@@ -1,0 +1,72 @@
+# FS08 part 2 write regression, QED (#Z C:\Apps\QED\QED.NAP; prep-card.sh qed).
+# New text (^N), type "FS08" Return, save (^S -> the AES file selector for an
+# untitled text), Esc clears the name field, type QEDT.TXT, Return = save;
+# then edit the saved file (type "AB" Return) and save again over it (^S on a
+# titled text writes the existing file), quit (^Q).
+# Ticks hz_200 after the injector arms = the first EL0 program (the first
+# accessory, session start); the application gets 3600 ticks.
+# IKBD make codes: Ctrl 1D, N 31, S 1F, Q 10, F 21, 0 0B, 8 09, Return 1C,
+# Esc 01, E 12, D 20, T 14, . 34, X 2D, A 1E, B 30; break = make | 0x80.
+100 parkbr
+3600 mark Q00_UP
+3800 key 1D
+3810 key 31
+3820 key B1
+3830 key 9D
+4600 mark Q01_NEW
+4800 key 21
+4806 key A1
+4820 key 1F
+4826 key 9F
+4840 key 0B
+4846 key 8B
+4860 key 09
+4866 key 89
+4880 key 1C
+4886 key 9C
+5400 mark Q02_TYPED
+5600 key 1D
+5610 key 1F
+5620 key 9F
+5630 key 9D
+6800 mark Q03_FSEL
+7000 key 01
+7006 key 81
+7020 key 10
+7026 key 90
+7040 key 12
+7046 key 92
+7060 key 20
+7066 key A0
+7080 key 14
+7086 key 94
+7100 key 34
+7106 key B4
+7120 key 14
+7126 key 94
+7140 key 2D
+7146 key AD
+7160 key 14
+7166 key 94
+7800 mark Q04_NAME
+8000 key 1C
+8006 key 9C
+9400 mark Q05_SAVED
+9600 key 1E
+9606 key 9E
+9620 key 30
+9626 key B0
+9640 key 1C
+9646 key 9C
+10200 mark Q06_EDITED
+10400 key 1D
+10410 key 1F
+10420 key 9F
+10430 key 9D
+11600 mark Q07_SAVED_AGAIN
+11800 key 1D
+11810 key 10
+11820 key 90
+11830 key 9D
+13000 mark Q08_QUIT
+13400 mark END

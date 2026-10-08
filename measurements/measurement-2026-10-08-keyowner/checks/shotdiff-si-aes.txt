@@ -1,0 +1,6 @@
+DIFF D02_DIALOG.png: OTHER (176,352)-(204,368)
+DIFF D02_DIALOG.png: OTHER (208,352)-(240,368)
+DIFF D02_DIALOG.png: OTHER (244,352)-(284,368)
+DIFF D03_CLOSED.png: CURSOR? (184,192)-(200,212)
+DIFF D03_CLOSED.png: CURSOR? (312,320)-(328,336)
+head-si-aes- vs new-si-aes-: same=3 cursor-only=1 other=1 missing=0

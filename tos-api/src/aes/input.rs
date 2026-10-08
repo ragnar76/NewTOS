@@ -66,9 +66,9 @@
 //! only from the IKBD decode path), so plain `Relaxed` atomics suffice, matching
 //! the rest of the AES state.
 
-use core::sync::atomic::{AtomicBool, AtomicI16, AtomicI32, AtomicU32, AtomicU64, AtomicU8, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicI16, AtomicI32, AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 
-use super::pd::NUM_PDS;
+use super::pd::{DESKTOP, NUM_PDS};
 
 /// EmuTOS `MB_DOWN` (`aes/geminput.c:46`) — the left button, the only state
 /// that moves mouse ownership.
@@ -98,6 +98,88 @@ static YRAT: AtomicI16 = AtomicI16::new(0);
 /// observe it (`aes/gemctrl.c:441`), and at single-app that owner is the
 /// application.
 static GL_MOWNER_APP: AtomicBool = AtomicBool::new(true);
+
+/// The **application half** of EmuTOS `gl_mowner` — *"current mouse/keybd
+/// owner"* (`aes/geminput.c:52`): which AES identity the mouse, and with it
+/// every key (`kchange` → `post_keybd(gl_mowner->p_cda, ch)`, `:288-296`),
+/// belongs to while [`GL_MOWNER_APP`] says "an application". Written at the
+/// same places as the flag, under the same guards (`set_mown`, `bchange`'s
+/// `chkown`); read by [`owns_keys`]. Identities are compared as EmuTOS's
+/// `AESPD`s are, see [`same_pd`]. Power-up value: the application chain,
+/// represented by [`DESKTOP`] (the first `w_setactive` hands the mouse to the
+/// desktop window's owner, `rlr` at `wm_init`, `aes/gemwmlib.c:1254-1290`).
+static GL_MOWNER_PD: AtomicUsize = AtomicUsize::new(DESKTOP);
+
+/// The application half of EmuTOS `gl_cowner` (`aes/geminput.c:63`) — the
+/// owner of the control rectangle, set together with `gl_mowner` by
+/// `set_mown` (`:225`) and handed out again by `chkown` for a press inside
+/// the control rectangle (`:320-322`).
+///
+/// `set_mown(ctl_pd)` — `fm_own(FALSE)` handing the mouse back to a
+/// remembered `ctl_pd` — would make `gl_cowner` the Control Manager too; that
+/// half is not carried: a press inside the control rectangle stays an
+/// application's, as the flag has always answered it (`chkown`'s `+1`).
+static GL_COWNER_PD: AtomicUsize = AtomicUsize::new(DESKTOP);
+
+/// A value of EmuTOS `gl_mowner` as `get_mown`/`set_mown`/`ct_chgown` pass it:
+/// the Control Manager (`ctl_pd`) or an application process, named by its AES
+/// identity (`appl::current_identity`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Mown {
+    /// `ctl_pd`, the Screen Manager.
+    Ctl,
+    /// An application process — its AES identity.
+    Pd(usize),
+}
+
+impl Mown {
+    /// `ctl_pd` in [`Mown::to_raw`]'s encoding — not an AES identity
+    /// (identities are GEMDOS slots and [`DESKTOP`]).
+    const RAW_CTL: usize = usize::MAX;
+
+    /// One word for an atomic (`fm_own`'s `ml_pmown`).
+    pub(super) fn to_raw(self) -> usize {
+        match self {
+            Mown::Ctl => Self::RAW_CTL,
+            Mown::Pd(p) => p,
+        }
+    }
+
+    /// The inverse of [`Mown::to_raw`].
+    pub(super) fn from_raw(raw: usize) -> Mown {
+        if raw == Self::RAW_CTL {
+            Mown::Ctl
+        } else {
+            Mown::Pd(raw)
+        }
+    }
+}
+
+/// Do two AES identities name the same EmuTOS `AESPD`? EmuTOS runs the
+/// desktop, every launched program and every `Pexec` child on **one**
+/// descriptor, `D.g_int[0]` (`aes/geminit.c:851-877`, `gemshlib.c:572`), and
+/// each desk accessory on one of its own (`D.g_acc[]`, `geminit.c:819`).
+/// NewTOS gives every GEMDOS slot and the kernel desktop an identity of its
+/// own (A62); for ownership they fold back: a registered accessory
+/// ([`super::acc::is_process`]) is itself, every other identity is the one
+/// application chain.
+fn same_pd(a: usize, b: usize) -> bool {
+    a == b || (!super::acc::is_process(a) && !super::acc::is_process(b))
+}
+
+/// May the AES identity `idx` take a key now? EmuTOS's `kchange` posts every
+/// key to `gl_mowner` and a wait reads only its own queue (`ev_multi`'s
+/// `rlr->p_cda->c_q`, `aes/gemevlib.c:173-182`; `akbin`,
+/// `aes/geminput.c:486-493`), so a key is the waiter's exactly when the
+/// waiter owns the mouse: not while `ctl_pd` does, and not while another
+/// process does (`docs/api/aes/event.md` "Who gets a key").
+///
+/// NewTOS reads the key out of the shared ring at that moment instead of
+/// moving it into a per-process queue when it arrives (the ring is also the
+/// GEMDOS console's; spec, "Where NewTOS differs").
+pub(super) fn owns_keys(idx: usize) -> bool {
+    GL_MOWNER_APP.load(Ordering::Relaxed) && same_pd(GL_MOWNER_PD.load(Ordering::Relaxed), idx)
+}
 
 /// EmuTOS `gl_ctmown` (`aes/gemctrl.c:50`) — the Control Manager holds the
 /// mouse across a menu-bar track. Raised and lowered by [`ct_mouse`] from
@@ -239,6 +321,8 @@ pub(super) fn reinit() {
     XRAT.store(0, Ordering::Relaxed);
     YRAT.store(0, Ordering::Relaxed);
     GL_MOWNER_APP.store(true, Ordering::Relaxed);
+    GL_MOWNER_PD.store(DESKTOP, Ordering::Relaxed);
+    GL_COWNER_PD.store(DESKTOP, Ordering::Relaxed);
     GL_CTMOWN.store(false, Ordering::Relaxed);
     CT_MSGUP.store(false, Ordering::Relaxed);
 }
@@ -373,9 +457,15 @@ fn bchange(new: u8, clicks: i16, x: i16, y: i16) {
     // `if (!gl_ctmown && (new == MB_DOWN) && (button == 0)) gl_mowner = chkown();`
     // (aes/geminput.c:334-335)
     if !GL_CTMOWN.load(Ordering::Relaxed) && new == MB_DOWN && button == 0 {
-        // chkown: +1 → gl_cowner, 0 → D.w_win[0].w_owner (both the app at
-        // single-app), −1 → ctl_pd.
-        GL_MOWNER_APP.store(super::window::chk_ctrl(x, y) >= 0, Ordering::Relaxed);
+        // chkown: +1 → gl_cowner, 0 → D.w_win[0].w_owner, −1 → ctl_pd
+        // (aes/geminput.c:310-322).
+        let val = super::window::chk_ctrl(x, y);
+        GL_MOWNER_APP.store(val >= 0, Ordering::Relaxed);
+        match val {
+            1 => GL_MOWNER_PD.store(GL_COWNER_PD.load(Ordering::Relaxed), Ordering::Relaxed),
+            0 => GL_MOWNER_PD.store(super::window::desk_owner(), Ordering::Relaxed),
+            _ => {}
+        }
     }
     // `mtrans++; pr_button = button; pr_mclick = mclick; pr_xrat = xrat;
     // pr_yrat = yrat; button = new; mclick = clicks;` (aes/geminput.c:337-343).
@@ -532,20 +622,39 @@ pub(super) fn own_mouse() -> bool {
 
 /// The Control Manager's `w_setactive()` (`aes/gemctrl.c:442`): give the mouse
 /// to the owner of the top window — `ct_chgown(ppd, &d)` → `set_mown`
-/// (`aes/gemwmlib.c:326-333`, `aes/gemctrl.c:392-397`). At single-app the top
-/// window's owner is always this application; the two guards are
-/// [`ct_chgown`]'s and [`set_mown`]'s, so a press latched to the Control
-/// Manager stays with it until the release.
+/// (`aes/gemwmlib.c:322-334`, `aes/gemctrl.c:392-397`); the desktop window's
+/// owner when no window is open ([`window::top_owner`](super::window::top_owner)).
+/// The two guards are [`ct_chgown`]'s and [`set_mown`]'s, so a press latched
+/// to the Control Manager stays with it until the release.
+///
+/// **While `ml_ocnt > 0` the owner is kept.** EmuTOS's `ctlmgr` reaches its
+/// loop head only after its own `ev_multi` fired (`aes/gemctrl.c:439-462`),
+/// and inside a `BEG_MCTRL` bracket nothing can fire it: keys and presses go to
+/// the bracket's holder (the control rectangle is the whole screen, `chkown`
+/// answers `gl_cowner`), and `gl_mntree` is held, so there is no bar to track
+/// (`aes/gemfmlib.c:89-93`). Our Control Manager runs inline at every wait
+/// pass of every client, so the dormancy is stated here: the holder keeps the
+/// mouse and the keyboard (`docs/api/aes/event.md` "Who gets a key", point 2).
+/// The flag half is set as before.
 pub(super) fn w_setactive() {
-    ct_chgown(true);
+    let pd = if super::window::mctrl_held() {
+        GL_MOWNER_PD.load(Ordering::Relaxed)
+    } else {
+        super::window::top_owner()
+    };
+    ct_chgown(Mown::Pd(pd));
 }
 
 /// EmuTOS `get_mown(&pmown)` (`aes/geminput.c:209-212`) — the current mouse
-/// owner, as [`own_mouse`] reports it: `true` = the application (`rlr`),
-/// `false` = `ctl_pd`. `fm_own` saves it on entry (`ml_pmown`,
-/// `aes/gemfmlib.c:92`) to hand the mouse back to that owner on exit.
-pub(super) fn get_mown() -> bool {
-    GL_MOWNER_APP.load(Ordering::Relaxed)
+/// owner: [`Mown::Ctl`] while `ctl_pd` has it, else the application's
+/// identity. `fm_own` saves it on entry (`ml_pmown`, `aes/gemfmlib.c:92`) to
+/// hand the mouse back to that owner on exit.
+pub(super) fn get_mown() -> Mown {
+    if GL_MOWNER_APP.load(Ordering::Relaxed) {
+        Mown::Pd(GL_MOWNER_PD.load(Ordering::Relaxed))
+    } else {
+        Mown::Ctl
+    }
 }
 
 /// EmuTOS `ct_chgown(mpd, pr)` (`aes/gemctrl.c:392-397`): `set_ctrl(pr); if
@@ -553,10 +662,10 @@ pub(super) fn get_mown() -> bool {
 /// track holds it. The control rectangle half is not stored: EmuTOS's `ctrl`
 /// has exactly two sources, and [`window::chk_ctrl`](super::window::chk_ctrl)
 /// reads both live (`ml_ocnt > 0` → the whole screen; else the top window's
-/// work area). `app` names the owner as [`get_mown`] does.
-pub(super) fn ct_chgown(app: bool) {
+/// work area). `owner` names the owner as [`get_mown`] does.
+pub(super) fn ct_chgown(owner: Mown) {
     if !GL_CTMOWN.load(Ordering::Relaxed) {
-        set_mown(app);
+        set_mown(owner);
     }
 }
 
@@ -567,11 +676,20 @@ pub(super) fn ct_chgown(app: bool) {
 /// `post_button` completes a parked button wait of the new owner that the
 /// (up) state satisfies ([`post_button`]); the `post_mouse` half is covered by
 /// the Event Manager re-testing its rectangles against `own_mouse()` on every
-/// pass.
-fn set_mown(app: bool) {
+/// pass. `gl_cowner = gl_mowner = mp` (`:225`): for an application both
+/// identity halves move ([`GL_MOWNER_PD`], [`GL_COWNER_PD`]); for `ctl_pd`
+/// only the flag does.
+fn set_mown(owner: Mown) {
     let button = BUTTON.load(Ordering::Relaxed);
     if button == 0 {
-        GL_MOWNER_APP.store(app, Ordering::Relaxed);
+        match owner {
+            Mown::Ctl => GL_MOWNER_APP.store(false, Ordering::Relaxed),
+            Mown::Pd(pd) => {
+                GL_MOWNER_APP.store(true, Ordering::Relaxed);
+                GL_MOWNER_PD.store(pd, Ordering::Relaxed);
+                GL_COWNER_PD.store(pd, Ordering::Relaxed);
+            }
+        }
         post_button(button, 1);
     }
 }

@@ -268,7 +268,7 @@ pub trait Host: Sync {
         None
     }
 
-    // ── SYSINFO01: the effective system settings (`Ssystem` 2003–2019) ──
+    // ── SYSINFO01: the effective system settings (`Ssystem` 2003–2020) ──
     //
     // The facts below live in the kernel (drivers, boot decisions) and not in
     // `tos-api`; each is the state the kernel actually ended up in, never the
@@ -315,6 +315,13 @@ pub trait Host: Sync {
         None
     }
 
+    /// Where the keyboard/mouse pump runs (INPUT01, boot argument
+    /// `input=aes`) — `Ssystem(S_NEWTOS_INPUTMODE)`, KEYOWNER. `None`
+    /// without a kernel input pump (hostless).
+    fn input_mode(&self) -> Option<InputMode> {
+        None
+    }
+
     /// The OS name and version as the boot screen prints it
     /// (`"NewTOS 0.1"`), or `None` (hostless). `Ssystem(S_NEWTOS_KVERSION)`
     /// appends the build stamp ([`crate::build::BUILD_STAMP`]).
@@ -344,6 +351,17 @@ pub struct SdCardMode {
     pub compat: bool,
     /// Data-bus width the driver and the card use, in bits (1 or 4).
     pub bus_width: u8,
+}
+
+/// Where the keyboard/mouse pump runs — `Ssystem(S_NEWTOS_INPUTMODE)`
+/// (`docs/api/gemdos/154-ssystem.md`, 2020).
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum InputMode {
+    /// Also from the 200 Hz timer interrupt while a program runs: the pointer
+    /// moves while a program is busy (INPUT01, the default).
+    TimerPump = 0,
+    /// Only in the AES waits and the console reads (`input=aes`).
+    Aes = 1,
 }
 
 /// Where the active keyboard layout came from — `Ssystem(S_NEWTOS_KEYBOARD)`.

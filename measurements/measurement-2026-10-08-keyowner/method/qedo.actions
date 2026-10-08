@@ -1,0 +1,49 @@
+# OFAM freeze: QED opens an EXISTING file (C:\APPS\QED\NOTE.TXT, seeded), edit, save, quit.
+# ^O -> fsel; Esc clears the selection field; type NOTE.TXT, Return; type ab Return; ^S; ^Q.
+# Ticks hz_200 after the injector arms (as qedw.actions).
+100 parkbr
+3600 mark Q00_UP
+3800 key 1D
+3810 key 18
+3820 key 98
+3830 key 9D
+5000 mark Q01_FSEL
+5200 key 01
+5206 key 81
+5400 key 31
+5406 key B1
+5420 key 18
+5426 key 98
+5440 key 14
+5446 key 94
+5460 key 12
+5466 key 92
+5480 key 34
+5486 key B4
+5500 key 14
+5506 key 94
+5520 key 2D
+5526 key AD
+5540 key 14
+5546 key 94
+5660 key 1C
+5666 key 9C
+8000 mark Q02_OPENED
+8200 key 1E
+8206 key 9E
+8220 key 30
+8226 key B0
+8240 key 1C
+8246 key 9C
+9000 mark Q03_EDITED
+9200 key 1D
+9210 key 1F
+9220 key 9F
+9230 key 9D
+10400 mark Q04_SAVED
+10600 key 1D
+10610 key 10
+10620 key 90
+10630 key 9D
+11800 mark Q05_QUIT
+12200 mark END

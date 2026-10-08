@@ -1,0 +1,1 @@
+head-emucon- vs new-emucon-: same=7 cursor-only=0 other=0 missing=0

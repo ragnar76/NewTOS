@@ -1,0 +1,2 @@
+DIFF END.png: CURSOR? (24,60)-(28,80)
+head-qed- vs new-qed-: same=3 cursor-only=1 other=0 missing=0

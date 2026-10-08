@@ -11,8 +11,9 @@
 //! BCM2711 mailbox) is kernel-only — [`S_NEWTOS_KBDVEC`] (2002), the
 //! kernel entry of the per-process default `kbdvec` stub (KEYS02,
 //! `docs/api/xbios/22-kbdvbase.md` B3/D6), and the system-information modes
-//! 2003–2019 ([`S_NEWTOS_CPUMEAS`] … [`S_NEWTOS_KVERSION`], SYSINFO01): the
-//! effective settings the kernel runs with. 2000 is free: FreeMiNT's own header
+//! 2003–2020 ([`S_NEWTOS_CPUMEAS`] … [`S_NEWTOS_KVERSION`], SYSINFO01, and
+//! [`S_NEWTOS_INPUTMODE`], KEYOWNER): the effective settings the kernel runs
+//! with. 2000 is free: FreeMiNT's own header
 //! reserves 0–29, 100, `0x54f8`, 900–999 and 1000–**1999**
 //! (`references/freemint/sys/mint/ssystem.h`, the two `reserved` comments),
 //! and the highest number its dispatcher answers is the build-gated test mode
@@ -45,9 +46,9 @@ pub const S_NEWTOS_CPUTEMP: u16 = 2001;
 pub const S_NEWTOS_KBDVEC: u16 = crate::xbios::kbdvecs::S_NEWTOS_KBDVEC;
 
 // SYSINFO01: the effective system settings a system-information tool shows
-// (`docs/api/gemdos/154-ssystem.md` §"System-information modes (2003–2019)").
-// Scalars 2003–2018 share the 2000/2001 interface ([`newtos_scalar`]); 2019 is
-// a string ([`s_newtos_kversion`]).
+// (`docs/api/gemdos/154-ssystem.md` §"System-information modes (2003–2020)").
+// Scalars 2003–2018 and 2020 share the 2000/2001 interface ([`newtos_scalar`]);
+// 2019 is a string ([`s_newtos_kversion`]).
 
 /// The ARM clock the firmware measured, Hz.
 pub const S_NEWTOS_CPUMEAS: u16 = 2003;
@@ -83,6 +84,9 @@ pub const S_NEWTOS_KEYBOARD: u16 = 2017;
 pub const S_NEWTOS_SERIAL: u16 = 2018;
 /// Kernel version + build stamp, a string into the caller's buffer.
 pub const S_NEWTOS_KVERSION: u16 = 2019;
+/// Where the keyboard/mouse pump runs: 0 also from the timer interrupt (the
+/// pointer moves while a program is busy), 1 `input=aes` (KEYOWNER).
+pub const S_NEWTOS_INPUTMODE: u16 = 2020;
 
 /// `Ssystem(WORD mode, LONG arg1, LONG arg2)`: `mode` in `x0`, `arg1` in
 /// `x1`, `arg2` in `x2`.
@@ -108,12 +112,14 @@ pub fn ssystem(args: &TrapArgs) -> Long {
         }
         S_NEWTOS_KBDVEC => s_newtos_kbdvec(args),
         S_NEWTOS_KVERSION => s_newtos_kversion(args),
-        mode @ S_NEWTOS_CPUMEAS..=S_NEWTOS_SERIAL => newtos_scalar(args, || sysinfo_value(mode)),
+        mode @ (S_NEWTOS_CPUMEAS..=S_NEWTOS_SERIAL | S_NEWTOS_INPUTMODE) => {
+            newtos_scalar(args, || sysinfo_value(mode))
+        }
         _ => EINVFN,
     }
 }
 
-/// The value of one scalar system-information mode (2003–2018), or `None`
+/// The value of one scalar system-information mode (2003–2018, 2020), or `None`
 /// when this machine does not know it (`docs/api/gemdos/154-ssystem.md`
 /// §"System-information modes"). Every answer is the state the kernel runs
 /// with — read from the module that holds it, or from the host for facts that
@@ -155,6 +161,7 @@ fn sysinfo_value(mode: u16) -> Option<Long> {
         S_NEWTOS_GPUMEM => host::host()?.gpu_memory_bytes().map(kib),
         S_NEWTOS_KEYBOARD => host::host()?.keyboard_layout().map(|k| k as Long),
         S_NEWTOS_SERIAL => host::host()?.serial_console().map(Long::from),
+        S_NEWTOS_INPUTMODE => host::host()?.input_mode().map(|m| m as Long),
         _ => None,
     }
 }

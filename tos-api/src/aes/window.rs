@@ -818,8 +818,9 @@ const NO_OWNER: usize = usize::MAX;
 /// EmuTOS `ml_pmown` (`gemfmlib.c:58`) — the mouse owner `fm_own` found on
 /// the outermost `BEG_MCTRL` (`get_mown(&ml_pmown)`, `:92`), handed the mouse
 /// back on the matching `END_MCTRL` (`ct_chgown(ml_pmown, &ml_ctrl)`, `:102`).
-/// `true` = the application, `false` = `ctl_pd`, as [`input::get_mown`] reports.
-static ML_PMOWN: AtomicBool = AtomicBool::new(true);
+/// An [`input::Mown`] as [`input::get_mown`] reports it, in
+/// [`input::Mown::to_raw`]'s encoding; power-up value: the application chain.
+static ML_PMOWN: AtomicUsize = AtomicUsize::new(super::pd::DESKTOP);
 
 /// Global default per-gadget colour words (`WF_DCOLOR`): the topped/untopped
 /// defaults new windows inherit (EmuTOS `gl_wtcolor`/`gl_wbcolor`,
@@ -4365,13 +4366,13 @@ pub fn fm_own(begin: bool) {
 /// &gl_rscreen);` — the menu-hold (a menu-bar click is inert while the dialog
 /// is up), the whole screen as the control rectangle (read live by
 /// [`chk_ctrl`] from `ml_ocnt > 0`, so `ml_ctrl` needs no store), and
-/// `set_mown(rlr)`: the caller owns the mouse for the dialog, unless a button
-/// is held (`set_mown`'s `if (!button)`, `aes/geminput.c:222`) or a menu track
-/// holds it (`ct_chgown`'s `if (!gl_ctmown)`, `aes/gemctrl.c:395`). The 1 → 0
-/// edge (`:101-103`) is `ct_chgown(ml_pmown, &ml_ctrl); gl_mntree =
-/// ml_mnhold;` — the previous owner gets the mouse back under the same two
-/// guards (A102). At single-app `rlr` is the application, so `set_mown(rlr)`
-/// is `ct_chgown(true)` and the remembered owner is [`input::get_mown`]'s flag.
+/// `set_mown(rlr)`: the caller owns the mouse — and the keyboard — for the
+/// dialog, unless a button is held (`set_mown`'s `if (!button)`,
+/// `aes/geminput.c:222`) or a menu track holds it (`ct_chgown`'s `if
+/// (!gl_ctmown)`, `aes/gemctrl.c:395`). The 1 → 0 edge (`:101-103`) is
+/// `ct_chgown(ml_pmown, &ml_ctrl); gl_mntree = ml_mnhold;` — the previous
+/// owner gets the mouse back under the same two guards (A102). `rlr` is the
+/// caller's AES identity, the remembered owner is [`input::get_mown`]'s.
 fn mctrl_own(begin: bool) {
     if begin {
         update_beg(); // fm_own: wm_update(BEG_UPDATE) (gemfmlib.c:86)
@@ -4381,8 +4382,9 @@ fn mctrl_own(begin: bool) {
         // dialog, remember the owner, give the mouse to the caller (`:89-93`).
         if MCTRL_CNT.load(Ordering::Relaxed) == 0 {
             super::menu::hold_menu();
-            ML_PMOWN.store(super::input::get_mown(), Ordering::Relaxed);
-            super::input::ct_chgown(true);
+            ML_PMOWN.store(super::input::get_mown().to_raw(), Ordering::Relaxed);
+            // `ct_chgown(rlr, &gl_rscreen)` (gemfmlib.c:93): the caller.
+            super::input::ct_chgown(super::input::Mown::Pd(super::appl::current_identity()));
             // The holder of the count, on the same edge as the rest of the
             // 0 → 1 state — see [`MCTRL_OWNER`] for why the counter needs one
             // although `ml_ocnt` has none.
@@ -4400,7 +4402,7 @@ fn mctrl_own(begin: bool) {
         // non-positive count as "app does not own the mouse", so an unbalanced
         // END_MCTRL cannot wedge interception off.
         if MCTRL_CNT.fetch_sub(1, Ordering::Relaxed) == 1 {
-            super::input::ct_chgown(ML_PMOWN.load(Ordering::Relaxed));
+            super::input::ct_chgown(super::input::Mown::from_raw(ML_PMOWN.load(Ordering::Relaxed)));
             super::menu::release_menu();
             MCTRL_OWNER.store(NO_OWNER, Ordering::Relaxed);
         }
@@ -4699,7 +4701,7 @@ pub fn wm_init() {
 ///   windows inherit (`wm_start`, `gemwmlib.c:1346-1357`), which
 ///   `wind_set(WF_DCOLOR)` may have changed for the session that ended.
 /// * `ml_pmown` (`gemfmlib.c:58`) — the mouse owner parked by the outermost
-///   `BEG_MCTRL`; `true` (the application) is its power-up value.
+///   `BEG_MCTRL`; the application chain is its power-up value.
 /// * the save/restore snapshot of [`save_windows`], slots included, so no dead
 ///   session's window record (its title pointer with it) survives at all.
 pub(super) fn reinit() {
@@ -4721,7 +4723,7 @@ pub(super) fn reinit() {
     UPDATE_OWNER.store(NO_OWNER, Ordering::Relaxed);
     *gl_wtcolor() = GL_WTCOLOR_DEFAULT;
     *gl_wbcolor() = GL_WBCOLOR_DEFAULT;
-    ML_PMOWN.store(true, Ordering::Relaxed);
+    ML_PMOWN.store(super::pd::DESKTOP, Ordering::Relaxed);
 }
 
 fn inside(r: Grect, x: i16, y: i16) -> bool {
@@ -5396,6 +5398,35 @@ pub(super) fn wm_find(x: i16, y: i16) -> i16 {
 /// [`owner_of`], for the wheel's `WM_ARROWED`.
 pub(super) fn owner_of_window(handle: i16) -> Option<usize> {
     owner_of(handle)
+}
+
+/// `D.w_win[w_top()].w_owner` — the process `w_setactive` hands the mouse and
+/// the keyboard to (`aes/gemwmlib.c:322-334`): the owner of the top open
+/// window, or of the desktop window when none is open ([`get_top`] answers
+/// `DESKWH` then, EmuTOS `w_top`, `:315-318`). See [`desk_owner`] for a
+/// desktop window without a recorded owner.
+pub(super) fn top_owner() -> usize {
+    let top = get_top();
+    if top == DESKWH {
+        return desk_owner();
+    }
+    owner_of(top).unwrap_or_else(desk_owner)
+}
+
+/// `D.w_win[DESKWH].w_owner` — `chkown`'s answer for a press on the desktop
+/// (`aes/geminput.c:324`). EmuTOS records `rlr` there in `wm_init`
+/// (`w_setup(ppd, DESKWH, NONE)`, `aes/gemwmlib.c:1254-1290`), and `rlr` is
+/// the application chain at every `wm_init` the shell loop runs; NewTOS leaves
+/// the slot unowned until `WF_NEWDESK` re-owns it, so an unowned desktop window
+/// answers the chain, represented by [`super::pd::DESKTOP`].
+pub(super) fn desk_owner() -> usize {
+    owner_of(DESKWH).unwrap_or(super::pd::DESKTOP)
+}
+
+/// `ml_ocnt > 0` — a `wind_update(BEG_MCTRL)` / `fm_own(TRUE)` bracket is in
+/// force (`aes/gemfmlib.c:82-107`).
+pub(super) fn mctrl_held() -> bool {
+    MCTRL_CNT.load(Ordering::Relaxed) > 0
 }
 
 /// AES window-frame interception (the `evnt_multi` hook, mirroring the EmuTOS

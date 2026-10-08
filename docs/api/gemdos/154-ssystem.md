@@ -22,7 +22,7 @@
 > machine facts an EL0 program cannot reach any other way, because the hardware
 > that knows them is kernel-only (2000/2001), the kernel entry of the
 > default `kbdvec` stub (2002, KEYS02), and the effective system settings a
-> system-information tool shows (2003–2019, SYSINFO01). These are *not* FreeMiNT modes and are
+> system-information tool shows (2003–2020, SYSINFO01 / KEYOWNER). These are *not* FreeMiNT modes and are
 > marked as ours wherever they appear; 2000+ is a range FreeMiNT leaves free.
 
 > **Contract vs. reference** — see [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md).
@@ -170,6 +170,7 @@ NewTOS identity, but that is a separate decision.
 | `S_NEWTOS_KEYBOARD` | 2017 | input | source of the active keyboard layout |
 | `S_NEWTOS_SERIAL` | 2018 | console | serial console output on / off |
 | `S_NEWTOS_KVERSION` | 2019 | kernel | kernel version + build stamp, **string** into the caller's buffer |
+| `S_NEWTOS_INPUTMODE` | 2020 | input | where the keyboard/mouse pump runs (timer pump / `input=aes`) — KEYOWNER |
 
 **Why the number block is free.** FreeMiNT's `sys/mint/ssystem.h` (@ `f906416`)
 assigns 0–29, 100 and `0x54f8` (21752), and reserves two ranges by comment:
@@ -264,7 +265,7 @@ answer both tags, with the fixed values 700 000 000 Hz and 25 000 m°C — those
 are the emulator's numbers, faithfully reported, and only a real Pi 4 shows a
 clock that moves and a die that warms up.
 
-#### System-information modes (2003–2019) — SYSINFO01
+#### System-information modes (2003–2020) — SYSINFO01, KEYOWNER
 
 The settings and machine facts a system-information tool shows (the SYSACC desk
 accessory, `sdk/examples/sysacc.c`, TASK/SYSINFO01). Every mode reports the
@@ -274,7 +275,7 @@ hardware actually negotiated — never the text of a configuration file. A
 program that wants to show `memprot=strict` learns "strict" only if the kernel
 really runs strict.
 
-**Interface of the scalar modes 2003–2018** — exactly the one of 2000/2001
+**Interface of the scalar modes 2003–2018 and 2020** — exactly the one of 2000/2001
 (§"Interface (both modes)" below): `arg1` = pointer to a 32-bit LONG that
 receives the value, or 0 for the value in the returned LONG; `arg2` reserved,
 must be 0 (`EINVAL` before anything is read, nothing written); `ERROR` (-1)
@@ -300,6 +301,7 @@ one, for the same reason as there.
 | `S_NEWTOS_GPUMEM` | 2016 | the memory the firmware gives the VideoCore (`gpu_mem` split), **KiB** | the firmware did not answer "Get VC memory"; no VideoCore | `Host::gpu_memory_bytes` → mailbox "Get VC memory" `0x0001_0006` (§3a), read once at boot with "Get ARM memory" — the split cannot change while the machine runs |
 | `S_NEWTOS_KEYBOARD` | 2017 | where the active layout came from: **0** = built-in US (the default, or `#K us`); **1** = built-in German (`#K de` in `NEWDESK.INF`); **2** = loaded from `C:\KEYBOARD.KBD`; **3** = changed since by a program (XBIOS `Keytbl` replaced a table with different contents) | the board has no keyboard translator (hostless) | `Host::keyboard_layout` → `kernel::keymap` |
 | `S_NEWTOS_SERIAL` | 2018 | **0** = serial console output off; **1** = on (`serial=on` on `board-rpi4`; always on on `board-qemu-virt`, whose serial log is its only console) | hostless | `Host::serial_console` → `kernel::console::serial_tx_enabled` (SER01) |
+| `S_NEWTOS_INPUTMODE` | 2020 | where the keyboard/mouse pump runs (INPUT01): **0** = also from the 200 Hz timer interrupt while a program runs, so the pointer moves while a program is busy (the default); **1** = only in the AES waits and the console reads (`input=aes`, the behaviour before INPUT01). Added by TASK/KEYOWNER after the 2003–2019 block | hostless | `Host::input_mode` → `kernel::input_gate::mode` (decided once at boot from `input=aes`, `kernel/src/bootargs.rs` `INPUT_AES`) |
 
 **`S_NEWTOS_KVERSION` (2019) — the kernel version string.** The string form of
 FreeMiNT's `S_KNAME` (900, `sys/ssystem.c:572-576` → `strncpy_f`,
@@ -350,8 +352,10 @@ Where a fact is not known on a board, the answer is `ERROR` — the same rule as
 | 2017 | 0–3 | 0–3 | `ERROR` |
 | 2018 | 0 / 1 | 1 | `ERROR` |
 | 2019 | string | string | `ERROR` |
+| 2020 | 0 / 1 | 0 / 1 | `ERROR` |
 
-Tests: `tos-api/tests/gemdos_ssystem_sysinfo.rs`.
+Tests: `tos-api/tests/gemdos_ssystem_sysinfo.rs` (2021 is the next free
+number and answers `EINVFN`).
 
 ---
 

@@ -1,0 +1,166 @@
+measurement-2026-10-08-keyowner -- TASK/KEYOWNER: a key goes to the mouse/keyboard owner
+(EmuTOS gl_mowner), not to whoever polls first; Ssystem 2020 = input mode. Developer
+self-evidence; the Tester's verdict is separate.
+
+Date 2026-10-08, branch desk-rebuild, HEAD e3400de9 (tag ofam-2026 + INPUT01 + SYSINFO02) plus
+this change, uncommitted. QEMU raspi4b, -append "serial=on" (+ memprot=strict / input=aes where
+named), memprot default on, one QEMU at a time, host macOS. No SD card, Pi or TT touched (the TT
+card was mounted on the host the whole time and left alone). Scratch (kernels, base cards, run
+clones, cargo target dirs, sockets) in the session scratchpad; every run card an APFS clone
+(cp -c) of one base card per content, deleted right after its run (checks/run-cards-sha256.txt);
+scratch deleted at the end.
+
+RESULT IN ONE LINE
+  The SYSINFO02 drop-down now gets its keys: Esc closes it unchanged, Up+Return picks "On",
+  Down+Esc cancels (screendumps/new-sikeys-*); at HEAD the same script leaves the box open after
+  Esc (head-sikeys-K03_ESC_CLOSED = the open box). Every other keyboard path, 22 scripted runs
+  per kernel, HEAD vs new: byte-identical screendumps except the intended "Mouse while busy"
+  value and timing artefacts named below; host checks PASS, fsck clean, 0 exceptions in 46 logs.
+
+CAUSE (spec: docs/api/aes/event.md "Who gets a key -- the mouse owner (gl_mowner)", written first)
+  tos-api/src/aes/event.rs evnt_multi's MU_KEYBD arm (and evnt_keybd) read the one IKBD key ring
+  for whatever AES client was polling. With the cooperative kernel the SYSACC accessory sleeps in
+  its drop-down's evnt_multi(MU_KEYBD|MU_BUTTON|MU_M1) under wind_update(BEG_MCTRL); the scheduler
+  runs the in-kernel EmuDESK, whose evnt_multi(MU_KEYBD|...) took Esc/Return/the arrows.
+  EmuTOS: gl_mowner is the "current mouse/keybd owner" (references/emutos/aes/geminput.c:52);
+  chkkbd reads a key only for it (gemdisp.c:158-177), kchange -> post_keybd(gl_mowner->p_cda, ch)
+  (geminput.c:288-308), a wait reads its own queue (gemevlib.c:173-182, akbin geminput.c:486-493).
+  gl_mowner = top window owner via the Control Manager's w_setactive (gemwmlib.c:322-334,
+  gemctrl.c:439-442), the caller under fm_own / BEG_MCTRL (gemfmlib.c:82-107), chkown on a press
+  (geminput.c:310-335), ctl_pd on a hover into the bar (:388-389); hand-over only with the button
+  up (set_mown :220-235) and outside a menu track (ct_chgown gemctrl.c:392-397). There is no
+  gl_kowner in this EmuTOS: the keyboard owner IS gl_mowner. The application chain (desktop,
+  launched program, Pexec children) is one AESPD (geminit.c:851-877), each accessory its own.
+
+FIX (Rust; spec sections cited in the code)
+  tos-api/src/aes/input.rs   GL_MOWNER_PD / GL_COWNER_PD: the AES identity the application half
+                             of gl_mowner/gl_cowner names (next to the existing ctl_pd flag);
+                             enum Mown (Ctl | Pd(identity)) for get_mown/set_mown/ct_chgown;
+                             set_mown moves both identity halves (button-up guard unchanged);
+                             bchange's chkown fills the identity (+1 gl_cowner, 0 desktop window
+                             owner); w_setactive = top window's owner, but keeps the owner while
+                             ml_ocnt > 0 (ctlmgr is dormant inside a BEG_MCTRL bracket: nothing it
+                             waits for can fire); owns_keys(idx) = flag && same_pd(owner, idx);
+                             same_pd folds every non-accessory identity into the chain.
+  tos-api/src/aes/window.rs  ML_PMOWN carries an Mown (identity), fm_own's 0->1 edge gives the
+                             mouse to the caller's identity; top_owner(), desk_owner() (unowned
+                             desktop window = the chain), mctrl_held().
+  tos-api/src/aes/acc.rs     is_process(idx).
+  tos-api/src/aes/event.rs   evnt_multi MU_KEYBD and evnt_keybd take a key only when
+                             owns_keys(caller); evnt_keybd runs the Control Manager's loop head
+                             (w_setactive) per pass, as evnt_mouse already does.
+  Named deviations (spec "Where NewTOS differs"): the key is assigned when read, not when forked
+  (the ring is also the GEMDOS console's, and accessories keep running during a TOS program);
+  keys typed while ctl_pd owns are not eaten but wait; w_setactive runs at every wait pass of
+  every client (inline Control Manager) except under ml_ocnt > 0; the kernel's own modal loops
+  (form_do/form_alert/fsel, busy loops that never yield) read the ring directly.
+
+SSYSTEM 2020 (spec: docs/api/gemdos/154-ssystem.md, 2020 row + board table, written first)
+  S_NEWTOS_INPUTMODE = 2020: 0 = the timer pump (pointer moves while a program is busy, INPUT01
+  default), 1 = input=aes; ERROR hostless. tos-api host.rs Host::input_mode + enum InputMode,
+  gemdos/ssystem.rs, kernel host_env.rs -> kernel::input_gate::mode(). Next free number 2021
+  (gemdos_ssystem_cpuinfo.rs / gemdos_ssystem_sysinfo.rs moved their "unused" probe to 2021).
+  sdk/examples/sysacc.c: "Mouse while busy" Running now from 2020 (0 -> On, 1 -> Off; an older
+  kernel's EINVFN -> "not available"). screendumps new-si-D02_DIALOG "On", new-si-aes-D02_DIALOG
+  "Off" (-append input=aes), head-* "not available".
+
+HOST TESTS (red/green)
+  tos-api/tests/aes_key_owner.rs, 6 tests at the AES trap with a registered accessory + the
+  kernel desktop / a chain program and one shared key ring: BEG_MCTRL holder gets Esc/Return/
+  Up/Down, the desktop none, END_MCTRL gives typing back; evnt_keybd follows the owner; typing goes
+  to the top window owner (a chain program), not to an idle accessory; an accessory window on top
+  owns the keys; an accessory form_alert reads its Return and gives the keys back; desktop
+  shortcuts (Alt-C, Esc, Return) reach the desktop with an accessory loaded.
+  gemdos_ssystem_sysinfo.rs: input_mode_reports_the_pump_in_effect (both forms, 0 and 1),
+  2020 in the arg2 and unknown-host loops, the_block_ends_at_2020 (2021 = EINVFN).
+  RED at HEAD (checks/host-red-head.txt, method/host-red-head.sh: the new test files on a
+  git archive of e3400de9): aes_key_owner 0/6; gemdos_ssystem_sysinfo does not compile (no
+  Host::input_mode). Also red with only the key gate taken out (checks/host-red-green.txt).
+  GREEN with the change: 6/6 and 9/9.
+
+QEMU RUNS (method/: make-bases-keyowner.sh, make-kernels-keyowner.sh, make-inj-input01.sh,
+  keyowner-runs.sh, runs-all.sh, compare-keyowner.sh; INPUT01's scripted IKBD injector, its
+  drive-m3.py/gen_script.py/desk-arm-m3.py/shotdiff.py; actions copied from INPUT01, ofam-freeze
+  fs09 and sysinfo2, new: desk-sikeys.actions, desk-emucon.actions)
+  Kernels: "head" = git archive HEAD e3400de9, "new" = the shared tree; per set one plain release
+  kernel (APITEST) + 19 injector kernels (board-rpi4 release, scratch copies); separate cargo target
+  dirs per set (a first attempt with one shared dir let the new build pick up HEAD's tos-api rlib
+  and fail to compile -- caught, rebuilt; checks/kernels-cards-sha256.txt). Cards: base64 =
+  tools/make-sd-image.sh 64 MiB (C:\ACC\SYSACC.NAC + C:\SYSACC2.NAC = this tree's SYSACC, both
+  accessories ALIVE in every run on it); group-A cards = seed-card.sh/seed-card-a4.sh (no
+  accessory) plus desk3a-acc = the desk3a card + C:\ACC\SYSACC.NAC.
+  Comparison checks/shotdiff-<part>.txt, summary checks/shotdiff-summary.txt (head vs new):
+    sikeys      THE FIX: new K02 drop-down -> K03 Esc: closed, "Off" kept -> K05 Up: "On"
+                highlighted -> K06 Return: "On" chosen -> K08 Down: "Off" highlighted -> K09 Esc:
+                closed, "On" kept -> K10 Cancel: dialog gone. head: K03 = box still open (the
+                defect), the script diverges from there on (intended difference, 9 OTHER).
+    si / si-aes / sitera / siqed   SYSACC dialog from EmuDESK / EmuDESK input=aes / TeraDesk /
+                QED, Return closes: identical except the "Mouse while busy" value (intended) and
+                pointer-only regions in dumps whose mark lies 100 ticks before a parkbr sweep
+                (D00_IDLE, *_CLOSED: the dump lands one 5 ms tick earlier or later inside the
+                sweep -- head 2 steps, new 1 step in *_CLOSED; new ahead in si D00_IDLE: noise
+                in both directions, the same SYSINFO02 "mark too close to the next input"
+                artefact; every END dump identical).
+    emucon      Ctrl-Z -> EmuCON, "ver", "dir", "exit" -> desktop, accessories alive: 7/7 identical
+    acc-on / acc-strict   LDGDEMO popup, alerts, value typing: 10/10, 10/10 identical
+    desk / tera / qed     6/6, 4/4 identical; qed 3 identical + END caret-blink region (known)
+    desk3a      Ctrl-I info dialog typing, rename, Alt-C, no accessory: 9/9 identical
+    desk3a-acc  the same with SYSACC loaded: 9/9 identical (F_TYPED "REN", G_RENAMED REN.TXT,
+                H_DRIVE_C the C:\ window by Alt-C -- viewed)
+    api         APITEST t25/t40 identical (TOTAL 106/0/5 on screen)
+    zv-dclick / zv-browser / zv-quit / zvfull   4/4, 7/7, 7/7, 6/6 identical (zvfull: full
+                screen -> Esc -> window back -> File > Quit)
+    doom        kbdvec keys: Esc menu, Up, Return, Y -> "exited with rc=0" in both serial logs;
+                the 6 differing dumps are attract-demo frames and DOOM's random quit message
+                (timing; known from INPUT01/ofam) -- viewed: same menu state, same prompt step.
+    deskw / qedw / qedo / teraw   12/12, 10/10, 7/7, 7/7 identical; host checks PASS (head and
+                new: checks/*-hostcheck.txt), fsck_msdos -n clean (checks/*-fsck.txt).
+  Serial: 0 [EXC]/PANIC/"Memory violation" in all 46 logs (23 head + 23 new).
+
+STATIC CHECKS (method/checks.sh final -> checks/final-*.txt; after all code edits; the shared
+  tree's target/ used by cargo xtask as in the INPUT01 run; the root kernel8.img (gitignored,
+  0e85db29...) saved before and restored afterwards)
+  host tests 1268/0/1 (baseline 1261/0/1: +6 aes_key_owner, +1 input_mode test)
+  release build rpi4 + qemu-virt: tos-api 64 / kernel 94, 0 errors (baseline 64/94)
+  clippy rpi4 + qemu-virt: tos-api 76 / kernel 125 (baseline 76/125)
+  desk drift probe 31; SDK host tests 19/0/0 (baseline 19/0/0); sdk/build.sh sysacc.c 0 warnings
+  qemu-virt release kernel built, NOT booted.
+
+PI PACKAGE (not copied to any card): bin/kernel8.img (gitignored) sha256
+  6314c8006a25f0a761f86d0de128459cd169ce2e326eb29b2b1a939eb5cf17f8 = the rpi4 release build of
+  checks.sh (cargo xtask build --board rpi4 --release, banner "NewTOS 0.1 2026-10-08 (e3400de9)");
+  bin/SYSACC.NAC 812ddd57... (sdk/build.sh of this tree's sysacc.c = the C:\ACC copy on every
+  base64 card above); bin/LIESMICH.TXT (German).
+  Package kernel booted unchanged (serial/pkg-api-serial.log, pkg-aes-api-serial.log): boot line
+  "[input] ..." for both modes, APITEST TOTAL 106/0/5 in both (screendumps/pkg-*-t40.png).
+
+NOT DONE / OPEN
+  - Real Pi 4 not run (workers take no HW actions). QEMU raspi4b has no USB: the input source
+    is the scratch injector at the usb::poll sites; the USB-HID key path into the same ring is
+    HW-only.
+  - Keys typed while ctl_pd owns the mouse (button held on a frame, during a menu track) wait for
+    the next owner instead of being eaten (named deviation, spec).
+  - After an accessory's form_do/form_alert, EmuTOS leaves it the key owner until ctlmgr next
+    loops; NewTOS hands the keys back at the next wait pass of any client (inline Control
+    Manager timing, spec). Not observable in any run here.
+  - The mouse-button/rectangle ownership test (own_mouse, "rlr == gl_mowner") is still the
+    single-app flag; only keys follow the identity. Out of this ticket.
+  - An accessory that tops its own window but waits without MU_KEYBD would leave typed keys in
+    the ring (EmuTOS: they pile up in its queue); none of the shipped accessories has a window.
+
+method/ FILES
+  this run: keyowner-change.diff (the code/spec/test change, incl. the new test file),
+    make-bases-keyowner.sh, make-kernels-keyowner.sh, keyowner-runs.sh, runs-all.sh,
+    compare-keyowner.sh, host-red-head.sh, desk-sikeys.actions, desk-emucon.actions;
+    make-inj-input01.sh (INPUT01 copy + one cargo target dir per kernel set);
+    run-gui-fs09.sh (ofam fs09 run-gui.sh, dumps to ../screendumps).
+  copied unchanged: from measurement-2026-10-08-input01/method apply-injector-input01.py,
+    desk-arm-m3.py, gen_script.py, drive-m3.py, seed-card.sh, seed-card-a4.sh, newdesk-*.inf,
+    TERADESK.INF, run-rpi4.sh, qmp_timed.py, shotdiff.py, checks.sh, desk3a/, evb-acc/-desk/-tera/
+    -qed/-desk3a, zv-dclick/-browser/-quit, doom .actions; from measurement-2026-10-08-ofam-freeze/
+    method/fs09 prep-card.sh (as prep-card-fs09.sh), gen-pattern.py, card-check.py, qedo-check.py,
+    desk/, deskw/qedw/qedo/teraw/zvfull .actions; from measurement-2026-10-08-sysinfo2/method
+    run-rpi4-drive-m3.sh, desk.actions (as desk-si.actions), tera.actions / qed.actions (as
+    si-tera / si-qed .actions).
+SHA256SUMS: every file of this run except itself and the gitignored bin/kernel8.img (its hash
+  is above and in bin/LIESMICH.TXT).

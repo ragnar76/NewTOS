@@ -553,7 +553,13 @@ pub fn evnt_multi(pb: &Aespb) -> Option<sched::Switch> {
                 // press it had just consumed.
                 super::input::w_setactive();
             }
-            if flags & MU_KEYBD != 0 {
+            // `pc = &rlr->p_cda->c_q; if (pc->c_cnt) …` (`aes/gemevlib.c:
+            // 173-182`): the caller reads its own queue, and `kchange` fills
+            // only the mouse owner's (`aes/geminput.c:288-296`) — a key is
+            // taken only by the process that owns the mouse now, after the
+            // Control Manager's `w_setactive` above (`docs/api/aes/event.md`
+            // "Who gets a key").
+            if flags & MU_KEYBD != 0 && super::input::owns_keys(idx) {
                 if let Some(w) = h.console_try_read_key() {
                     key = w as i16; // scancode << 8 | ascii (EV_KRET)
                     fired |= MU_KEYBD;
@@ -751,11 +757,24 @@ pub fn evnt_multi(pb: &Aespb) -> Option<sched::Switch> {
 /// low byte is the ASCII character (0 for keys with none), the high byte
 /// the Atari scancode, so cursor / function keys reach the application.
 /// The GEMDOS console path still reads the ASCII byte only.
+///
+/// `ev_block(MU_KEYBD)` → `akbin` reads the caller's own queue
+/// (`aes/geminput.c:486-493`), which `kchange` fills only while the caller owns
+/// the mouse (`:288-296`): a key is taken only by the current key owner
+/// ([`super::input::owns_keys`]). The Control Manager's loop head runs on each
+/// pass, as in [`evnt_mouse`], so ownership a hover over the bar gave to
+/// `ctl_pd` comes back (`docs/api/aes/event.md` "Who gets a key").
 pub fn evnt_keybd(pb: &Aespb) -> Option<sched::Switch> {
+    let idx = super::appl::current_identity();
     let key = match host() {
         Some(h) => loop {
-            if let Some(w) = h.console_try_read_key() {
-                break w as i16; // scancode << 8 | ascii
+            if !super::input::ct_msgup_busy() {
+                super::input::w_setactive();
+            }
+            if super::input::owns_keys(idx) {
+                if let Some(w) = h.console_try_read_key() {
+                    break w as i16; // scancode << 8 | ascii
+                }
             }
             if let sched::SleepOutcome::Yield(sw) = sched::sleep(sched::wait_input()) {
                 return Some(sw); // yield to a peer (S2); re-checks on resume

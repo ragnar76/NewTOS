@@ -1,0 +1,14 @@
+# QED regression (#Z C:\Apps\QED\QED.NAP; geometry from
+# measurement-2026-10-06-ldg-m3/screendumps/m3-on-qed-t30.png): hover the
+# "Datei" title (83,9) -> drop-down; click its first item (90,28).
+# Ticks hz_200 after QED's first poll.
+100 parkbr
+1600 mark Q00_UP
+1700 move 83 9
+2000 mark Q01_DATEI_OPEN
+2100 move 90 28
+2300 down
+2303 up
+3400 mark Q02_ITEM_CLICKED
+3600 parkbr
+4000 mark END

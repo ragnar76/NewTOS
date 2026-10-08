@@ -1,0 +1,16 @@
+# tos-api/tests/aes_key_owner.rs against the new tos-api with ONLY the key gate taken out
+# (event.rs: evnt_multi MU_KEYBD arm and evnt_keybd read the ring without input::owns_keys(idx),
+#  i.e. HEAD's first-poller-wins rule; scratch edit of a copy, restored from the copy right after)
+test keys_go_to_the_accessory_inside_its_beg_mctrl ... FAILED
+test an_accessory_dialog_reads_its_keys_and_gives_them_back ... FAILED
+test desktop_shortcuts_reach_the_desktop_with_an_accessory_loaded ... FAILED
+test evnt_keybd_follows_the_owner ... FAILED
+test an_accessory_window_on_top_gets_the_keys ... FAILED
+test typing_goes_to_the_top_window_owner_not_to_an_idle_accessory ... FAILED
+test result: FAILED. 0 passed; 6 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+# the same test file with the change in place:
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out
+
+# tos-api/tests/gemdos_ssystem_sysinfo.rs input_mode_reports_the_pump_in_effect: red at HEAD by construction
+# (HEAD answers Ssystem(2020) with EINVFN, the test expects 0/1), green with the change.

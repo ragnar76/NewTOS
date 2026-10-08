@@ -1,0 +1,19 @@
+# TASK/SYSINFO01, EmuDESK (in-kernel desktop, no #Z; the card's
+# C:\ACC\SYSACC.NAC + C:\SYSACC2.NAC registered): hover "Desk" (26,9) ->
+# drop-down with the two " System Info" entries; click the first (60,66) ->
+# AC_OPEN -> the SYSINFO01 dialog; Return (the DEFAULT OK button) closes it.
+# Ticks hz_200 after "[desk] desktop up" (desk-arm-m3.py). IKBD Return 1C.
+# (measurement-2026-10-07-acctitle/method/desk.actions, mark names changed.)
+100 parkbr
+400 mark D00_IDLE
+500 move 26 9
+900 mark D01_DESK_OPEN
+1000 move 60 66
+1200 down
+1203 up
+2200 mark D02_DIALOG
+2400 key 1C
+2406 key 9C
+3000 mark D03_CLOSED
+3100 parkbr
+3400 mark END

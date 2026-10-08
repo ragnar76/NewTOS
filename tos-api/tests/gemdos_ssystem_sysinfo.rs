@@ -1,9 +1,9 @@
 //! **SYSINFO01** — `Ssystem` 2003–2019 at the GEMDOS trap boundary: the
 //! effective system settings a system-information tool (the SYSACC desk
-//! accessory) shows.
+//! accessory) shows; **KEYOWNER** added 2020, the input pump mode.
 //!
 //! Spec: `docs/api/gemdos/154-ssystem.md` §"System-information modes
-//! (2003–2019)". Pinned here, above the [`Host`] boundary and on the
+//! (2003–2020)". Pinned here, above the [`Host`] boundary and on the
 //! `tos-api` modules that hold the rest of the state:
 //!
 //! 1. every scalar mode answers in the call's own LONG (`arg1 == 0`) and
@@ -15,13 +15,14 @@
 //!    and "ASID test mode" rules;
 //! 5. 2019 copies with FreeMiNT's `strncpy_f` rule (`len - 1` characters, NUL
 //!    always, `len <= 0` writes nothing);
-//! 6. 2020 is not a mode (`EINVFN`).
+//! 6. 2020 reports the input pump (0 timer pump, 1 `input=aes`);
+//! 7. 2021 is not a mode (`EINVFN`).
 
-use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU8, Ordering};
 use std::sync::{Mutex, MutexGuard, Once};
 
 use tos_api::bdos::process::{memprot, mmu};
-use tos_api::host::{CpuClockPolicy, Host, KeyboardLayout, ScreenInfo, SdCardMode};
+use tos_api::host::{CpuClockPolicy, Host, InputMode, KeyboardLayout, ScreenInfo, SdCardMode};
 use tos_api::trap::{TrapArgs, TrapClass};
 
 const SSYSTEM: u16 = 0x154;
@@ -42,6 +43,7 @@ const S_NEWTOS_GPUMEM: u64 = 2016;
 const S_NEWTOS_KEYBOARD: u64 = 2017;
 const S_NEWTOS_SERIAL: u64 = 2018;
 const S_NEWTOS_KVERSION: u64 = 2019;
+const S_NEWTOS_INPUTMODE: u64 = 2020;
 
 const E_OK: i32 = 0;
 const ERROR: i32 = -1;
@@ -49,7 +51,7 @@ const EINVAL: i32 = -25;
 const EINVFN: i32 = -32;
 
 /// The scalar modes whose answer comes from the host.
-const HOST_MODES: [u64; 11] = [
+const HOST_MODES: [u64; 12] = [
     S_NEWTOS_CPUMEAS,
     S_NEWTOS_CPUPOLICY,
     S_NEWTOS_SDMODE,
@@ -61,6 +63,7 @@ const HOST_MODES: [u64; 11] = [
     S_NEWTOS_KEYBOARD,
     S_NEWTOS_SERIAL,
     S_NEWTOS_KVERSION,
+    S_NEWTOS_INPUTMODE,
 ];
 
 /// Does the stand-in host know its facts? One switch for all of them, so the
@@ -68,6 +71,8 @@ const HOST_MODES: [u64; 11] = [
 static KNOWS: AtomicBool = AtomicBool::new(true);
 /// The measured clock it reports, Hz.
 static MEASURED_HZ: AtomicI64 = AtomicI64::new(1_499_998_000);
+/// The input pump it reports, `InputMode as u8`.
+static PUMP: AtomicU8 = AtomicU8::new(InputMode::TimerPump as u8);
 
 static RIG: Mutex<()> = Mutex::new(());
 
@@ -117,6 +122,16 @@ impl Host for InfoHost {
 
     fn os_version(&self) -> Option<&'static str> {
         KNOWS.load(Ordering::Relaxed).then_some("NewTOS 0.1")
+    }
+
+    fn input_mode(&self) -> Option<InputMode> {
+        KNOWS.load(Ordering::Relaxed).then(|| {
+            if PUMP.load(Ordering::Relaxed) == InputMode::Aes as u8 {
+                InputMode::Aes
+            } else {
+                InputMode::TimerPump
+            }
+        })
     }
 }
 
@@ -186,7 +201,7 @@ fn unknown_host_facts_are_error_and_write_nothing() {
 #[test]
 fn arg2_is_refused_for_every_scalar_mode_before_anything_is_read() {
     let _g = rig(true);
-    for mode in 2003..=2018u64 {
+    for mode in (2003..=2018u64).chain([S_NEWTOS_INPUTMODE]) {
         let mut out: i32 = 0x0BAD_F00D;
         assert_eq!(gemdos(mode, &mut out as *mut i32 as u64, 1), EINVAL, "mode {mode}: arg2 != 0");
         assert_eq!(out, 0x0BAD_F00D, "mode {mode}: nothing written");
@@ -272,7 +287,17 @@ fn version_string_follows_strncpy_f() {
 }
 
 #[test]
-fn the_block_ends_at_2019() {
+fn input_mode_reports_the_pump_in_effect() {
     let _g = rig(true);
-    assert_eq!(gemdos(2020, 0, 0), EINVFN);
+    PUMP.store(InputMode::TimerPump as u8, Ordering::Relaxed);
+    assert_eq!(both_forms(S_NEWTOS_INPUTMODE), 0, "timer pump: the pointer moves while busy");
+    PUMP.store(InputMode::Aes as u8, Ordering::Relaxed);
+    assert_eq!(both_forms(S_NEWTOS_INPUTMODE), 1, "input=aes");
+    PUMP.store(InputMode::TimerPump as u8, Ordering::Relaxed);
+}
+
+#[test]
+fn the_block_ends_at_2020() {
+    let _g = rig(true);
+    assert_eq!(gemdos(2021, 0, 0), EINVFN);
 }

@@ -1,0 +1,71 @@
+# FS08 part 2 write regression, EmuDESK (in-kernel desktop, no #Z). Card:
+# prep-card.sh desk -- window C:\D3A\ restored from NEWDESK.INF (#W 02 04 26
+# 0C, the desk3a geometry): items SUB3A (folder) / BIG.DAT (300003 B) /
+# NOTE.TXT at the glyph centres (63,120) / (147,120) / (231,120); the C drive
+# icon at (38,30). Every operation goes through the desktop's copy/move/delete
+# code (kernel/src/desk/dir.rs: 32 KiB Fread/Fwrite copy buffer, Frename,
+# Fdelete, Dcreate, Ddelete) and is confirmed with Return (the OK default).
+# Ticks hz_200 after "[desk] desktop up" (desk-arm-m3.py). IKBD: Return 1C,
+# Ctrl 1D, D 20; break = make | 0x80.
+100 parkbr
+400 mark A_IDLE
+# 1. copy BIG.DAT onto SUB3A (plain drag = copy)
+600 move 147 120
+800 down
+900 drag 120 120
+1000 drag 63 120
+1200 up
+2200 mark B_COPY_CONFIRM
+2400 key 1C
+2406 key 9C
+4400 mark C_COPIED
+# 2. move NOTE.TXT onto SUB3A (Ctrl held during the drag = move)
+4600 move 231 120
+4700 key 1D
+4800 down
+4900 drag 150 120
+5000 drag 63 120
+5200 up
+5300 key 9D
+6200 mark D_MOVE_CONFIRM
+6400 key 1C
+6406 key 9C
+8000 mark E_MOVED
+# 3. delete BIG.DAT in C:\D3A: select it, File > Delete (Ctrl-D), confirm
+8200 move 147 120
+8400 down
+8403 up
+8600 parkbr
+8800 key 1D
+8810 key 20
+8820 key A0
+8830 key 9D
+9800 mark F_DELETE_CONFIRM
+10000 key 1C
+10006 key 9C
+11600 mark G_DELETED
+# 4. copy the folder SUB3A (INSIDE.TXT, BIG.DAT, NOTE.TXT) onto drive C
+11800 move 63 120
+12000 down
+12100 drag 50 60
+12200 drag 38 30
+12400 up
+13400 mark H_FOLDERCOPY_CONFIRM
+13600 key 1C
+13606 key 9C
+16000 mark I_FOLDER_COPIED
+# 5. delete the folder C:\D3A\SUB3A: select, Ctrl-D, confirm
+16200 move 63 120
+16400 down
+16403 up
+16600 parkbr
+16800 key 1D
+16810 key 20
+16820 key A0
+16830 key 9D
+17800 mark J_FOLDERDEL_CONFIRM
+18000 key 1C
+18006 key 9C
+20000 mark K_FOLDER_DELETED
+20200 parkbr
+20600 mark END

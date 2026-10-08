@@ -9,19 +9,21 @@
  * cache, cache share, pointer motion while a program computes, serial
  * console. For each setting the dialog shows the value the kernel runs with
  * NOW (asked through NewTOS's own Ssystem subfunctions, GEMDOS 0x154, modes
- * 2000-2019, docs/api/gemdos/154-ssystem.md) and the value selected for the
+ * 2000-2020, docs/api/gemdos/154-ssystem.md) and the value selected for the
  * NEXT start (read from C:\CMDLINE.TXT the way the kernel reads its boot
  * arguments). Clicking a next-start value opens a small drop-down list of
  * the choices; Save writes C:\CMDLINE.TXT. The file's text is never shown:
  * every value is a plain-language label (user, 2026-10-07/08).
  *
  * A value the kernel does not report is shown as "not available", never as
- * an invented one. (The pointer-motion mode, `input=aes`, has no Ssystem
- * mode yet: its NOW column says so.)
+ * an invented one. (The pointer-motion mode, `input=aes`, is Ssystem 2020
+ * since KEYOWNER; an older kernel answers EINVFN and the NOW column says
+ * "not available".)
  *
  * History: ACC06 built it as one form_alert (Ssystem 2000/2001); SYSINFO01
  * (2026-10-07) turned it into a read-only dialog; SYSINFO02 (2026-10-08)
- * made the start-up settings selectable and savable.
+ * made the start-up settings selectable and savable; KEYOWNER (2026-10-08)
+ * fills the NOW column of "Mouse while busy" from Ssystem 2020.
  *
  * FILE EXTENSION: `.NAC` (ADR-018, ACC05): a native AArch64 desk accessory.
  * The AES loads it once from C:\ACC\*.NAC and C:\*.NAC at session start
@@ -96,7 +98,7 @@
  *   objc_find       AES  43      wind_update     AES 107
  *   objc_offset     AES  44
  *   Fcreate 0x3C, Fopen 0x3D, Fclose 0x3E, Fread 0x3F, Fwrite 0x40,
- *   Fdelete 0x41, Frename 0x56, Ssystem 0x154 (modes 2000-2019)
+ *   Fdelete 0x41, Frename 0x56, Ssystem 0x154 (modes 2000-2020)
  */
 #include <newtos.h>
 
@@ -153,6 +155,7 @@ static inline NLONG gemdos3(NLONG fn, NLONG a0, NLONG a1, NLONG a2)
 #define S_NEWTOS_KEYBOARD   2017 /* 0 US, 1 German, 2 file, 3 changed  */
 #define S_NEWTOS_SERIAL     2018 /* 0 off, 1 on                        */
 #define S_NEWTOS_KVERSION   2019 /* version string into a buffer       */
+#define S_NEWTOS_INPUTMODE  2020 /* 0 timer pump, 1 input=aes          */
 
 /* The kernel delivers the pointer form with one 32-bit store, so the target
  * is an `int` (32 bit under our LP64 app ABI), never a `long`. Returns 1 and
@@ -709,8 +712,12 @@ static void read_values(void)
     else
         /* No cache, no share: say so rather than a percentage of nothing. */
         sapp(now_text[CL_BCACHEPCT], 0, "-");
-    /* No Ssystem mode reports the input mode (input=aes) yet. */
-    sapp(now_text[CL_INPUT], 0, NA);
+    /* 2020: 0 = the timer pump (the pointer moves while busy), 1 = input=aes
+     * -- the setting's value is the other way round (1 = moves). */
+    if (sys_value(S_NEWTOS_INPUTMODE, &v))
+        value_textn(now_text[CL_INPUT], VALUE_LEN, CL_INPUT, v ? 0 : 1);
+    else
+        sapp(now_text[CL_INPUT], 0, NA);
     if (sys_value(S_NEWTOS_SERIAL, &v))
         value_textn(now_text[CL_SERIAL], VALUE_LEN, CL_SERIAL, v ? 1 : 0);
     else

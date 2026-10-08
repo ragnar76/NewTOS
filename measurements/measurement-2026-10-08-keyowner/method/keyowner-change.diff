@@ -1,0 +1,1508 @@
+diff --git a/docs/api/aes/event.md b/docs/api/aes/event.md
+index f8b823fb..e1de48c1 100644
+--- a/docs/api/aes/event.md
++++ b/docs/api/aes/event.md
+@@ -166,6 +166,8 @@ and the delivered `msg[0] == AC_CLOSE` it also sets `AP_ACCLOSE`.
+ 2. **Quick-check keyboard** (`MU_KEYBD`): if a character is queued on the
+    caller's console queue (`rlr->p_cda->c_q`), dequeue it into `EV_KRET`
+    (`prets[4]`) and mark `MU_KEYBD` fired (`:173-182`).
++   Keys reach that queue only while the caller owns the mouse — see
++   "Who gets a key" below.
+ 3. **Quick-check button / rectangles** (only if the caller owns the mouse,
+    `rlr == gl_mowner`): `MU_BUTTON` uses `downorup(button, buparm)` on the
+    current (or, if a transition is pending, the transition-time `pr_button`)
+@@ -445,6 +447,99 @@ is decided: an accessory is a second `AESPD` parked in `evnt_multi`
+ work item is exactly "must the inline Control Manager go for this, or can
+ accessories live without events during a track".
+ 
++### Who gets a key — the mouse owner (`gl_mowner`) — contract (KEYOWNER, 2026-10-08)
++
++**EmuTOS.** A key belongs to the process that owns the mouse at the moment the
++AES picks it up. `gl_mowner` is declared *"current mouse/keybd owner"*
++(`aes/geminput.c:52`); `chkkbd` reads a character only while that owner's
++keyboard queue has room and forks `kchange` with it (`aes/gemdisp.c:158-177`);
++`kchange` hands it to exactly that process — `post_keybd(gl_mowner->p_cda, ch)`
++(`aes/geminput.c:288-296`) — which wakes the owner's parked `MU_KEYBD` wait or
++queues the key in the owner's `c_q` (`:299-308`). A wait reads only its own
++queue: `ev_multi`'s quick check `pc = &rlr->p_cda->c_q` (`aes/gemevlib.c:
++173-182`), `akbin` for the blocking arm and for `evnt_keybd`
++(`aes/geminput.c:486-493`, `gemasync.c:151-152`, `gemsuper.c:127`). A process
++that does not own the mouse never sees a key, however long it waits.
++
++`gl_mowner` moves at four places, and the keyboard moves with it:
++
++| Where | Rule | Source |
++|-------|------|--------|
++| the Control Manager's loop head | `w_setactive()`: the owner of the top window (`w_top()`, the desktop window when none is open) gets the mouse — `ct_chgown(D.w_win[wh].w_owner, &work)`, skipped for a NULL owner | `aes/gemctrl.c:439-442`, `aes/gemwmlib.c:322-334` |
++| `wind_update(BEG_MCTRL)` / `form_do` | `fm_own(TRUE)` on the 0 → 1 edge of `ml_ocnt`: remember the owner (`get_mown(&ml_pmown)`), give the mouse to the caller (`ct_chgown(rlr, &gl_rscreen)`); `fm_own(FALSE)` on the 1 → 0 edge gives it back to `ml_pmown` | `aes/gemfmlib.c:82-107`, `aes/gemwmlib.c:1778-1797` |
++| a left-button press | `if (!gl_ctmown && new == MB_DOWN && button == 0) gl_mowner = chkown()`: inside the control rectangle → `gl_cowner`, a window frame or the bar → `ctl_pd`, the desktop → the desktop window's owner | `aes/geminput.c:310-335` |
++| the pointer entering the menu titles, buttons up | `gl_mowner = ctl_pd` | `aes/geminput.c:388-389` |
++
++Two guards apply to every hand-over through `set_mown`: nothing changes while
++a button is held (`if (!button)`, `aes/geminput.c:220-235`), and nothing
++changes while a menu track holds the mouse (`ct_chgown`'s `if (!gl_ctmown)`,
++`aes/gemctrl.c:392-397`).
++
++**Consequences an application can observe** (the contract):
++
++1. **Normal typing goes to the top window's owner** — with no window open, to
++   the owner of the desktop window, i.e. the application chain (`wm_init`
++   records `rlr`, `aes/gemwmlib.c:1254-1290`).
++2. **During `wind_update(BEG_MCTRL)` the keys go to the caller.** The Control
++   Manager cannot take them back while `ml_ocnt > 0`: its own `ev_multi`
++   (`MU_KEYBD | MU_BUTTON [| MU_M1 | MU_MESAG]`, `aes/gemctrl.c:445-462`) is
++   fired only by what `ctl_pd` owns, and during the bracket it owns nothing —
++   keys and presses go to the holder (the control rectangle is the whole screen,
++   so `chkown` answers `gl_cowner`), and `gl_mntree` is held (`NULL`), so there
++   is no bar to track. A desk accessory tracking its own drop-down
++   (`mn_popup`'s model, `aes/gemmnext.c:312-353`) therefore receives Esc,
++   Return and the cursor keys; the application waiting in its own `evnt_multi`
++   at the same time does not.
++3. **A desk accessory gets keys only while it owns the mouse:** its window is
++   topped, or it is inside `BEG_MCTRL` / `form_do` / `form_alert`. An idle
++   accessory waiting for `MU_MESAG` (or even `MU_KEYBD`) takes nothing from
++   the application.
++4. **The application chain is one owner.** EmuTOS runs the desktop, every
++   launched program and every `Pexec` child on one `AESPD`, `D.g_int[0]`
++   (`aes/geminit.c:851-877`, `gemshlib.c:572`), and each accessory on its own
++   (`D.g_acc[]`, `geminit.c:819`). A key owned by the chain is the chain's,
++   whichever of its members is waiting.
++
++**NewTOS (tos-api `aes::input`, `aes::event`).** `gl_mowner` is held as the
++existing Control-Manager flag (`ctl_pd` or "an application", A73/H02) plus the
++**AES identity** the application half names, maintained at the four places of
++the table above with the two guards. Identities map onto EmuTOS's process
++model as point 4 says: a registered accessory (`aes::acc`) is its own owner;
++the kernel desktop and every GEMDOS slot that is not an accessory are the one
++chain owner. A desktop window without a recorded owner is the chain's
++(`wm_init`'s `rlr`). `evnt_multi`'s `MU_KEYBD` arm and `evnt_keybd` take a key
++only when the caller is the current key owner.
++
++**Where NewTOS differs, and why** (named, not rationalised — each is a
++property of the inline Control Manager and the shared key ring):
++
++* **The key is assigned when it is read, not when `chkkbd` forks it.** The
++  IKBD ring is also the GEMDOS/BIOS console's (`Cconin`, `Bconin`), and with
++  the cooperative kernel desk accessories keep running their `evnt_*` loops
++  while a TOS program reads the console. Moving keys into a per-process AES
++  queue from an accessory's wait would take them away from that program. So
++  the key stays in the ring until its owner reads it; a key that arrives while
++  A owns the mouse but is read only after ownership moved to B goes to B.
++* **Keys typed while `ctl_pd` owns the mouse are not eaten.** EmuTOS's
++  `ctlmgr` swallows them (its `MU_KEYBD`); here they wait in the ring and go
++  to the next application owner. This happens only with a button held on a
++  window frame or the bar, or during a menu track.
++* **`w_setactive` runs at every pass of every wait** (the inline Control
++  Manager, see A91 above), not only after a Control-Manager event — except
++  while `ml_ocnt > 0`, where it keeps the owner, because `ctlmgr` is dormant
++  then (point 2). After an accessory's `form_do`/`form_alert` ends, EmuTOS
++  leaves the accessory owner until `ctlmgr` next loops; NewTOS hands the
++  keys back to the top window's owner at the next wait pass of any client.
++* **The kernel's own modal loops** (`form_do`, `form_alert`, `fsel_input` —
++  busy loops that never yield) read the ring directly: they run under
++  `fm_own(TRUE)`, so the caller is the owner (with the button up on entry), and
++  no other client runs until they return.
++* `evnt_keybd` runs the Control Manager's loop head (`w_setactive`) on each
++  pass as `evnt_mouse` does, so a key owner taken by a hover over the bar
++  comes back to the waiter (EmuTOS's independent `ctlmgr` would loop there).
++
++Tests: `tos-api/tests/aes_key_owner.rs`.
++
+ ---
+ 
+ ## The single-event waits (opcodes 20–24, 26)
+@@ -471,6 +566,10 @@ encoding is the raw AES/VDI keyboard word (`gsx_char` → VDI string input,
+ `gemgsxif.c:459-471`): high byte = IKBD scancode, low byte = ASCII (0 for
+ non-ASCII keys such as the function/cursor keys).
+ 
++The wait is `akbin` on the caller's own queue (`aes/geminput.c:486-493`): only
++a key that arrives while the caller owns the mouse completes it ("Who gets a
++key", above).
++
+ ### `evnt_button` (21)
+ 
+ **Source:** `gemsuper.c:129-131` → `ev_button(B_CLICKS, B_MASK, B_STATE,
+diff --git a/docs/api/gemdos/154-ssystem.md b/docs/api/gemdos/154-ssystem.md
+index 54356cbf..2417fed0 100644
+--- a/docs/api/gemdos/154-ssystem.md
++++ b/docs/api/gemdos/154-ssystem.md
+@@ -22,7 +22,7 @@
+ > machine facts an EL0 program cannot reach any other way, because the hardware
+ > that knows them is kernel-only (2000/2001), the kernel entry of the
+ > default `kbdvec` stub (2002, KEYS02), and the effective system settings a
+-> system-information tool shows (2003–2019, SYSINFO01). These are *not* FreeMiNT modes and are
++> system-information tool shows (2003–2020, SYSINFO01 / KEYOWNER). These are *not* FreeMiNT modes and are
+ > marked as ours wherever they appear; 2000+ is a range FreeMiNT leaves free.
+ 
+ > **Contract vs. reference** — see [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md).
+@@ -170,6 +170,7 @@ NewTOS identity, but that is a separate decision.
+ | `S_NEWTOS_KEYBOARD` | 2017 | input | source of the active keyboard layout |
+ | `S_NEWTOS_SERIAL` | 2018 | console | serial console output on / off |
+ | `S_NEWTOS_KVERSION` | 2019 | kernel | kernel version + build stamp, **string** into the caller's buffer |
++| `S_NEWTOS_INPUTMODE` | 2020 | input | where the keyboard/mouse pump runs (timer pump / `input=aes`) — KEYOWNER |
+ 
+ **Why the number block is free.** FreeMiNT's `sys/mint/ssystem.h` (@ `f906416`)
+ assigns 0–29, 100 and `0x54f8` (21752), and reserves two ranges by comment:
+@@ -264,7 +265,7 @@ answer both tags, with the fixed values 700 000 000 Hz and 25 000 m°C — those
+ are the emulator's numbers, faithfully reported, and only a real Pi 4 shows a
+ clock that moves and a die that warms up.
+ 
+-#### System-information modes (2003–2019) — SYSINFO01
++#### System-information modes (2003–2020) — SYSINFO01, KEYOWNER
+ 
+ The settings and machine facts a system-information tool shows (the SYSACC desk
+ accessory, `sdk/examples/sysacc.c`, TASK/SYSINFO01). Every mode reports the
+@@ -274,7 +275,7 @@ hardware actually negotiated — never the text of a configuration file. A
+ program that wants to show `memprot=strict` learns "strict" only if the kernel
+ really runs strict.
+ 
+-**Interface of the scalar modes 2003–2018** — exactly the one of 2000/2001
++**Interface of the scalar modes 2003–2018 and 2020** — exactly the one of 2000/2001
+ (§"Interface (both modes)" below): `arg1` = pointer to a 32-bit LONG that
+ receives the value, or 0 for the value in the returned LONG; `arg2` reserved,
+ must be 0 (`EINVAL` before anything is read, nothing written); `ERROR` (-1)
+@@ -300,6 +301,7 @@ one, for the same reason as there.
+ | `S_NEWTOS_GPUMEM` | 2016 | the memory the firmware gives the VideoCore (`gpu_mem` split), **KiB** | the firmware did not answer "Get VC memory"; no VideoCore | `Host::gpu_memory_bytes` → mailbox "Get VC memory" `0x0001_0006` (§3a), read once at boot with "Get ARM memory" — the split cannot change while the machine runs |
+ | `S_NEWTOS_KEYBOARD` | 2017 | where the active layout came from: **0** = built-in US (the default, or `#K us`); **1** = built-in German (`#K de` in `NEWDESK.INF`); **2** = loaded from `C:\KEYBOARD.KBD`; **3** = changed since by a program (XBIOS `Keytbl` replaced a table with different contents) | the board has no keyboard translator (hostless) | `Host::keyboard_layout` → `kernel::keymap` |
+ | `S_NEWTOS_SERIAL` | 2018 | **0** = serial console output off; **1** = on (`serial=on` on `board-rpi4`; always on on `board-qemu-virt`, whose serial log is its only console) | hostless | `Host::serial_console` → `kernel::console::serial_tx_enabled` (SER01) |
++| `S_NEWTOS_INPUTMODE` | 2020 | where the keyboard/mouse pump runs (INPUT01): **0** = also from the 200 Hz timer interrupt while a program runs, so the pointer moves while a program is busy (the default); **1** = only in the AES waits and the console reads (`input=aes`, the behaviour before INPUT01). Added by TASK/KEYOWNER after the 2003–2019 block | hostless | `Host::input_mode` → `kernel::input_gate::mode` (decided once at boot from `input=aes`, `kernel/src/bootargs.rs` `INPUT_AES`) |
+ 
+ **`S_NEWTOS_KVERSION` (2019) — the kernel version string.** The string form of
+ FreeMiNT's `S_KNAME` (900, `sys/ssystem.c:572-576` → `strncpy_f`,
+@@ -350,8 +352,10 @@ Where a fact is not known on a board, the answer is `ERROR` — the same rule as
+ | 2017 | 0–3 | 0–3 | `ERROR` |
+ | 2018 | 0 / 1 | 1 | `ERROR` |
+ | 2019 | string | string | `ERROR` |
++| 2020 | 0 / 1 | 0 / 1 | `ERROR` |
+ 
+-Tests: `tos-api/tests/gemdos_ssystem_sysinfo.rs`.
++Tests: `tos-api/tests/gemdos_ssystem_sysinfo.rs` (2021 is the next free
++number and answers `EINVFN`).
+ 
+ ---
+ 
+diff --git a/kernel/src/host_env.rs b/kernel/src/host_env.rs
+index f50ef43f..00010682 100644
+--- a/kernel/src/host_env.rs
++++ b/kernel/src/host_env.rs
+@@ -397,6 +397,13 @@ impl Host for KernelHost {
+         Some(crate::console::serial_tx_enabled())
+     }
+ 
++    fn input_mode(&self) -> Option<tos_api::host::InputMode> {
++        Some(match crate::input_gate::mode() {
++            crate::input_gate::InputMode::Irq => tos_api::host::InputMode::TimerPump,
++            crate::input_gate::InputMode::Aes => tos_api::host::InputMode::Aes,
++        })
++    }
++
+     fn os_version(&self) -> Option<&'static str> {
+         Some(crate::initinfo::VERSION_STRING)
+     }
+diff --git a/sdk/examples/sysacc.c b/sdk/examples/sysacc.c
+index 79fc699b..b78dd713 100644
+--- a/sdk/examples/sysacc.c
++++ b/sdk/examples/sysacc.c
+@@ -9,19 +9,21 @@
+  * cache, cache share, pointer motion while a program computes, serial
+  * console. For each setting the dialog shows the value the kernel runs with
+  * NOW (asked through NewTOS's own Ssystem subfunctions, GEMDOS 0x154, modes
+- * 2000-2019, docs/api/gemdos/154-ssystem.md) and the value selected for the
++ * 2000-2020, docs/api/gemdos/154-ssystem.md) and the value selected for the
+  * NEXT start (read from C:\CMDLINE.TXT the way the kernel reads its boot
+  * arguments). Clicking a next-start value opens a small drop-down list of
+  * the choices; Save writes C:\CMDLINE.TXT. The file's text is never shown:
+  * every value is a plain-language label (user, 2026-10-07/08).
+  *
+  * A value the kernel does not report is shown as "not available", never as
+- * an invented one. (The pointer-motion mode, `input=aes`, has no Ssystem
+- * mode yet: its NOW column says so.)
++ * an invented one. (The pointer-motion mode, `input=aes`, is Ssystem 2020
++ * since KEYOWNER; an older kernel answers EINVFN and the NOW column says
++ * "not available".)
+  *
+  * History: ACC06 built it as one form_alert (Ssystem 2000/2001); SYSINFO01
+  * (2026-10-07) turned it into a read-only dialog; SYSINFO02 (2026-10-08)
+- * made the start-up settings selectable and savable.
++ * made the start-up settings selectable and savable; KEYOWNER (2026-10-08)
++ * fills the NOW column of "Mouse while busy" from Ssystem 2020.
+  *
+  * FILE EXTENSION: `.NAC` (ADR-018, ACC05): a native AArch64 desk accessory.
+  * The AES loads it once from C:\ACC\*.NAC and C:\*.NAC at session start
+@@ -96,7 +98,7 @@
+  *   objc_find       AES  43      wind_update     AES 107
+  *   objc_offset     AES  44
+  *   Fcreate 0x3C, Fopen 0x3D, Fclose 0x3E, Fread 0x3F, Fwrite 0x40,
+- *   Fdelete 0x41, Frename 0x56, Ssystem 0x154 (modes 2000-2019)
++ *   Fdelete 0x41, Frename 0x56, Ssystem 0x154 (modes 2000-2020)
+  */
+ #include <newtos.h>
+ 
+@@ -153,6 +155,7 @@ static inline NLONG gemdos3(NLONG fn, NLONG a0, NLONG a1, NLONG a2)
+ #define S_NEWTOS_KEYBOARD   2017 /* 0 US, 1 German, 2 file, 3 changed  */
+ #define S_NEWTOS_SERIAL     2018 /* 0 off, 1 on                        */
+ #define S_NEWTOS_KVERSION   2019 /* version string into a buffer       */
++#define S_NEWTOS_INPUTMODE  2020 /* 0 timer pump, 1 input=aes          */
+ 
+ /* The kernel delivers the pointer form with one 32-bit store, so the target
+  * is an `int` (32 bit under our LP64 app ABI), never a `long`. Returns 1 and
+@@ -709,8 +712,12 @@ static void read_values(void)
+     else
+         /* No cache, no share: say so rather than a percentage of nothing. */
+         sapp(now_text[CL_BCACHEPCT], 0, "-");
+-    /* No Ssystem mode reports the input mode (input=aes) yet. */
+-    sapp(now_text[CL_INPUT], 0, NA);
++    /* 2020: 0 = the timer pump (the pointer moves while busy), 1 = input=aes
++     * -- the setting's value is the other way round (1 = moves). */
++    if (sys_value(S_NEWTOS_INPUTMODE, &v))
++        value_textn(now_text[CL_INPUT], VALUE_LEN, CL_INPUT, v ? 0 : 1);
++    else
++        sapp(now_text[CL_INPUT], 0, NA);
+     if (sys_value(S_NEWTOS_SERIAL, &v))
+         value_textn(now_text[CL_SERIAL], VALUE_LEN, CL_SERIAL, v ? 1 : 0);
+     else
+diff --git a/tos-api/src/aes/acc.rs b/tos-api/src/aes/acc.rs
+index c964a11a..a5246848 100644
+--- a/tos-api/src/aes/acc.rs
++++ b/tos-api/src/aes/acc.rs
+@@ -123,6 +123,14 @@ pub fn processes() -> impl Iterator<Item = usize> {
+     t.into_iter().filter(|e| *e != usize::MAX)
+ }
+ 
++/// Is identity `idx` a loaded desk accessory — an `AESPD` of its own
++/// (`D.g_acc[]`, `aes/geminit.c:819`), as opposed to a member of the
++/// application chain? Used by the keyboard/mouse-owner comparison
++/// (`input::same_pd`).
++pub fn is_process(idx: usize) -> bool {
++    processes().any(|e| e == idx)
++}
++
+ /// Number of loaded accessory processes.
+ pub fn count() -> usize {
+     processes().count()
+diff --git a/tos-api/src/aes/event.rs b/tos-api/src/aes/event.rs
+index de69e2da..b45eaf84 100644
+--- a/tos-api/src/aes/event.rs
++++ b/tos-api/src/aes/event.rs
+@@ -553,7 +553,13 @@ pub fn evnt_multi(pb: &Aespb) -> Option<sched::Switch> {
+                 // press it had just consumed.
+                 super::input::w_setactive();
+             }
+-            if flags & MU_KEYBD != 0 {
++            // `pc = &rlr->p_cda->c_q; if (pc->c_cnt) …` (`aes/gemevlib.c:
++            // 173-182`): the caller reads its own queue, and `kchange` fills
++            // only the mouse owner's (`aes/geminput.c:288-296`) — a key is
++            // taken only by the process that owns the mouse now, after the
++            // Control Manager's `w_setactive` above (`docs/api/aes/event.md`
++            // "Who gets a key").
++            if flags & MU_KEYBD != 0 && super::input::owns_keys(idx) {
+                 if let Some(w) = h.console_try_read_key() {
+                     key = w as i16; // scancode << 8 | ascii (EV_KRET)
+                     fired |= MU_KEYBD;
+@@ -751,11 +757,24 @@ pub fn evnt_multi(pb: &Aespb) -> Option<sched::Switch> {
+ /// low byte is the ASCII character (0 for keys with none), the high byte
+ /// the Atari scancode, so cursor / function keys reach the application.
+ /// The GEMDOS console path still reads the ASCII byte only.
++///
++/// `ev_block(MU_KEYBD)` → `akbin` reads the caller's own queue
++/// (`aes/geminput.c:486-493`), which `kchange` fills only while the caller owns
++/// the mouse (`:288-296`): a key is taken only by the current key owner
++/// ([`super::input::owns_keys`]). The Control Manager's loop head runs on each
++/// pass, as in [`evnt_mouse`], so ownership a hover over the bar gave to
++/// `ctl_pd` comes back (`docs/api/aes/event.md` "Who gets a key").
+ pub fn evnt_keybd(pb: &Aespb) -> Option<sched::Switch> {
++    let idx = super::appl::current_identity();
+     let key = match host() {
+         Some(h) => loop {
+-            if let Some(w) = h.console_try_read_key() {
+-                break w as i16; // scancode << 8 | ascii
++            if !super::input::ct_msgup_busy() {
++                super::input::w_setactive();
++            }
++            if super::input::owns_keys(idx) {
++                if let Some(w) = h.console_try_read_key() {
++                    break w as i16; // scancode << 8 | ascii
++                }
+             }
+             if let sched::SleepOutcome::Yield(sw) = sched::sleep(sched::wait_input()) {
+                 return Some(sw); // yield to a peer (S2); re-checks on resume
+diff --git a/tos-api/src/aes/input.rs b/tos-api/src/aes/input.rs
+index 3e97cf51..7f7fa56e 100644
+--- a/tos-api/src/aes/input.rs
++++ b/tos-api/src/aes/input.rs
+@@ -66,9 +66,9 @@
+ //! only from the IKBD decode path), so plain `Relaxed` atomics suffice, matching
+ //! the rest of the AES state.
+ 
+-use core::sync::atomic::{AtomicBool, AtomicI16, AtomicI32, AtomicU32, AtomicU64, AtomicU8, Ordering};
++use core::sync::atomic::{AtomicBool, AtomicI16, AtomicI32, AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering};
+ 
+-use super::pd::NUM_PDS;
++use super::pd::{DESKTOP, NUM_PDS};
+ 
+ /// EmuTOS `MB_DOWN` (`aes/geminput.c:46`) — the left button, the only state
+ /// that moves mouse ownership.
+@@ -99,6 +99,88 @@ static YRAT: AtomicI16 = AtomicI16::new(0);
+ /// application.
+ static GL_MOWNER_APP: AtomicBool = AtomicBool::new(true);
+ 
++/// The **application half** of EmuTOS `gl_mowner` — *"current mouse/keybd
++/// owner"* (`aes/geminput.c:52`): which AES identity the mouse, and with it
++/// every key (`kchange` → `post_keybd(gl_mowner->p_cda, ch)`, `:288-296`),
++/// belongs to while [`GL_MOWNER_APP`] says "an application". Written at the
++/// same places as the flag, under the same guards (`set_mown`, `bchange`'s
++/// `chkown`); read by [`owns_keys`]. Identities are compared as EmuTOS's
++/// `AESPD`s are, see [`same_pd`]. Power-up value: the application chain,
++/// represented by [`DESKTOP`] (the first `w_setactive` hands the mouse to the
++/// desktop window's owner, `rlr` at `wm_init`, `aes/gemwmlib.c:1254-1290`).
++static GL_MOWNER_PD: AtomicUsize = AtomicUsize::new(DESKTOP);
++
++/// The application half of EmuTOS `gl_cowner` (`aes/geminput.c:63`) — the
++/// owner of the control rectangle, set together with `gl_mowner` by
++/// `set_mown` (`:225`) and handed out again by `chkown` for a press inside
++/// the control rectangle (`:320-322`).
++///
++/// `set_mown(ctl_pd)` — `fm_own(FALSE)` handing the mouse back to a
++/// remembered `ctl_pd` — would make `gl_cowner` the Control Manager too; that
++/// half is not carried: a press inside the control rectangle stays an
++/// application's, as the flag has always answered it (`chkown`'s `+1`).
++static GL_COWNER_PD: AtomicUsize = AtomicUsize::new(DESKTOP);
++
++/// A value of EmuTOS `gl_mowner` as `get_mown`/`set_mown`/`ct_chgown` pass it:
++/// the Control Manager (`ctl_pd`) or an application process, named by its AES
++/// identity (`appl::current_identity`).
++#[derive(Clone, Copy, Debug, PartialEq, Eq)]
++pub(super) enum Mown {
++    /// `ctl_pd`, the Screen Manager.
++    Ctl,
++    /// An application process — its AES identity.
++    Pd(usize),
++}
++
++impl Mown {
++    /// `ctl_pd` in [`Mown::to_raw`]'s encoding — not an AES identity
++    /// (identities are GEMDOS slots and [`DESKTOP`]).
++    const RAW_CTL: usize = usize::MAX;
++
++    /// One word for an atomic (`fm_own`'s `ml_pmown`).
++    pub(super) fn to_raw(self) -> usize {
++        match self {
++            Mown::Ctl => Self::RAW_CTL,
++            Mown::Pd(p) => p,
++        }
++    }
++
++    /// The inverse of [`Mown::to_raw`].
++    pub(super) fn from_raw(raw: usize) -> Mown {
++        if raw == Self::RAW_CTL {
++            Mown::Ctl
++        } else {
++            Mown::Pd(raw)
++        }
++    }
++}
++
++/// Do two AES identities name the same EmuTOS `AESPD`? EmuTOS runs the
++/// desktop, every launched program and every `Pexec` child on **one**
++/// descriptor, `D.g_int[0]` (`aes/geminit.c:851-877`, `gemshlib.c:572`), and
++/// each desk accessory on one of its own (`D.g_acc[]`, `geminit.c:819`).
++/// NewTOS gives every GEMDOS slot and the kernel desktop an identity of its
++/// own (A62); for ownership they fold back: a registered accessory
++/// ([`super::acc::is_process`]) is itself, every other identity is the one
++/// application chain.
++fn same_pd(a: usize, b: usize) -> bool {
++    a == b || (!super::acc::is_process(a) && !super::acc::is_process(b))
++}
++
++/// May the AES identity `idx` take a key now? EmuTOS's `kchange` posts every
++/// key to `gl_mowner` and a wait reads only its own queue (`ev_multi`'s
++/// `rlr->p_cda->c_q`, `aes/gemevlib.c:173-182`; `akbin`,
++/// `aes/geminput.c:486-493`), so a key is the waiter's exactly when the
++/// waiter owns the mouse: not while `ctl_pd` does, and not while another
++/// process does (`docs/api/aes/event.md` "Who gets a key").
++///
++/// NewTOS reads the key out of the shared ring at that moment instead of
++/// moving it into a per-process queue when it arrives (the ring is also the
++/// GEMDOS console's; spec, "Where NewTOS differs").
++pub(super) fn owns_keys(idx: usize) -> bool {
++    GL_MOWNER_APP.load(Ordering::Relaxed) && same_pd(GL_MOWNER_PD.load(Ordering::Relaxed), idx)
++}
++
+ /// EmuTOS `gl_ctmown` (`aes/gemctrl.c:50`) — the Control Manager holds the
+ /// mouse across a menu-bar track. Raised and lowered by [`ct_mouse`] from
+ /// [`menu::track`](super::menu::track), EmuTOS `mn_do`'s `ct_mouse(TRUE)` on
+@@ -239,6 +321,8 @@ pub(super) fn reinit() {
+     XRAT.store(0, Ordering::Relaxed);
+     YRAT.store(0, Ordering::Relaxed);
+     GL_MOWNER_APP.store(true, Ordering::Relaxed);
++    GL_MOWNER_PD.store(DESKTOP, Ordering::Relaxed);
++    GL_COWNER_PD.store(DESKTOP, Ordering::Relaxed);
+     GL_CTMOWN.store(false, Ordering::Relaxed);
+     CT_MSGUP.store(false, Ordering::Relaxed);
+ }
+@@ -373,9 +457,15 @@ fn bchange(new: u8, clicks: i16, x: i16, y: i16) {
+     // `if (!gl_ctmown && (new == MB_DOWN) && (button == 0)) gl_mowner = chkown();`
+     // (aes/geminput.c:334-335)
+     if !GL_CTMOWN.load(Ordering::Relaxed) && new == MB_DOWN && button == 0 {
+-        // chkown: +1 → gl_cowner, 0 → D.w_win[0].w_owner (both the app at
+-        // single-app), −1 → ctl_pd.
+-        GL_MOWNER_APP.store(super::window::chk_ctrl(x, y) >= 0, Ordering::Relaxed);
++        // chkown: +1 → gl_cowner, 0 → D.w_win[0].w_owner, −1 → ctl_pd
++        // (aes/geminput.c:310-322).
++        let val = super::window::chk_ctrl(x, y);
++        GL_MOWNER_APP.store(val >= 0, Ordering::Relaxed);
++        match val {
++            1 => GL_MOWNER_PD.store(GL_COWNER_PD.load(Ordering::Relaxed), Ordering::Relaxed),
++            0 => GL_MOWNER_PD.store(super::window::desk_owner(), Ordering::Relaxed),
++            _ => {}
++        }
+     }
+     // `mtrans++; pr_button = button; pr_mclick = mclick; pr_xrat = xrat;
+     // pr_yrat = yrat; button = new; mclick = clicks;` (aes/geminput.c:337-343).
+@@ -532,20 +622,39 @@ pub(super) fn own_mouse() -> bool {
+ 
+ /// The Control Manager's `w_setactive()` (`aes/gemctrl.c:442`): give the mouse
+ /// to the owner of the top window — `ct_chgown(ppd, &d)` → `set_mown`
+-/// (`aes/gemwmlib.c:326-333`, `aes/gemctrl.c:392-397`). At single-app the top
+-/// window's owner is always this application; the two guards are
+-/// [`ct_chgown`]'s and [`set_mown`]'s, so a press latched to the Control
+-/// Manager stays with it until the release.
++/// (`aes/gemwmlib.c:322-334`, `aes/gemctrl.c:392-397`); the desktop window's
++/// owner when no window is open ([`window::top_owner`](super::window::top_owner)).
++/// The two guards are [`ct_chgown`]'s and [`set_mown`]'s, so a press latched
++/// to the Control Manager stays with it until the release.
++///
++/// **While `ml_ocnt > 0` the owner is kept.** EmuTOS's `ctlmgr` reaches its
++/// loop head only after its own `ev_multi` fired (`aes/gemctrl.c:439-462`),
++/// and inside a `BEG_MCTRL` bracket nothing can fire it: keys and presses go to
++/// the bracket's holder (the control rectangle is the whole screen, `chkown`
++/// answers `gl_cowner`), and `gl_mntree` is held, so there is no bar to track
++/// (`aes/gemfmlib.c:89-93`). Our Control Manager runs inline at every wait
++/// pass of every client, so the dormancy is stated here: the holder keeps the
++/// mouse and the keyboard (`docs/api/aes/event.md` "Who gets a key", point 2).
++/// The flag half is set as before.
+ pub(super) fn w_setactive() {
+-    ct_chgown(true);
++    let pd = if super::window::mctrl_held() {
++        GL_MOWNER_PD.load(Ordering::Relaxed)
++    } else {
++        super::window::top_owner()
++    };
++    ct_chgown(Mown::Pd(pd));
+ }
+ 
+ /// EmuTOS `get_mown(&pmown)` (`aes/geminput.c:209-212`) — the current mouse
+-/// owner, as [`own_mouse`] reports it: `true` = the application (`rlr`),
+-/// `false` = `ctl_pd`. `fm_own` saves it on entry (`ml_pmown`,
+-/// `aes/gemfmlib.c:92`) to hand the mouse back to that owner on exit.
+-pub(super) fn get_mown() -> bool {
+-    GL_MOWNER_APP.load(Ordering::Relaxed)
++/// owner: [`Mown::Ctl`] while `ctl_pd` has it, else the application's
++/// identity. `fm_own` saves it on entry (`ml_pmown`, `aes/gemfmlib.c:92`) to
++/// hand the mouse back to that owner on exit.
++pub(super) fn get_mown() -> Mown {
++    if GL_MOWNER_APP.load(Ordering::Relaxed) {
++        Mown::Pd(GL_MOWNER_PD.load(Ordering::Relaxed))
++    } else {
++        Mown::Ctl
++    }
+ }
+ 
+ /// EmuTOS `ct_chgown(mpd, pr)` (`aes/gemctrl.c:392-397`): `set_ctrl(pr); if
+@@ -553,10 +662,10 @@ pub(super) fn get_mown() -> bool {
+ /// track holds it. The control rectangle half is not stored: EmuTOS's `ctrl`
+ /// has exactly two sources, and [`window::chk_ctrl`](super::window::chk_ctrl)
+ /// reads both live (`ml_ocnt > 0` → the whole screen; else the top window's
+-/// work area). `app` names the owner as [`get_mown`] does.
+-pub(super) fn ct_chgown(app: bool) {
++/// work area). `owner` names the owner as [`get_mown`] does.
++pub(super) fn ct_chgown(owner: Mown) {
+     if !GL_CTMOWN.load(Ordering::Relaxed) {
+-        set_mown(app);
++        set_mown(owner);
+     }
+ }
+ 
+@@ -567,11 +676,20 @@ pub(super) fn ct_chgown(app: bool) {
+ /// `post_button` completes a parked button wait of the new owner that the
+ /// (up) state satisfies ([`post_button`]); the `post_mouse` half is covered by
+ /// the Event Manager re-testing its rectangles against `own_mouse()` on every
+-/// pass.
+-fn set_mown(app: bool) {
++/// pass. `gl_cowner = gl_mowner = mp` (`:225`): for an application both
++/// identity halves move ([`GL_MOWNER_PD`], [`GL_COWNER_PD`]); for `ctl_pd`
++/// only the flag does.
++fn set_mown(owner: Mown) {
+     let button = BUTTON.load(Ordering::Relaxed);
+     if button == 0 {
+-        GL_MOWNER_APP.store(app, Ordering::Relaxed);
++        match owner {
++            Mown::Ctl => GL_MOWNER_APP.store(false, Ordering::Relaxed),
++            Mown::Pd(pd) => {
++                GL_MOWNER_APP.store(true, Ordering::Relaxed);
++                GL_MOWNER_PD.store(pd, Ordering::Relaxed);
++                GL_COWNER_PD.store(pd, Ordering::Relaxed);
++            }
++        }
+         post_button(button, 1);
+     }
+ }
+diff --git a/tos-api/src/aes/window.rs b/tos-api/src/aes/window.rs
+index 3f26ad65..30cf71b7 100644
+--- a/tos-api/src/aes/window.rs
++++ b/tos-api/src/aes/window.rs
+@@ -818,8 +818,9 @@ const NO_OWNER: usize = usize::MAX;
+ /// EmuTOS `ml_pmown` (`gemfmlib.c:58`) — the mouse owner `fm_own` found on
+ /// the outermost `BEG_MCTRL` (`get_mown(&ml_pmown)`, `:92`), handed the mouse
+ /// back on the matching `END_MCTRL` (`ct_chgown(ml_pmown, &ml_ctrl)`, `:102`).
+-/// `true` = the application, `false` = `ctl_pd`, as [`input::get_mown`] reports.
+-static ML_PMOWN: AtomicBool = AtomicBool::new(true);
++/// An [`input::Mown`] as [`input::get_mown`] reports it, in
++/// [`input::Mown::to_raw`]'s encoding; power-up value: the application chain.
++static ML_PMOWN: AtomicUsize = AtomicUsize::new(super::pd::DESKTOP);
+ 
+ /// Global default per-gadget colour words (`WF_DCOLOR`): the topped/untopped
+ /// defaults new windows inherit (EmuTOS `gl_wtcolor`/`gl_wbcolor`,
+@@ -4365,13 +4366,13 @@ pub fn fm_own(begin: bool) {
+ /// &gl_rscreen);` — the menu-hold (a menu-bar click is inert while the dialog
+ /// is up), the whole screen as the control rectangle (read live by
+ /// [`chk_ctrl`] from `ml_ocnt > 0`, so `ml_ctrl` needs no store), and
+-/// `set_mown(rlr)`: the caller owns the mouse for the dialog, unless a button
+-/// is held (`set_mown`'s `if (!button)`, `aes/geminput.c:222`) or a menu track
+-/// holds it (`ct_chgown`'s `if (!gl_ctmown)`, `aes/gemctrl.c:395`). The 1 → 0
+-/// edge (`:101-103`) is `ct_chgown(ml_pmown, &ml_ctrl); gl_mntree =
+-/// ml_mnhold;` — the previous owner gets the mouse back under the same two
+-/// guards (A102). At single-app `rlr` is the application, so `set_mown(rlr)`
+-/// is `ct_chgown(true)` and the remembered owner is [`input::get_mown`]'s flag.
++/// `set_mown(rlr)`: the caller owns the mouse — and the keyboard — for the
++/// dialog, unless a button is held (`set_mown`'s `if (!button)`,
++/// `aes/geminput.c:222`) or a menu track holds it (`ct_chgown`'s `if
++/// (!gl_ctmown)`, `aes/gemctrl.c:395`). The 1 → 0 edge (`:101-103`) is
++/// `ct_chgown(ml_pmown, &ml_ctrl); gl_mntree = ml_mnhold;` — the previous
++/// owner gets the mouse back under the same two guards (A102). `rlr` is the
++/// caller's AES identity, the remembered owner is [`input::get_mown`]'s.
+ fn mctrl_own(begin: bool) {
+     if begin {
+         update_beg(); // fm_own: wm_update(BEG_UPDATE) (gemfmlib.c:86)
+@@ -4381,8 +4382,9 @@ fn mctrl_own(begin: bool) {
+         // dialog, remember the owner, give the mouse to the caller (`:89-93`).
+         if MCTRL_CNT.load(Ordering::Relaxed) == 0 {
+             super::menu::hold_menu();
+-            ML_PMOWN.store(super::input::get_mown(), Ordering::Relaxed);
+-            super::input::ct_chgown(true);
++            ML_PMOWN.store(super::input::get_mown().to_raw(), Ordering::Relaxed);
++            // `ct_chgown(rlr, &gl_rscreen)` (gemfmlib.c:93): the caller.
++            super::input::ct_chgown(super::input::Mown::Pd(super::appl::current_identity()));
+             // The holder of the count, on the same edge as the rest of the
+             // 0 → 1 state — see [`MCTRL_OWNER`] for why the counter needs one
+             // although `ml_ocnt` has none.
+@@ -4400,7 +4402,7 @@ fn mctrl_own(begin: bool) {
+         // non-positive count as "app does not own the mouse", so an unbalanced
+         // END_MCTRL cannot wedge interception off.
+         if MCTRL_CNT.fetch_sub(1, Ordering::Relaxed) == 1 {
+-            super::input::ct_chgown(ML_PMOWN.load(Ordering::Relaxed));
++            super::input::ct_chgown(super::input::Mown::from_raw(ML_PMOWN.load(Ordering::Relaxed)));
+             super::menu::release_menu();
+             MCTRL_OWNER.store(NO_OWNER, Ordering::Relaxed);
+         }
+@@ -4699,7 +4701,7 @@ pub fn wm_init() {
+ ///   windows inherit (`wm_start`, `gemwmlib.c:1346-1357`), which
+ ///   `wind_set(WF_DCOLOR)` may have changed for the session that ended.
+ /// * `ml_pmown` (`gemfmlib.c:58`) — the mouse owner parked by the outermost
+-///   `BEG_MCTRL`; `true` (the application) is its power-up value.
++///   `BEG_MCTRL`; the application chain is its power-up value.
+ /// * the save/restore snapshot of [`save_windows`], slots included, so no dead
+ ///   session's window record (its title pointer with it) survives at all.
+ pub(super) fn reinit() {
+@@ -4721,7 +4723,7 @@ pub(super) fn reinit() {
+     UPDATE_OWNER.store(NO_OWNER, Ordering::Relaxed);
+     *gl_wtcolor() = GL_WTCOLOR_DEFAULT;
+     *gl_wbcolor() = GL_WBCOLOR_DEFAULT;
+-    ML_PMOWN.store(true, Ordering::Relaxed);
++    ML_PMOWN.store(super::pd::DESKTOP, Ordering::Relaxed);
+ }
+ 
+ fn inside(r: Grect, x: i16, y: i16) -> bool {
+@@ -5398,6 +5400,35 @@ pub(super) fn owner_of_window(handle: i16) -> Option<usize> {
+     owner_of(handle)
+ }
+ 
++/// `D.w_win[w_top()].w_owner` — the process `w_setactive` hands the mouse and
++/// the keyboard to (`aes/gemwmlib.c:322-334`): the owner of the top open
++/// window, or of the desktop window when none is open ([`get_top`] answers
++/// `DESKWH` then, EmuTOS `w_top`, `:315-318`). See [`desk_owner`] for a
++/// desktop window without a recorded owner.
++pub(super) fn top_owner() -> usize {
++    let top = get_top();
++    if top == DESKWH {
++        return desk_owner();
++    }
++    owner_of(top).unwrap_or_else(desk_owner)
++}
++
++/// `D.w_win[DESKWH].w_owner` — `chkown`'s answer for a press on the desktop
++/// (`aes/geminput.c:324`). EmuTOS records `rlr` there in `wm_init`
++/// (`w_setup(ppd, DESKWH, NONE)`, `aes/gemwmlib.c:1254-1290`), and `rlr` is
++/// the application chain at every `wm_init` the shell loop runs; NewTOS leaves
++/// the slot unowned until `WF_NEWDESK` re-owns it, so an unowned desktop window
++/// answers the chain, represented by [`super::pd::DESKTOP`].
++pub(super) fn desk_owner() -> usize {
++    owner_of(DESKWH).unwrap_or(super::pd::DESKTOP)
++}
++
++/// `ml_ocnt > 0` — a `wind_update(BEG_MCTRL)` / `fm_own(TRUE)` bracket is in
++/// force (`aes/gemfmlib.c:82-107`).
++pub(super) fn mctrl_held() -> bool {
++    MCTRL_CNT.load(Ordering::Relaxed) > 0
++}
++
+ /// AES window-frame interception (the `evnt_multi` hook, mirroring the EmuTOS
+ /// Control Manager's `hctl_window`, `gemctrl.c:158`). On a button press in a
+ /// window frame, handle the gadget and post the resulting `WM_*` message into
+diff --git a/tos-api/src/gemdos/ssystem.rs b/tos-api/src/gemdos/ssystem.rs
+index 2a558eea..817d6a58 100644
+--- a/tos-api/src/gemdos/ssystem.rs
++++ b/tos-api/src/gemdos/ssystem.rs
+@@ -11,8 +11,9 @@
+ //! BCM2711 mailbox) is kernel-only — [`S_NEWTOS_KBDVEC`] (2002), the
+ //! kernel entry of the per-process default `kbdvec` stub (KEYS02,
+ //! `docs/api/xbios/22-kbdvbase.md` B3/D6), and the system-information modes
+-//! 2003–2019 ([`S_NEWTOS_CPUMEAS`] … [`S_NEWTOS_KVERSION`], SYSINFO01): the
+-//! effective settings the kernel runs with. 2000 is free: FreeMiNT's own header
++//! 2003–2020 ([`S_NEWTOS_CPUMEAS`] … [`S_NEWTOS_KVERSION`], SYSINFO01, and
++//! [`S_NEWTOS_INPUTMODE`], KEYOWNER): the effective settings the kernel runs
++//! with. 2000 is free: FreeMiNT's own header
+ //! reserves 0–29, 100, `0x54f8`, 900–999 and 1000–**1999**
+ //! (`references/freemint/sys/mint/ssystem.h`, the two `reserved` comments),
+ //! and the highest number its dispatcher answers is the build-gated test mode
+@@ -45,9 +46,9 @@ pub const S_NEWTOS_CPUTEMP: u16 = 2001;
+ pub const S_NEWTOS_KBDVEC: u16 = crate::xbios::kbdvecs::S_NEWTOS_KBDVEC;
+ 
+ // SYSINFO01: the effective system settings a system-information tool shows
+-// (`docs/api/gemdos/154-ssystem.md` §"System-information modes (2003–2019)").
+-// Scalars 2003–2018 share the 2000/2001 interface ([`newtos_scalar`]); 2019 is
+-// a string ([`s_newtos_kversion`]).
++// (`docs/api/gemdos/154-ssystem.md` §"System-information modes (2003–2020)").
++// Scalars 2003–2018 and 2020 share the 2000/2001 interface ([`newtos_scalar`]);
++// 2019 is a string ([`s_newtos_kversion`]).
+ 
+ /// The ARM clock the firmware measured, Hz.
+ pub const S_NEWTOS_CPUMEAS: u16 = 2003;
+@@ -83,6 +84,9 @@ pub const S_NEWTOS_KEYBOARD: u16 = 2017;
+ pub const S_NEWTOS_SERIAL: u16 = 2018;
+ /// Kernel version + build stamp, a string into the caller's buffer.
+ pub const S_NEWTOS_KVERSION: u16 = 2019;
++/// Where the keyboard/mouse pump runs: 0 also from the timer interrupt (the
++/// pointer moves while a program is busy), 1 `input=aes` (KEYOWNER).
++pub const S_NEWTOS_INPUTMODE: u16 = 2020;
+ 
+ /// `Ssystem(WORD mode, LONG arg1, LONG arg2)`: `mode` in `x0`, `arg1` in
+ /// `x1`, `arg2` in `x2`.
+@@ -108,12 +112,14 @@ pub fn ssystem(args: &TrapArgs) -> Long {
+         }
+         S_NEWTOS_KBDVEC => s_newtos_kbdvec(args),
+         S_NEWTOS_KVERSION => s_newtos_kversion(args),
+-        mode @ S_NEWTOS_CPUMEAS..=S_NEWTOS_SERIAL => newtos_scalar(args, || sysinfo_value(mode)),
++        mode @ (S_NEWTOS_CPUMEAS..=S_NEWTOS_SERIAL | S_NEWTOS_INPUTMODE) => {
++            newtos_scalar(args, || sysinfo_value(mode))
++        }
+         _ => EINVFN,
+     }
+ }
+ 
+-/// The value of one scalar system-information mode (2003–2018), or `None`
++/// The value of one scalar system-information mode (2003–2018, 2020), or `None`
+ /// when this machine does not know it (`docs/api/gemdos/154-ssystem.md`
+ /// §"System-information modes"). Every answer is the state the kernel runs
+ /// with — read from the module that holds it, or from the host for facts that
+@@ -155,6 +161,7 @@ fn sysinfo_value(mode: u16) -> Option<Long> {
+         S_NEWTOS_GPUMEM => host::host()?.gpu_memory_bytes().map(kib),
+         S_NEWTOS_KEYBOARD => host::host()?.keyboard_layout().map(|k| k as Long),
+         S_NEWTOS_SERIAL => host::host()?.serial_console().map(Long::from),
++        S_NEWTOS_INPUTMODE => host::host()?.input_mode().map(|m| m as Long),
+         _ => None,
+     }
+ }
+diff --git a/tos-api/src/host.rs b/tos-api/src/host.rs
+index e9215905..397e29bd 100644
+--- a/tos-api/src/host.rs
++++ b/tos-api/src/host.rs
+@@ -268,7 +268,7 @@ pub trait Host: Sync {
+         None
+     }
+ 
+-    // ── SYSINFO01: the effective system settings (`Ssystem` 2003–2019) ──
++    // ── SYSINFO01: the effective system settings (`Ssystem` 2003–2020) ──
+     //
+     // The facts below live in the kernel (drivers, boot decisions) and not in
+     // `tos-api`; each is the state the kernel actually ended up in, never the
+@@ -315,6 +315,13 @@ pub trait Host: Sync {
+         None
+     }
+ 
++    /// Where the keyboard/mouse pump runs (INPUT01, boot argument
++    /// `input=aes`) — `Ssystem(S_NEWTOS_INPUTMODE)`, KEYOWNER. `None`
++    /// without a kernel input pump (hostless).
++    fn input_mode(&self) -> Option<InputMode> {
++        None
++    }
++
+     /// The OS name and version as the boot screen prints it
+     /// (`"NewTOS 0.1"`), or `None` (hostless). `Ssystem(S_NEWTOS_KVERSION)`
+     /// appends the build stamp ([`crate::build::BUILD_STAMP`]).
+@@ -346,6 +353,17 @@ pub struct SdCardMode {
+     pub bus_width: u8,
+ }
+ 
++/// Where the keyboard/mouse pump runs — `Ssystem(S_NEWTOS_INPUTMODE)`
++/// (`docs/api/gemdos/154-ssystem.md`, 2020).
++#[derive(Clone, Copy, Debug, Eq, PartialEq)]
++pub enum InputMode {
++    /// Also from the 200 Hz timer interrupt while a program runs: the pointer
++    /// moves while a program is busy (INPUT01, the default).
++    TimerPump = 0,
++    /// Only in the AES waits and the console reads (`input=aes`).
++    Aes = 1,
++}
++
+ /// Where the active keyboard layout came from — `Ssystem(S_NEWTOS_KEYBOARD)`.
+ #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+ pub enum KeyboardLayout {
+diff --git a/tos-api/tests/gemdos_ssystem_cpuinfo.rs b/tos-api/tests/gemdos_ssystem_cpuinfo.rs
+index 8468f2ff..c3d25f9c 100644
+--- a/tos-api/tests/gemdos_ssystem_cpuinfo.rs
++++ b/tos-api/tests/gemdos_ssystem_cpuinfo.rs
+@@ -181,11 +181,12 @@ fn the_neighbouring_mode_numbers_are_still_unimplemented() {
+     rig(PI4_CLOCK_HZ, WARM_MDEG);
+ 
+     // 1999 is the last number FreeMiNT reserves for its debug block
+-    // (`sys/mint/ssystem.h`, "reserved 1000 - 1999"); 2020 is the next free
++    // (`sys/mint/ssystem.h`, "reserved 1000 - 1999"); 2021 is the next free
+     // NewTOS number (2002 is `S_NEWTOS_KBDVEC` since KEYS02, tested in
+-    // `xbios_kbdvecs.rs`; 2003-2019 are the SYSINFO01 modes, tested in
+-    // `gemdos_ssystem_sysinfo.rs`). Neither may answer with a machine reading.
+-    for mode in [1999_u64, 2020, 2999] {
++    // `xbios_kbdvecs.rs`; 2003-2019 are the SYSINFO01 modes and 2020 the
++    // KEYOWNER input mode, tested in `gemdos_ssystem_sysinfo.rs`). Neither may
++    // answer with a machine reading.
++    for mode in [1999_u64, 2021, 2999] {
+         assert_eq!(
+             gemdos(SSYSTEM, mode, 0, 0),
+             EINVFN,
+diff --git a/tos-api/tests/gemdos_ssystem_sysinfo.rs b/tos-api/tests/gemdos_ssystem_sysinfo.rs
+index 969e64c7..1fbc2217 100644
+--- a/tos-api/tests/gemdos_ssystem_sysinfo.rs
++++ b/tos-api/tests/gemdos_ssystem_sysinfo.rs
+@@ -1,9 +1,9 @@
+ //! **SYSINFO01** — `Ssystem` 2003–2019 at the GEMDOS trap boundary: the
+ //! effective system settings a system-information tool (the SYSACC desk
+-//! accessory) shows.
++//! accessory) shows; **KEYOWNER** added 2020, the input pump mode.
+ //!
+ //! Spec: `docs/api/gemdos/154-ssystem.md` §"System-information modes
+-//! (2003–2019)". Pinned here, above the [`Host`] boundary and on the
++//! (2003–2020)". Pinned here, above the [`Host`] boundary and on the
+ //! `tos-api` modules that hold the rest of the state:
+ //!
+ //! 1. every scalar mode answers in the call's own LONG (`arg1 == 0`) and
+@@ -15,13 +15,14 @@
+ //!    and "ASID test mode" rules;
+ //! 5. 2019 copies with FreeMiNT's `strncpy_f` rule (`len - 1` characters, NUL
+ //!    always, `len <= 0` writes nothing);
+-//! 6. 2020 is not a mode (`EINVFN`).
++//! 6. 2020 reports the input pump (0 timer pump, 1 `input=aes`);
++//! 7. 2021 is not a mode (`EINVFN`).
+ 
+-use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
++use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU8, Ordering};
+ use std::sync::{Mutex, MutexGuard, Once};
+ 
+ use tos_api::bdos::process::{memprot, mmu};
+-use tos_api::host::{CpuClockPolicy, Host, KeyboardLayout, ScreenInfo, SdCardMode};
++use tos_api::host::{CpuClockPolicy, Host, InputMode, KeyboardLayout, ScreenInfo, SdCardMode};
+ use tos_api::trap::{TrapArgs, TrapClass};
+ 
+ const SSYSTEM: u16 = 0x154;
+@@ -42,6 +43,7 @@ const S_NEWTOS_GPUMEM: u64 = 2016;
+ const S_NEWTOS_KEYBOARD: u64 = 2017;
+ const S_NEWTOS_SERIAL: u64 = 2018;
+ const S_NEWTOS_KVERSION: u64 = 2019;
++const S_NEWTOS_INPUTMODE: u64 = 2020;
+ 
+ const E_OK: i32 = 0;
+ const ERROR: i32 = -1;
+@@ -49,7 +51,7 @@ const EINVAL: i32 = -25;
+ const EINVFN: i32 = -32;
+ 
+ /// The scalar modes whose answer comes from the host.
+-const HOST_MODES: [u64; 11] = [
++const HOST_MODES: [u64; 12] = [
+     S_NEWTOS_CPUMEAS,
+     S_NEWTOS_CPUPOLICY,
+     S_NEWTOS_SDMODE,
+@@ -61,6 +63,7 @@ const HOST_MODES: [u64; 11] = [
+     S_NEWTOS_KEYBOARD,
+     S_NEWTOS_SERIAL,
+     S_NEWTOS_KVERSION,
++    S_NEWTOS_INPUTMODE,
+ ];
+ 
+ /// Does the stand-in host know its facts? One switch for all of them, so the
+@@ -68,6 +71,8 @@ const HOST_MODES: [u64; 11] = [
+ static KNOWS: AtomicBool = AtomicBool::new(true);
+ /// The measured clock it reports, Hz.
+ static MEASURED_HZ: AtomicI64 = AtomicI64::new(1_499_998_000);
++/// The input pump it reports, `InputMode as u8`.
++static PUMP: AtomicU8 = AtomicU8::new(InputMode::TimerPump as u8);
+ 
+ static RIG: Mutex<()> = Mutex::new(());
+ 
+@@ -118,6 +123,16 @@ impl Host for InfoHost {
+     fn os_version(&self) -> Option<&'static str> {
+         KNOWS.load(Ordering::Relaxed).then_some("NewTOS 0.1")
+     }
++
++    fn input_mode(&self) -> Option<InputMode> {
++        KNOWS.load(Ordering::Relaxed).then(|| {
++            if PUMP.load(Ordering::Relaxed) == InputMode::Aes as u8 {
++                InputMode::Aes
++            } else {
++                InputMode::TimerPump
++            }
++        })
++    }
+ }
+ 
+ static HOST: Once = Once::new();
+@@ -186,7 +201,7 @@ fn unknown_host_facts_are_error_and_write_nothing() {
+ #[test]
+ fn arg2_is_refused_for_every_scalar_mode_before_anything_is_read() {
+     let _g = rig(true);
+-    for mode in 2003..=2018u64 {
++    for mode in (2003..=2018u64).chain([S_NEWTOS_INPUTMODE]) {
+         let mut out: i32 = 0x0BAD_F00D;
+         assert_eq!(gemdos(mode, &mut out as *mut i32 as u64, 1), EINVAL, "mode {mode}: arg2 != 0");
+         assert_eq!(out, 0x0BAD_F00D, "mode {mode}: nothing written");
+@@ -272,7 +287,17 @@ fn version_string_follows_strncpy_f() {
+ }
+ 
+ #[test]
+-fn the_block_ends_at_2019() {
++fn input_mode_reports_the_pump_in_effect() {
++    let _g = rig(true);
++    PUMP.store(InputMode::TimerPump as u8, Ordering::Relaxed);
++    assert_eq!(both_forms(S_NEWTOS_INPUTMODE), 0, "timer pump: the pointer moves while busy");
++    PUMP.store(InputMode::Aes as u8, Ordering::Relaxed);
++    assert_eq!(both_forms(S_NEWTOS_INPUTMODE), 1, "input=aes");
++    PUMP.store(InputMode::TimerPump as u8, Ordering::Relaxed);
++}
++
++#[test]
++fn the_block_ends_at_2020() {
+     let _g = rig(true);
+-    assert_eq!(gemdos(2020, 0, 0), EINVFN);
++    assert_eq!(gemdos(2021, 0, 0), EINVFN);
+ }
+diff --git a/tos-api/tests/aes_key_owner.rs b/tos-api/tests/aes_key_owner.rs
+new file mode 100644
+index 00000000..99930371
+--- /dev/null
++++ b/tos-api/tests/aes_key_owner.rs
+@@ -0,0 +1,597 @@
++//! KEYOWNER — **a key goes to the process that owns the mouse.**
++//!
++//! Spec: `docs/api/aes/event.md` § "Who gets a key — the mouse owner
++//! (`gl_mowner`)". EmuTOS's `kchange` posts every key to the mouse owner,
++//! `post_keybd(gl_mowner->p_cda, ch)` (`aes/geminput.c:288-296`), and a wait
++//! reads only its own queue — `ev_multi`'s `rlr->p_cda->c_q`
++//! (`aes/gemevlib.c:173-182`), `akbin` (`aes/geminput.c:486-493`). The owner
++//! is the top window's owner (`w_setactive`, `aes/gemwmlib.c:322-334`), the
++//! caller during `wind_update(BEG_MCTRL)` / `form_do` (`fm_own`,
++//! `aes/gemfmlib.c:82-107`), and the application chain is one owner
++//! (`aes/geminit.c:851-877`) while each desk accessory is one of its own.
++//!
++//! The measured defect (`measurements/measurement-2026-10-08-sysinfo2/`,
++//! RUNINFO "Esc"): the SYSACC accessory tracks its drop-down inside
++//! `BEG_MCTRL` and waits in `evnt_multi(MU_KEYBD | …)`; while it sleeps the
++//! built-in desktop's own `evnt_multi(MU_KEYBD | …)` ran and took Esc / Return
++//! / the cursor keys out of the one key ring — first poller wins.
++//!
++//! What is pinned, at the AES trap boundary, with a registered accessory and
++//! the kernel-context desktop (or a launched chain program) as the two clients:
++//!
++//! 1. inside the accessory's `BEG_MCTRL` the keys are the accessory's — the
++//!    desktop's `evnt_multi` does not get them, the accessory's does, and after
++//!    `END_MCTRL` they are the desktop's again;
++//! 2. normal typing goes to the owner of the top window (a chain program), not
++//!    to an idle accessory that also waits for `MU_KEYBD`;
++//! 3. an accessory window on top makes the accessory the key owner;
++//! 4. an accessory's modal dialog (`form_alert`, the kernel's `fm_do` loop)
++//!    reads its keys, and the keys go back to the desktop afterwards;
++//! 5. desktop shortcuts (Alt-C) reach the desktop with an idle accessory loaded;
++//! 6. `evnt_keybd` follows the same owner.
++//!
++//! Harness shape follows `aes_pd_by_slot.rs` (silent raster, process slots).
++
++use std::collections::VecDeque;
++use std::sync::atomic::{AtomicU64, Ordering};
++use std::sync::{Mutex, MutexGuard, Once};
++
++use tos_api::bdos::process::{self, Abi, PROCESS_TABLE};
++use tos_api::host::Host;
++use tos_api::vdi::backend::{ClipRect, MonoSrc, PatternFill, Pel, RasterBackend, Rect, WriteMode};
++use tos_types::BasePage;
++
++const SCREEN_W: u16 = 640;
++const SCREEN_H: u16 = 480;
++
++// ── a raster backend that accepts every draw and keeps no pixels ───────────
++
++struct SinkBackend;
++
++impl RasterBackend for SinkBackend {
++    fn width(&self) -> u16 {
++        SCREEN_W
++    }
++    fn height(&self) -> u16 {
++        SCREEN_H
++    }
++    fn num_colors(&self) -> u16 {
++        256
++    }
++    fn planes(&self) -> u16 {
++        16
++    }
++    fn set_color(&self, _index: u16, _r: u16, _g: u16, _b: u16) {}
++    fn query_color(&self, _index: u16) -> (u16, u16, u16) {
++        (0, 0, 0)
++    }
++    fn set_active_palette(&self, _palette: &[u16; 256]) {}
++    fn pel_to_device16(&self, pel: Pel) -> u16 {
++        pel as u16
++    }
++    fn device_to_rgb565(&self, argb: u32) -> u16 {
++        argb as u16
++    }
++    fn rgb565_to_device(&self, px: u16) -> u32 {
++        px as u32
++    }
++    fn read_pixel(&self, _x: i16, _y: i16) -> Pel {
++        0
++    }
++    fn fill_rect(&self, _x: i16, _y: i16, _w: i16, _h: i16, _pel: Pel, _clip: ClipRect) {}
++    fn abline(
++        &self,
++        _x0: i16,
++        _y0: i16,
++        _x1: i16,
++        _y1: i16,
++        _pel: Pel,
++        _mode: WriteMode,
++        _clip: ClipRect,
++        mask: u16,
++        _last: bool,
++    ) -> u16 {
++        mask
++    }
++    fn fill_pattern(&self, _x: i16, _y: i16, _w: i16, _h: i16, _f: PatternFill, _c: ClipRect) {}
++    fn draw_glyph_sized(
++        &self,
++        _x: i16,
++        _y: i16,
++        _glyph: &[u8],
++        _cell_w: i16,
++        _cell_h: i16,
++        _fg: Pel,
++        _mode: WriteMode,
++        _clip: ClipRect,
++    ) {
++    }
++    fn blit_mono(&self, _d: Rect, _s: MonoSrc, _fg: Pel, _bg: Pel, _m: WriteMode, _c: ClipRect) {}
++    fn copy_rect(&self, _src: Rect, _dx: i16, _dy: i16, _op: u8, _clip: ClipRect) {}
++    fn get_device_pixel(&self, _x: i16, _y: i16) -> u32 {
++        0
++    }
++    fn put_device_pixel(&self, _x: i16, _y: i16, _argb: u32) {}
++    fn flush_rect(&self, _x0: i16, _y0: i16, _x1: i16, _y1: i16) {}
++}
++
++// ── the host: one key ring, as the kernel's IKBD ring ─────────────────────
++
++/// A host with no pixels and **one** key ring — the shared IKBD ring the
++/// kernel host reads `console_try_read_key` from. Whoever reads first takes
++/// the key; the AES decides who may read.
++struct KeyHost {
++    raster: SinkBackend,
++    clock: AtomicU64,
++    keys: Mutex<VecDeque<u16>>,
++}
++
++impl Host for KeyHost {
++    fn console_write_byte(&self, _byte: u8) {}
++    fn console_try_read(&self) -> Option<u8> {
++        self.console_try_read_key().map(|w| w as u8)
++    }
++    fn console_try_read_key(&self) -> Option<u16> {
++        self.keys.lock().unwrap().pop_front()
++    }
++    fn console_peek_key(&self) -> Option<u16> {
++        self.keys.lock().unwrap().front().copied()
++    }
++    fn console_has_input(&self) -> bool {
++        !self.keys.lock().unwrap().is_empty()
++    }
++    fn raster(&self) -> Option<&dyn RasterBackend> {
++        Some(&self.raster)
++    }
++    fn monotonic_millis(&self) -> u64 {
++        self.clock.load(Ordering::Relaxed)
++    }
++    fn pump_input(&self) {
++        let n = self.clock.fetch_add(1, Ordering::Relaxed);
++        assert!(n < 10_000_000, "a trap is spinning");
++    }
++}
++
++unsafe impl Sync for KeyHost {}
++unsafe impl Send for KeyHost {}
++
++static HOST_ONCE: Once = Once::new();
++static HOST: Mutex<Option<&'static KeyHost>> = Mutex::new(None);
++
++fn install_host() {
++    HOST_ONCE.call_once(|| {
++        let host: &'static KeyHost = Box::leak(Box::new(KeyHost {
++            raster: SinkBackend,
++            clock: AtomicU64::new(0),
++            keys: Mutex::new(VecDeque::new()),
++        }));
++        let href: &'static &'static dyn Host = Box::leak(Box::new(host as &'static dyn Host));
++        tos_api::host::install_host(href);
++        *HOST.lock().unwrap() = Some(host);
++    });
++}
++
++fn host() -> &'static KeyHost {
++    HOST.lock().unwrap().expect("host installed by lock()")
++}
++
++/// Type `key` (`scancode << 8 | ascii`) into the ring.
++fn type_key(key: u16) {
++    host().keys.lock().unwrap().push_back(key);
++}
++
++/// Keys still in the ring, oldest first.
++fn ring() -> Vec<u16> {
++    host().keys.lock().unwrap().iter().copied().collect()
++}
++
++static LOCK: Mutex<()> = Mutex::new(());
++
++/// Serialise on the process-wide statics and start from a clean AES state:
++/// no window, no `wind_update` hold, an empty ring, the desktop running.
++fn lock() -> MutexGuard<'static, ()> {
++    install_host();
++    let g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
++    desktop_context();
++    tos_api::aes::window::wm_new();
++    host().keys.lock().unwrap().clear();
++    g
++}
++
++// ── AES parameter block ───────────────────────────────────────────────────
++
++const ABI: Abi = Abi::Lp64;
++
++struct Aespb {
++    contrl: Box<[i16; 8]>,
++    global: Box<[i16; 16]>,
++    intin: Box<[i16; 16]>,
++    intout: Box<[i16; 16]>,
++    addrin: Box<[u64; 4]>,
++    addrout: Box<[u64; 4]>,
++    block: Box<[u64; 6]>,
++}
++
++impl Aespb {
++    fn new() -> Aespb {
++        let mut pb = Aespb {
++            contrl: Box::new([0; 8]),
++            global: Box::new([0; 16]),
++            intin: Box::new([0; 16]),
++            intout: Box::new([0; 16]),
++            addrin: Box::new([0; 4]),
++            addrout: Box::new([0; 4]),
++            block: Box::new([0; 6]),
++        };
++        pb.block[0] = pb.contrl.as_ptr() as u64;
++        pb.block[1] = pb.global.as_ptr() as u64;
++        pb.block[2] = pb.intin.as_ptr() as u64;
++        pb.block[3] = pb.intout.as_ptr() as u64;
++        pb.block[4] = pb.addrin.as_ptr() as u64;
++        pb.block[5] = pb.addrout.as_ptr() as u64;
++        pb
++    }
++
++    fn call(&mut self, opcode: i16, in_len: i16, out_len: i16, ain_len: i16) -> i16 {
++        self.contrl[0] = opcode;
++        self.contrl[1] = in_len;
++        self.contrl[2] = out_len;
++        self.contrl[3] = ain_len;
++        self.contrl[4] = 0;
++        self.intout.fill(0);
++        // SAFETY: all six arrays are live, LP64, and cover the declared lengths.
++        assert!(
++            unsafe { tos_api::aes::dispatch(self.block.as_ptr() as u64, ABI) }.is_none(),
++            "the call parked (it must fire on its first pass here)"
++        );
++        self.intout[0]
++    }
++}
++
++const EVNT_KEYBD: i16 = 20;
++const EVNT_MULTI: i16 = 25;
++const FORM_ALERT: i16 = 52;
++const WIND_CREATE: i16 = 100;
++const WIND_OPEN: i16 = 101;
++const WIND_CLOSE: i16 = 102;
++const WIND_DELETE: i16 = 103;
++const WIND_SET: i16 = 105;
++const WIND_UPDATE: i16 = 107;
++
++const MU_KEYBD: i16 = 0x0001;
++const MU_MESAG: i16 = 0x0010;
++const MU_TIMER: i16 = 0x0020;
++
++const END_MCTRL: i16 = 2;
++const BEG_MCTRL: i16 = 3;
++
++const WF_NEWDESK: i16 = 14;
++const DESKWH: i16 = 0;
++const NAME: i16 = 0x0001;
++const MOVER: i16 = 0x0008;
++
++// Key words, `scancode << 8 | ascii`.
++const K_ESC: u16 = 0x011B;
++const K_RETURN: u16 = 0x1C0D;
++const K_UP: u16 = 0x4800;
++const K_DOWN: u16 = 0x5000;
++const K_ALT_C: u16 = 0x2E00;
++const K_A: u16 = 0x1E61;
++const K_B: u16 = 0x3062;
++
++/// `evnt_multi(MU_KEYBD | MU_TIMER, 0 ms)` — one poll: `MU_KEYBD` and the key
++/// when the caller may take one, else `MU_TIMER` alone (a 0-ms timer is a poll,
++/// `aes/gemevlib.c:216-220`). With `MU_MESAG` too when `mesag` is set (the
++/// desktop's and an idle accessory's wait).
++fn poll_key(pb: &mut Aespb, mesag: bool) -> Option<u16> {
++    let mut msg = [0i16; 8];
++    pb.intin.fill(0);
++    pb.intin[0] = MU_KEYBD | MU_TIMER | if mesag { MU_MESAG } else { 0 };
++    pb.addrin.fill(0);
++    pb.addrin[0] = msg.as_mut_ptr() as u64;
++    let which = pb.call(EVNT_MULTI, 16, 7, 1);
++    pb.addrin[0] = 0;
++    (which & MU_KEYBD != 0).then_some(pb.intout[5] as u16)
++}
++
++fn wind_update(pb: &mut Aespb, mode: i16) {
++    pb.intin.fill(0);
++    pb.intin[0] = mode;
++    assert_eq!(pb.call(WIND_UPDATE, 1, 1, 0), 1);
++}
++
++fn evnt_keybd(pb: &mut Aespb) -> u16 {
++    pb.intin.fill(0);
++    pb.call(EVNT_KEYBD, 0, 1, 0) as u16
++}
++
++fn form_alert(pb: &mut Aespb, s: &[u8], defbut: i16) -> i16 {
++    pb.intin.fill(0);
++    pb.intin[0] = defbut;
++    pb.addrin.fill(0);
++    pb.addrin[0] = s.as_ptr() as u64;
++    let r = pb.call(FORM_ALERT, 1, 1, 1);
++    pb.addrin[0] = 0;
++    r
++}
++
++/// `wind_create` + `wind_open` a window at `(x, y)`; it becomes the top window.
++fn open_window(pb: &mut Aespb, x: i16, y: i16) -> i16 {
++    pb.intin.fill(0);
++    pb.intin[0] = NAME | MOVER;
++    pb.intin[3] = SCREEN_W as i16;
++    pb.intin[4] = SCREEN_H as i16;
++    let h = pb.call(WIND_CREATE, 5, 1, 0);
++    assert!(h > 0, "wind_create: {h}");
++    pb.intin.fill(0);
++    pb.intin[0] = h;
++    pb.intin[1] = x;
++    pb.intin[2] = y;
++    pb.intin[3] = 200;
++    pb.intin[4] = 120;
++    assert_eq!(pb.call(WIND_OPEN, 5, 1, 0), 1);
++    h
++}
++
++fn close_window(pb: &mut Aespb, h: i16) {
++    pb.intin.fill(0);
++    pb.intin[0] = h;
++    pb.call(WIND_CLOSE, 1, 1, 0);
++    pb.intin.fill(0);
++    pb.intin[0] = h;
++    pb.call(WIND_DELETE, 1, 1, 0);
++}
++
++/// `wind_set(0, WF_NEWDESK, NULL, 0)` from the running client — the desktop's
++/// registration, which records it as the desktop window's owner
++/// (`gemwmlib.c:1684-1687`).
++fn newdesk(pb: &mut Aespb) {
++    pb.intin.fill(0);
++    pb.intin[0] = DESKWH;
++    pb.intin[1] = WF_NEWDESK;
++    pb.addrin.fill(0);
++    pb.call(WIND_SET, 6, 1, 1);
++}
++
++// ── process slots ─────────────────────────────────────────────────────────
++
++/// A claimed GEMDOS slot with a basepage page of its own; released on drop.
++/// `acc` registers it as a desk accessory (`acc::register_process`, the
++/// loader's `D.g_acc[]` slot) and forgets it again on drop.
++struct Proc {
++    slot: usize,
++    page: *mut [u8; 4096],
++    acc: bool,
++}
++
++impl Proc {
++    fn new(acc: bool) -> Self {
++        let slot = process::allocate_slot().expect("a free process slot");
++        let page = Box::into_raw(Box::new([0u8; 4096]));
++        PROCESS_TABLE[slot]
++            .basepage_kva
++            .store(page.cast::<BasePage>(), Ordering::Release);
++        if acc {
++            tos_api::aes::acc::register_process(slot);
++        }
++        Proc { slot, page, acc }
++    }
++
++    fn bp(&self) -> *mut BasePage {
++        self.page.cast::<BasePage>()
++    }
++
++    /// Make this the running process: every AES call now carries its identity.
++    fn run(&self) {
++        process::set_current(self.bp());
++    }
++}
++
++impl Drop for Proc {
++    fn drop(&mut self) {
++        if process::current() == self.bp() {
++            process::set_current(std::ptr::null_mut());
++        }
++        if self.acc {
++            tos_api::aes::acc::forget_process(self.slot);
++        }
++        // SAFETY: single-threaded under `LOCK`.
++        unsafe { process::pterm::release_slot(self.slot) };
++        // SAFETY: `page` came from `Box::into_raw` and the slot no longer names it.
++        unsafe { drop(Box::from_raw(self.page)) };
++    }
++}
++
++/// The kernel boot context: no running process — the built-in desktop.
++fn desktop_context() {
++    process::set_current(std::ptr::null_mut());
++}
++
++// ── 1. the BEG_MCTRL holder gets the keys ─────────────────────────────────
++
++/// The SYSINFO02 drop-down: the accessory takes the mouse with
++/// `wind_update(BEG_MCTRL)` and waits for `MU_KEYBD | MU_BUTTON | MU_M1`; the
++/// desktop waits in its own `evnt_multi(MU_KEYBD | MU_BUTTON | MU_MESAG)`.
++/// Esc, Return and the cursor keys are the accessory's (`fm_own` →
++/// `ct_chgown(rlr, …)`, `aes/gemfmlib.c:93`; `kchange` → the owner,
++/// `aes/geminput.c:288-296`). Before KEYOWNER the desktop's poll took them.
++#[test]
++fn keys_go_to_the_accessory_inside_its_beg_mctrl() {
++    let _g = lock();
++    let mut pb = Aespb::new();
++    newdesk(&mut pb);
++    let acc = Proc::new(true);
++
++    acc.run();
++    wind_update(&mut pb, BEG_MCTRL);
++
++    for key in [K_DOWN, K_UP, K_RETURN, K_ESC] {
++        type_key(key);
++        desktop_context();
++        assert_eq!(
++            poll_key(&mut pb, true),
++            None,
++            "key {key:#06x}: the desktop must not take a key while the accessory holds \
++             BEG_MCTRL (gl_mowner = the accessory, aes/gemfmlib.c:93; kchange → \
++             post_keybd(gl_mowner->p_cda), aes/geminput.c:288-296)"
++        );
++        assert_eq!(ring(), vec![key], "the key stays for its owner");
++        acc.run();
++        assert_eq!(poll_key(&mut pb, false), Some(key), "key {key:#06x}: the accessory's own wait gets it");
++        assert!(ring().is_empty());
++    }
++
++    acc.run();
++    wind_update(&mut pb, END_MCTRL);
++
++    // END_MCTRL hands the mouse back (`ct_chgown(ml_pmown, …)`, gemfmlib.c:102):
++    // typing is the desktop's again, and the idle accessory gets nothing.
++    type_key(K_A);
++    acc.run();
++    assert_eq!(poll_key(&mut pb, true), None, "after END_MCTRL the idle accessory owns no key");
++    desktop_context();
++    assert_eq!(poll_key(&mut pb, true), Some(K_A), "after END_MCTRL the desktop types again");
++}
++
++/// `evnt_keybd` is `akbin` on the caller's queue (`aes/geminput.c:486-493`):
++/// the BEG_MCTRL holder's `evnt_keybd` gets the key the desktop may not take.
++#[test]
++fn evnt_keybd_follows_the_owner() {
++    let _g = lock();
++    let mut pb = Aespb::new();
++    newdesk(&mut pb);
++    let acc = Proc::new(true);
++
++    acc.run();
++    wind_update(&mut pb, BEG_MCTRL);
++    type_key(K_ESC);
++    desktop_context();
++    assert_eq!(poll_key(&mut pb, true), None, "not the desktop's");
++    acc.run();
++    assert_eq!(evnt_keybd(&mut pb), K_ESC, "evnt_keybd of the owner returns the key in RET_CODE");
++    wind_update(&mut pb, END_MCTRL);
++
++    type_key(K_B);
++    desktop_context();
++    assert_eq!(evnt_keybd(&mut pb), K_B, "the desktop's evnt_keybd after END_MCTRL");
++}
++
++// ── 2. normal typing goes to the top window's owner ───────────────────────
++
++/// A launched program (a chain member, e.g. QED) with its window on top; an
++/// accessory loaded and waiting for keys too. Typing is the program's
++/// (`w_setactive`, `aes/gemwmlib.c:322-334`) — the accessory gets nothing.
++/// Before KEYOWNER whichever of the two polled first took the key.
++#[test]
++fn typing_goes_to_the_top_window_owner_not_to_an_idle_accessory() {
++    let _g = lock();
++    let mut pb = Aespb::new();
++    let acc = Proc::new(true);
++    let app = Proc::new(false);
++
++    app.run();
++    let wh = open_window(&mut pb, 40, 60);
++
++    for key in [K_A, K_B, K_RETURN] {
++        type_key(key);
++        acc.run();
++        assert_eq!(
++            poll_key(&mut pb, true),
++            None,
++            "key {key:#06x}: an accessory that owns no window and holds no BEG_MCTRL takes no key"
++        );
++        app.run();
++        assert_eq!(poll_key(&mut pb, true), Some(key), "key {key:#06x}: the top window's owner types");
++    }
++
++    app.run();
++    close_window(&mut pb, wh);
++    // No window open: the desktop window's owner (the chain) still types.
++    type_key(K_A);
++    acc.run();
++    assert_eq!(poll_key(&mut pb, true), None);
++    app.run();
++    assert_eq!(poll_key(&mut pb, true), Some(K_A), "no window: the chain owns the keys");
++}
++
++// ── 3. an accessory window on top ─────────────────────────────────────────
++
++/// An accessory's window on top makes the accessory the key owner
++/// (`w_setactive` → `D.w_win[w_top()].w_owner`); closing it gives the keys
++/// back to the desktop.
++#[test]
++fn an_accessory_window_on_top_gets_the_keys() {
++    let _g = lock();
++    let mut pb = Aespb::new();
++    newdesk(&mut pb);
++    let acc = Proc::new(true);
++
++    acc.run();
++    let wh = open_window(&mut pb, 100, 100);
++
++    type_key(K_A);
++    desktop_context();
++    assert_eq!(poll_key(&mut pb, true), None, "the accessory's window is on top: not the desktop's key");
++    acc.run();
++    assert_eq!(poll_key(&mut pb, true), Some(K_A), "the top window's owner is the accessory");
++
++    close_window(&mut pb, wh);
++    type_key(K_B);
++    acc.run();
++    assert_eq!(poll_key(&mut pb, true), None, "its window closed: the accessory owns no key");
++    desktop_context();
++    assert_eq!(poll_key(&mut pb, true), Some(K_B), "back to the desktop window's owner");
++}
++
++// ── 4. an accessory's modal dialog ────────────────────────────────────────
++
++/// An accessory's `form_alert` (the kernel's `fm_do` loop, `fm_own(TRUE)`)
++/// reads its own keys — Return fires the default button — and afterwards the
++/// desktop types again (`fm_own(FALSE)` → `ml_pmown`).
++#[test]
++fn an_accessory_dialog_reads_its_keys_and_gives_them_back() {
++    let _g = lock();
++    let mut pb = Aespb::new();
++    newdesk(&mut pb);
++    let acc = Proc::new(true);
++
++    acc.run();
++    type_key(K_RETURN);
++    assert_eq!(form_alert(&mut pb, b"[1][Save the settings?][Save|Cancel]\0", 1), 1, "Return = default");
++    assert!(ring().is_empty(), "the dialog took its Return");
++
++    type_key(K_A);
++    acc.run();
++    assert_eq!(poll_key(&mut pb, true), None, "dialog over: the accessory owns no key");
++    desktop_context();
++    assert_eq!(poll_key(&mut pb, true), Some(K_A), "dialog over: the desktop types");
++}
++
++// ── 5. desktop shortcuts ──────────────────────────────────────────────────
++
++/// The desktop's keyboard shortcuts (Alt-C, Esc, Return) with an idle
++/// accessory loaded: the desktop gets every one, the accessory none.
++#[test]
++fn desktop_shortcuts_reach_the_desktop_with_an_accessory_loaded() {
++    let _g = lock();
++    let mut pb = Aespb::new();
++    newdesk(&mut pb);
++    let acc = Proc::new(true);
++
++    for key in [K_ALT_C, K_ESC, K_RETURN] {
++        type_key(key);
++        acc.run();
++        assert_eq!(poll_key(&mut pb, true), None, "key {key:#06x}: not the idle accessory's");
++        desktop_context();
++        assert_eq!(poll_key(&mut pb, true), Some(key), "key {key:#06x}: the desktop's shortcut");
++    }
++
++    // A desktop window of the desktop's own on top changes nothing.
++    let wh = open_window(&mut pb, 20, 40);
++    type_key(K_ALT_C);
++    acc.run();
++    assert_eq!(poll_key(&mut pb, true), None);
++    desktop_context();
++    assert_eq!(poll_key(&mut pb, true), Some(K_ALT_C));
++    close_window(&mut pb, wh);
++}

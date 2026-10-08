@@ -166,6 +166,8 @@ and the delivered `msg[0] == AC_CLOSE` it also sets `AP_ACCLOSE`.
 2. **Quick-check keyboard** (`MU_KEYBD`): if a character is queued on the
    caller's console queue (`rlr->p_cda->c_q`), dequeue it into `EV_KRET`
    (`prets[4]`) and mark `MU_KEYBD` fired (`:173-182`).
+   Keys reach that queue only while the caller owns the mouse — see
+   "Who gets a key" below.
 3. **Quick-check button / rectangles** (only if the caller owns the mouse,
    `rlr == gl_mowner`): `MU_BUTTON` uses `downorup(button, buparm)` on the
    current (or, if a transition is pending, the transition-time `pr_button`)
@@ -445,6 +447,99 @@ is decided: an accessory is a second `AESPD` parked in `evnt_multi`
 work item is exactly "must the inline Control Manager go for this, or can
 accessories live without events during a track".
 
+### Who gets a key — the mouse owner (`gl_mowner`) — contract (KEYOWNER, 2026-10-08)
+
+**EmuTOS.** A key belongs to the process that owns the mouse at the moment the
+AES picks it up. `gl_mowner` is declared *"current mouse/keybd owner"*
+(`aes/geminput.c:52`); `chkkbd` reads a character only while that owner's
+keyboard queue has room and forks `kchange` with it (`aes/gemdisp.c:158-177`);
+`kchange` hands it to exactly that process — `post_keybd(gl_mowner->p_cda, ch)`
+(`aes/geminput.c:288-296`) — which wakes the owner's parked `MU_KEYBD` wait or
+queues the key in the owner's `c_q` (`:299-308`). A wait reads only its own
+queue: `ev_multi`'s quick check `pc = &rlr->p_cda->c_q` (`aes/gemevlib.c:
+173-182`), `akbin` for the blocking arm and for `evnt_keybd`
+(`aes/geminput.c:486-493`, `gemasync.c:151-152`, `gemsuper.c:127`). A process
+that does not own the mouse never sees a key, however long it waits.
+
+`gl_mowner` moves at four places, and the keyboard moves with it:
+
+| Where | Rule | Source |
+|-------|------|--------|
+| the Control Manager's loop head | `w_setactive()`: the owner of the top window (`w_top()`, the desktop window when none is open) gets the mouse — `ct_chgown(D.w_win[wh].w_owner, &work)`, skipped for a NULL owner | `aes/gemctrl.c:439-442`, `aes/gemwmlib.c:322-334` |
+| `wind_update(BEG_MCTRL)` / `form_do` | `fm_own(TRUE)` on the 0 → 1 edge of `ml_ocnt`: remember the owner (`get_mown(&ml_pmown)`), give the mouse to the caller (`ct_chgown(rlr, &gl_rscreen)`); `fm_own(FALSE)` on the 1 → 0 edge gives it back to `ml_pmown` | `aes/gemfmlib.c:82-107`, `aes/gemwmlib.c:1778-1797` |
+| a left-button press | `if (!gl_ctmown && new == MB_DOWN && button == 0) gl_mowner = chkown()`: inside the control rectangle → `gl_cowner`, a window frame or the bar → `ctl_pd`, the desktop → the desktop window's owner | `aes/geminput.c:310-335` |
+| the pointer entering the menu titles, buttons up | `gl_mowner = ctl_pd` | `aes/geminput.c:388-389` |
+
+Two guards apply to every hand-over through `set_mown`: nothing changes while
+a button is held (`if (!button)`, `aes/geminput.c:220-235`), and nothing
+changes while a menu track holds the mouse (`ct_chgown`'s `if (!gl_ctmown)`,
+`aes/gemctrl.c:392-397`).
+
+**Consequences an application can observe** (the contract):
+
+1. **Normal typing goes to the top window's owner** — with no window open, to
+   the owner of the desktop window, i.e. the application chain (`wm_init`
+   records `rlr`, `aes/gemwmlib.c:1254-1290`).
+2. **During `wind_update(BEG_MCTRL)` the keys go to the caller.** The Control
+   Manager cannot take them back while `ml_ocnt > 0`: its own `ev_multi`
+   (`MU_KEYBD | MU_BUTTON [| MU_M1 | MU_MESAG]`, `aes/gemctrl.c:445-462`) is
+   fired only by what `ctl_pd` owns, and during the bracket it owns nothing —
+   keys and presses go to the holder (the control rectangle is the whole screen,
+   so `chkown` answers `gl_cowner`), and `gl_mntree` is held (`NULL`), so there
+   is no bar to track. A desk accessory tracking its own drop-down
+   (`mn_popup`'s model, `aes/gemmnext.c:312-353`) therefore receives Esc,
+   Return and the cursor keys; the application waiting in its own `evnt_multi`
+   at the same time does not.
+3. **A desk accessory gets keys only while it owns the mouse:** its window is
+   topped, or it is inside `BEG_MCTRL` / `form_do` / `form_alert`. An idle
+   accessory waiting for `MU_MESAG` (or even `MU_KEYBD`) takes nothing from
+   the application.
+4. **The application chain is one owner.** EmuTOS runs the desktop, every
+   launched program and every `Pexec` child on one `AESPD`, `D.g_int[0]`
+   (`aes/geminit.c:851-877`, `gemshlib.c:572`), and each accessory on its own
+   (`D.g_acc[]`, `geminit.c:819`). A key owned by the chain is the chain's,
+   whichever of its members is waiting.
+
+**NewTOS (tos-api `aes::input`, `aes::event`).** `gl_mowner` is held as the
+existing Control-Manager flag (`ctl_pd` or "an application", A73/H02) plus the
+**AES identity** the application half names, maintained at the four places of
+the table above with the two guards. Identities map onto EmuTOS's process
+model as point 4 says: a registered accessory (`aes::acc`) is its own owner;
+the kernel desktop and every GEMDOS slot that is not an accessory are the one
+chain owner. A desktop window without a recorded owner is the chain's
+(`wm_init`'s `rlr`). `evnt_multi`'s `MU_KEYBD` arm and `evnt_keybd` take a key
+only when the caller is the current key owner.
+
+**Where NewTOS differs, and why** (named, not rationalised — each is a
+property of the inline Control Manager and the shared key ring):
+
+* **The key is assigned when it is read, not when `chkkbd` forks it.** The
+  IKBD ring is also the GEMDOS/BIOS console's (`Cconin`, `Bconin`), and with
+  the cooperative kernel desk accessories keep running their `evnt_*` loops
+  while a TOS program reads the console. Moving keys into a per-process AES
+  queue from an accessory's wait would take them away from that program. So
+  the key stays in the ring until its owner reads it; a key that arrives while
+  A owns the mouse but is read only after ownership moved to B goes to B.
+* **Keys typed while `ctl_pd` owns the mouse are not eaten.** EmuTOS's
+  `ctlmgr` swallows them (its `MU_KEYBD`); here they wait in the ring and go
+  to the next application owner. This happens only with a button held on a
+  window frame or the bar, or during a menu track.
+* **`w_setactive` runs at every pass of every wait** (the inline Control
+  Manager, see A91 above), not only after a Control-Manager event — except
+  while `ml_ocnt > 0`, where it keeps the owner, because `ctlmgr` is dormant
+  then (point 2). After an accessory's `form_do`/`form_alert` ends, EmuTOS
+  leaves the accessory owner until `ctlmgr` next loops; NewTOS hands the
+  keys back to the top window's owner at the next wait pass of any client.
+* **The kernel's own modal loops** (`form_do`, `form_alert`, `fsel_input` —
+  busy loops that never yield) read the ring directly: they run under
+  `fm_own(TRUE)`, so the caller is the owner (with the button up on entry), and
+  no other client runs until they return.
+* `evnt_keybd` runs the Control Manager's loop head (`w_setactive`) on each
+  pass as `evnt_mouse` does, so a key owner taken by a hover over the bar
+  comes back to the waiter (EmuTOS's independent `ctlmgr` would loop there).
+
+Tests: `tos-api/tests/aes_key_owner.rs`.
+
 ---
 
 ## The single-event waits (opcodes 20–24, 26)
@@ -470,6 +565,10 @@ slot:** unlike `evnt_multi` (where the key goes in `EV_KRET` = `int_out[5]`),
 encoding is the raw AES/VDI keyboard word (`gsx_char` → VDI string input,
 `gemgsxif.c:459-471`): high byte = IKBD scancode, low byte = ASCII (0 for
 non-ASCII keys such as the function/cursor keys).
+
+The wait is `akbin` on the caller's own queue (`aes/geminput.c:486-493`): only
+a key that arrives while the caller owns the mouse completes it ("Who gets a
+key", above).
 
 ### `evnt_button` (21)
 

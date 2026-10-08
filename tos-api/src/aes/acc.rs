@@ -123,6 +123,14 @@ pub fn processes() -> impl Iterator<Item = usize> {
     t.into_iter().filter(|e| *e != usize::MAX)
 }
 
+/// Is identity `idx` a loaded desk accessory — an `AESPD` of its own
+/// (`D.g_acc[]`, `aes/geminit.c:819`), as opposed to a member of the
+/// application chain? Used by the keyboard/mouse-owner comparison
+/// (`input::same_pd`).
+pub fn is_process(idx: usize) -> bool {
+    processes().any(|e| e == idx)
+}
+
 /// Number of loaded accessory processes.
 pub fn count() -> usize {
     processes().count()
