@@ -211,9 +211,12 @@
  *     turns the bytes into presses and releases with the real timing: a key
  *     is down from its make to its break, however many other keys come and
  *     go meanwhile, and a tap is a press and a release as far apart as the
- *     finger was. Scancode to DOOM key: the special keys by scancode, every
- *     other key by the character Keytbl()'s unshifted table gives it, so the
- *     keyboard's own layout still decides which key is 'y'. The AES keyboard
+ *     finger was. Scancode to DOOM key: the special keys by scancode (Help is
+ *     F11 = gamma, Undo is Pause), every other key by the character
+ *     Keytbl()'s unshifted table gives it, so the keyboard's own layout
+ *     still decides which key is 'y'; '+' counts as '=' (screen size up,
+ *     map zoom in -- '=' is Shift+0 on the German layout), ',' and '.' are
+ *     strafe left and right as in vanilla DOOM. The AES keyboard
  *     events the chained vector still produces are read and dropped, so they
  *     do not pile up for whoever owns the keyboard after DOOM.
  *     The hook comes out again on every way out: atexit() (a normal quit,
@@ -1787,12 +1790,24 @@ static unsigned char map_key(int scan, int ascii)
 	case 0x42: return KEY_F8;
 	case 0x43: return KEY_F9;
 	case 0x44: return KEY_F10;
+	case 0x62: return KEY_F11;		/* Help: gamma (USB F11 = Help) */
+	case 0x61: return KEY_PAUSE;		/* Undo: the Atari has no Pause */
 	default: break;
 	}
 	/* Everything else by its character, so the keyboard's own layout
 	 * decides which key is 'y'. DOOM wants lower case. */
 	if (ascii >= 'A' && ascii <= 'Z')
 		ascii += 'a' - 'A';
+	/* DOOM wants '=' (screen size up, automap zoom in); on the German
+	 * layout that is Shift+0, so '+' stands in for it on any layout. */
+	if (ascii == '+')
+		return KEY_EQUALS;
+	/* The vanilla strafe keys; doomgeneric binds strafe left/right to
+	 * KEY_STRAFE_L/R, which no key would produce otherwise. */
+	if (ascii == ',')
+		return KEY_STRAFE_L;
+	if (ascii == '.')
+		return KEY_STRAFE_R;
 	if (ascii >= 0x20 && ascii < 0x7f)
 		return (unsigned char)ascii;
 	return 0;
