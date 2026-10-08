@@ -90,6 +90,14 @@
 !/apps/chaintest/*.c
 !/apps/chaintest/*.sh
 
+# ...and gemtest, OURS: the AES/VDI counterpart to apitest (TESTGEM.NAP). Its
+# build script was updated under T06 but never reached the repo because the
+# /apps/*/ rule above swallowed the whole directory.
+!/apps/gemtest/
+/apps/gemtest/*
+!/apps/gemtest/*.c
+!/apps/gemtest/*.sh
+
 # ...and present, OURS: PRESENT.NAP, the slide-show program (TASK/PRESENT01).
 # Source, build script and the sample slide file + picture generator are
 # tracked; build/ (PRESENT.NAP) and the generated sample/TEST.PNG are not.
