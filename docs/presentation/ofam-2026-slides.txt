@@ -40,13 +40,11 @@
 @image DESKTOP.PNG
 
 # Toolchain
-- Built with clang and our own SDK
+- clang / LLVM for 64-bit ARM, plus our own SDK
 - mintlib, gemlib, cflib: ported, not rewritten
+- Atari sources stay untouched - fixes go into the toolchain
 - Native programs: .NAP, .NCP, .NAC
   - .PRG, .TOS and .ACC stay free for a 68000 emulator
-- Runs: QED, TeraDesk, zView, Doom, CoreMark
-- zView with 10 image formats - LDG libraries load as .NLD
-- CoreMark says about 7,300 - plenty for any Atari program
 
 # zView
 @image ZVIEW.PNG
