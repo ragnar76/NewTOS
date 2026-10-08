@@ -54,7 +54,6 @@
 - Networking
 - Faster graphics: the VDI drawing code in hand-written ARM assembly
 - More software: Thing, HighWire, the newer zView
-- And one day NewTOS inside a real Atari, on a PiStorm
 - Follow along at newtosworld.de
 
 # Credits
