@@ -10,42 +10,39 @@
 - Since May: 1,250 commits, 190,000 lines of code, more than 1,250 tests
 
 # What it runs on
-- Raspberry Pi 4 (BCM2711, ARM Cortex-A72, 1.5 GHz)
-- HDMI: up to 1920 x 1080, true colour
-- SD card: 4-bit bus, multi-block transfers, ~10 MB/s
-- 32 MB block cache, read in RAM after the first access
-- USB keyboard and mouse
-- Serial console for debugging
-- MMU: every program gets memory protection, like FreeMiNT
-- Develop and test in QEMU, run on the real Pi
+- A Raspberry Pi 4 - four ARM cores at 1.5 GHz, for less than an Atari cost back then
+- Full HD over HDMI, in true colour
+- The SD card is the hard disk: about 10 MB per second, with a 32 MB cache in RAM
+- An ordinary USB keyboard and mouse
+- Every program gets its own memory protection - a crash ends the program, not the system
+- Most of the work happened in QEMU on the Mac, then went onto the real Pi
 @image PI4.PNG
 
 # BIOS and XBIOS
-- BIOS: console, character devices, Rwabs, Getbpb, Mediach
-- Drives C: to F: from the SD card partitions (FAT)
-- System variables and cookie jar as on a Falcon (TOS 4.04)
-- XBIOS: screen, palette, Keytbl, Kbdvbase, Supexec, timers
-- Keyboard layouts: German and US, loadable KEYBOARD.KBD
-- 200 Hz system timer (_hz_200), mouse moves while programs compute
-- NewTOS extensions via Ssystem: CPU clock, temperature, system info
+- The layer underneath, just as programs expect it from a Falcon with TOS 4.04
+- The SD card shows up as drives C: to F:
+- System variables and cookie jar live where Atari software looks for them
+- German or US keyboard layout - or your own KEYBOARD.KBD
+- A 200 Hz timer, like the real machine
+- A few new calls of our own: CPU clock, temperature, system information
 
 # VDI, AES and Desktop
-- VDI: about 70 functions, Falcon true-colour model
-- Checked pixel by pixel against real TT and Falcon dumps
-- AES: all 11 managers - windows, menus, dialogs, events, resources
-- 3D look as in TOS 4 / EmuTOS
-- Desk accessories (.NAC), e.g. System Info
-- Desktop: EmuDESK rebuilt 1:1 - TeraDesk runs on top
+- The VDI draws everything - about 70 functions, in true colour
+- Compared pixel by pixel with a real TT and a Falcon
+- The AES is complete: windows, menus, dialogs, events, resources
+- The 3D look you know from TOS 4
+- Desk accessories work - System Info is one, built just for this
+- The desktop is EmuDESK, rebuilt piece by piece - and TeraDesk runs on top
 @image DESKTOP.PNG
 
 # Toolchain
-- clang / LLVM for AArch64, own SDK
-- mintlib, gemlib, cflib ported - not rewritten
-- Native 64-bit programs: .NAP (GEM), .NCP (console), .NAC (accessory)
-- .PRG/.TOS/.ACC stay reserved for a future 68000 emulator
-- Running ports: QED, TeraDesk, zView with 10 image codecs, Doom, CoreMark
-- LDG libraries load natively (.NLD), WinDom, libpng, libjpeg, zlib
-- CoreMark: about 7,300 on the Pi 4
+- Programs are built with clang and our own SDK
+- The Atari libraries - mintlib, gemlib, cflib - were ported, not rewritten
+- Native programs get their own names: .NAP, .NCP, .NAC
+  - .PRG, .TOS and .ACC stay free for a 68000 emulator later
+- Already running: QED, TeraDesk, zView with 10 image formats, Doom, CoreMark
+- Even LDG libraries load, natively, as .NLD files
+- CoreMark says about 7,300 - fast enough for anything an Atari ever did
 @image ZVIEW.PNG
 
 # Plans and Outlook
