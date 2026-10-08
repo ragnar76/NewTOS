@@ -1,0 +1,31 @@
+measurement-2026-10-08-present-res -- PRESENT.NAP slides at 1024x768, 800x600, 1280x720 (+1920x1080 reference)
+
+WHAT/WHY  The Atari meeting projector is VGA-only (HDMI->VGA converter), so the Pi will probably get a
+  lower mode. Question: does PRESENT.NAP render all 9 slides of the OFAM deck correctly at lower resolutions?
+
+HOW  Branch main, HEAD caf30d8b, tree clean. QEMU raspi4b (-append serial=on), headless. The framebuffer size is set with
+  -global bcm2835-fb.xres=W -global bcm2835-fb.yres=H (device properties of QEMU's bcm2835-fb; default 640x480).
+  Serial line "[fb] VideoCore display geometry detected: WxH" confirmed per run (serial/*.log).
+  Kernel = scratch copy of main (rsync) + the INPUT01 scratch IKBD injector (method/apply-injector-input01.py,
+  method/make-inj-input01.sh, script method/present.actions), board-rpi4 release, own cargo target dir.
+  Product code untouched. Card = ONE base image (32 MiB MBR+FAT16, method/seed-present-card.sh) with
+  C:\Apps\PRESENT\{PRESENT.NAP,SLIDES.TXT,PI4.PNG,DESKTOP.PNG,ZVIEW.PNG}, SLIDES.TXT = "@spacing 5" + docs/presentation/ofam-2026-slides.txt,
+  NEWDESK.INF #Z C:\Apps\PRESENT\PRESENT.NAP@. Per run an APFS clone (cp -c), deleted after the run.
+  Per run (method/run-res.sh + drive-m3.py): PRESENT autostarts, the injector presses Right (scancode 4D/CD) 8 times
+  and Esc (01/81); a screendump is taken 2.5 s (host) after each "[m3] MARK Sn" (the key follows 5 s later), then
+  DESK (after Esc) and end.
+  sha256: kernel(injector) 8d844f5ff7b3d1da1098b6e179f7e02b6e47ed05c58b43fef70ac74199081e79
+          PRESENT.NAP      98043d745d632c3f40b0a83c74e69f0613271b2f7f566693c44a2c7594b7e14c (identical to sdk/apps/present/build/PRESENT.NAP rebuilt from present.c)
+          base card        e7b36ad8e1b84131d7299e54799b680b19bce13f705d072a12b117e3fb1d3608
+  First attempt had the next-key 2 s after the mark (dump 2.5 s later) -> screendumps one slide late; discarded,
+  actions re-timed, all four resolutions rerun. Only the rerun is kept.
+
+RESULT (screendumps/<WxH>/r<WxH>-S1..S9.png = slides 1..9, -DESK = after Esc, -end)
+  All four resolutions: 9/9 slides rendered, footer "n / 9" correct, PRESENT exited with rc=0
+  ("[shell] sh_ldapp: ... exited with rc=0"), desktop (menu bar, icons, green desktop) back after Esc, no exception
+  lines. Per slide: all bullets present, no clipped line, images complete and inside the screen, footer/title no overlap.
+  Layout facts: text size is chosen per slide (e.g. at 1024x768 slides 1, 2, 9 use the small bullet size, 3, 4, 6, 8 the
+  large one; at 800x600 slides 3, 6, 8 use the large one and fill down to about y=520 of 600, footer at y=575).
+  Pictures are scaled to fit the area under the title.
+  Not covered: real VideoCore/HDMI->VGA converter behaviour (which mode the converter/projector negotiates, EDID),
+  real keyboard/mouse, cache effects on silicon. QEMU only.
