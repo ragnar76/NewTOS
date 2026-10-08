@@ -1,0 +1,59 @@
+; TEST VARIANT ONLY (not the deck): the proposed shortenings + picture-only screenshot slides.
+# NewTOS - Why and How
+- More than 20 years ago I registered newtosworld.de
+- The dream: TOS on an ordinary PC.
+  - No Raspberry Pi, no ARM desktops - just a beige box and an idea
+- It never got built: I couldn't program, and had no help
+- This year it finally changed: I built it with Claude, an AI
+- Not an emulator: TOS itself, rewritten for today's hardware
+  - Same GEMDOS, BIOS, XBIOS, VDI and AES, checked line by line against EmuTOS
+- Atari programs are recompiled from original sources, unchanged
+- Since May: 1,250 commits, 190,000 lines of code, 1,250+ tests
+
+# What it runs on
+- Raspberry Pi 4: 4 ARM cores, 1.5 GHz
+  - NewTOS uses one for now; three are waiting
+- Full HD over HDMI, in true colour
+- The SD card is the hard disk: 10 MB/s, 32 MB RAM cache
+- An ordinary USB keyboard and mouse
+- Memory protection per program: a crash ends the program, not the system
+- Most of the work was done in QEMU on the Mac, then on the real Pi
+@image PI4.PNG
+
+# VDI, AES and Desktop
+- The VDI draws everything - about 70 functions, in true colour
+- Tested against a real Atari TT and Hatari, in several configurations
+  - TT, Falcon, true colour - compared pixel by pixel
+- The AES is complete: windows, menus, dialogs, events, resources
+- The 3D look you know from TOS 4
+- Desk accessories work - System Info is one, built just for this
+- The desktop is EmuDESK, rebuilt piece by piece - and TeraDesk runs on top
+
+# EmuDESK and System Info
+@image DESKTOP.PNG
+
+# Toolchain
+- Built with clang and our own SDK
+- The Atari libraries - mintlib, gemlib, cflib - were ported, not rewritten
+- Native programs: .NAP, .NCP, .NAC
+  - .PRG, .TOS and .ACC stay free for a 68000 emulator later
+- Running: QED, TeraDesk, zView, Doom, CoreMark
+- LDG libraries load natively as .NLD files
+- CoreMark says about 7,300 - plenty for any Atari program
+@image ZVIEW.PNG
+
+# zView with 10 image formats
+@image ZVIEW.PNG
+
+# Credits
+- EmuTOS - the reference for every TOS function
+- FreeMiNT, mintlib, gemlib, cflib - libraries and the memory model
+- QED, TeraDesk, zView (z-tools), WinDom, LDG, libshare
+- zView codecs: BMP TGA PNG GIF JPEG DEGAS NEOchrome GodPaint Eureka IMG
+- zlib, libpng, IJG libjpeg, giflib, libexif
+- Doom (id Software, doomgeneric), CoreMark (EEMBC)
+- Hatari and QEMU - reference machines and test bench
+- Rust, LLVM/clang, Raspberry Pi firmware, circle (reference)
+- Built with Claude Code (Anthropic)
+  - Plugins: caveman, mattpocock-skills, rust-analyzer-lsp, clangd-lsp, graphify
+- And thank you - to everyone who kept the Atari alive all these years

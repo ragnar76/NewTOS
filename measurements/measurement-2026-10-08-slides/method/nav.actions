@@ -1,0 +1,25 @@
+# 7-slide deck (docs/presentation/ofam-2026-slides.txt), 1920x1080. PRESENT.NAP is started by
+# the #Z autorun; the injector clock starts at the first EL0 program. Ticks = hz_200.
+# IKBD: 4D Right (break CD), 01 Esc (break 81). One screendump 0.1 s after each mark.
+600 mark S1
+700 key 4D
+703 key CD
+1300 mark S2
+1400 key 4D
+1403 key CD
+2000 mark S3
+2100 key 4D
+2103 key CD
+2700 mark S4
+2800 key 4D
+2803 key CD
+3400 mark S5
+3500 key 4D
+3503 key CD
+4100 mark S6
+4200 key 4D
+4203 key CD
+4800 mark S7
+4900 key 01
+4903 key 81
+6500 mark END_DESKTOP

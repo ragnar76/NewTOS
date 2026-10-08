@@ -1,0 +1,166 @@
+RB2
+NewTOS booting on rpi4
+[serial] output on: boot arguments contain `serial=on`
+Phase 02 reached.
+[mm] DTB at 0x0000000000000100
+[mm] firmware: ARM memory bank 0: 0x0000000000000000 + 1006632960 bytes (960 MiB)
+[mm] firmware: VC memory: 0x000000003c000000 + 67108864 bytes (64 MiB)
+[mm] device tree: no usable /memory node (blob invalid or absent)
+[clock] ARM 700 -> 700 MHz (max 700, measured ?, SoC 25.0 C)
+[mm] memory map:
+[mm]   DRAM  : 0x0000000000000000..0x000000003c000000 (1006632960 bytes) — source: firmware
+[mm]   kernel: 0x0000000000080000..0x00000000002da000 (2465792 bytes)
+[mm]   ST-RAM: 0x0000000000400000..0x0000000000e00000 (10485760 bytes)
+[mm]   TT-RAM: 0x0000000001000000..0x0000000039e00000 (954204160 bytes)
+[mm]   OSrsvd: 0x0000000039e00000..0x000000003c000000 (35651584 bytes)
+[mm]     bcach: 0x0000000039e00000..0x000000003be00000 (33554432 bytes)
+[mm]     heap: 0x000000003be00000..0x000000003c000000 (2097152 bytes)
+[mm]   MMIO 00: 0x00000000fd500000..0x00000000fd510000
+[mm]   MMIO 01: 0x00000000fe000000..0x00000000ff000000
+[mm]   MMIO 02: 0x00000000ff800000..0x0000000100000000
+[mm] MMU reinstalled (high-half via TTBR1, TTBR0 deferred to Phase 06).
+[mm] frames ST-RAM: total=2560 used=0 free=2560 (10485760 B free)
+[mm] frames TT-RAM: total=232960 used=0 free=232960 (954204160 B free)
+[mm] alloc ST-RAM frame -> 0x0000000000400000
+[mm] alloc TT-RAM frame -> 0x0000000001000000
+[mm] heap after init: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[mm] heap smoke OK
+[mm] heap after smoke: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+[fb] VideoCore display geometry detected: 1920x1080
+[fb] alpha mode = 2
+[fb] 1920x1080 pitch 7680 virtual height 2160 -> 2 screen page(s), 16200 KiB
+[fb] VideoCore fb up: 1920x1080 stride 1920px
+[mm] memory protection ON: table arena 0x01000000+2424 tables
+[mm] BDOS pools: ST-RAM 0x00400000+10485760 TT-RAM 0x01978000+944275456
+[mm] user address space: pools mapped VA = PA (456 shared L3 tables, 4-KiB pages, rights per process)
+[mm] BDOS ST-RAM after init: total=10485760 free=10485760 used=0 largest_free=10485760 (free_mds=1 alloc_mds=0)
+[mm] BDOS TT-RAM after init: total=944275456 free=944275456 used=0 largest_free=944275456 (free_mds=1 alloc_mds=0)
+[input] keyboard/mouse pump: AES waits and console reads; pointer motion also from the 200 Hz tick while a program runs (input=aes switches that off)
+[bcache] FS09 block read cache: 32768 KiB at 0x39e00000 (asked 32768 KiB, default), 61680 sectors of 512 B, linear-read share 5 % (default), write-through
+[emmc] SD card on controller @ 0xffff0000fe300000
+[emmc] M1 SLOTISR_VER=0x24020000 (SDHCI spec 0x02) CAPABILITIES=0x052134b4 (base 52 MHz)
+[emmc] M1 CONTROL0=0x00000f02 CONTROL1=0x000e0207 div=2 -> SDCLK ~13000000 Hz
+[emmc] M1 mailbox clock rate: EMMC(1)=50000000 Hz EMMC2(12)=700000000 Hz
+[emmc] FS08 mode: multi-block (CMD18/CMD25 + Auto CMD12) — bus 4-bit (ACMD6 ok, SCR SD_BUS_WIDTHS=0x5), CONTROL0[1] Data Transfer Width=1
+[emmc] M1 during identification: 2 error(s), 0 timeout(s), 2 recovery(ies) CTO=2
+[clock] seeded from kernel8.img: 2026-10-08 07:29:38
+[pcie] RC not present (no response at RC_BASE); USB disabled
+[proc] stand-in PDs: initial_basepage 0x00251000, AES PD 0x00251100 (read-only to all)
+[acc] loaded C:\ACC\SYSACC.NAC into slot 0 (entry 0x197a000)
+[acc] loaded C:\SYSACC2.NAC into slot 1 (entry 0x1988000)
+[acc] 2 file(s) found, 2 process(es) started
+[aes] gsx_malloc: screen buffer pa=0x01994000 len=4147200 (kernel-owned, WF_SCREEN)
+[sched] switch -> slot 0
+[sched] running
+[m3] injector armed at hz_200 3023
+[sched] switch -> slot 1
+[sched] running
+[sched] switch -> kernel client
+[acc] all accessories have issued their message wait
+[shell] sh_ldapp: starting C:\ZVIEW\ZVIEW.NAP, sh_nextapp=2, sh_isgem=1
+[acc] launching with 2 accessory(s); AC_CLOSE seen by all: false
+[launch] EL0: slot 2 entry 0x1dac000
+[exec] preparing program (slot 3)
+[exec] launching
+[exec] preparing program (slot 3)
+[exec] launching
+[exec] preparing program (slot 3)
+[exec] launching
+[m3] step 0 at +106 sched 100 irq=1 -> mouse (959,539) mb=0
+[exec] preparing program (slot 3)
+[exec] launching
+[m3] step 1 at +110 sched 101 irq=1 -> mouse (1086,666) mb=0
+[m3] step 2 at +113 sched 102 irq=1 -> mouse (1213,793) mb=0
+[m3] step 3 at +119 sched 103 irq=1 -> mouse (1340,920) mb=0
+[exec] preparing program (slot 3)
+[exec] launching
+[m3] step 4 at +122 sched 104 irq=1 -> mouse (1467,1047) mb=0
+[m3] step 5 at +125 sched 105 irq=1 -> mouse (1594,1079) mb=0
+[m3] step 6 at +126 sched 106 irq=1 -> mouse (1721,1079) mb=0
+[m3] step 7 at +131 sched 107 irq=1 -> mouse (1848,1079) mb=0
+[exec] preparing program (slot 3)
+[exec] launching
+[m3] step 8 at +134 sched 108 irq=1 -> mouse (1919,1079) mb=0
+[m3] step 9 at +137 sched 109 irq=1 -> mouse (1919,1079) mb=0
+[m3] step 10 at +143 sched 110 irq=1 -> mouse (1919,1079) mb=0
+[exec] preparing program (slot 3)
+[exec] launching
+[m3] step 11 at +146 sched 111 irq=1 -> mouse (1919,1079) mb=0
+[m3] step 12 at +150 sched 112 irq=1 -> mouse (1919,1079) mb=0
+[m3] step 13 at +156 sched 113 irq=1 -> mouse (1919,1079) mb=0
+[exec] preparing program (slot 3)
+[exec] launching
+[m3] step 14 at +159 sched 114 irq=1 -> mouse (1919,1079) mb=0
+[m3] step 15 at +162 sched 115 irq=1 -> mouse (1919,1079) mb=0
+[exec] preparing program (slot 3)
+[exec] launching
+[exec] preparing program (slot 3)
+[exec] launching
+[m3] step 16 at +3100 sched 3100 irq=0 -> mouse (1792,952) mb=0
+[m3] step 17 at +3101 sched 3101 irq=0 -> mouse (1665,825) mb=0
+[m3] step 18 at +3102 sched 3102 irq=0 -> mouse (1538,698) mb=0
+[m3] step 19 at +3103 sched 3103 irq=0 -> mouse (1411,571) mb=0
+[m3] step 20 at +3104 sched 3104 irq=0 -> mouse (1284,444) mb=0
+[m3] step 21 at +3105 sched 3105 irq=0 -> mouse (1157,317) mb=0
+[m3] step 22 at +3106 sched 3106 irq=0 -> mouse (1030,190) mb=0
+[m3] step 23 at +3107 sched 3107 irq=0 -> mouse (903,63) mb=0
+[m3] step 24 at +3108 sched 3108 irq=0 -> mouse (776,8) mb=0
+[m3] step 25 at +3109 sched 3109 irq=0 -> mouse (649,8) mb=0
+[m3] step 26 at +3110 sched 3110 irq=0 -> mouse (522,8) mb=0
+[m3] step 27 at +3111 sched 3111 irq=0 -> mouse (395,8) mb=0
+[m3] step 28 at +3112 sched 3112 irq=0 -> mouse (268,8) mb=0
+[m3] step 29 at +3113 sched 3113 irq=0 -> mouse (141,8) mb=0
+[m3] step 30 at +3114 sched 3114 irq=0 -> mouse (76,8) mb=0
+[m3] step 31 at +3500 sched 3500 irq=0 -> mouse (100,28) mb=0
+[m3] step 32 at +3700 sched 3700 irq=0 -> mouse (100,28) mb=1
+[m3] step 33 at +3703 sched 3703 irq=1 -> mouse (100,28) mb=1
+[m3] MARK B02_BROWSER_C step 34 at +6000 sched 6000 irq=0 mouse (100,28) mb=0
+[m3] step 35 at +6100 sched 6100 irq=0 -> mouse (227,110) mb=0
+[m3] step 36 at +6108 sched 6101 irq=0 -> mouse (354,110) mb=0
+[m3] step 37 at +6108 sched 6102 irq=0 -> mouse (481,110) mb=0
+[m3] step 38 at +6108 sched 6103 irq=0 -> mouse (608,110) mb=0
+[m3] step 39 at +6108 sched 6104 irq=0 -> mouse (735,110) mb=0
+[m3] step 40 at +6108 sched 6105 irq=0 -> mouse (862,110) mb=0
+[m3] step 41 at +6108 sched 6106 irq=0 -> mouse (989,110) mb=0
+[m3] step 42 at +6108 sched 6107 irq=0 -> mouse (1106,110) mb=0
+[m3] step 43 at +6300 sched 6300 irq=0 -> mouse (1106,110) mb=1
+[m3] step 44 at +6303 sched 6303 irq=0 -> mouse (1106,110) mb=0
+[m3] step 45 at +6308 sched 6308 irq=0 -> mouse (1106,110) mb=1
+[m3] step 46 at +6311 sched 6311 irq=0 -> mouse (1106,110) mb=0
+[m3] MARK B03_ZVIEW step 47 at +9000 sched 9000 irq=0 mouse (1106,110) mb=0
+[m3] step 48 at +9100 sched 9100 irq=0 -> mouse (979,110) mb=0
+[m3] step 49 at +9101 sched 9101 irq=0 -> mouse (852,110) mb=0
+[m3] step 50 at +9108 sched 9102 irq=0 -> mouse (725,110) mb=0
+[m3] step 51 at +9108 sched 9103 irq=0 -> mouse (598,110) mb=0
+[m3] step 52 at +9108 sched 9104 irq=0 -> mouse (471,110) mb=0
+[m3] step 53 at +9108 sched 9105 irq=0 -> mouse (470,110) mb=0
+[m3] step 54 at +9300 sched 9300 irq=0 -> mouse (470,110) mb=1
+[m3] step 55 at +9303 sched 9303 irq=0 -> mouse (470,110) mb=0
+[m3] step 56 at +9308 sched 9308 irq=0 -> mouse (470,110) mb=1
+[m3] step 57 at +9311 sched 9311 irq=0 -> mouse (470,110) mb=0
+[m3] MARK B04_SAMPLES step 58 at +16000 sched 16000 irq=0 mouse (470,110) mb=0
+[m3] step 59 at +16100 sched 16100 irq=0 -> mouse (343,105) mb=0
+[m3] step 60 at +16107 sched 16101 irq=0 -> mouse (258,105) mb=0
+[m3] step 61 at +16300 sched 16300 irq=0 -> mouse (258,105) mb=1
+[m3] step 62 at +16303 sched 16303 irq=0 -> mouse (258,105) mb=0
+[m3] step 63 at +16308 sched 16308 irq=0 -> mouse (258,105) mb=1
+[m3] step 64 at +16311 sched 16311 irq=0 -> mouse (258,105) mb=0
+[m3] MARK B05_LANDSCAPE step 65 at +19000 sched 19000 irq=0 mouse (258,105) mb=0
+[m3] step 66 at +19100 sched 19100 irq=0 -> mouse (385,232) mb=0
+[m3] step 67 at +19113 sched 19101 irq=0 -> mouse (512,359) mb=0
+[m3] step 68 at +19113 sched 19102 irq=0 -> mouse (639,486) mb=0
+[m3] step 69 at +19113 sched 19103 irq=0 -> mouse (766,613) mb=0
+[m3] step 70 at +19113 sched 19104 irq=0 -> mouse (893,740) mb=0
+[m3] step 71 at +19113 sched 19105 irq=0 -> mouse (1020,867) mb=0
+[m3] step 72 at +19113 sched 19106 irq=0 -> mouse (1147,994) mb=0
+[m3] step 73 at +19113 sched 19107 irq=0 -> mouse (1274,1079) mb=0
+[m3] step 74 at +19113 sched 19108 irq=0 -> mouse (1401,1079) mb=0
+[m3] step 75 at +19113 sched 19109 irq=0 -> mouse (1528,1079) mb=0
+[m3] step 76 at +19113 sched 19110 irq=0 -> mouse (1655,1079) mb=0
+[m3] step 77 at +19113 sched 19111 irq=0 -> mouse (1782,1079) mb=0
+[m3] step 78 at +19113 sched 19112 irq=0 -> mouse (1909,1079) mb=0
+[m3] step 79 at +19113 sched 19113 irq=0 -> mouse (1919,1079) mb=0
+[m3] step 80 at +19114 sched 19114 irq=0 -> mouse (1919,1079) mb=0
+[m3] step 81 at +19115 sched 19115 irq=0 -> mouse (1919,1079) mb=0
+[m3] MARK B06_PARKED step 82 at +19400 sched 19400 irq=0 mouse (1919,1079) mb=0
+[m3] MARK END step 83 at +19500 sched 19500 irq=0 mouse (1919,1079) mb=0

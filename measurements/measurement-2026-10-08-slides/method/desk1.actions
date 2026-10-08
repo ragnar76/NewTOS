@@ -1,0 +1,10 @@
+# exploration, EmuDESK at 1920x1080
+100 parkhd
+400 move 38 40
+600 down
+603 up
+608 down
+611 up
+2000 mark D01_C_OPEN
+2100 move 40 9
+2500 mark D02_DESK_MENU

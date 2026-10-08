@@ -1,0 +1,19 @@
+# EmuDESK 1920x1080: open C: (double-click the DISK C icon), Desk > System Info
+# (first entry) -> dialog on top of the window; park the pointer bottom-right.
+# Ticks hz_200 after "[desk] desktop up" (desk-arm-m3.py).
+100 parkhd
+400 move 38 40
+600 down
+603 up
+608 down
+611 up
+2000 mark D01_C_OPEN
+2100 move 40 9
+2500 mark D02_DESK_MENU
+2600 move 68 59
+2800 down
+2803 up
+4000 mark D03_DIALOG
+4100 parkhd
+4400 mark D04_DIALOG_PARKED
+4500 mark END

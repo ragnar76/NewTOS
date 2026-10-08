@@ -1,0 +1,48 @@
+measurement-2026-10-08-slides -- presentation screenshots + real slide-deck render
+for the Atari meeting (ofam-2026). Tester run, no product code changed.
+
+Date 2026-10-08, branch desk-rebuild, HEAD aec187e4, clean tree. QEMU raspi4b,
+-append serial=on (memprot default = ON, serial: "[mm] memory protection ON"),
+-global bcm2835-fb.xres=1920 yres=1080, one QEMU at a time, host macOS. No SD
+card, Pi or TT touched. Release kernels built from HEAD in a scratch copy with
+the IKBD injector (method/make-inj-input01.sh + apply-injector-input01.py, as
+measurement-2026-10-08-present/method); the build stamp "aec187e4" shown by the
+System Info dialog comes from GIT_DIR pointed at the repo for the scratch build.
+Every run card = APFS clone (cp -c) of one 64 MB base (tools/make-sd-image.sh),
+deleted after the run; all scratch deleted at the end. Hashes: checks/.
+
+1. SCREENSHOTS (docs/presentation/images/DESKTOP.PNG, ZVIEW.PNG; 1920x1080 RGB
+   PNG straight from the QMP screendump, nothing cropped; PI4.PNG untouched)
+   DESKTOP.PNG  EmuDESK (the card's own NEWDESK.INF), C: window open (double-
+                click the DISK C icon) with folders+files, Desk > System Info
+                dialog open on top. The dialog sits right of/below the window
+                and hides nothing of it -> the window+dialog variant was chosen.
+                method/desk2.actions.
+   ZVIEW.PNG    zView: browser (C:\ZVIEW\SAMPLES) + the picture window with
+                LANDSCAP.JPG (synthetic sunset/mountain/lake landscape,
+                1280x960 JPEG, method/gen-landscape.py, deterministic, no photo)
+                at 100 %. method/zv1.actions (steps of measurement-2026-10-07-
+                zview-perf zp-hd + double-click on the first thumbnail).
+   screendumps/DESKTOP.PNG, ZVIEW.PNG = the same files; d4-D0x / z3-B0x = steps.
+2. SLIDE DECK: docs/presentation/ofam-2026-slides.txt as C:\Apps\PRESENT\
+   SLIDES.TXT + PI4/DESKTOP/ZVIEW.PNG beside it; PRESENT.NAP (rebuilt with
+   sdk/apps/present/build-present.sh, sha 94ebf10b...ec29) started by #Z; Right
+   key per slide (method/nav.actions); dump 0.1 s after each mark:
+   screendumps/slide-01..07.png (+ slides-end-desktop.png: Esc -> desktop).
+   0 [EXC]/[PANIC]; "PRESENT.NAP exited with rc=0".
+   Extra (NOT the deck): method/slides-variant-test.txt = the proposed
+   shortenings + picture-only screenshot slides, rendered the same way
+   -> screendumps/variant-01..07.png.
+
+FINDINGS: per slide in the Tester report; short form
+  S1 fits (x3) but 5 of 8 bullets wrap with 1-3-word orphans; two lines end
+     exactly at the right margin (zero slack).
+  S2/S5 (picture slides) drop to x2; on S4 the 1920x1080 screenshot is scaled
+     to 36 % in the 692 px picture column -> DESKTOP illegible.
+  Shortened text (variant) brings S2/S5 to x3 and S1 to single lines; the
+  screenshots as own picture-only slides get ~75 % (1432 px) = readable.
+
+NOT COVERED: real Pi 4 (HDMI, USB input, timing); the System Info values in
+  DESKTOP.PNG are QEMU's (700 MHz requested, 25.0 C, "not available" measured).
+  The END desktop dump (slides-end-desktop.png) uses the run template INF
+  (4 "Hard disk" icons, flat green), not the card's own INF of DESKTOP.PNG.

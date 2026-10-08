@@ -1,0 +1,29 @@
+# zView at 1920x1080 (opening steps as measurement-2026-10-07-zview-perf/method/zp-hd.actions):
+# File > browser, folder ZVIEW, folder SAMPLES, double-click LANDSCAP.JPG (the first thumbnail).
+100 parkhd
+3100 move 76 8
+3500 move 100 28
+3700 down
+3703 up
+6000 mark B02_BROWSER_C
+6100 move 1106 110
+6300 down
+6303 up
+6308 down
+6311 up
+9000 mark B03_ZVIEW
+9100 move 470 110
+9300 down
+9303 up
+9308 down
+9311 up
+16000 mark B04_SAMPLES
+16100 move 258 105
+16300 down
+16303 up
+16308 down
+16311 up
+19000 mark B05_LANDSCAPE
+19100 parkhd
+19400 mark B06_PARKED
+19500 mark END
