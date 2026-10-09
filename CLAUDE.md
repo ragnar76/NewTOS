@@ -196,7 +196,7 @@ PiRusTOS/
 │   ├── STATUS.md, MEMORY.md, REQUIREMENTS.md, ARCHITECTURE.md, COMPATIBILITY.md, …
 │   ├── api/                     # extracted TOS API spec, one dir/file per group
 │   ├── analysis/                # dated analyses and design notes (<topic>-YYYY-MM-DD.md)
-│   ├── hardware/, sdk/, benchmarks/
+│   ├── hardware/, sdk/, benchmarks/, presentation/ (slide decks + images)
 ├── phases/                      # PHASE-XX-*.md implementation guidelines
 ├── TASK/                        # tickets: <ID>.md + <ID>-STATUS-DONE.MD / -STATUS-UNFINISHED.MD
 ├── measurements/                # evidence runs, one dir per run (see below)
