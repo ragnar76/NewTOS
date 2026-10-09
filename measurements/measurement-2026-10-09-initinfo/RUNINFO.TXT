@@ -1,0 +1,44 @@
+measurement-2026-10-09-initinfo — boot screen centred in the middle third
+==========================================================================
+
+What
+  kernel/src/initinfo.rs `run()`: the boot information screen no longer frames
+  the whole screen. A measuring pass of the same row list (`lay_out` over a
+  `Sheet` without a workstation) yields the block height and the width the
+  rows need; the frame is sw/3 wide (at least the content width, at most
+  sw-32) and centred both ways, like EmuTOS' top_margin/left_margin
+  (references/emutos/bios/initinfo.c:301-316). Content, strings, colours,
+  hold logic and INITINFO_DURATION are unchanged.
+
+Why
+  User 2026-10-09: at Full HD the screen was "almost fullscreen and
+  overwhelming"; the info should sit in the inner third.
+
+How
+  Kernels (built from tree at HEAD 91df50ba + the uncommitted initinfo.rs change):
+    board-rpi4 release kernel8.img      sha256 0d82abf42fcdf3e8943050085ae35a4f26a038c670049005b1cd9051bae34623
+    board-qemu-virt release (objcopy)   sha256 cbbca1291d7ec580b3080ec052993161eb318e715ea398a77e55e4e0acb9132d
+  QEMU 11.0.2.
+  raspi4b: method/run-init.sh <kernel8.img> - <WxH> <outdir>
+    (no SD card attached: the boot screen does not need one; "GEMDOS drives:
+    none" is therefore expected. raspi4b has no PCIe RC in QEMU, so no USB tree.)
+    -append serial=on, -global bcm2835-fb.xres/yres, QMP screendumps at
+    6/10/14 s, i.e. inside the 15 s hold of board-rpi4.
+  qemu-virt (exercises the USB tree rows; ramfb, qemu-xhci + usb-kbd + usb-mouse,
+    same device set as `cargo xtask run`): screendumps at 1.5/2.5/3.5 s; the
+    3 s hold ends before 3.5 s, so that last dump is already past the screen.
+
+Result (frame pixel bounds measured from the PNGs, t10 / t2.5)
+  1920x1080 rpi4   frame x 640..1279 (640 px = sw/3), y 320..758;  L/R 640/640, T/B 320/321
+  1024x768  rpi4   frame x 236..787  (552 px = content width), y 164..602; L/R 236/236, T/B 164/165
+  640x480   rpi4   frame x 44..595   (552 px = content width), y 20..458;  L/R 44/44,  T/B 20/21
+  1920x1080 virt   frame x 640..1279, y 293..785 (taller: USB tree, 3 rows); T/B 293/294
+  The t06/t10/t14 dumps of each raspi4b run are byte-identical (screen held).
+  Looked at every image: box centred, nothing clipped, no stray lines, all
+  text inside the frame.
+
+Builds / baselines
+  cargo xtask build --release, both boards: tos-api 64, kernel 94 warnings (delta 0)
+  cargo clippy -p kernel --release --no-default-features --features board-{qemu-virt,rpi4}
+    --lib --bins: tos-api 76, kernel 125 (delta 0)
+  cargo xtask test: 1268 / 0 / 1

@@ -251,97 +251,269 @@ pub fn run() -> u8 {
     #[cfg(feature = "initinfo-diag")]
     diag::VWK_OK.store(true, core::sync::atomic::Ordering::Relaxed);
     v.clear(); // white background
-    let cx = sw / 2;
+
+    // Everything the rows show is gathered once, so the measuring pass and
+    // the drawing pass below lay out exactly the same rows.
+    let content = Content::gather();
+
+    // ── geometry: a box centred both ways ──
+    //
+    // EmuTOS draws no frame round its boot screen; it centres the text block
+    // instead — vertically by `top_margin = (screen_height - initinfo_height)
+    // / 2` (`references/emutos/bios/initinfo.c:301-306`), horizontally by
+    // `left_margin = (SCREEN_WIDTH-LOGO_LENGTH) / 2` for the logo and
+    // `(SCREEN_WIDTH-INFO_LENGTH) / 2` for the info lines (:308-316). EmuTOS
+    // has to keep `initinfo_height` in step with the rows by hand (:270,
+    // :287-299); here a measuring pass of the same `lay_out` supplies both the
+    // height and the width the rows need. The box is the middle third of the
+    // screen, widened to the content and narrowed to the screen if need be;
+    // a block taller than the screen starts at the top edge.
+    let mut probe = Sheet::measure();
+    lay_out(&mut probe, &content);
+    let bw = (sw / 3).max(probe.need_w).min(sw - 32);
+    let bh = probe.y;
+    let fx0 = (sw - bw) / 2;
+    let fy0 = ((sh - bh) / 2).max(0);
+    let (fx1, fy1) = (fx0 + bw - 1, (fy0 + bh - 1).min(sh - 1));
 
     // ── outer frame ──
-    let (fx0, fy0, fx1, fy1) = (16, 12, sw - 17, sh - 13);
     v.set_line(BLACK);
     rect(&mut v, fx0, fy0, fx1, fy1);
 
-    // ── NewTOS logo: a grid of coloured blocks (EmuTOS' print_art idea —
-    //    each cell is a colour, not an ASCII char). "New" blue, "TOS" red. ──
-    let (cw, chh) = (12i16, 13i16);
-    let cols = LOGO[0].len() as i16;
-    let logo_x = cx - cols * cw / 2;
-    let logo_y = fy0 + 16;
-    for (r, row) in LOGO.iter().enumerate() {
-        let ry = logo_y + r as i16 * chh;
-        for (c, &cell) in row.iter().enumerate() {
-            if cell == b'#' {
-                let col = c as i16;
-                v.set_fill(if col < 18 { BLUE } else { RED });
-                let bx = logo_x + col * cw;
-                v.fill_rect(bx, ry, bx + cw - 1, ry + chh - 1);
+    let mut sheet = Sheet::draw(&mut v, fx0, fx1, fy0);
+    lay_out(&mut sheet, &content);
+
+    v.close();
+
+    // EmuTOS' `initinfo` ends in the wait loop, not in the last `cprintf`.
+    wait_for_user(host)
+}
+
+/// Space between the frame's top/bottom edge and the first/last row.
+const PAD_Y: i16 = 16;
+/// Space a centred row keeps from the frame's left and right edges.
+const PAD_X: i16 = 24;
+/// Inset of the separators from the frame's left and right edges.
+const SEP_INSET: i16 = 16;
+/// Left edge of the USB tree, measured from the frame's left edge.
+const USB_INSET: i16 = 40;
+/// Size of one logo cell, in pixels.
+const LOGO_CELL: (i16, i16) = (12, 13);
+
+/// The values the boot screen shows, read once so that the measuring and the
+/// drawing pass of [`lay_out`] see the same rows.
+struct Content {
+    /// The `label : value` system-info pairs, top to bottom.
+    pairs: [(&'static [u8], alloc::string::String); 8],
+    /// The xHCI port count and one line per HID device, or `None` without a
+    /// USB host controller.
+    usb: Option<(u8, alloc::vec::Vec<alloc::string::String>)>,
+}
+
+impl Content {
+    fn gather() -> Self {
+        use alloc::string::String;
+
+        let st = stats(Pool::Stram);
+        let tt = stats(Pool::Ttram);
+        let pairs = [
+            (&b"Version"[..], String::from(VERSION_STRING)),
+            (&b"Built"[..], String::from(BUILD_STAMP)),
+            (&b"CPU type"[..], String::from("ARM Cortex-A72 (AArch64)")),
+            (&b"Machine"[..], String::from(machine_name())),
+            (&b"ST-RAM"[..], size_str(st.total_bytes())),
+            (&b"TT-RAM"[..], size_str(tt.total_bytes())),
+            (&b"GEMDOS drives"[..], drives_str()),
+            (&b"Boot time"[..], boot_time_str()),
+        ];
+
+        // USB devices are enumerated *before* this screen.
+        let mut devs = [crate::drivers::usb::DeviceInfo::default(); 4];
+        let (ports, n) = crate::drivers::usb::tree(&mut devs);
+        #[cfg(feature = "initinfo-diag")]
+        diag::set(&diag::USB, ((ports as u64) << 32) | n as u64);
+        let usb = (ports > 0).then(|| {
+            let lines = devs[..n]
+                .iter()
+                .enumerate()
+                .map(|(i, d)| {
+                    let kind = match d.protocol {
+                        1 => "Keyboard",
+                        2 => "Mouse",
+                        _ => "HID device",
+                    };
+                    let lead = if i + 1 == n { "\\-" } else { "|-" };
+                    format!("{} Port {}: {}  {:04x}:{:04x}", lead, d.port, kind, d.vid, d.pid)
+                })
+                .collect();
+            (ports, lines)
+        });
+        Content { pairs, usb }
+    }
+}
+
+/// One pass over the boot screen's rows: either **measuring** (no
+/// workstation; it records how wide the widest row is and, through `y`, how
+/// tall the block is) or **drawing** into the frame `x0..=x1`.
+struct Sheet<'a> {
+    /// `None` while measuring.
+    v: Option<&'a mut Vdi>,
+    x0: i16,
+    x1: i16,
+    /// Top of the next row; after a measuring pass, the block's height.
+    y: i16,
+    /// Frame width the rows need (measuring pass).
+    need_w: i16,
+}
+
+impl<'a> Sheet<'a> {
+    fn measure() -> Self {
+        Sheet { v: None, x0: 0, x1: 0, y: 0, need_w: 0 }
+    }
+
+    fn draw(v: &'a mut Vdi, x0: i16, x1: i16, y0: i16) -> Self {
+        Sheet { v: Some(v), x0, x1, y: y0, need_w: 0 }
+    }
+
+    fn cx(&self) -> i16 {
+        (self.x0 + self.x1 + 1) / 2
+    }
+
+    fn gap(&mut self, dy: i16) {
+        self.y += dy;
+    }
+
+    /// A row of `w` pixels centred in the frame.
+    fn need_centred(&mut self, w: i16) {
+        self.need_w = self.need_w.max(w + 2 * PAD_X);
+    }
+
+    /// The logo grid, centred; advances past it.
+    fn logo(&mut self) {
+        let (cw, chh) = LOGO_CELL;
+        let cols = LOGO[0].len() as i16;
+        self.need_centred(cols * cw);
+        let (logo_x, logo_y) = (self.cx() - cols * cw / 2, self.y);
+        if let Some(v) = self.v.as_deref_mut() {
+            for (r, row) in LOGO.iter().enumerate() {
+                let ry = logo_y + r as i16 * chh;
+                for (c, &cell) in row.iter().enumerate() {
+                    if cell == b'#' {
+                        let col = c as i16;
+                        v.set_fill(if col < 18 { BLUE } else { RED });
+                        let bx = logo_x + col * cw;
+                        v.fill_rect(bx, ry, bx + cw - 1, ry + chh - 1);
+                    }
+                }
             }
         }
+        self.y += LOGO.len() as i16 * chh;
     }
-    let mut y = logo_y + LOGO.len() as i16 * chh;
+
+    /// A text line centred in the frame, in `colour`.
+    fn centred(&mut self, text: &[u8], colour: i16) {
+        use tos_api::vdi::font::CELL_W;
+        self.need_centred(text.len() as i16 * CELL_W);
+        let (cx, y) = (self.cx(), self.y);
+        if let Some(v) = self.v.as_deref_mut() {
+            v.set_text_align(1, 5); // centre, top
+            v.set_text_color(colour);
+            v.gtext(cx, y, text);
+        }
+    }
+
+    /// A horizontal separator across the frame.
+    fn separator(&mut self) {
+        let (x0, x1, y) = (self.x0 + SEP_INSET, self.x1 - SEP_INSET, self.y);
+        if let Some(v) = self.v.as_deref_mut() {
+            v.set_line(BLACK);
+            v.line(x0, y, x1, y);
+        }
+    }
+
+    /// A `label : value` pair around the frame's centre (see [`pair`]).
+    fn pair(&mut self, label: &[u8], value: &[u8]) {
+        use tos_api::vdi::font::CELL_W;
+        // `pair` writes at most 22 label bytes plus " :", 8 px left of centre,
+        // and the value 8 px right of it: the wider half sets the width.
+        let left = (label.len().min(22) as i16 + 2) * CELL_W + 8;
+        let right = value.len() as i16 * CELL_W + 8;
+        self.need_centred(2 * left.max(right));
+        let (cx, y) = (self.cx(), self.y);
+        if let Some(v) = self.v.as_deref_mut() {
+            pair(v, cx, y, label, value);
+        }
+    }
+
+    /// A left-aligned line of the USB tree, `indent` px into the tree.
+    fn usb_line(&mut self, indent: i16, text: &[u8]) {
+        use tos_api::vdi::font::CELL_W;
+        let dx = USB_INSET + indent;
+        self.need_w = self.need_w.max(dx + text.len() as i16 * CELL_W + PAD_X);
+        let (x, y) = (self.x0 + dx, self.y);
+        if let Some(v) = self.v.as_deref_mut() {
+            v.set_text_align(0, 5); // left, top
+            v.set_text_color(BLACK);
+            v.gtext(x, y, text);
+        }
+    }
+
+    /// The inverse-video message bar, centred (see [`display_inverse`]).
+    fn inverse(&mut self, text: &[u8]) {
+        use tos_api::vdi::font::CELL_W;
+        self.need_centred(INFO_LENGTH * CELL_W);
+        let (cx, y) = (self.cx(), self.y);
+        if let Some(v) = self.v.as_deref_mut() {
+            display_inverse(v, cx, y, text);
+        }
+    }
+}
+
+/// The boot screen's rows, top to bottom — the single description both the
+/// measuring and the drawing pass of [`run`] walk. Starts at the frame's top
+/// edge and ends at its bottom edge, so a measuring pass leaves the frame
+/// height in `s.y`.
+fn lay_out(s: &mut Sheet, c: &Content) {
+    use tos_api::vdi::font::CELL_H;
+
+    // ── NewTOS logo: a grid of coloured blocks (EmuTOS' print_art idea —
+    //    each cell is a colour, not an ASCII char). "New" blue, "TOS" red. ──
+    s.gap(PAD_Y);
+    s.logo();
 
     // ── tagline, centred ──
-    y += 12;
-    v.set_text_align(1, 5); // centre, top
-    v.set_text_color(BLACK);
-    v.gtext(cx, y, b"This operating system isnt Original");
+    s.gap(12);
+    s.centred(b"This operating system isnt Original", BLACK);
 
     // separator under the tagline
-    y += 24;
-    v.set_line(BLACK);
-    v.line(fx0 + 16, y, fx1 - 16, y);
+    s.gap(24);
+    s.separator();
 
     // ── system-info pairs (label right-aligned, value left of centre) ──
-    let st = stats(Pool::Stram);
-    let tt = stats(Pool::Ttram);
-    y += 18;
-    pair(&mut v, cx, y, b"Version", VERSION_STRING.as_bytes());
-    y += 22;
-    pair(&mut v, cx, y, b"Built", BUILD_STAMP.as_bytes());
-    y += 22;
-    pair(&mut v, cx, y, b"CPU type", b"ARM Cortex-A72 (AArch64)");
-    y += 22;
-    pair(&mut v, cx, y, b"Machine", machine_name().as_bytes());
-    y += 22;
-    pair(&mut v, cx, y, b"ST-RAM", size_str(st.total_bytes()).as_bytes());
-    y += 22;
-    pair(&mut v, cx, y, b"TT-RAM", size_str(tt.total_bytes()).as_bytes());
-    y += 22;
-    pair(&mut v, cx, y, b"GEMDOS drives", drives_str().as_bytes());
-    y += 22;
-    pair(&mut v, cx, y, b"Boot time", boot_time_str().as_bytes());
+    s.gap(18);
+    for (i, (label, value)) in c.pairs.iter().enumerate() {
+        if i > 0 {
+            s.gap(22);
+        }
+        s.pair(label, value.as_bytes());
+    }
 
     // separator
-    y += 22;
-    v.set_line(BLACK);
-    v.line(fx0 + 16, y, fx1 - 16, y);
+    s.gap(22);
+    s.separator();
 
-    // ── USB device tree (devices are enumerated *before* this screen) ──
-    y += 16;
-    let mut devs = [crate::drivers::usb::DeviceInfo::default(); 4];
-    let (ports, n) = crate::drivers::usb::tree(&mut devs);
-    #[cfg(feature = "initinfo-diag")]
-    diag::set(&diag::USB, ((ports as u64) << 32) | n as u64);
-    if ports > 0 {
-        let tx = fx0 + 40;
-        v.set_text_align(0, 5); // left
-        v.set_text_color(BLACK);
-        v.gtext(tx, y, format!("USB: xHCI host controller, {ports} ports").as_bytes());
-        y += 18;
-        if n == 0 {
-            v.gtext(tx + 16, y, b"(no devices connected)");
-            y += 18;
+    // ── USB device tree ──
+    s.gap(16);
+    if let Some((ports, lines)) = &c.usb {
+        s.usb_line(0, format!("USB: xHCI host controller, {ports} ports").as_bytes());
+        s.gap(18);
+        if lines.is_empty() {
+            s.usb_line(16, b"(no devices connected)");
+            s.gap(18);
         }
-        for (i, d) in devs[..n].iter().enumerate() {
-            let kind = match d.protocol {
-                1 => "Keyboard",
-                2 => "Mouse",
-                _ => "HID device",
-            };
-            let lead = if i + 1 == n { "\\-" } else { "|-" };
-            let line = format!(
-                "{} Port {}: {}  {:04x}:{:04x}",
-                lead, d.port, kind, d.vid, d.pid
-            );
-            v.gtext(tx + 12, y, line.as_bytes());
-            y += 18;
+        for line in lines {
+            s.usb_line(12, line.as_bytes());
+            s.gap(18);
         }
     }
 
@@ -368,28 +540,19 @@ pub fn run() -> u8 {
     //   *before* `autoexec` (`bios/bios.c:834-844`). NewTOS' console shell is
     //   reachable as the shell loop's `CONSOLE_APP`, but there is no
     //   run-a-shell-then-continue-booting entry, so the flag has no consumer.
-    y += 10;
-    v.set_text_align(1, 5);
-    v.set_text_color(BLACK);
+    s.gap(10);
     // `display_message(_("Hold <Control> to skip AUTO/ACC"))` (:353)
-    v.gtext(cx, y, b"Hold <Control> to skip AUTO/ACC");
-    y += 22;
+    s.centred(b"Hold <Control> to skip AUTO/ACC", BLACK);
+    s.gap(22);
     // `display_inverse(_("Hold <Shift> to pause this screen"),0)` (:364)
-    display_inverse(&mut v, cx, y, b"Hold <Shift> to pause this screen");
+    s.inverse(b"Hold <Shift> to pause this screen");
 
-    // ── footer + booting ──
-    y += 26;
-    v.set_text_align(1, 5);
-    v.set_text_color(BLACK);
-    v.gtext(cx, y, INDEPENDENCE_NOTICE.as_bytes());
-    y += 22;
-    v.set_text_color(BLUE);
-    v.gtext(cx, y, AUTHORSHIP_LINE.as_bytes());
-
-    v.close();
-
-    // EmuTOS' `initinfo` ends in the wait loop, not in the last `cprintf`.
-    wait_for_user(host)
+    // ── footer ──
+    s.gap(26);
+    s.centred(INDEPENDENCE_NOTICE.as_bytes(), BLACK);
+    s.gap(22);
+    s.centred(AUTHORSHIP_LINE.as_bytes(), BLUE);
+    s.gap(CELL_H + PAD_Y);
 }
 
 /// `display_inverse(s, FALSE)` (`references/emutos/bios/initinfo.c:134-150`) —
