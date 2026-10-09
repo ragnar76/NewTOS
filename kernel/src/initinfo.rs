@@ -72,7 +72,7 @@ const DEL_ASCII: u8 = 0x7F;
 /// info lines in characters; also the width of the inverse-video bar.
 const INFO_LENGTH: i16 = 40;
 
-// ── The three strings the desktop's About box also shows ────────────────────
+// ── The two strings the desktop's About box also shows ──────────────────────
 //
 // **They are duplicated there, since DESK43 U4 (2026-09-26), and that is the
 // intended arrangement.** The older note here claimed the desktop reads these
@@ -88,6 +88,9 @@ const INFO_LENGTH: i16 = 40;
 // a number, `tos-api/src/cookie.rs:142`; `Sversion` is the GEMDOS version).
 // Programs get `VERSION_STRING` + the build stamp through
 // `Ssystem(S_NEWTOS_KVERSION)` (2019, SYSINFO01, via `Host::os_version`).
+// The About box's authorship line ("Adapted by ...") is no longer one of the
+// shared strings: the boot screen dropped it on 2026-10-09 (user decision),
+// so the desktop's `AUTHORSHIP_LINE` has no counterpart here.
 
 /// The NewTOS version string, as the boot screen's `Version` line prints it.
 /// The desktop's About box shows the same text from its own constant — see the
@@ -100,11 +103,6 @@ pub(crate) const VERSION_STRING: &str = "NewTOS 0.1";
 /// same text from its own constant.
 pub(crate) const INDEPENDENCE_NOTICE: &str =
     "NewTOS is an independent project - not original Atari software.";
-
-/// The authorship line the boot screen closes with, where EmuTOS names "The
-/// EmuTOS development team" (`desk/desk_rsc.c:824-826`). The desktop's About
-/// box shows the same text from its own constant.
-pub(crate) const AUTHORSHIP_LINE: &str = "Adapted by Ingo Uhlemann with Claude AI...";
 
 /// The build stamp, `YYYY-MM-DD (rev)`, re-exported from [`tos_api::build`].
 ///
@@ -550,8 +548,6 @@ fn lay_out(s: &mut Sheet, c: &Content) {
     // ── footer ──
     s.gap(26);
     s.centred(INDEPENDENCE_NOTICE.as_bytes(), BLACK);
-    s.gap(22);
-    s.centred(AUTHORSHIP_LINE.as_bytes(), BLUE);
     s.gap(CELL_H + PAD_Y);
 }
 

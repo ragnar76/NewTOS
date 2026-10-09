@@ -2629,8 +2629,8 @@ const INDEPENDENCE_NOTICE: &str =
     "NewTOS is an independent project - not original Atari software.";
 
 /// The authorship line, where EmuTOS names *"The EmuTOS development team"*
-/// (`desk_rsc.c:824-826`). Same text as
-/// [`crate::initinfo::AUTHORSHIP_LINE`], same reason as above.
+/// (`desk_rsc.c:824-826`). The boot screen carried the same text until
+/// 2026-10-09; it no longer does, so this copy has no counterpart.
 const AUTHORSHIP_LINE: &str = "Adapted by Ingo Uhlemann with Claude AI...";
 
 /// The machine the desktop was built for, as the About box's `Machine` row
