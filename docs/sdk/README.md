@@ -28,6 +28,7 @@ Repository revision the documentation was written against:
 | [12-windom.md](12-windom.md) | WinDom 1.21.3 (+ zView's patch) as `libwindom1.a`: pin, flags, the 10 LP64/endianness overlays, the LP64 sweep, LDG's WinDom demo client, open problems (mouse clicks, module heap) — TASK/LDG-M3 |
 | [13-zview.md](13-zview.md) | zView (LDG version) as `ZVIEW.NAP` + ten codec modules `CODECS\*.NLD`, without PDF: pin, build rules, the 13 overlays (endianness incl. the browser font, two m68k-asm retargets, `.NLD`, PDF omission), samples, what is verified, open kernel blocker K1 (`graf_handle` workstation not open) — TASK/ZVIEW-M4 |
 | [14-present.md](14-present.md) | `PRESENT.NAP`, our own full-screen slide show: slide file format (`SLIDES.TXT`), keys, how it draws (system font read back via `vro_cpyfm`, Scale2x/3x, one RGB565 frame blit, libpng pictures), build + install — TASK/PRESENT01 |
+| [15-host-checklist.md](15-host-checklist.md) | Checklist for a second Mac: which gitignored files to copy, which tools and versions, proof builds — written to be handed to an agent for verification |
 
 ## Thirty-second version
 
