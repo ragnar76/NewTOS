@@ -121,7 +121,7 @@ impl Host for InfoHost {
     }
 
     fn os_version(&self) -> Option<&'static str> {
-        KNOWS.load(Ordering::Relaxed).then_some("NewTOS 0.1")
+        KNOWS.load(Ordering::Relaxed).then_some("NewTOS 0.5")
     }
 
     fn input_mode(&self) -> Option<InputMode> {
@@ -266,7 +266,7 @@ fn pool_sizes_are_error_before_init_then_kib() {
 #[test]
 fn version_string_follows_strncpy_f() {
     let _g = rig(true);
-    let full = format!("NewTOS 0.1 {}", tos_api::build::BUILD_STAMP);
+    let full = format!("NewTOS 0.5 {}", tos_api::build::BUILD_STAMP);
     assert!(full.len() < 64, "documented: shorter than 64 bytes");
 
     let mut buf = [0xEEu8; 64];

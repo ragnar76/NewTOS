@@ -2623,7 +2623,7 @@ const ADDINFO_BOX_SPEC: u64 = (2 << 16) | 0x1100;
 /// `docs/api/gemdos/154-ssystem.md`) hands programs this string followed by
 /// the build stamp; this desktop does not ask for it (it is compiled with the
 /// kernel), a separately built one could.
-const VERSION_STRING: &str = "NewTOS 0.1";
+const VERSION_STRING: &str = "NewTOS 0.5";
 
 /// The project's independence notice — the NewTOS counterpart of the
 /// GPL/attribution block `ADDINFO` puts below its copyright

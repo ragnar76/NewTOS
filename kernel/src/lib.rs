@@ -346,7 +346,10 @@ extern "C" fn kernel_main_rust(dtb_phys: usize, entry_el: u64) -> ! {
     host_env::install();
 
     // Seed the NewTOS cookie jar (system-feature registry, read via the
-    // Ssystem trap). Version 0x0000_0100 = NewTOS 0.1.0.
+    // Ssystem trap). `NTOS` = 0x0000_0100, set at NewTOS 0.1.0 and left as is
+    // when the product version became 0.5 (2026-10-09): a cookie value is
+    // program-visible (`docs/api/bios/_cookie-jar.md`), so it changes only on
+    // its own decision, not with the version string.
     tos_api::cookie::seed_defaults(0x0000_0100);
 
     // Bring up the GIC, enable the PL011 RX interrupt, and unmask IRQs.
