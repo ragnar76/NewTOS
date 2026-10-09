@@ -1254,8 +1254,8 @@ which is what `desk_rsc.c` itself leaves.
 ### 4. The About box's content
 
 `do_aboutdesk`'s body is now the approved credit block, laid out on `ADDINFO`'s
-row grid (blank rows at 1, 4, 7, 10 and 15, as `desk_rsc.c:790-866` leaves char
-rows 3, 6, 8 and 13 empty):
+row grid (blank rows at 1, 4, 7 and 10, as `desk_rsc.c:790-866` leaves char
+rows 3, 6, 8 and 13 empty, and row 15 as the gap above the OK button):
 
 ```
                     - NewTOS -
@@ -1273,15 +1273,18 @@ rows 3, 6, 8 and 13 empty):
           (c) 1987 Digital Research, Inc.
        (c) 1999 Caldera Thin Clients, Inc.
               (c) 2001 Lineo, Inc.
-
-   Adapted by Ingo Uhlemann with Claude AI...
 ```
+
+**2026-10-09:** the box carried a further row 16, a NewTOS authorship line
+(`Adapted by …`) with no `ADDINFO` counterpart. It was dropped on user decision
+— the boot screen had dropped it the same day (`a2b58038`) — which moves the
+content closer to EmuTOS's `ADDINFO`.
 
 Everything but the `Version`/`Machine` pair block is centred; the pair block is
 `ADDINFO`'s `DELABEL`/`DEVERSN` arrangement (`desk_rsc.c:800-813`).
 
-**Where the strings live, and why.** Version, machine name, the independence
-notice and the authorship line stay in `crate::initinfo` because the **boot
+**Where the strings live, and why.** Version, machine name and the independence
+notice stay in `crate::initinfo` because the **boot
 screen prints them too** — that is EmuTOS's own arrangement, `desk_xlate_fix`
 pointing `DEVERSN->ob_spec` at the BIOS `version[]` the boot screen prints
 (`deskmain.c:1880`). The six credit lines are **local to the dialog**, for the
@@ -1300,7 +1303,9 @@ development team"` (`:806-828`, patched at `deskmain.c:1892` from
 
 **Size.** The box grows from 384 × 276 to **384 × 436** — the width is unchanged
 because the longest line (the 42-character authorship line) is still wider than
-the machine line on either board. At 640 × 480 it is centred at (128, 31) and the
+the machine line on either board. *(Since 2026-10-09, without the authorship
+row: **376 × 396**; the longest line is now the 41-character EmuTOS copyright
+line. The figures below are the 2026-09-24 measurement.)* At 640 × 480 it is centred at (128, 31) and the
 `OUTLINED` 3D outline reaches (125, 28, 390, 442): 9 px clear below the menu bar,
 10 px above the bottom edge. It fits on both board profiles; the qemu-virt
 machine name is shorter, so the box is the same size there.

@@ -2435,14 +2435,18 @@ impl Line {
 /// | 5-6 | the independence notice | [`INDEPENDENCE_NOTICE`] |
 /// | 8-9 | the EmuTOS credit | [`CREDIT_REIMPL`] / [`CREDIT_EMUTOS`] |
 /// | 11-14 | the `'GPLed'` chain | [`CREDIT_GPL`] / [`CREDIT_DRI`] / [`CREDIT_CALDERA`] / [`CREDIT_LINEO`] |
-/// | 16 | the authorship line | [`AUTHORSHIP_LINE`] |
 ///
-/// The blank rows 1/4/7/10/15 are `ADDINFO`'s own: it leaves char rows 3, 6, 8
-/// and 13 empty between its blocks (`desk_rsc.c:790-866`).
+/// The blank rows 1/4/7/10 are `ADDINFO`'s own: it leaves char rows 3, 6, 8
+/// and 13 empty between its blocks (`desk_rsc.c:790-866`); row 15 is the gap
+/// above the OK button (`ADDINFO`'s char row 16, `:869-873`).
+///
+/// Until 2026-10-09 a row 16 carried a NewTOS authorship line with no
+/// `ADDINFO` counterpart; it was dropped (user decision), which brings the
+/// content closer to `ADDINFO`'s.
 ///
 /// **Two readers, two copies — on purpose, since DESK43 U4 (the machine line
-/// since X03).** The version, the machine line, the independence notice and
-/// the authorship line are also printed by the boot screen. They *were* read from [`crate::initinfo`], on the argument that
+/// since X03).** The version, the machine line and the independence notice
+/// are also printed by the boot screen. They *were* read from [`crate::initinfo`], on the argument that
 /// EmuTOS shares one source (`desk_xlate_fix` points `DEVERSN->ob_spec` at the
 /// BIOS `version[]` the boot screen prints, `deskmain.c:1880`). That argument
 /// holds only while the desktop is linked with the BIOS, which is EmuTOS's
@@ -2479,8 +2483,9 @@ impl Line {
 /// and its boot screen prints only `EmuTOS Version %s` (`bios/initinfo.c:321`).
 /// NewTOS now has that stamp too ([`tos_api::build`], DESK12): it feeds the
 /// OSHEADER the same way, and the boot screen prints it as an own addition.
-/// It is not repeated here — besides having no EmuTOS counterpart, the box is
-/// 436 px tall at 640x480 with 10 px to spare, and one more row is 20.
+/// It is not repeated here, because it has no EmuTOS counterpart. (The box is
+/// 396 px tall since the authorship row went on 2026-10-09; it was 436 px,
+/// with 10 px to spare at 640x480, before.)
 ///
 pub(super) fn do_aboutdesk() {
     // Column layout: a `label   value` pair block, as `ADDINFO` pairs DELABEL
@@ -2512,7 +2517,6 @@ pub(super) fn do_aboutdesk() {
     let dri = Line::new(CREDIT_DRI);
     let caldera = Line::new(CREDIT_CALDERA);
     let lineo = Line::new(CREDIT_LINEO);
-    let author = Line::new(AUTHORSHIP_LINE);
 
     static OK: &[u8] = b" OK \0";
     const OK_W: i16 = 90;
@@ -2529,21 +2533,22 @@ pub(super) fn do_aboutdesk() {
         .max(gpl.width())
         .max(dri.width())
         .max(caldera.width())
-        .max(lineo.width())
-        .max(author.width());
+        .max(lineo.width());
     let dw = text_w + 2 * MARGIN;
     let pair_x = (dw - pair_w) / 2;
     let val_x = pair_x + LABEL_COLS * CELL_W;
     let ctr = |l: &Line| (dw - l.width()) / 2;
 
-    // Row grid, with `ADDINFO`'s blank rows at 1, 4, 7, 10 and 15.
+    // Row grid, with `ADDINFO`'s blank rows at 1, 4, 7 and 10; row 15 stays
+    // empty above the button.
     let y0 = MARGIN;
     let row = |n: i16| y0 + n * ROW;
-    let y_ok = row(18);
+    let y_ok = row(16);
     let dh = y_ok + OK_H + MARGIN;
 
-    /// Object index of the OK button — `ADDINFO`'s `DEOK` (`desk_rsc.h:91`).
-    const DEOK: i16 = 15;
+    /// Object index of the OK button — `ADDINFO`'s `DEOK` (`desk_rsc.h:91`);
+    /// ours is 14, not 16, because this tree has no `G_IMAGE` logos.
+    const DEOK: i16 = 14;
     let str_obj = |l: &Line, x: i16, n: i16, next: i16| mk(G_STRING, 0, l.spec(), x, row(n), l.width(), CELL_H, next, -1, -1);
     let mut tree = [
         mk_root(ADDINFO_BOX_SPEC, dw, dh, DEOK),
@@ -2559,8 +2564,7 @@ pub(super) fn do_aboutdesk() {
         str_obj(&gpl, ctr(&gpl), 11, 11),
         str_obj(&dri, ctr(&dri), 12, 12),
         str_obj(&caldera, ctr(&caldera), 13, 13),
-        str_obj(&lineo, ctr(&lineo), 14, 14),
-        str_obj(&author, ctr(&author), 16, DEOK),
+        str_obj(&lineo, ctr(&lineo), 14, DEOK),
         // `DEOK`: `SELECTABLE | DEFAULT | EXIT | LASTOB | FL3DBAK | FL3DIND`
         // (`desk_rsc.c:869-873`) — the last two bits are `FL3DACT`.
         mk(
@@ -2627,11 +2631,6 @@ const VERSION_STRING: &str = "NewTOS 0.1";
 /// [`crate::initinfo::INDEPENDENCE_NOTICE`], same reason as above.
 const INDEPENDENCE_NOTICE: &str =
     "NewTOS is an independent project - not original Atari software.";
-
-/// The authorship line, where EmuTOS names *"The EmuTOS development team"*
-/// (`desk_rsc.c:824-826`). The boot screen carried the same text until
-/// 2026-10-09; it no longer does, so this copy has no counterpart.
-const AUTHORSHIP_LINE: &str = "Adapted by Ingo Uhlemann with Claude AI...";
 
 /// The machine the desktop was built for, as the About box's `Machine` row
 /// prints it — a NewTOS addition; `ADDINFO` has no Machine line

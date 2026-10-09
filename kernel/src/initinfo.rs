@@ -88,9 +88,8 @@ const INFO_LENGTH: i16 = 40;
 // a number, `tos-api/src/cookie.rs:142`; `Sversion` is the GEMDOS version).
 // Programs get `VERSION_STRING` + the build stamp through
 // `Ssystem(S_NEWTOS_KVERSION)` (2019, SYSINFO01, via `Host::os_version`).
-// The About box's authorship line ("Adapted by ...") is no longer one of the
-// shared strings: the boot screen dropped it on 2026-10-09 (user decision),
-// so the desktop's `AUTHORSHIP_LINE` has no counterpart here.
+// The former authorship line ("Adapted by ...") is gone from both readers:
+// the boot screen and the About box dropped it on 2026-10-09 (user decision).
 
 /// The NewTOS version string, as the boot screen's `Version` line prints it.
 /// The desktop's About box shows the same text from its own constant — see the

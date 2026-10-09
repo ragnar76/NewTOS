@@ -1322,12 +1322,13 @@ replaces the **content**:
 | 2/3 | `G_STRING` ×2 | `Version` + `NewTOS 0.1` | `desk::inf::VERSION_STRING` |
 | 4/5 | `G_STRING` ×2 | `Machine` + the board name | `desk::inf::MACHINE_NAME` (per-board build constant, X03) |
 | 6/7 | `G_STRING` ×2 | the independence notice, split at its dash | `desk::inf::INDEPENDENCE_NOTICE` |
-| 8 | `G_STRING` | the authorship line | `desk::inf::AUTHORSHIP_LINE` |
-| 9 | `G_BUTTON` | ` OK ` (`SELECTABLE\|DEFAULT\|EXIT\|LASTOB`) | = `DEOK` |
+| 8/9 | `G_STRING` ×2 | the EmuTOS credit | `desk::inf::CREDIT_REIMPL` / `CREDIT_EMUTOS` |
+| 10–13 | `G_STRING` ×4 | the `'GPLed'` chain | `desk::inf::CREDIT_GPL` / `CREDIT_DRI` / `CREDIT_CALDERA` / `CREDIT_LINEO` |
+| 14 | `G_BUTTON` | ` OK ` (`SELECTABLE\|DEFAULT\|EXIT\|LASTOB`) | = `DEOK` (EmuTOS 16; no logos here) |
 
-The four strings are **the desktop's own constants in `kernel/src/desk/inf.rs`**;
+The three strings are **the desktop's own constants in `kernel/src/desk/inf.rs`**;
 `kernel/src/initinfo.rs` keeps same-text copies for the boot screen. Until
-DESK43 U4 (version, notice, authorship) and X03 (machine line) the box read the
+DESK43 U4 (version, notice, and the authorship line dropped on 2026-10-09) and X03 (machine line) the box read the
 `initinfo` symbols, on the argument that EmuTOS shares one source —
 `desk_xlate_fix` points `DEVERSN`'s `ob_spec` at the BIOS `version[]` string the
 boot screen also prints (`deskmain.c:1880`). That holds only while the desktop
