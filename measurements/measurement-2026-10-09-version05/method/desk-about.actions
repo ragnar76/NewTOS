@@ -1,0 +1,18 @@
+# version05: EmuDESK About box at 1920x1080, no card. gen_script.py assumes a
+# 640x480 screen; three parkbr sweeps saturate the pointer at the real corner
+# (1919,1079) while the generator believes (639,479), so every target below is
+# written in generator coordinates T = real - (1280,600):
+#   (26,300) -> T(-1254,-300)   approach the Desk title from below, no other title crossed
+#   (26,9)   -> T(-1254,-591)   hover "Desk" -> drop-down
+#   (60,28)  -> T(-1220,-572)   first entry "About NewTOS..."; click
+100 parkbr
+106 parkbr
+112 parkbr
+200 move -1254 -300
+400 mark A00_IDLE
+500 move -1254 -591
+900 mark A01_DESK_OPEN
+1000 move -1220 -572
+1200 down
+1203 up
+2200 mark A02_ABOUT

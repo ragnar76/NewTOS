@@ -1,0 +1,58 @@
+measurement-2026-10-09-version05 — About box without the authorship line; NewTOS 0.5
+====================================================================================
+
+What
+  5f819b96 fix(desk): drop the authorship line from the About box
+    kernel/src/desk/inf.rs do_aboutdesk: AUTHORSHIP_LINE removed, DEOK 15 -> 14,
+    OK button row 18 -> 16 (one blank row above it, as before), box sized by
+    the EmuTOS copyright line. EmuTOS ADDINFO (desk/desk_rsc.c:772-873) has
+    no such line.
+  03b9025c chore(release): NewTOS 0.5
+    Version text "NewTOS 0.1" -> "NewTOS 0.5" (boot screen, About box, shell
+    `ver`, Ssystem(S_NEWTOS_KVERSION) docs/test), crate versions kernel/
+    tos-api/tos-types 0.1.0 -> 0.5.0. TOS-visible versions unchanged
+    (Sversion, OSHEADER os_version, AES/VDI words, cookie values incl. NTOS=0x100).
+
+Why
+  User decisions 2026-10-09.
+
+How
+  Kernels:
+    board-rpi4 release kernel8.img, `cargo xtask build --board rpi4 --release`
+      from the committed tree at 03b9025c (clean), build stamp
+      "2026-10-09 (03b9025c)":
+      sha256 e45acf512536502ea6d7f770c70a7e81159f893c55c492f38fc968bd2824666d
+      (this is also the card kernel handed to the lead; not kept in the repo)
+    injector kernel (scratch copy of the same tree, INPUT01 injector,
+      method/make-inj-input01.sh ... desk-about; no .git in the copy, so its
+      stamp reads "(unknown)"):
+      sha256 4a6745518c5a0ce94c664a48b1ad92981a99f8ca381f6218df83c162bf88b391
+  QEMU raspi4b, 1920x1080 (-global bcm2835-fb.xres/yres), no SD card,
+  -append serial=on: method/run-shots.sh <kernel> 1920x1080 <out> <tag> SEC:PNG...
+    boot : screendumps at 6/10/14 s (inside the 15 s boot-screen hold)
+    about: method/desk-about.actions (three parkbr sweeps to the corner, up
+           the left edge to "Desk" (26,9), click "About" at (60,28)); dumps
+           at 22/30/40 s. Serial shows the A00/A01/A02 marks at the expected
+           pointer positions.
+    gen_script.py assumes 640x480; the actions file explains the coordinate
+    offset used at 1920x1080.
+
+Result (looked at every image)
+  boot-t06/t10/t14 byte-identical: centred frame, "Version : NewTOS 0.5",
+    "Built : 2026-10-09 (03b9025c)", no authorship line.
+  about-t22/t30/t40 (t30 = t40 byte-identical): About box centred, title,
+    Version "NewTOS 0.5", Machine "Raspberry Pi 4 (BCM2711)", independence
+    notice, EmuTOS credit, 'GPLed' chain, one blank row, OK button. No
+    authorship line, no empty row left behind. Outline from the PNG
+    (black pixels): x 772..1147 (376 px), y 351..746 (396 px) = the
+    376 x 396 the code computes.
+
+Builds / baselines (at 03b9025c content)
+  cargo xtask build --release, both boards (fresh per board): tos-api 64,
+    kernel 94 warnings (delta 0)
+  cargo clippy -p kernel --release --no-default-features --features
+    board-{qemu-virt,rpi4} --lib --bins: tos-api 76, kernel 125 (delta 0)
+  cargo xtask test: 1268 / 0 / 1
+  sdk/run-host-tests.sh: 19 / 0 / 0
+  SYSACC not rebuilt: it reads the version via Ssystem(S_NEWTOS_KVERSION)
+    at run time and embeds no "NewTOS 0.x" text.
