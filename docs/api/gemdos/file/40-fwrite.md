@@ -16,9 +16,13 @@
 **Installed handler / vector:** (none) — direct `funcs[]` entry `0x40` =
 `xwrite`, `stdio_typ = 0x82`, `wparms=5` (`bdos/bdosmain.c:260`). As with
 `Fread`, the `0x82` flag is **inert**: `0x40` is outside the redirection ranges
-(`fn < 12` / `16..19`, `bdos/bdosmain.c:498`), so `Fwrite` is never intercepted.
+(`fn < 12` / `16..19`, `bdos/bdosmain.c:498`), so the **stdio redirection block** never intercepts it. (Correction 2026-10-13:
+the `0x82` flag is *not* inert overall — bit 7 sends `Fwrite` into the
+handle-resolution block `bdos/bdosmain.c:571-643`, which runs **before**
+`xwrite` and answers character-device handles itself. See "Character-device
+path" below.)
 
-**Helpers called:**
+**Helpers called (file path):**
 - `bdos/fsmain.c:474` — `getofd()`.
 - `bdos/fsio.c:554` — `ixwrite()` → `bdos/fsio.c:208` — `xrw(1, …)` — the
   unified transfer, allocating clusters with `nextcl` when writing past EOF.
@@ -31,6 +35,215 @@
 grows and `dfd->o_flag |= O_DIRTY` when the file extends (`bdos/fsio.c:42-46`).
 
 **Build configuration affecting this function:** none.
+
+---
+
+## Character-device path (ADDED 2026-10-13, FS11; EmuTOS @ `1a7484ab`)
+
+Everything here happens in `osif()` **before** `xwrite`; `xwrite` never sees a
+handle that ends on a BIOS character device. `bdos/bdosmain.c` unless noted.
+
+### Dispatch and argument layout
+
+`pw[0]`=fn 0x40, `pw[1]`=handle (`:571-576`), `pw[2..3]`=`len` as one LONG
+(`count = *(long *)&pw[2]`, `:624`), `pw[4..5]`=buffer pointer (`:604`, `:626`).
+Handle resolution (`:578-593`, `:600-602`) is identical to `Fread`/`Fseek`, see
+[`42-fseek.md`](42-fseek.md) and [`3f-fread.md`](3f-fread.md): `numl == 0` →
+`EIHNDL` (`:592-593`); `numl < -3` → `EIHNDL` (`:601-602`); `numl > 0` → `xwrite`
+(file path). `numl` in `-1..-3` → device path. `HXFORM(h) = 3+h`
+(`bdos/console.h:36`): CON (-1) → BIOS 2, AUX (-2) → BIOS 1, PRN (-3) → BIOS 0.
+
+Default std handles (`bdos/console.c:60-67`): 0,1,4,5 → CON; 2 → AUX; 3 → PRN.
+`Fwrite` does not check direction: `Fwrite(0,…)` (stdin) writes to the console.
+`Fdup` of a device-mapped std handle (`bdos/fshand.c:115-118`) and
+`Fforce(std, -1..-3)` (`bdos/fshand.c:53-54`) give handles that take the same
+device path; `Fforce(std, file)` takes the file path; `Fclose(std)` reverts to
+the default (`bdos/fsopnclo.c:450-455`); `Fclose` of the closed dup'ed slot →
+later `Fwrite` → `EIHNDL` (slot `f_ofd = 0`, `bdos/fsopnclo.c:462-470`).
+
+### Device-write algorithm (`:622-640`)
+
+```
+count = LONG(pw[2..3]); p = buffer
+for (n = 0; n < count; n++)               // count <= 0: loop body never runs
+    if (numl == H_Console)  tabout(2, (unsigned char)*p++)      // :630-631
+    else if (Bconout(HXFORM(numl), (unsigned char)*p++) == 0)   // :634
+             return n;                                          // :635
+return count;                                                   // :639
+```
+
+- **No HUGE guard** (unlike `Fread`): the full 32-bit `count` is used.
+- **`count <= 0`**: nothing written; returns **`count` itself** (so
+  `Fwrite(-1, -5, b)` returns **-5**, a negative value that is *not* an error
+  code; `Fwrite(-1, 0, b)` returns 0). Read from `:628,:639`.
+- **Bytes are written one at a time**, each as `(unsigned char)`; the buffer is
+  not NUL-terminated-scanned; embedded NULs are written.
+
+### CON (-1 → BIOS 2): `tabout` (`bdos/console.c:292-302`)
+
+`tabout(2, ch)` returns `void`; `Fwrite` therefore **always returns `count`**
+for CON (barring Ctrl-C termination). Per byte:
+
+1. TAB (0x09): `do conout(2,' ') while (glbcolumn[2] & 7)` — at least one
+   space, then spaces up to the next multiple of 8 columns (`console.c:294-299`).
+2. any other byte: `conout(2, ch)`.
+
+`conout` (`console.c:263-274`): first `conbrk(2)` (`console.c:206-243`), then
+`Bconout(2, ch)` (return value ignored), then column update: `ch >= 0x20`
+(including 0x7F and 0x80-0xFF) → `glbcolumn[2]++`; CR → 0; BS → `--` (not
+clamped; may go negative); everything else (LF, BEL, ESC, NUL, …) unchanged.
+No other translation: LF is **not** expanded to CR LF; control characters are
+sent raw (the `^X` expansion is `cookdout`, used only by `cgets`).
+
+`conbrk` runs **before every byte**: if `Bconstat(2)` is non-zero it drains
+`Bconin(2)`:
+- Ctrl-C (0x03) → flush the BDOS typeahead buffer and `terminate()` =
+  `xterm(-32)` (`console.c:101,220-225`): **the process is terminated, the
+  `Fwrite` does not return** (inference: `xterm` does not return).
+- Ctrl-S (0x13) → output pauses; `Bconin` loop continues until Ctrl-Q (0x11)
+  (`console.c:226-231,242`).
+- Ctrl-X (0x18) → flush typeahead; the key itself is then queued.
+- any other key → appended to the 64-entry BDOS typeahead buffer
+  (`bdos/fs.h:46`); if full, BEL `Bconout(2,7)` and the key is dropped
+  (`console.c:235-240`). Type-ahead keys swallowed here are later delivered by
+  `getch` (typeahead first) to `Fread`/`Cconin`.
+Column state `glbcolumn[2]` is shared with `Cconout`/`Cconws`/`Cconrs`.
+
+### AUX (-2 → BIOS 1) and PRN (-3 → BIOS 0): raw `Bconout`
+
+Per byte `Bconout(dev, (unsigned char)b)` (BIOS trap 13 fn 3,
+`include/biosbind.h:22`) — **no `conbrk` (no Ctrl-C/Ctrl-S), no tab expansion,
+no column tracking, no CR/LF translation.** The BIOS return value is tested for
+non-zero only:
+
+- return **0** → `Fwrite` returns `n` = number of bytes *before* the failing
+  one (that byte is not counted, the remaining bytes are not sent, no retry),
+  `:634-635`. The value returned is a short count, never an error code.
+- non-zero → continue; after the last byte `Fwrite` returns `count`.
+
+When `Bconout` returns 0 (BIOS side):
+- PRN (`bconout0`, `bios/parport.c:144-169`): with `CONF_WITH_PRINTER_PORT`: if
+  the previous call did not time out within the last `SHORT_TIMEOUT` = 5 s
+  (`:40`), it waits for the port up to `LONG_TIMEOUT` = 30 s (`:41`, `:157-166`;
+  a Ctrl-C on the console aborts the wait, `:163-165`) and returns `prnout(c)`
+  (1) when ready; on timeout it records `last_timeout` and returns **0**
+  (`:168-169`); within 5 s of a timeout it returns 0 immediately. **Without**
+  `CONF_WITH_PRINTER_PORT` (default 0, `include/config.h:707-708`; machine
+  configs may enable it) `bconout0` always returns 0 → the first byte fails →
+  `Fwrite(-3 or 3, n, b)` returns **0**.
+- AUX (`bconout1`, `bios/serport.c:289-330`): returns 1 after queuing/sending
+  on MFP or ColdFire RS232; blocks while the transmit buffer is full; returns 0
+  only in a build with neither (`:325-327`).
+- Any device: `bconout` returns 0 while `CHARDEV_AVAILABLE` is unset
+  (`bios/bios.c:997-998`, early boot), and for BIOS handle `> 7`
+  (`:1008-1010`; not reachable via BDOS handles -1..-3). `Bconmap` remaps only
+  BIOS handles `>= 6` (`bios/bios.c:1002-1004`).
+
+### Error table (device path)
+
+| Condition | Cite | Returned |
+|---|---|---|
+| handle resolves to `0` (free sft slot / `p_uft[h] == 0`) | `:592-593` | `EIHNDL` (-37) |
+| handle `<= -4` | `:600-602` | `EIHNDL` (-37) |
+| `h >= NUMHANDLES` | EmuTOS reads `sft[]` out of bounds (`:578-579`); contract per `42-fseek.md` | `EIHNDL` |
+| CON, any `count > 0` | `:630-631,639` | `count` |
+| AUX/PRN, all bytes accepted | `:639` | `count` |
+| AUX/PRN, `Bconout` returns 0 at byte index `n` | `:634-635` | `n` (short count) |
+| any device, `count <= 0` | `:628,639` | `count` (0, or the negative `count` itself) |
+
+### Cross-checks (device path)
+
+- **FreeMiNT** (not followed): `sys_f_write` hands any terminal to `tty_write`
+  (`references/freemint/sys/dosfile.c:300-301`), termios processing, no `tabout`.
+- **Atari Compendium / Profibuch:** not in the repository (searched); not
+  cross-checked. Equality with ROM TOS (esp. the short-count-on-`Bconout`==0 and
+  the negative-`count` echo) is **unverified**.
+
+### Test cases (device path; **EmuTOS reference expectations**)
+
+> These are the EmuTOS results. The NewTOS expectations (decisions of
+> 2026-10-13: Ctrl-C-only break, no tab expansion, absent AUX/PRN entries) are
+> the table "NewTOS host tests" below; where they differ, that table is the one
+> the Developer implements.
+
+Setup: default process; keyboard/AUX queues injectable; per-device output
+captured; printer-port accept/reject switchable.
+
+| # | Setup | Call | Expected |
+|---|---|---|---|
+| W1 | default | `Fwrite(-1, 5, "hello")` | 5; CON output `"hello"` |
+| W2 | default | `Fwrite(1, 3, "abc")`, `Fwrite(0,…)`, `Fwrite(4,…)`, `Fwrite(5,…)` | 3 each; all to CON |
+| W3 | CON at column 0 | `Fwrite(-1, 2, "\tX")` | 2; output = 8 spaces + `X` |
+| W4 | CON at column 0 | `Fwrite(-1, 4, "ab\tX")` | 4; output `"ab"` + 6 spaces + `"X"` |
+| W5 | CON at column 5 (after `Fwrite("12345")`) | `Fwrite(-1,2,"\tX")` | 2; 3 spaces then `X` |
+| W6 | CON at column 8 | `Fwrite(-1,1,"\t")` | 1; 8 spaces (always at least one) |
+| W7 | CON | `Fwrite(-1, 3, "a\nb")` | 3; output bytes `61 0A 62` (no CR inserted) |
+| W8 | CON | `Fwrite(-1, 3, "a\rb")` then `Fwrite(-1,1,"\t")` | 3, then 1; column reset by CR (tab from col 1 → 7 spaces) |
+| W9 | CON | `Fwrite(-1, 0, b)` | 0, no output |
+| W10 | CON | `Fwrite(-1, -5, b)` | **-5**, no output |
+| W11 | CON | `Fwrite(-1, 3, "a\0b")` | 3; bytes `61 00 62` |
+| W12 | keyboard queue `('k')` | `Fwrite(-1, 1, "x")` | 1; `'k'` consumed from the hardware queue into typeahead, delivered by next `Fread(-1,1,…)` |
+| W13 | keyboard queue `(^C)` | `Fwrite(-1, 3, "abc")` | process terminated (exit -32) before/at the first byte; no return (observe terminate hook) |
+| W14 | keyboard queue `(^S)` then later `^Q` | `Fwrite(-1, 3, "abc")` | output of the byte is held until `^Q`; then returns 3 |
+| W15 | AUX ready | `Fwrite(-2, 4, "ATZ\r")` and `Fwrite(2, 4, …)` (separate runs) | 4; AUX output `41 54 5A 0D`; nothing on CON |
+| W16 | AUX | `Fwrite(-2, 2, "\tX")` | 2; AUX gets raw `09 58` (no tab expansion) |
+| W17 | AUX queue `(^C)` | `Fwrite(-2, 2, "ab")` | 2 (no break handling on AUX) |
+| W18 | PRN ready | `Fwrite(-3, 3, "abc")`, `Fwrite(3, 3, …)` | 3; printer gets `61 62 63`, CON nothing |
+| W19 | PRN rejects from byte index 2 (Bconout returns 0) | `Fwrite(-3, 5, "abcde")` | 2; printer received `ab` only |
+| W20 | PRN rejects immediately | `Fwrite(-3, 5, …)` | 0 |
+| W21 | AUX rejects at byte 1 (test hook) | `Fwrite(-2, 3, …)` | 1 |
+| W22 | any | `Fwrite(-2, 0, b)`, `Fwrite(-3, -1, b)` | 0, **-1** |
+| W23 | any | `Fwrite(-4, 1, b)`, `Fwrite(-32768, 1, b)` | `EIHNDL` |
+| W24 | free sft slot `6+k` | `Fwrite(6+k, 1, b)` | `EIHNDL` |
+| W25 | `d = Fdup(2)` (AUX) | `Fwrite(d, 2, "ok")`; after `Fclose(d)` again | 2 (to AUX); then `EIHNDL` |
+| W26 | `Fforce(1, -3)` | `Fwrite(1, 2, "ok")` | 2; to PRN |
+| W27 | `Fforce(1, fh)` (file) | `Fwrite(1, 2, "ok")` | 2; into the file; `Fclose(1)` → `Fwrite(1,…)` to CON again |
+
+### NewTOS host tests (decisions 2026-10-13; IDs the Developer implements)
+
+Device table as in `3f-fread.md` "NewTOS implementation notes": CON real, **AUX
+(1) and PRN (0) = absent-device entry** (`Bconout` → 0). CON write rule:
+per byte `output_break` (Ctrl-C only) then `console_write_byte`, **raw** (no tab
+expansion, no `glbcolumn`, no BDOS typeahead, no Ctrl-S/Ctrl-Q). **(=)** = same
+as the EmuTOS row, **(≠)** = NewTOS value given.
+
+| # | Call / setup | NewTOS expected |
+|---|---|---|
+| W1 | **(=)** `Fwrite(-1,5,"hello")` | 5; CON `"hello"` |
+| W2 | **(=)** `Fwrite(1|0|4|5, 3, "abc")` | 3 each; CON |
+| W3 | **(≠)** `Fwrite(-1,2,"\tX")` | 2; CON bytes `09 58` (raw TAB, no expansion) |
+| W4 | **(≠)** `Fwrite(-1,4,"ab\tX")` | 4; `61 62 09 58` |
+| W5 | **(≠)** after `Fwrite("12345")`: `Fwrite(-1,2,"\tX")` | 2; `09 58` (no column state) |
+| W6 | **(≠)** `Fwrite(-1,1,"\t")` | 1; `09` |
+| W7 | **(=)** `Fwrite(-1,3,"a\nb")` | 3; `61 0A 62` (no CR inserted) |
+| W8 | **(≠)** `Fwrite(-1,3,"a\rb")`, then `Fwrite(-1,1,"\t")` | 3, then 1; bytes `61 0D 62`, `09` |
+| W9 | **(=)** `Fwrite(-1,0,b)` | 0, no output |
+| W10 | **(=)** `Fwrite(-1,-5,b)` | **-5**, no output (returns `count` itself) |
+| W11 | **(=)** `Fwrite(-1,3,"a\0b")` | 3; `61 00 62` |
+| W12 | **(≠ mechanism)** keyboard queue `('k')`; `Fwrite(-1,1,"x")` | 1; `'k'` is **not** consumed (no typeahead buffer); it stays in the input ring and the next `Fread(-1,1,…)` returns it — same observable outcome as EmuTOS |
+| W13 | **(≠ detail)** keyboard queue front `(^C)`; `Fwrite(-1,3,"abc")` | terminate (exit -32) requested before the first byte, no byte written, the key consumed (observe the terminate hook); return value not observable by the program |
+| W14 | **(≠)** keyboard queue `(^S)`; `Fwrite(-1,3,"abc")` | 3; `"abc"` written immediately — **no pause**; `^S` stays in the queue and is read later as data (no Ctrl-S/Q flow control) |
+| W15 | **(≠)** AUX absent: `Fwrite(-2,4,"ATZ\r")`, `Fwrite(2,4,…)` | **0** each (first `Bconout(1,…)` returns 0 → short count 0); CON receives nothing |
+| W16 | **(≠)** `Fwrite(-2,2,"\tX")` | 0 |
+| W17 | **(≠)** CON queue `(^C)`; `Fwrite(-2,2,"ab")` | 0, and the Ctrl-C is **not** consumed (no break check on non-CON; stays queued) |
+| W18 | **(≠)** PRN absent: `Fwrite(-3,3,"abc")`, `Fwrite(3,3,…)` | **0** each; CON nothing |
+| W19 | test device on PRN accepting 2 bytes then returning 0 (`Bconout`) | `Fwrite(-3,5,"abcde")` → 2; device received `ab` |
+| W20 | test device on PRN returning 0 at once | 0 |
+| W21 | test device on AUX returning 0 from byte 1 | `Fwrite(-2,3,…)` → 1 |
+| W22 | **(=)** `Fwrite(-2,0,b)`, `Fwrite(-3,-1,b)` | 0, **-1** |
+| W23 | **(=)** `Fwrite(-4,1,b)`, `Fwrite(-32768,1,b)` | `EIHNDL` |
+| W24 | **(=)** free sft slot `6+k` | `EIHNDL` |
+| W25 | **(≠)** `d=Fdup(2)` (AUX); `Fwrite(d,2,"ok")`; `Fclose(d)`; `Fwrite(d,…)` | 0 (absent AUX); then `EIHNDL` |
+| W26 | **(≠)** `Fforce(1,-3)`; `Fwrite(1,2,"ok")` | 0 (absent PRN) |
+| W27 | **(=)** `Fforce(1,fh)` (file); `Fwrite(1,2,"ok")`; `Fclose(1)`; `Fwrite(1,…)` | 2 into the file; then CON again |
+| WT1 | **single dispatch point.** Replace the AUX entry by a test device that accepts all bytes and captures `Bconout`: `Fwrite(-2,4,"ATZ\r")` | 4; captured `41 54 5A 0D`; CON untouched. The same fixture must also be hit by `Fwrite(2,…)`, `Fdup(2)`'d handle, `Cauxout`, `Bconout(1,…)`; and `Bcostat(1)`/`Cauxos` read the entry's status (one fixture, all paths) |
+| WT2 | test AUX entry: `Fwrite(-2,2,"\tX")` | 2; captured raw `09 58` (non-CON: no tab expansion) |
+| WT3 | PRN entry replaced: `Fwrite(-3,3,"abc")`, `Fwrite(3,…)`, `Cprnout('a')`, `Bconout(0,…)` | all reach entry 0, none entry 1 |
+| WT4 | absent entries: byte `n` is read from the user buffer **before** the device call (EmuTOS evaluates `*p++` as argument, `:634`): `Fwrite(-2,3,p)` with `p` unreadable at byte 0 | `FAULTED` (existing ARCH03 3a convention), not 0 |
+
+Note W15/W18 (and W25/W26): the value 0 here is a **short count**, per the rule
+`Bconout`==0 → return bytes written so far (`:634-635`). It is the intended
+result of the absent-device profile, not an error code.
 
 ---
 
@@ -119,6 +332,8 @@ through the BIOS `longjmp` path, not as an inline `xwrite` return.
 | Condition | Source location | Returned value |
 |-----------|-----------------|----------------|
 | Invalid handle (`getofd` NULL) | `bdos/fsio.c:540-543` | `EIHNDL` (-37) |
+| Handle `<= -4` / free sft slot (before `xwrite`) | `bdos/bdosmain.c:592-593,601-602` | `EIHNDL` (-37) |
+| Character device (-1..-3, std handles by default) | `bdos/bdosmain.c:622-640` | see "Character-device path" (`Bconout`==0 → short count) |
 | Disk full (cannot allocate cluster) | `bdos/fsio.c` (`xrw` stops, `nextcl` fails) | **short count**, not an error code |
 | Write-protect / media fault | via `longjmp_rwabs` (`bdos/fs.h:60`) | BIOS code (e.g. `EWRPRO` -13, `EWRITF` -10) |
 
@@ -138,10 +353,16 @@ count**, never as a negative code, from `Fwrite` itself.
 - **Zero len:** `Fwrite(h, 0, buf)` returns 0, no side effects.
 - **Write to read-only-opened handle succeeds** (mode not enforced).
 - **Error:** `Fwrite(9999, 1, buf)` returns `EIHNDL` (-37).
+- **Character devices:** EmuTOS reference W1..W27; NewTOS host tests W1..W27 + WT1..WT4 (see "NewTOS host tests").
 
 ---
 
 ## Edge cases discovered in source
+
+0. **Character devices are writable via `Fwrite` (added 2026-10-13).** Handles
+   -1/-2/-3 and the standard handles 0..5 (default mapping) never reach
+   `xwrite`; see "Character-device path" for `tabout`/`Bconout` routing, the
+   short-count rule, and `count <= 0` returning `count` itself.
 
 1. **Disk full is a short count, not an error.** `xrw` returns the bytes it
    managed to write; subsequent writes at the full boundary return 0
@@ -206,6 +427,50 @@ count**, never as a negative code, from `Fwrite` itself.
 ## NewTOS implementation notes
 
 (Empty during Phase 00.)
+
+FS11 (2026-10-13, user decisions; `TASK/FS11.md`, follow-up `TASK/IO01.md`).
+Before this change NewTOS `fwrite` (`tos-api/src/bdos/fs/file.rs:1072`,
+`console_write`) sent every device handle raw to the console. Decisions 1-3 are
+approved by the user (2026-10-13).
+
+**1. One per-BIOS-device dispatch point.** `Fwrite` on `-1..-3` and on standard
+handles (also after `Fdup`/`Fforce` to a device) resolves to a BIOS device number
+(`HXFORM`, `bdos/console.h:36`: CON -1 → 2, AUX -2 → 1, PRN -3 → 0) and calls that
+device-table entry's `Bconout`, the same table `Bconout`/`Cauxout`/`Cprnout`/
+`Midiws` use (device table and the absent-device profile are defined in
+`3f-fread.md` "NewTOS implementation notes"; not repeated). No GEMDOS special case
+for AUX/PRN. Documented, deliberate absent-device profile (not a stub): PRN, AUX
+and MIDI entries return 0 from `Bconout` like EmuTOS' `charout_dummy`
+(`bios/chardev.c:55-58`; AUX map entry `bios/serport.c:96`; PRN without
+`CONF_WITH_PRINTER_PORT` `bios/parport.c:144-172`). Hence, *derived* from the
+`osif` algorithm (`:622-640`): `Fwrite(-2|2, n>0, b)` = **0** and
+`Fwrite(-3|3, n>0, b)` = **0** (the first byte is refused, nothing is retried);
+`n <= 0` returns `n` itself (0, or the negative count) on every device. A later
+driver (`TASK/IO01.md`) only swaps the entry; short-count semantics are already
+in place (tests W19-W21, WT1-WT3).
+
+**2. CON write = NewTOS `Cconws` today.** For `Fwrite` to CON, per byte: the
+Ctrl-C-only `output_break` (`tos-api/src/gemdos/console.rs`, doc comment above
+`output_break`, "Divergence from EmuTOS (documented, approved)"), then the byte
+raw to the console. Divergences from the EmuTOS `tabout`/`conbrk` path described
+above, all the **same approved divergence** as `Cconout`/`Cconws` (see
+`docs/api/gemdos/console/02-cconout.md` and `09-cconws.md`, which now carry the
+note): **no tab expansion** (TAB 0x09 is emitted raw), **no `glbcolumn`**, **no BDOS
+typeahead buffer** (pending keys stay in the input ring) and **no Ctrl-S/Ctrl-Q
+pause**; a Ctrl-C at the front of the queue consumes that key, requests
+`Pterm(-32)` and stops. Return value: `count` (as EmuTOS, `tabout` is void). A
+separate future ticket will add the column counter and typeahead for *all*
+console functions together; it is **not** part of FS11. Non-CON devices have no
+break check at all (as EmuTOS, `:633-635`).
+
+**3. Edge cases follow EmuTOS:** `count <= 0` → returns `count` itself (also
+negative, e.g. -5; not an error code); the full 32-bit `count` is used (no HUGE
+guard, unlike `Fread`); embedded NULs are written; a byte is read from the user
+buffer before the device call (unreadable byte → `FAULTED`, ARCH03 3a, bytes
+written so far remain written).
+
+Host tests the Developer implements for this spec: **W1..W27, WT1..WT4** (table
+"NewTOS host tests").
 
 PHASE-05: FAT write path with explicit cluster allocation. NewTOS may add an
 `Fsync`-style extension later; existing programs rely on `Fclose` for flush.

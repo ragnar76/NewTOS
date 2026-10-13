@@ -173,3 +173,11 @@ Because `Bconout` waits for the transmit register to be free before writing,
 ## NewTOS implementation notes
 
 (Empty during Phase 00.)
+
+FS11 / IO01 prep (2026-10-13, user decision 1): see `docs/api/gemdos/file/3f-fread.md` "NewTOS implementation notes" for the device table.
+`Cauxout(ch)` is a pass-through to `Bconout(1, ch)` of the AUX entry. With the
+absent-device entry it returns **0** (byte discarded), like `charout_dummy`
+(`bios/chardev.c:55-58`, `bios/serport.c:96`). The "in practice non-zero" remark in
+the extraction summary describes a real serial backend only; it is not a
+`Cauxout` contract. (EmuTOS without any RS-232 backend also returns 0 from
+`bconout1`, `bios/serport.c:325-327`, so the value agrees.)

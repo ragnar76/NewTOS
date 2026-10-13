@@ -210,3 +210,14 @@ bytes are written verbatim through `Bconout`.
 
 PHASE-02: `Cconout` returns `1` (D-001/D-011); an early implementation drift to
 `0`/the byte was corrected — see D-011.
+
+FS11 (2026-10-13, user decision 2; documentation of an already implemented,
+approved divergence): NewTOS `Cconout` runs only the **Ctrl-C-only** subset of
+EmuTOS' `conbrk` (`bdos/console.c:206-243`) before the byte: a Ctrl-C at the front
+of the input queue is consumed and `Pterm(-32)` is requested; Ctrl-S/Ctrl-Q flow
+control and the BDOS typeahead buffer are **not** implemented (other keys stay in
+the single input ring), and there is **no tab expansion and no `glbcolumn`
+tracking** — TAB (0x09) is emitted raw (`tos-api/src/gemdos/console.rs`, doc
+comment of `output_break`, "Divergence from EmuTOS (documented, approved)"). The
+column counter and typeahead for all console functions is a separate future
+ticket. `Fwrite` to CON follows this same rule (`40-fwrite.md`).

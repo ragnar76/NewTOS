@@ -238,6 +238,27 @@ boot-guard `0L`.
 
 (Empty during Phase 00.)
 
+FS11 / IO01 prep (2026-10-13, user decision 1): device-table dispatch and the
+documented absent-device profile (deliberate, not a stub) are defined in
+`docs/api/gemdos/file/3f-fread.md` "NewTOS implementation notes"; all BIOS
+character calls, `Fread`/`Fwrite` on device handles and the `C*aux*`/`Cprn*`
+GEMDOS calls use the **same** per-device entry. A later UART/MIDI/printer driver
+(`TASK/IO01.md`) replaces only that entry.
+
+**Devices 0 (PRN), 1 (AUX), 3 (MIDI):** `Bconout` -> `0`, byte discarded
+(`charout_dummy` semantics, `bios/chardev.c:55-58`; AUX = dummy map entry
+`bios/serport.c:96`). Consistency with EmuTOS: dev 0 without
+`CONF_WITH_PRINTER_PORT` returns 0 at once (`bios/parport.c:144-172`, exact match).
+**Inconsistent with EmuTOS' own `bconout3`** (documented divergence, semantics not
+changed): without `CONF_WITH_MIDI_ACIA` it loops `while(!bcostat3())` and
+`bcostat3` returns 0 (`bios/midi.c:78-79,86-87`), i.e. **never returns**; the
+table row "`bconout3` (MIDI) -> `1L`" holds only with an ACIA. Dev 1: EmuTOS
+`bconout1` without any RS-232 backend returns 0 after its (instantly satisfied)
+wait loop (`bios/serport.c:323-327`; the comment "will never return" there is
+wrong, `bcostat1` returns -1 at `:285`) -- same value 0. The `bconout` wrapper also
+returns 0 for a handle > 7 (`bios/bios.c:1008-1010`) and before
+`CHARDEV_AVAILABLE` (`:997-998`).
+
 ## Pi / BCM2711 binding
 
 > Re-points the *hardware reference* (`bconout2` calling `cputc`/VT52 over the

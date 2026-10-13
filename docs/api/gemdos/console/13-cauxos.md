@@ -160,3 +160,11 @@ None. The device is `run->p_uft[2]`, not a parameter.
 ## NewTOS implementation notes
 
 (Empty during Phase 00.)
+
+FS11 / IO01 prep (2026-10-13, user decision 1): see `docs/api/gemdos/file/3f-fread.md` "NewTOS implementation notes" for the device table.
+`Cauxos()` = `Bcostat(1)` of the AUX entry = **0** (not ready) for the absent
+device — matching the Bconmap dummy entry (`bios/serport.c:96`). *Inconsistency
+noted, semantics unchanged:* the "reports `-1` when the UART can accept a byte"
+sentence in the summary is the real-backend case; EmuTOS' `bcostat1` without any
+RS-232 backend returns **-1** (`bios/serport.c:284-285`), i.e. differs from the
+dummy entry. The decision (absent = status not ready) follows the dummy entry.

@@ -167,6 +167,31 @@ No validation; a bogus `cnt` sends more/fewer bytes.
 
 (Empty during Phase 00.)
 
+FS11 / IO01 prep (2026-10-13, user decision 1): `Midiws(cnt, ptr)` sends `cnt+1`
+bytes (`cnt` unsigned 16 bit) by calling `Bconout(3, byte)` of the **MIDI
+device-table entry** once per byte, results ignored, `void` -- exactly the shape
+of `midiws()` (`bios/midi.c:104-110`, `bconout3(3, *ptr++)`). The entry is the
+documented absent device (`Bconout` -> 0, deliberate profile, not a stub; table in
+`docs/api/gemdos/file/3f-fread.md` "NewTOS implementation notes"), so the call
+returns normally and transmits nothing; a later MIDI driver (`TASK/IO01.md`)
+replaces only the entry. Each source byte is read from `ptr` before the device
+call as in EmuTOS (an unreadable byte is a user-pointer fault under the ARCH03 3a
+convention; the current `system::midiws()` takes no arguments and reads nothing --
+code to be aligned by the Developer, not changed here).
+
+**Inconsistencies found (spec text not rewritten; semantics decided by the user):**
+1. The "Behaviour on the Pi" paragraph below says the no-op is "consistent with
+   EmuTOS on a `CONF_WITH_MIDI_ACIA`-off build". **That is wrong.** Without the
+   ACIA, `bconout3` is `while(!bcostat3()) ;` (`bios/midi.c:86-87`) and
+   `bcostat3` returns 0 (`:78-79`), so EmuTOS `Midiws` **never returns**
+   (the `#else return 0L` at `:92-94` is unreachable). NewTOS' return-immediately
+   behaviour corresponds to EmuTOS' `charout_dummy` (`bios/chardev.c:55-58`), not to
+   EmuTOS' MIDI code. Same defect in "Edge cases" 2 ("bytes are dropped") and the
+   "No-MIDI profile" criterion (they describe the NewTOS result, not EmuTOS').
+2. "Current-code gaps R4" below ("`Midiws` is not in the XBIOS dispatcher") is stale:
+   `MIDIWS => system::midiws()` is wired (`tos-api/src/xbios/mod.rs:88`,
+   STATUS 2026-07-03).
+
 PHASE-07 (optional): a NewTOS MIDI-over-USB or -UART path could give `Midiws`
 a real transport; until then it is an ABI no-op. The `bytes-1` unsigned count
 is honoured either way.

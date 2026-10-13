@@ -207,6 +207,26 @@ No distinct error code — `0L` means both "busy" and "unavailable/invalid".
 
 (Empty during Phase 00.)
 
+FS11 / IO01 prep (2026-10-13, user decision 1): device-table dispatch and the
+documented absent-device profile (deliberate, not a stub) are defined in
+`docs/api/gemdos/file/3f-fread.md` "NewTOS implementation notes"; all BIOS
+character calls, `Fread`/`Fwrite` on device handles and the `C*aux*`/`Cprn*`
+GEMDOS calls use the **same** per-device entry. A later UART/MIDI/printer driver
+(`TASK/IO01.md`) replaces only that entry.
+
+**Devices 0 (PRN), 1 (AUX), 3, 4 (IKBD-TX/MIDI-TX):** `Bcostat` -> `0` (not ready).
+Consistency with EmuTOS: dev 0 `bcostat0` returns 0 without
+`CONF_WITH_PRINTER_PORT` (`bios/parport.c:139-140`, exact match); dev 1 = dummy
+map entry (`bios/serport.c:96`) -- **inconsistent with EmuTOS' `bcostat1` without any
+RS-232 backend, which returns -1** (`serport.c:284-285`), documented divergence,
+the decision follows the dummy entry; MIDI `bcostat3` returns 0 without ACIA
+(`bios/midi.c:78-79`), same value. **The slot swap must survive the device table:**
+in EmuTOS `bcostat_init[3] = bcostat4` (IKBD) and `[4] = bcostat3` (MIDI)
+(`bios/chardev.c:38-42`), unlike Bconin/Bconout. Both are 0 today, so the swap is
+unobservable; a future MIDI driver (`TASK/IO01.md`) must install its *status*
+function in slot 4 and the IKBD one in slot 3 (or the table must carry the swap
+explicitly). `Cauxos`/`Cprnos` call `Bcostat(1)`/`Bcostat(0)` through the same entries.
+
 ## Pi / BCM2711 binding
 
 > Re-points the *hardware reference* (per-handle TX-ready routines reading

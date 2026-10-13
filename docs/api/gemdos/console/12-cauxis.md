@@ -173,3 +173,11 @@ error code.
 ## NewTOS implementation notes
 
 (Empty during Phase 00.)
+
+FS11 / IO01 prep (2026-10-13, user decision 1): see `docs/api/gemdos/file/3f-fread.md` "NewTOS implementation notes" for the device table.
+`Cauxis()` = `constat(1)` → `Bconstat(1)` of the AUX entry = **0** (no byte). The
+BDOS typeahead check in `constat` has nothing to find (NewTOS has no BDOS
+typeahead; an absent device never produces status). Equals the dummy map entry
+(`bios/serport.c:96`, `char_dummy`). See the D-003 note in `03-cauxin.md`
+(spec said the AUX typeahead is never populated; `conbrk(1)` can populate it in
+EmuTOS).

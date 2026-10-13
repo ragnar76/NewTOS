@@ -184,3 +184,21 @@ BIOS serial driver.
 ## NewTOS implementation notes
 
 (Empty during Phase 00.)
+
+FS11 / IO01 prep (2026-10-13, user decision 1): see `docs/api/gemdos/file/3f-fread.md` "NewTOS implementation notes" for the device table.
+`Cauxin` is a pass-through to `Bconin(1)` of the **AUX device-table entry**. The
+entry is currently the documented *absent device* (deliberate profile, not a stub):
+`Bconin` returns **0 immediately**, `Cauxin()` therefore returns `0x00000000` and
+never blocks (the "Blocking" verification criterion above applies to a real
+AUX driver only). Matches EmuTOS' Bconmap dummy map entry `char_dummy`
+(`bios/serport.c:96`, `bios/chardev.c:50-53`), **not** EmuTOS' own `bconin1`
+(blocking, `bios/serport.c:260-263`, `bconin_iorec` loop `:202-205`). A later UART
+driver (`TASK/IO01.md`) replaces only the entry.
+
+*Spec inconsistency noted, semantics unchanged:* Edge case 1 / D-003 say the AUX
+typeahead buffer is "never used by any GEMDOS path". EmuTOS' `conbrk(h)`
+(`bdos/console.c:206-243`, reached from `conout(1, …)`, e.g. the echo of
+`Fread(-2, …)`) *does* append to `buffer[1]`, and `getch`/`constat` read it
+(`console.c:143-152,351-366`). `Cauxin` bypasses it, `Cauxis` does not. With a
+real AUX device that is an EmuTOS quirk; in NewTOS it is unobservable (no BDOS
+typeahead buffer; absent device has no status).

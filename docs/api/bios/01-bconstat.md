@@ -235,6 +235,22 @@ returns 0" guard is EmuTOS-specific and invisible to normal applications
 
 (Empty during Phase 00. Filled in during Phase 02 / Phase 07.)
 
+FS11 / IO01 prep (2026-10-13, user decision 1): device-table dispatch and the
+documented absent-device profile (deliberate, not a stub) are defined in
+`docs/api/gemdos/file/3f-fread.md` "NewTOS implementation notes"; all BIOS
+character calls, `Fread`/`Fwrite` on device handles and the `C*aux*`/`Cprn*`
+GEMDOS calls use the **same** per-device entry. A later UART/MIDI/printer driver
+(`TASK/IO01.md`) replaces only that entry.
+
+**Devices 0 (PRN), 1 (AUX), 3 (MIDI):** `Bconstat` → `0` (no byte). Consistency
+with EmuTOS (read this session): dev 0 = `char_dummy` (`bios/chardev.c:31`);
+dev 1 = dummy Bconmap entry `char_dummy` (`bios/serport.c:96`) — EmuTOS' own
+`bconstat1` is the real iorec test (`serport.c:255-258`) and is what a later
+driver provides; dev 3: EmuTOS `bconstat3` returns 0 while its iorec is empty
+(`bios/midi.c:23-33`), same value. The "Pi / BCM2711 binding" paragraph below
+calling AUX-as-dummy a "minor divergence / K-series" is superseded: it is now the
+decided, documented profile until `TASK/IO01.md`.
+
 ## Pi / BCM2711 binding
 
 > Re-points the *hardware reference* (per-handle status routines reading MFP/

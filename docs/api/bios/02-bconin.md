@@ -269,6 +269,25 @@ first when the distinction matters.
 
 (Empty during Phase 00.)
 
+FS11 / IO01 prep (2026-10-13, user decision 1): device-table dispatch and the
+documented absent-device profile (deliberate, not a stub) are defined in
+`docs/api/gemdos/file/3f-fread.md` "NewTOS implementation notes"; all BIOS
+character calls, `Fread`/`Fwrite` on device handles and the `C*aux*`/`Cprn*`
+GEMDOS calls use the **same** per-device entry. A later UART/MIDI/printer driver
+(`TASK/IO01.md`) replaces only that entry.
+
+**Devices 0 (PRN), 1 (AUX), 3 (MIDI):** `Bconin` -> `0`, **non-blocking**.
+Consistency with EmuTOS: dev 0 `bconin0` returns 0 (`bios/parport.c:123-127`,
+exact match); dev 1 = dummy Bconmap entry `char_dummy` (`bios/serport.c:96`).
+**Inconsistent with EmuTOS' own routines** for 1 and 3 (documented divergence,
+semantics not changed): `bconin1` blocks until a byte arrives
+(`serport.c:260-263`, `bconin_iorec` loop `:202-205`) and `bconin3` spins on
+`bconstat3` (`bios/midi.c:35-38`) -- without an ACIA/UART it would never return.
+NewTOS never blocks on an absent device. Consequence: `Bconin(1)` can be tested
+without hang risk (the 2026-09-05 APITEST note in `docs/STATUS.md` skipped it for
+that reason). Table rows above marked "blocking: yes" for 1/3 describe the real
+drivers only.
+
 ## Pi / BCM2711 binding
 
 > Re-points the *hardware reference* (`bconin2` dequeuing a 4-byte

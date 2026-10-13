@@ -192,3 +192,13 @@ buffer (no validation).
 
 PHASE-02: `Cconws` returns the written byte count by design (D-009), asserted by
 the Phase-02 self-test.
+
+FS11 (2026-10-13, user decision 2; documentation of an already implemented,
+approved divergence): the loop above is, in NewTOS, per byte the Ctrl-C-only
+`output_break` followed by the raw byte — **no tab expansion** (the "Tab
+expansion" verification criterion and edge case 4's Ctrl-S pause above describe
+EmuTOS and are **not** met by NewTOS), **no `glbcolumn`**, **no BDOS typeahead**,
+**no Ctrl-S/Ctrl-Q pause** (`tos-api/src/gemdos/console.rs`, `output_break` doc
+comment). Separate future ticket: column counter + typeahead for all console
+functions. `Fwrite` to CON is specified to behave exactly like this
+(`docs/api/gemdos/file/40-fwrite.md`).

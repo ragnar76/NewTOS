@@ -182,3 +182,11 @@ a negative TOS error code.
 ## NewTOS implementation notes
 
 (Empty during Phase 00.)
+
+FS11 / IO01 prep (2026-10-13, user decision 1): see `docs/api/gemdos/file/3f-fread.md` "NewTOS implementation notes" for the device table.
+`Cprnout(ch)` is a pass-through to `Bconout(0, ch)` of the PRN entry. With the
+absent-device entry it returns **0 immediately** ("printer not ready/timed
+out"): no 30 s wait. This equals EmuTOS without `CONF_WITH_PRINTER_PORT`, where
+`bconout0` returns 0 at once (`bios/parport.c:144-172`, body gated, `:170-171`).
+Programs that retry on 0 will loop; that is the same behaviour as EmuTOS on a
+machine without a printer port.
