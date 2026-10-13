@@ -48,3 +48,14 @@ Aufruf in `__libc_crtinit`; E7/E8 in v1 nein (Schritt 8 entfaellt).
 Umsetzung in zwei Developer-Auftraegen: A = Schritte 1–6 + Doku (Kernel),
 B = Schritt 7 (SDK). Nebenbefunde: [MEM07](MEM07.md), [MEM08](MEM08.md),
 [MEM09](MEM09.md).
+
+## Nachentscheidung (Anwender 2026-10-13) — `SNAP` im Seitenbudget
+
+Teil A hielt vor Schritt 4 an: in `memprot.rs` haengen ausser `RECS`/`KEPT`
+auch `SNAP` (`:929-932`, Momentaufnahme aller belegten Bloecke, bricht bei
+260 stumm ab) und `VSCRATCH` (`:1641-1644`, `memprot=verify`) an
+`MAX_RECORDS`. Entscheidung **B**: alle MEM05-Seiten (MDs, `RECS`, `SNAP`,
+`KEPT`) zaehlen gegen das Budget von 512 Seiten; MEM05 belegt nie mehr als
+2 MiB Heap. `VSCRATCH` fest 512. Die Kosten einer Synchronisierung
+(O(N·64 + N log N) je `Malloc` mit Speicherschutz) werden als bekannte
+Grenze dokumentiert; Umbau → [MEM10](MEM10.md).
