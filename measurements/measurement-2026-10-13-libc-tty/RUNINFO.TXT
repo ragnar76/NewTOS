@@ -1,0 +1,109 @@
+measurement-2026-10-13-libc-tty -- TASK/LIBC-TTY decision 1: the NewTOS isatty shim
+(sdk/libc/newtos-arch/isatty.c, fds 0-2 = tty, __open_stat[].flags never set) is deleted;
+mintlib's own mintlib/isatty.c is built again (Fcntl TIOCGPGRP -> EINVFN, then the Fseek
+probe; flags CRMOD|ECHO for a tty). Analysis: docs/analysis/libc-tty-2026-10-13.md.
+
+Date 2026-10-13, host macOS, QEMU raspi4b (-append serial=on [memprot=off|strict]).
+Base HEAD ad789346; the change is uncommitted in the shared tree (method/libc-tty-change.diff;
+the deletion of newtos-arch/isatty.c is staged in the index). No kernel / tos-api code touched.
+No SD card, Pi or TT touched. Cards: method/seed-card.sh (private 64 MiB images in the session
+scratchpad). Kernels gitignored, sha256 in bin/KERNELS.SHA256; programs in bin/ with
+bin/SHA256SUMS; repo binaries in repo-binaries.sha256. Scripts in method/ are copies of
+measurement-2026-10-13-fs11-aux-acceptance/method (unchanged unless noted in their headers)
+plus the new tests/ttyprobe.c, build-tty.sh, tty-schedule.py, tty-kernels.sh, tty-series.sh,
+rerun-off-ttyprobe.sh, fstat-host-countercheck.sh.
+
+WHAT CHANGED
+  sdk/libc/build-libc.sh          mintlib/isatty.c out of EXCLUDE; overlay compile step
+                                  and comment for newtos-arch/isatty.c removed
+  sdk/libc/newtos-arch/isatty.c   deleted (__open_stat[] comes from mintlib/isatty.c:14)
+  sdk/libc/newtos-arch/access.c   comment: no longer names the isatty shim
+  sdk/libc/tests/fstat-host*      host test builds mintlib/isatty.c; fake Fcntl -> -32
+                                  (EINVFN); Fseek model: standard handles 0-2 = device
+                                  (answer 0, as tos-api file.rs Target::Device); new isatty
+                                  checks (std handles 1 + FH_ISATTY + CRMOD|ECHO, Fforce'd
+                                  handle / file / empty file / closed handle 0 + position
+                                  unchanged, isatty(-1) = 1, cached answer without a trap)
+  docs                            docs/sdk/07-mintlib-limits.md (isatty row, start-up row,
+                                  new "console read()" row incl. the RAW path's two keys per
+                                  byte = upstream, stale getenv("PATH") sentence),
+                                  docs/sdk/04-porting-anatomy.md:81, docs/sdk/05-abi-pitfalls.md
+                                  B6 (crt0 -> __libc_crtinit -> __libc_parseargs, then _main),
+                                  docs/MEMORY.md (the newtos-arch shim list entry)
+
+1. STATIC BASELINES (method/checks.sh tty; checks/tty-*.txt, checks/checks-tty.log)
+                                                          expected   measured
+   host tests (cargo test -p tos-api -p tos-types -p xtask) 1323/0/1   1323 / 0 / 1
+   release warnings tos-api/kernel, fresh, rpi4             64 / 94    64 / 94, 0 errors
+   release warnings tos-api/kernel, fresh, qemu-virt        64 / 94    64 / 94, 0 errors
+   clippy tos-api/kernel, rpi4 and qemu-virt                76 / 125   76 / 125 both
+   tools/desk-drift-probe.sh                                31         31
+   sdk/run-host-tests.sh                                    19/0/0     19 / 0 / 0
+     (fstat-host: 25 -> 44 checks, all PASS, checks/fstat-host-green.txt)
+   Red control (method/fstat-host-countercheck.sh): the adjusted fstat-host against the
+   removed shim -> 44 checks, 9 failed (status/flags never set, isatty(-1)=0); every FS08
+   check still green (checks/fstat-host-red-oldshim.txt).
+   libc.a: mintlib__isatty.o archived (__isatty global, isatty weak, __open_stat global);
+   disassembly: svc #1 with x8=0x104 (Fcntl, TIOCGPGRP 0x5406) then x8=0x42 (Fseek).
+   build-libc.sh: 9 expected compile failures, 0 new (checks/build-libc.log).
+
+2. PROGRAMS RELINKED (method/build-all.sh; checks/build-all.log) -- every program of the
+   aux-acceptance run plus TTYPROBE/TTYA; APITEST, QED, TeraDesk, Doom, CoreMark, gemtest,
+   chaintest via their sdk/apps scripts. All four app hashes differ from the aux-acceptance
+   run (repo-binaries.sha256).
+
+3. THE PROBE (method/tests/ttyprobe.c; build-tty.sh)
+   T1  isatty(0/1/2) = 1; __open_stat[fd0] status FH_ISATTY, flags CRMOD|ECHO (0x5)
+   T2  Fcreate'd empty file handle -> 0; file with 10 bytes at position 3 -> 0 and the
+       position is still 3; open() fd -> 0
+   T3  Fforce(1, file), Pexec(0) C:\TTYPROBE.NAP "K" (freshly started child): exit code
+       0x40|isatty(1)|isatty(0)<<1|isatty(2)<<2|stdout->__linebuf<<3 = 0x46 wanted
+       (isatty(1)=0, stdout fully buffered); the file holds the child's printf line
+   T4  getchar() = 'a', fgets = "b\n", fgets = "cop\n" with __open_stat[] untouched
+       (FS11DEV part C of measurement-2026-10-13-fs11 minus its flag setting); keys from
+       the KEYS02 injector, schedule a b CR c o p CR (tty-schedule.py, tty-kernels.sh)
+   TTYA.NAP = T1-T3 (product kernel); TTYPROBE.NAP = T1-T4 (keys kernel).
+
+4. QEMU raspi4b (method/tty-series.sh; checks/summary-tty.txt, checks/tty-series.log)
+                         ON              OFF             STRICT
+   TTYA (product)        T1/T2/T3 PASS   T1/T2/T3 PASS   T1/T2/T3 PASS
+   TTYPROBE (keys)       T1-T4 PASS      T1-T4 PASS (*)  T1-T4 PASS
+   STDOUTDB              DBG lines identical to aux-acceptance cm-<mode>-stdoutdb-rerun
+                         modulo heap addresses (fputs rc 0, printf rc 0x1a, errno 0)
+   STDERRP new crt0      STDERR lines identical to aux-acceptance ac-<mode>-...-auxkernel-newcrt0
+   STDERRA               STDERR lines identical to aux-acceptance ac-<mode>-stderra-auxkernel
+   APITEST               TOTAL 106/0/5 all modes; [OK]/FAIL/SKIP lines identical modulo
+                         load addresses (on)
+   Doom                  VERIFIED via EdDI+scale+vro_cpyfm, all modes
+   [EXC]/[PANIC]         none in any log
+   (*) first off pass: boot stalled before the AES (no program started); drive.py needed
+       880 s for its 200 s timeout -> host stall (the next run, off STDOUTDB, also hit its
+       200 s timeout right after its end marker). Rerun (method/rerun-off-ttyprobe.sh,
+       serial/tty-off-rpi4-ttyprobe-rerun-*): T1-T4 PASS. The void first-pass log is kept.
+   T4 serial (serial/tty-*-ttyprobe*): each injected key is popped once (rx_pop_key) and
+   echoed; Return echoes CR, then mintlib's Cconout('\n'); no double read.
+   Smoke run before the series: serial/smoke-on-rpi4-ttyprobe-serial.log (PASS).
+
+5. SCREENDUMPS vs measurement-2026-10-13-fs11-aux-acceptance (checks/shotcmp-vs-aux.txt)
+   identical in on/off/strict: desktop-t25, TeraDesk-t35, QED-t30, APITEST-t40, STDERRP and
+   STDERRA end screens. DIFF: doom-t30/t45 in all modes (demo timing, inspected: Doom
+   running) and apitest-t25 in mode on (this run was already at the summary page at 25 s,
+   the reference still at the Bconin(2) 10 s key wait; t40 identical).
+
+6. OBSERVABLE BEHAVIOUR CHANGES for libc programs (source: mintlib main.c/read.c/open.c)
+   * stdin on the console reads through Fread (line read with echo and editing, CR -> \n
+     plus Cconout('\n')) instead of the RAW Crawcin path (no echo, two keys per byte,
+     fgets never ended).
+   * stdout/stderr redirected by the parent (Fforce to a file): isatty = 0 -> stdout fully
+     buffered, binary mode (no LF -> CRLF; fstat still reports S_IFCHR, TASK/LIBC-FSTAT),
+     and _main's Fforce(2,-1) is skipped when handle 2 is a file.
+   * isatty(-1) = 1 (was 0); every open() costs Fcntl + up to 3 Fseek traps more.
+   * write() goes bytewise with CRLF only with RAW set or a SIGINT handler installed; no
+     program in sdk/apps installs one (grep).
+
+NOT RUN: real Pi 4; qemu-virt runs (kernel only built, no libc change in the kernel);
+asid=on modes; old-crt0 STDERRP and the pre/prefs11 kernels of the stderr matrix; EmuCON
+(kernel shell, not a libc program; not in the requested list); TeraDesk->QED tdkeys,
+KBDVEC, S2ALL/PPARENT/PORT10 and the rest of the cm regression sample; a red QEMU control
+with the old shim (FS11 smoke log serial/smoke-on-rpi4-fs11dev of measurement-2026-10-13-fs11
+already shows that hang); Fforce after the first isatty query (upstream cache, documented).

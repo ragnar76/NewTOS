@@ -14,7 +14,7 @@
  * from the DOS attributes (FA_RDONLY -> clears the write bits, FA_HIDDEN ->
  * clears the read bits; executable extensions set the exec bits). So the owner
  * permission bits are the whole story, and we drop the group machinery. This
- * is the same lean-shim pattern as newtos-arch/{do_stat,isatty,ioctl}.c: a real
+ * is the same lean-shim pattern as newtos-arch/{do_stat,ioctl}.c: a real
  * check over the real stat, with the Unix-only tail removed. No stub.
  */
 

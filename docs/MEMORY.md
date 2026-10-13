@@ -1205,8 +1205,12 @@ The port surface, proven small for mintlib (Task #90):
   inits the malloc arena over the free TPA), **setjmp** (aarch64, when pulled).
 - **A few honest LP64/endian fixes** to vendored files: aarch64 `byteswap.h`
   (`__builtin_bswap*`), an `is_longlong` assign-to-constant fix in `vfprintf.c`,
-  and lean NewTOS `newtos-arch/{do_fstat,do_stat,isatty,ioctl}.c` that fill only
-  what stdio needs (cutting the Unix time/uid/passwd tail).
+  and lean NewTOS `newtos-arch/{do_fstat,do_stat,ioctl}.c` that fill only
+  what stdio needs (cutting the Unix time/uid/passwd tail). The first port's
+  `isatty.c` shim (fds 0-2 = tty) was dropped by TASK/LIBC-TTY (2026-10-13): it
+  never set `__open_stat[].flags`, so console `read()` took mintlib's RAW path;
+  mintlib's own `isatty.c` (`Fcntl` -> `EINVFN`, then the `Fseek` probe) works
+  since FS10.
 - **Build harness** `sdk/libc/build-libc.sh` replicates mintlib's `buildrules`
   (`-D_LIBC -D_REENTRANT -DHAVE_CONFIG_H -D_GNU_SOURCE -nostdinc` + include
   order) → `libc.a`. `>8`-arg XBIOS macros (Falcon, unused) are guarded with a

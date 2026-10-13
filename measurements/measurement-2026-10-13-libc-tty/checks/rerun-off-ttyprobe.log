@@ -1,0 +1,4 @@
+t=  16.2s end marker seen
+t=  18.3s tty-off-rpi4-ttyprobe-rerun-end.png {"return": {}}
+prompts seen: 0
+run tty-off-rpi4-ttyprobe-rerun: rc=0

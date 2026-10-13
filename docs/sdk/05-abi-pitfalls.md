@@ -275,8 +275,11 @@ in `parseargs()` — is m68k assembly in its other half and excluded
 no arguments whatever the launcher handed it; a file dropped on QED opened an
 empty editor (TASK/PORT01, `measurements/measurement-2026-09-25-port01/`).
 
-**Now**: `sdk/libc/crt0.S` calls `__libc_parseargs()`
-(`sdk/libc/newtos-arch/cmdargs.c`), which builds `argc`/`argv` from the tail
+**Now**: `sdk/libc/crt0.S` calls `__libc_crtinit()`
+(`sdk/libc/newtos-arch/heap_init.c`, mintlib's `_crtinit` for AArch64), which
+calls `__libc_parseargs()` (`sdk/libc/newtos-arch/cmdargs.c`, mintlib's
+`parseargs()`), and then, since TASK/LIBC-MAIN, mintlib's own `_main`.
+`__libc_parseargs()` builds `argc`/`argv` from the tail
 with mintlib's own rules — `argv[0]` is `""`, leading blanks skipped, split on
 runs of blanks/tabs, MagX single-quoting honoured — and publishes
 `__libc_argc`/`__libc_argv`. Host-checked by

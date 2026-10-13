@@ -146,8 +146,6 @@ DIRS="stdio stdlib string mintlib unix syscall time misc multibyte signal termio
 # These are dropped from the archive so the linker takes OUR definitions:
 #   mintlib/do_fstat.c -> newtos-arch/do_fstat.c  (lean __do_fstat: st_mode +
 #     honest st_size via Fseek only; no time/owner/tty resolution tail)
-#   mintlib/isatty.c   -> newtos-arch/isatty.c    (fd 0-2 == tty; also carries
-#     the __open_stat[] storage the file layer references)
 #   mintlib/do_stat.c  -> newtos-arch/do_stat.c   (lean __sys_stat: real Fstat64
 #     trap only, no timestamp/owner tail; __quickstat's Fsfirst emulation does
 #     the real path stat on -ENOSYS)
@@ -165,7 +163,7 @@ DIRS="stdio stdlib string mintlib unix syscall time misc multibyte signal termio
 # it treated the basepage fields as native pointers, and NewTOS had no
 # Pexec 5/6/7. It builds now from the LP64 overlay (overlay/mintlib/thread.c)
 # against the kernel's Pexec 5 + 4 (ARCH03 stage 2).
-EXCLUDE="mintlib/do_fstat.c mintlib/isatty.c mintlib/do_stat.c unix/access.c unix/ioctl.c"
+EXCLUDE="mintlib/do_fstat.c mintlib/do_stat.c unix/access.c unix/ioctl.c"
 is_excluded() { case " $EXCLUDE " in *" $1 "*) return 0;; esac; return 1; }
 
 echo "clang : $($CLANG --version | head -1)"
@@ -254,8 +252,6 @@ lib_check_failures "libc" "$BUILD/failed.txt" "$LIBC/expected-failures.txt" \
     -c "$LIBC/newtos-arch/setstack.S"  -o "$OBJ/arch__setstack.o" || exit 1
 "$CLANG" "${CFLAGS[@]}" -I"$SDK/include" "${INCS[@]}" \
     -c "$LIBC/newtos-arch/do_fstat.c"  -o "$OBJ/arch__do_fstat.o" || exit 1
-"$CLANG" "${CFLAGS[@]}" -I"$SDK/include" "${INCS[@]}" \
-    -c "$LIBC/newtos-arch/isatty.c"    -o "$OBJ/arch__isatty.o"   || exit 1
 "$CLANG" "${CFLAGS[@]}" -I"$SDK/include" "${INCS[@]}" \
     -c "$LIBC/newtos-arch/ioctl.c"     -o "$OBJ/arch__ioctl.o"    || exit 1
 "$CLANG" "${CFLAGS[@]}" -I"$SDK/include" "${INCS[@]}" \

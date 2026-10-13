@@ -1,6 +1,6 @@
 # LIBC-TTY — mintlib-`getchar`/`fgets` auf der Konsole: RAW-Weg, doppelt gelesene Tasten
 
-Status: **OFFEN** · Prioritaet: **P2** · Typ: SDK / libc — Nebenfund FS11 (2026-10-13)
+Status: **ERLEDIGT** 2026-10-13 ([Quittung](LIBC-TTY-STATUS-DONE.MD)) · Prioritaet: **P2** · Typ: SDK / libc — Nebenfund FS11 (2026-10-13)
 
 Abhaengigkeiten: [FS11](FS11.md) (Zeilenlesen ueber `Fread` auf CON)
 

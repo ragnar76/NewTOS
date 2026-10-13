@@ -1,0 +1,432 @@
+diff --git a/docs/MEMORY.md b/docs/MEMORY.md
+index 780e11f7..3b6d785c 100644
+--- a/docs/MEMORY.md
++++ b/docs/MEMORY.md
+@@ -1205,8 +1205,12 @@ The port surface, proven small for mintlib (Task #90):
+   inits the malloc arena over the free TPA), **setjmp** (aarch64, when pulled).
+ - **A few honest LP64/endian fixes** to vendored files: aarch64 `byteswap.h`
+   (`__builtin_bswap*`), an `is_longlong` assign-to-constant fix in `vfprintf.c`,
+-  and lean NewTOS `newtos-arch/{do_fstat,do_stat,isatty,ioctl}.c` that fill only
+-  what stdio needs (cutting the Unix time/uid/passwd tail).
++  and lean NewTOS `newtos-arch/{do_fstat,do_stat,ioctl}.c` that fill only
++  what stdio needs (cutting the Unix time/uid/passwd tail). The first port's
++  `isatty.c` shim (fds 0-2 = tty) was dropped by TASK/LIBC-TTY (2026-10-13): it
++  never set `__open_stat[].flags`, so console `read()` took mintlib's RAW path;
++  mintlib's own `isatty.c` (`Fcntl` -> `EINVFN`, then the `Fseek` probe) works
++  since FS10.
+ - **Build harness** `sdk/libc/build-libc.sh` replicates mintlib's `buildrules`
+   (`-D_LIBC -D_REENTRANT -DHAVE_CONFIG_H -D_GNU_SOURCE -nostdinc` + include
+   order) → `libc.a`. `>8`-arg XBIOS macros (Falcon, unused) are guarded with a
+diff --git a/docs/sdk/04-porting-anatomy.md b/docs/sdk/04-porting-anatomy.md
+index 63626627..c403f678 100644
+--- a/docs/sdk/04-porting-anatomy.md
++++ b/docs/sdk/04-porting-anatomy.md
+@@ -78,8 +78,9 @@ archive → link a test client.
+ The `newtos-arch/` shims are compiled and archived into `libc.a` after the
+ mintlib objects (`build-libc.sh:183-217`): `memops.c` (memcpy/memmove/memset/
+ bcopy/bzero), `proc.S` (`_exit` via `Pterm`), `heap_init.c`, the lean
+-`do_fstat.c`/`do_stat.c`/`isatty.c`/`ioctl.c`/`access.c` (they replace the
+-`EXCLUDE`d mintlib files), `getcookie.c` (`Getcookie` over `Ssystem`),
++`do_fstat.c`/`do_stat.c`/`ioctl.c`/`access.c` (they replace the
++`EXCLUDE`d mintlib files; the `isatty.c` shim is gone since TASK/LIBC-TTY,
++mintlib's own `mintlib/isatty.c` is built again), `getcookie.c` (`Getcookie` over `Ssystem`),
+ `getsysvar.c` (a plain 32-bit load — the sysvar area is in the process's own
+ address space), `softfloat.c` (`__extenddftf2`, the one compiler-rt builtin
+ `strtold` needs), and since T07 `setjmp.S` (the AArch64 `sigsetjmp`/`setjmp`/
+diff --git a/docs/sdk/05-abi-pitfalls.md b/docs/sdk/05-abi-pitfalls.md
+index 89ef6038..8780f3b6 100644
+--- a/docs/sdk/05-abi-pitfalls.md
++++ b/docs/sdk/05-abi-pitfalls.md
+@@ -275,8 +275,11 @@ in `parseargs()` — is m68k assembly in its other half and excluded
+ no arguments whatever the launcher handed it; a file dropped on QED opened an
+ empty editor (TASK/PORT01, `measurements/measurement-2026-09-25-port01/`).
+ 
+-**Now**: `sdk/libc/crt0.S` calls `__libc_parseargs()`
+-(`sdk/libc/newtos-arch/cmdargs.c`), which builds `argc`/`argv` from the tail
++**Now**: `sdk/libc/crt0.S` calls `__libc_crtinit()`
++(`sdk/libc/newtos-arch/heap_init.c`, mintlib's `_crtinit` for AArch64), which
++calls `__libc_parseargs()` (`sdk/libc/newtos-arch/cmdargs.c`, mintlib's
++`parseargs()`), and then, since TASK/LIBC-MAIN, mintlib's own `_main`.
++`__libc_parseargs()` builds `argc`/`argv` from the tail
+ with mintlib's own rules — `argv[0]` is `""`, leading blanks skipped, split on
+ runs of blanks/tabs, MagX single-quoting honoured — and publishes
+ `__libc_argc`/`__libc_argv`. Host-checked by
+diff --git a/docs/sdk/07-mintlib-limits.md b/docs/sdk/07-mintlib-limits.md
+index 574ce1bb..c272b895 100644
+--- a/docs/sdk/07-mintlib-limits.md
++++ b/docs/sdk/07-mintlib-limits.md
+@@ -47,7 +47,7 @@ tail that has no TOS analogue is dropped.
+ |--------------|------|-------------------|
+ | `mintlib/do_fstat.c` | `do_fstat.c` | fills `st_mode` (`S_IFCHR\|0600` for fd 0–2, `S_IFREG\|0644` otherwise), an honest `st_size` via `Fseek`, `st_blksize` (**32 KiB for a file handle ≥ 6, `BUFSIZ` = 1024 otherwise** — named deviation, see below), `st_blocks`, `st_nlink = 1`; **times and owner stay zero** (`:1-30`) |
+ | `mintlib/do_stat.c` | `do_stat.c` | `__sys_stat` = the `Fstat64` trap; `__do_stat` = `__quickstat` (mode/size/uid/gid honest, **no timestamps**) (`:1-27`, `:42-56`) |
+-| `mintlib/isatty.c` | `isatty.c` | `isatty(fd)` is `fd >= 0 && fd <= 2`; also carries `__open_stat[]` (`:1-16`) |
++| ~~`mintlib/isatty.c`~~ | built again since TASK/LIBC-TTY (2026-10-13); the shim (`isatty(fd)` = `fd >= 0 && fd <= 2`, `__open_stat[].flags` never set) is gone | mintlib's own `__isatty`, as on TOS: `Fcntl(fd, .., TIOCGPGRP)` is `EINVFN` (= `-ENOSYS`), so the `Fseek` probe decides — `Fseek(1, fd, SEEK_CUR) == 0` (a character device, since TASK/FS10) = tty, a position or an error = file, the position is put back (`mintlib/isatty.c:28-48`); a tty gets `__open_stat[].status = FH_ISATTY`, `flags = CRMOD\|ECHO` (`:54-58`), which sends `read()` on the console through `Fread` (§5 "console `read()`"); a standard handle `Fforce`d to a file is a file; `isatty(-1)` is 1 (CON:); the answer is cached per handle until `open`/`close`/`dup`/`dup2` (an `Fforce` after the first query is not seen — upstream). The file also defines `__open_stat[]` |
+ | `unix/ioctl.c` | `ioctl.c` | forwards to `Fcntl(fd, arg, request)`; the m68k tty line-discipline path is gone (`:1-16`) |
+ | `unix/access.c` | `access.c` | checks the owner `rwx` bits from `__quickstat` only; no group/passwd database (`:1-19`) |
+ | ~~`mintlib/thread.c`~~ | builds since TASK/PROC01 from `sdk/libc/overlay/mintlib/thread.c` (LP64 casts for the 32-bit basepage fields, plus one fix: `tfork` frees the saved `Pexec(PE_CBASEPAGE)` environment instead of `b->p_env`, §8) | `tfork`, `__waitval`, `__waittime` — `vfork`'s TOS branch, `wait4` |
+@@ -183,7 +183,8 @@ neither uses the libm). `libm.a` needs three libc symbols, `memset`, `_ctype`
+ | `environ`, `getenv` | built from the environment block `p_env` as mintlib does (TASK/PORT09): one entry per string up to the empty one, pointing **into** the block; an `ARGV=` string ends the environment and is cut **in place** (its `A` becomes NUL, so a later `Pexec(.., env = NULL)` child inherits the environment without the arguments); the desktop form `"PATH=\0C:\\\0"` — every `#Z`, desktop and accessory start gets a copy of the AES's (TASK/PPARENT, `docs/api/gemdos/process/_parent-and-environment.md`) — is joined **in place** to `"PATH=C:\\"` (`crtinit.c:332-345`). A program that reads its raw `p_env` block after start-up therefore sees mintlib's rewrite, not the bytes the kernel delivered — as on TOS with mintlib. `p_env == 0` or an empty block give the empty environment (one NULL); `environ` is never NULL (mintlib's `_spawnve` indexes it unconditionally, TASK/PORT10). An accessory gets `environ = {"", NULL}` like mintlib's `_acc_main` (no walk). The arrays (environ, the split tail, argv) lie in the TPA just above the BSS, as mintlib lays them out, and count to what the program keeps (`heap_init.c`, `crtinit.c:167-172`); an environment too large for the TPA stops the start with mintlib's "insufficient memory" | `newtos-arch/cmdargs.c`, `newtos-arch/heap_init.c`, `mintlib/globals.c`, `stdlib/getenv.c`; `kernel/src/launch.rs`, `loader.rs` |
+ | `_base` (`BASEPAGE *`) | set by `__libc_init_heap` from the basepage address crt0 hands it (TASK/T05; until then it stayed NULL and dereferencing it worked only because the basepage was at VA 0). Since ARCH03 stage 1 the basepage is the start of the TPA block, so `_base` is that address — never 0 | `newtos-arch/heap_init.c`, `sdk/libc/crt0.S`; readers: `unix/getppid.c`, `gmon.c`, TeraDesk's `environm.c` |
+ | `malloc`/`free`/`realloc` | mintlib's allocator; since ARCH03 E9 the start shrinks the TPA like `_crtinit` and, with the default `_stksize`, malloc takes its memory from GEMDOS `Malloc` (`_split_mem`) | `newtos-arch/heap_init.c`, `crtinit.c:212-247`, `unix/sbrk.c:54-71` |
+-| start-up (`_main`) | since 2026-10-13 (TASK/LIBC-MAIN) the libc `crt0` ends like mintlib's own start-up, for a program (`_crtinit`, `crtinit.c:257`) and an accessory (`_acc_main`, `crtinit.c:147`) alike: `_main(__libc_argc, __libc_argv, environ)` = `__libc_main` (`mintlib/main.c:77-305`, weak `_main`, so a program can still supply its own). It clears `errno`; finds no `MiNT` cookie (`__mint = 0`); a program calls `Pdomain(1)` and compares `Pgeteuid`/`Pgetuid`, `Pgetegid`/`Pgetgid` — all `EINVFN` on NewTOS as on EmuTOS, so not "secure" and `UNIXMODE` is honoured; clears `__open_stat[]`; with an empty `argv[0]` (no `ARGV=`) and handle 2 a terminal it does `Fforce(2, -1)` (stderr to the console); stdin/stdout/stderr get full/line/no buffering and, being terminals under TOS (`isatty` = fds 0-2, `newtos-arch/isatty.c`), **text mode** with a seek function, whose first flush asks `Fseek(0, h, SEEK_CUR)` — 0 on a character device since TASK/FS10, as on EmuTOS (until then every `stdout` write failed with `EBADF` here, which is why crt0 called only `exit(main())` from post-E9 to FS10); and it rewrites `PATH` (or every variable listed in `PCONVERT`) in `environ` to the Unix form (`PATH=C:\` → `PATH=/dev/c/`, `;`/`,` → `:`, lower case, `unx2dos.c:217`) — `spawnvp`/`execvp`/`system()` convert back; the raw `p_env` block is not touched | `mintlib/main.c`, `mintlib/crtinit.c`, `sdk/libc/crt0.S` |
++| start-up (`_main`) | since 2026-10-13 (TASK/LIBC-MAIN) the libc `crt0` ends like mintlib's own start-up, for a program (`_crtinit`, `crtinit.c:257`) and an accessory (`_acc_main`, `crtinit.c:147`) alike: `_main(__libc_argc, __libc_argv, environ)` = `__libc_main` (`mintlib/main.c:77-305`, weak `_main`, so a program can still supply its own). It clears `errno`; finds no `MiNT` cookie (`__mint = 0`); a program calls `Pdomain(1)` and compares `Pgeteuid`/`Pgetuid`, `Pgetegid`/`Pgetgid` — all `EINVFN` on NewTOS as on EmuTOS, so not "secure" and `UNIXMODE` is honoured; clears `__open_stat[]`; with an empty `argv[0]` (no `ARGV=`) and handle 2 a terminal it does `Fforce(2, -1)` (stderr to the console); stdin/stdout/stderr get full/line/no buffering (stdout full when `isatty(1)` is 0, i.e. redirected to a file) and, where `isatty` (mintlib's own since TASK/LIBC-TTY, §2) says terminal, **text mode** — a standard stream redirected to a file stays binary, because `fstat` still reports fds 0-2 as `S_IFCHR` (TASK/LIBC-FSTAT) — with a seek function, whose first flush asks `Fseek(0, h, SEEK_CUR)` — 0 on a character device since TASK/FS10, as on EmuTOS (until then every `stdout` write failed with `EBADF` here, which is why crt0 called only `exit(main())` from post-E9 to FS10); and it rewrites `PATH` (or every variable listed in `PCONVERT`) in `environ` to the Unix form (`PATH=C:\` → `PATH=/dev/c/`, `;`/`,` → `:`, lower case, `unx2dos.c:217`) — `spawnvp`/`execvp`/`system()` convert back; the raw `p_env` block is not touched | `mintlib/main.c`, `mintlib/crtinit.c`, `sdk/libc/crt0.S` |
++| console `read()`, `getchar`, `fgets` | mintlib's `__read` (`unix/read.c`). With `__open_stat[].flags` as `isatty` leaves them (`CRMOD\|ECHO`) a tty read is `Fread(fd, min(size, 4096))` — on CON the GEMDOS line read with echo and editing (TASK/FS11, `docs/api/gemdos/file/3f-fread.md`); `^D` first = EOF; a line ended by Return gets `\r` appended, `CRMOD` turns it into `\n` and echoes `Cconout('\n')` (`read.c:147-169`). QEMU-verified: `getchar()` = first key, `fgets` = the rest of the line + `\n` (`measurements/measurement-2026-10-13-libc-tty/`). Until TASK/LIBC-TTY the shim left `flags` 0, so every read took the RAW path below. **RAW path** (`flags` with `RAW`/`CBREAK`, or `ECHO` clear — reachable only by a program that sets the flags itself; `ioctl(TIOCSETP)` cannot, TASK/LIBC-IOCTL): `_console_read_byte` → `Fgetchar` (`EINVFN`) → `Crawcin`, no echo, no `CRMOD`, and it **reads two keys per byte, the first one discarded** (`read.c:176` result overwritten at `:183`). That is upstream mintlib-0.60.1 code, byte-identical to the tarball, and stays as it is (user decision 2026-10-13, TASK/LIBC-TTY decision 3) | `mintlib/unix/read.c`, `mintlib/console.c`; `docs/analysis/libc-tty-2026-10-13.md` §3 |
+ | `exit`/`_exit` | `exit()` is mintlib's: atexit handlers in reverse order, then every stdio stream closed (flushed), then `_exit` = `Pterm(rc)`. A `return` from `main` goes through it: `__libc_main` ends with `exit(main(argc, argv, envp))` (`mintlib/main.c:303`) — since post-E9 (2026-10-05) crt0 did that itself, since TASK/LIBC-MAIN (2026-10-13) through `_main`; before post-E9, crt0 called `Pterm` directly and buffered output and atexit handlers were lost | `stdlib/exit.c:43-59`, `newtos-arch/proc.S`, `sdk/libc/crt0.S` |
+ | `clock()` | reads `_hz_200` at `$4BA` through `get_sysvar` — a live 200 Hz tick (verified by `sdk/libc/tests/clocktest.c`) | `newtos-arch/getsysvar.c`, `time/clock.c` |
+ | `time()`/`gettimeofday()` | GEMDOS clock via mintlib's own path (`Tgettimeofday` probe, then `Tgetdate`/`Tgettime`) — **unverified** here beyond linking | `unix/gettimeofday.c` |
+@@ -330,8 +331,13 @@ What a caller must know:
+   `Pexec` loads it is the kernel's decision, not measured here). `_buffindfile` appends
+   the lower-case string (`P10KID.ncp`); GEMDOS upper-cases names on FAT, so it
+   matches `P10KID.NCP`. Host check `sdk/libc/tests/spawn-host.sh`
+-  (`spawn-search-host`). The PATH part of the search reads `getenv("PATH")`,
+-  which is empty while `environ` is (§5).
++  (`spawn-search-host`). The PATH part of the search reads `getenv("PATH")`:
++  `environ` is built from `p_env` since TASK/PORT09, and since TASK/LIBC-MAIN
++  `_main` keeps `PATH` there in mintlib's Unix form (`PATH=C:\` →
++  `/dev/c/`, §5 "start-up"); `_buffindfile` splits it on `:`/`,`
++  (`buffindf.c:27-28`). The host check fakes `getenv` with the DOS form; a
++  program found only through a PATH directory in the Unix form was not
++  measured on QEMU (PORT10 names its programs with a path).
+ * **The execute bits are NewTOS's too** (user decision 2026-10-02,
+   follow-up). `stat()`/`lstat()` (`__do_stat` = `__quickstat`), `access()`
+   (`newtos-arch/access.c`), `_buffindfile`, `open()` and `glob()` take
+diff --git a/sdk/libc/build-libc.sh b/sdk/libc/build-libc.sh
+index 78f9fe7a..5e985e91 100755
+--- a/sdk/libc/build-libc.sh
++++ b/sdk/libc/build-libc.sh
+@@ -146,8 +146,6 @@ DIRS="stdio stdlib string mintlib unix syscall time misc multibyte signal termio
+ # These are dropped from the archive so the linker takes OUR definitions:
+ #   mintlib/do_fstat.c -> newtos-arch/do_fstat.c  (lean __do_fstat: st_mode +
+ #     honest st_size via Fseek only; no time/owner/tty resolution tail)
+-#   mintlib/isatty.c   -> newtos-arch/isatty.c    (fd 0-2 == tty; also carries
+-#     the __open_stat[] storage the file layer references)
+ #   mintlib/do_stat.c  -> newtos-arch/do_stat.c   (lean __sys_stat: real Fstat64
+ #     trap only, no timestamp/owner tail; __quickstat's Fsfirst emulation does
+ #     the real path stat on -ENOSYS)
+@@ -165,7 +163,7 @@ DIRS="stdio stdlib string mintlib unix syscall time misc multibyte signal termio
+ # it treated the basepage fields as native pointers, and NewTOS had no
+ # Pexec 5/6/7. It builds now from the LP64 overlay (overlay/mintlib/thread.c)
+ # against the kernel's Pexec 5 + 4 (ARCH03 stage 2).
+-EXCLUDE="mintlib/do_fstat.c mintlib/isatty.c mintlib/do_stat.c unix/access.c unix/ioctl.c"
++EXCLUDE="mintlib/do_fstat.c mintlib/do_stat.c unix/access.c unix/ioctl.c"
+ is_excluded() { case " $EXCLUDE " in *" $1 "*) return 0;; esac; return 1; }
+ 
+ echo "clang : $($CLANG --version | head -1)"
+@@ -254,8 +252,6 @@ lib_check_failures "libc" "$BUILD/failed.txt" "$LIBC/expected-failures.txt" \
+     -c "$LIBC/newtos-arch/setstack.S"  -o "$OBJ/arch__setstack.o" || exit 1
+ "$CLANG" "${CFLAGS[@]}" -I"$SDK/include" "${INCS[@]}" \
+     -c "$LIBC/newtos-arch/do_fstat.c"  -o "$OBJ/arch__do_fstat.o" || exit 1
+-"$CLANG" "${CFLAGS[@]}" -I"$SDK/include" "${INCS[@]}" \
+-    -c "$LIBC/newtos-arch/isatty.c"    -o "$OBJ/arch__isatty.o"   || exit 1
+ "$CLANG" "${CFLAGS[@]}" -I"$SDK/include" "${INCS[@]}" \
+     -c "$LIBC/newtos-arch/ioctl.c"     -o "$OBJ/arch__ioctl.o"    || exit 1
+ "$CLANG" "${CFLAGS[@]}" -I"$SDK/include" "${INCS[@]}" \
+diff --git a/sdk/libc/newtos-arch/access.c b/sdk/libc/newtos-arch/access.c
+index 778af345..60b8db9c 100644
+--- a/sdk/libc/newtos-arch/access.c
++++ b/sdk/libc/newtos-arch/access.c
+@@ -14,7 +14,7 @@
+  * from the DOS attributes (FA_RDONLY -> clears the write bits, FA_HIDDEN ->
+  * clears the read bits; executable extensions set the exec bits). So the owner
+  * permission bits are the whole story, and we drop the group machinery. This
+- * is the same lean-shim pattern as newtos-arch/{do_stat,isatty,ioctl}.c: a real
++ * is the same lean-shim pattern as newtos-arch/{do_stat,ioctl}.c: a real
+  * check over the real stat, with the Unix-only tail removed. No stub.
+  */
+ 
+diff --git a/sdk/libc/newtos-arch/isatty.c b/sdk/libc/newtos-arch/isatty.c
+deleted file mode 100644
+index e3d5b92c..00000000
+--- a/sdk/libc/newtos-arch/isatty.c
++++ /dev/null
+@@ -1,28 +0,0 @@
+-/*
+- * isatty.c -- NewTOS lean isatty, replacing mintlib/isatty.c.
+- *
+- * mintlib's __isatty probes the handle with Fcntl(TIOCGPGRP) and a seek trick,
+- * pulling the ioctl/tty machinery. On NewTOS the console is fds 0,1,2 and
+- * everything else is a file, so isatty is a fixed fd-range test.
+- *
+- * mintlib/isatty.c also *defined* the file-handle status table __open_stat[],
+- * which is referenced by open/close/dup/dup2/pipe/read/write/main; since we
+- * exclude that file, we provide the storage here (zero-initialised, exactly as
+- * mintlib left it before any handle is classified).
+- *
+- * Public symbols match mintlib/isatty.c: __isatty and its weak alias isatty.
+- */
+-
+-#include <unistd.h>
+-#include <mint/mintbind.h>
+-#include "lib.h"
+-
+-/* Handle status table; indexed by __OPEN_INDEX(fd) (see mintlib/lib.h). */
+-struct __open_file __open_stat[__NHANDLES];
+-
+-int
+-__isatty (int fd)
+-{
+-	return (fd >= 0 && fd <= 2) ? 1 : 0;
+-}
+-weak_alias (__isatty, isatty)
+diff --git a/sdk/libc/tests/fstat-host-fs.c b/sdk/libc/tests/fstat-host-fs.c
+index 3d623b03..4a3ed6b5 100644
+--- a/sdk/libc/tests/fstat-host-fs.c
++++ b/sdk/libc/tests/fstat-host-fs.c
+@@ -5,22 +5,36 @@
+  *
+  * Compiled by fstat-host.sh with the mintlib include path and DEFS of
+  * sdk/libc/build-libc.sh, so `struct stat', FILE and BUFSIZ are mintlib's.
+- * It stands in for the one GEMDOS call the lean __do_fstat makes:
++ * It stands in for the GEMDOS calls the lean __do_fstat and mintlib's own
++ * __isatty (mintlib/isatty.c) make:
+  *
+  *   Fseek  -- a table of open handles, each with a size and a position;
+  *             SEEK_SET/CUR/END move the position and return it, as GEMDOS
+  *             Fseek does (docs/api/gemdos/file/42-fseek.md). A handle not in
+- *             the table answers EIHNDL (-37). A negative handle (a BIOS
+- *             device, e.g. -1 = CON:) answers 0 here, i.e. it LOOKS seekable,
+- *             so the check that devices keep BUFSIZ proves that the shim
+- *             classifies by handle number, not by Fseek success.
++ *             the table answers EIHNDL (-37). A character device -- a negative
++ *             handle (a BIOS device, e.g. -1 = CON:) or a standard handle 0-2
++ *             at its default device mapping -- answers 0 whatever the offset,
++ *             as the spec's "Character-device and standard handles" case and
++ *             the kernel (tos-api/src/bdos/fs/file.rs, Target::Device) do.
++ *             For -1 that means it LOOKS seekable, so the check that devices
++ *             keep BUFSIZ proves that __do_fstat classifies by handle number,
++ *             not by Fseek success. Handle 3 is in the table: a standard
++ *             handle Fforce'd to a file.
++ *   Fcntl  -- answers EINVFN (-32) for every call: NewTOS, like EmuTOS, has no
++ *             GEMDOS function 0x104 (tos-api/src/gemdos/mod.rs, id > MAX_FN),
++ *             which is the -ENOSYS __isatty needs to take its Fseek probe.
+  *
+- * fh_probe_stat() and fh_probe_stream() hand the harness plain integers, so
+- * the harness (fstat-host.c) can use the host's headers.
++ * Every Fseek/Fcntl call is counted (fh_trap_count) so the harness can see
++ * __isatty's cache answer without a trap.
++ *
++ * fh_probe_stat(), fh_probe_stream() and fh_probe_isatty() hand the harness
++ * plain integers, so the harness (fstat-host.c) can use the host's headers.
+  */
+ #include <string.h>
+ #include <stdio.h>
+ #include <sys/stat.h>
++#include <unistd.h>		/* __isatty */
++#include <sys/ioctl.h>		/* CRMOD, ECHO */
+ #include "lib.h"
+ 
+ struct fh { short h; long size; long pos; };
+@@ -32,12 +46,25 @@ static struct fh tab[] = {
+ };
+ #define NTAB ((int)(sizeof tab / sizeof tab[0]))
+ 
++static long traps;
++
++long fh_trap_count (void) { return traps; }
++
++long
++fh_test_Fcntl (short h, void *arg, short cmd)
++{
++	(void) h; (void) arg; (void) cmd;
++	traps++;
++	return -32;				/* EINVFN: no GEMDOS 0x104 */
++}
++
+ long
+ fh_test_Fseek (long off, short h, short mode)
+ {
+ 	int i;
+-	if (h < 0)
+-		return 0;
++	traps++;
++	if (h <= 2)
++		return 0;			/* character device */
+ 	for (i = 0; i < NTAB; i++) {
+ 		long np;
+ 		if (tab[i].h != h)
+@@ -107,3 +134,18 @@ fh_probe_stream (int fd, int *linebuf, int *seekable)
+ 	*seekable = f.__io_funcs.__seek != NULL;
+ 	return (long) f.__bufsize;
+ }
++
++/* mintlib's own __isatty(fd); *status and *flags as it left
++ * __open_stat[__OPEN_INDEX(fd)]. */
++int
++fh_probe_isatty (int fd, int *status, int *flags)
++{
++	int r = __isatty (fd);
++	*status = __open_stat[__OPEN_INDEX (fd)].status;
++	*flags = __open_stat[__OPEN_INDEX (fd)].flags;
++	return r;
++}
++
++int fh_fh_isatty (void) { return FH_ISATTY; }
++int fh_fh_isafile (void) { return FH_ISAFILE; }
++int fh_crmod_echo (void) { return CRMOD | ECHO; }
+diff --git a/sdk/libc/tests/fstat-host-gemdos.h b/sdk/libc/tests/fstat-host-gemdos.h
+index 21cdd6c4..1459f084 100644
+--- a/sdk/libc/tests/fstat-host-gemdos.h
++++ b/sdk/libc/tests/fstat-host-gemdos.h
+@@ -1,12 +1,17 @@
+ /*
+  * fstat-host-gemdos.h -- forced into the host build of the lean
+- * newtos-arch/do_fstat.c by fstat-host.sh (TASK/FS08 part 4). <mint/osbind.h>
+- * is held back there (-D_MINT_OSBIND_H: its GEMDOS macros are AArch64
+- * `svc #1' traps); the one GEMDOS call __do_fstat makes, Fseek, is routed to
+- * fstat-host-fs.c with osbind.h's argument order (offset, handle, mode).
++ * newtos-arch/do_fstat.c and of mintlib's own mintlib/isatty.c by
++ * fstat-host.sh (TASK/FS08 part 4, TASK/LIBC-TTY). <mint/osbind.h> and
++ * <mint/mintbind.h> are held back there (-D_MINT_OSBIND_H, -D_MINT_MINTBIND_H:
++ * their GEMDOS macros are AArch64 `svc #1' traps); the GEMDOS calls the two
++ * files make are routed to fstat-host-fs.c with the bindings' argument order:
++ *   Fseek (offset, handle, mode)  -- __do_fstat and __isatty
++ *   Fcntl (handle, arg, cmd)      -- __isatty's TIOCGPGRP probe
+  */
+ #ifndef FSTAT_HOST_GEMDOS_H
+ #define FSTAT_HOST_GEMDOS_H
+ long fh_test_Fseek (long, short, short);
++long fh_test_Fcntl (short, void *, short);
+ #define Fseek(offset, handle, mode)	fh_test_Fseek ((offset), (handle), (mode))
++#define Fcntl(handle, arg, cmd)		fh_test_Fcntl ((handle), (arg), (cmd))
+ #endif
+diff --git a/sdk/libc/tests/fstat-host.c b/sdk/libc/tests/fstat-host.c
+index 9b47ab97..7cc00696 100644
+--- a/sdk/libc/tests/fstat-host.c
++++ b/sdk/libc/tests/fstat-host.c
+@@ -7,9 +7,10 @@
+  * (stdio/stdio_init.c:72-77), which the lean sdk/libc/newtos-arch/do_fstat.c
+  * fills. Before FS08 part 4 it was BUFSIZ (1024) for every handle; now a
+  * GEMDOS file handle (>= 6) gets NEWTOS_FILE_BLKSIZE, everything else keeps
+- * BUFSIZ. fstat-host.sh links the shim (unchanged), newtos-arch/isatty.c,
+- * mintlib's own stdio/stdio_init.c, fstat-host-fs.c (Fseek table + probes)
+- * and this file.
++ * BUFSIZ. fstat-host.sh links the shim (unchanged), mintlib's own
++ * mintlib/isatty.c (TASK/LIBC-TTY: the NewTOS isatty shim is gone) and
++ * stdio/stdio_init.c, fstat-host-fs.c (Fseek/Fcntl model + probes) and this
++ * file.
+  *
+  * Checked:
+  *   regular file  handles 6, 7 (empty), 8: S_IFREG, honest st_size,
+@@ -22,6 +23,14 @@
+  *   unchanged     handle 3 (a standard handle, here seekable as if Fforce'd
+  *                 to a file), handle -1 (a BIOS device that answers Fseek
+  *                 0) and handle 9 (not open, Fseek EIHNDL): st_blksize BUFSIZ.
++ *   isatty        (mintlib/isatty.c: Fcntl -> EINVFN, then the Fseek probe)
++ *                 handles 0, 1, 2 (devices): 1, status FH_ISATTY, flags
++ *                 CRMOD|ECHO -- the flags __read needs to take the Fread line
++ *                 path instead of the RAW path; handle 3 (Fforce'd to a file),
++ *                 6 (file, mid-way), 7 (empty file), 9 (not open): 0, status
++ *                 FH_ISAFILE, file position unchanged by the probe; handle -1
++ *                 (BIOS device): 1 (upstream); a second query is answered from
++ *                 __open_stat[] without a trap.
+  *
+  * Exit status: number of failed checks; 77 = host is not LP64.
+  */
+@@ -32,6 +41,11 @@ long fh_probe_stream (int, int *, int *);
+ void fh_set_pos (short, long);
+ long fh_get_pos (short);
+ long fh_bufsiz (void);
++int fh_probe_isatty (int, int *, int *);
++long fh_trap_count (void);
++int fh_fh_isatty (void);
++int fh_fh_isafile (void);
++int fh_crmod_echo (void);
+ 
+ #define WANT_FILE_BLKSIZE 32768L	/* do_fstat.c NEWTOS_FILE_BLKSIZE */
+ 
+@@ -92,6 +106,40 @@ small_case (int fd, int want_chr, const char *what)
+     }
+ }
+ 
++static void
++isatty_case (int fd, int want_tty, long pos, const char *what)
++{
++  int st, fl, r;
++  long t, after;
++  char w[200];
++
++  if (pos >= 0)
++    fh_set_pos ((short) fd, pos);
++  r = fh_probe_isatty (fd, &st, &fl);
++  if (want_tty)
++    {
++      snprintf (w, sizeof w, "isatty(%d) (%s) = 1, status FH_ISATTY, flags CRMOD|ECHO 0x%x (got %d, status %d, flags 0x%x)",
++		fd, what, fh_crmod_echo (), r, st, fl);
++      check (r == 1 && st == fh_fh_isatty () && fl == fh_crmod_echo (), w);
++    }
++  else
++    {
++      snprintf (w, sizeof w, "isatty(%d) (%s) = 0, status FH_ISAFILE (got %d, status %d)", fd, what, r, st);
++      check (r == 0 && st == fh_fh_isafile (), w);
++    }
++  if (pos >= 0)
++    {
++      after = fh_get_pos ((short) fd);
++      snprintf (w, sizeof w, "isatty(%d) (%s): position %ld unchanged (got %ld)", fd, what, pos, after);
++      check (after == pos, w);
++    }
++  t = fh_trap_count ();
++  r = fh_probe_isatty (fd, &st, &fl);
++  snprintf (w, sizeof w, "isatty(%d) (%s): second query from the cache, same answer, no trap (got %d, %ld traps)",
++	    fd, what, r, fh_trap_count () - t);
++  check (r == want_tty && fh_trap_count () == t, w);
++}
++
+ int
+ main (void)
+ {
+@@ -110,6 +158,14 @@ main (void)
+   small_case (3, 0, "standard handle, seekable");
+   small_case (-1, 0, "BIOS device");
+   small_case (9, 0, "not open");
++  isatty_case (0, 1, -1, "console");
++  isatty_case (1, 1, -1, "console");
++  isatty_case (2, 1, -1, "console");
++  isatty_case (3, 0, 0, "standard handle Fforce'd to a file, at 0");
++  isatty_case (6, 0, 4242, "regular file, mid-way");
++  isatty_case (7, 0, 0, "empty regular file");
++  isatty_case (9, 0, -1, "not open");
++  isatty_case (-1, 1, -1, "BIOS device");
+   printf ("fstat-host: %d checks, %d failed\n", checks, failed);
+   return failed;
+ }
+diff --git a/sdk/libc/tests/fstat-host.sh b/sdk/libc/tests/fstat-host.sh
+index 9020a091..37e9d4c6 100755
+--- a/sdk/libc/tests/fstat-host.sh
++++ b/sdk/libc/tests/fstat-host.sh
+@@ -1,12 +1,14 @@
+ #!/usr/bin/env bash
+ #
+ # fstat-host.sh -- build and run the host harness for st_blksize and the stdio
+-# buffer size it selects (TASK/FS08 part 4): the lean
+-# sdk/libc/newtos-arch/do_fstat.c and newtos-arch/isatty.c (each minus its
+-# weak_alias line, an ELF .weak directive the Mach-O host assembler rejects),
+-# and mintlib's own stdio/stdio_init.c, compiled with the include path and
+-# DEFS of sdk/libc/build-libc.sh, <mint/osbind.h> held back and
+-# fstat-host-gemdos.h forced in (Fseek -> fstat-host-fs.c).
++# buffer size it selects (TASK/FS08 part 4), and of the tty classification
++# stdio and read() rely on (TASK/LIBC-TTY): the lean
++# sdk/libc/newtos-arch/do_fstat.c and mintlib's own mintlib/isatty.c (each
++# minus its weak_alias line, an ELF .weak directive the Mach-O host assembler
++# rejects), and mintlib's own stdio/stdio_init.c, compiled with the include
++# path and DEFS of sdk/libc/build-libc.sh, <mint/osbind.h> and
++# <mint/mintbind.h> held back and fstat-host-gemdos.h forced in (Fseek, Fcntl
++# -> fstat-host-fs.c).
+ #
+ # DO_FSTAT_SRC=<file> builds that do_fstat.c instead of the tree's -- for the
+ # before/after counter-check against the previous shim
+@@ -33,12 +35,12 @@ trap 'rm -rf "$W"' EXIT
+ 
+ MFLAGS=(-O2 -fno-builtin -nostdinc -fno-blocks -Wall -Wextra
+         -D_LIBC -D_REENTRANT -DHAVE_CONFIG_H -D_GNU_SOURCE -D__NO_LONG_DOUBLE_MATH
+-        -Wno-macro-redefined -D_MINT_OSBIND_H=1 -include "$HERE/fstat-host-gemdos.h"
++        -Wno-macro-redefined -D_MINT_OSBIND_H=1 -D_MINT_MINTBIND_H=1 -include "$HERE/fstat-host-gemdos.h"
+         -I"$TOP" -I"$TOP/include" -I"$TOP/mintlib" -I"$TOP/stdlib" -isystem "$RES")
+ SRC="${DO_FSTAT_SRC:-$LIBC/newtos-arch/do_fstat.c}"
+ echo "do_fstat.c under test: $SRC"
+ sed '/^weak_alias/d' "$SRC" > "$W/do_fstat.c"
+-sed '/^weak_alias/d' "$LIBC/newtos-arch/isatty.c" > "$W/isatty.c"
++sed '/^weak_alias/d' "$TOP/mintlib/isatty.c" > "$W/isatty.c"
+ "$CC" "${MFLAGS[@]}" -I"$LIBC/newtos-arch" -c "$W/do_fstat.c" -o "$W/do_fstat.o" || exit 1
+ "$CC" "${MFLAGS[@]}" -c "$W/isatty.c" -o "$W/isatty.o" || exit 1
+ "$CC" "${MFLAGS[@]}" -Wno-void-pointer-to-int-cast \

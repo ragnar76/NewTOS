@@ -78,8 +78,9 @@ archive → link a test client.
 The `newtos-arch/` shims are compiled and archived into `libc.a` after the
 mintlib objects (`build-libc.sh:183-217`): `memops.c` (memcpy/memmove/memset/
 bcopy/bzero), `proc.S` (`_exit` via `Pterm`), `heap_init.c`, the lean
-`do_fstat.c`/`do_stat.c`/`isatty.c`/`ioctl.c`/`access.c` (they replace the
-`EXCLUDE`d mintlib files), `getcookie.c` (`Getcookie` over `Ssystem`),
+`do_fstat.c`/`do_stat.c`/`ioctl.c`/`access.c` (they replace the
+`EXCLUDE`d mintlib files; the `isatty.c` shim is gone since TASK/LIBC-TTY,
+mintlib's own `mintlib/isatty.c` is built again), `getcookie.c` (`Getcookie` over `Ssystem`),
 `getsysvar.c` (a plain 32-bit load — the sysvar area is in the process's own
 address space), `softfloat.c` (`__extenddftf2`, the one compiler-rt builtin
 `strtold` needs), and since T07 `setjmp.S` (the AArch64 `sigsetjmp`/`setjmp`/

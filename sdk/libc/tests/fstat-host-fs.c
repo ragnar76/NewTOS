@@ -5,22 +5,36 @@
  *
  * Compiled by fstat-host.sh with the mintlib include path and DEFS of
  * sdk/libc/build-libc.sh, so `struct stat', FILE and BUFSIZ are mintlib's.
- * It stands in for the one GEMDOS call the lean __do_fstat makes:
+ * It stands in for the GEMDOS calls the lean __do_fstat and mintlib's own
+ * __isatty (mintlib/isatty.c) make:
  *
  *   Fseek  -- a table of open handles, each with a size and a position;
  *             SEEK_SET/CUR/END move the position and return it, as GEMDOS
  *             Fseek does (docs/api/gemdos/file/42-fseek.md). A handle not in
- *             the table answers EIHNDL (-37). A negative handle (a BIOS
- *             device, e.g. -1 = CON:) answers 0 here, i.e. it LOOKS seekable,
- *             so the check that devices keep BUFSIZ proves that the shim
- *             classifies by handle number, not by Fseek success.
+ *             the table answers EIHNDL (-37). A character device -- a negative
+ *             handle (a BIOS device, e.g. -1 = CON:) or a standard handle 0-2
+ *             at its default device mapping -- answers 0 whatever the offset,
+ *             as the spec's "Character-device and standard handles" case and
+ *             the kernel (tos-api/src/bdos/fs/file.rs, Target::Device) do.
+ *             For -1 that means it LOOKS seekable, so the check that devices
+ *             keep BUFSIZ proves that __do_fstat classifies by handle number,
+ *             not by Fseek success. Handle 3 is in the table: a standard
+ *             handle Fforce'd to a file.
+ *   Fcntl  -- answers EINVFN (-32) for every call: NewTOS, like EmuTOS, has no
+ *             GEMDOS function 0x104 (tos-api/src/gemdos/mod.rs, id > MAX_FN),
+ *             which is the -ENOSYS __isatty needs to take its Fseek probe.
  *
- * fh_probe_stat() and fh_probe_stream() hand the harness plain integers, so
- * the harness (fstat-host.c) can use the host's headers.
+ * Every Fseek/Fcntl call is counted (fh_trap_count) so the harness can see
+ * __isatty's cache answer without a trap.
+ *
+ * fh_probe_stat(), fh_probe_stream() and fh_probe_isatty() hand the harness
+ * plain integers, so the harness (fstat-host.c) can use the host's headers.
  */
 #include <string.h>
 #include <stdio.h>
 #include <sys/stat.h>
+#include <unistd.h>		/* __isatty */
+#include <sys/ioctl.h>		/* CRMOD, ECHO */
 #include "lib.h"
 
 struct fh { short h; long size; long pos; };
@@ -32,12 +46,25 @@ static struct fh tab[] = {
 };
 #define NTAB ((int)(sizeof tab / sizeof tab[0]))
 
+static long traps;
+
+long fh_trap_count (void) { return traps; }
+
+long
+fh_test_Fcntl (short h, void *arg, short cmd)
+{
+	(void) h; (void) arg; (void) cmd;
+	traps++;
+	return -32;				/* EINVFN: no GEMDOS 0x104 */
+}
+
 long
 fh_test_Fseek (long off, short h, short mode)
 {
 	int i;
-	if (h < 0)
-		return 0;
+	traps++;
+	if (h <= 2)
+		return 0;			/* character device */
 	for (i = 0; i < NTAB; i++) {
 		long np;
 		if (tab[i].h != h)
@@ -107,3 +134,18 @@ fh_probe_stream (int fd, int *linebuf, int *seekable)
 	*seekable = f.__io_funcs.__seek != NULL;
 	return (long) f.__bufsize;
 }
+
+/* mintlib's own __isatty(fd); *status and *flags as it left
+ * __open_stat[__OPEN_INDEX(fd)]. */
+int
+fh_probe_isatty (int fd, int *status, int *flags)
+{
+	int r = __isatty (fd);
+	*status = __open_stat[__OPEN_INDEX (fd)].status;
+	*flags = __open_stat[__OPEN_INDEX (fd)].flags;
+	return r;
+}
+
+int fh_fh_isatty (void) { return FH_ISATTY; }
+int fh_fh_isafile (void) { return FH_ISAFILE; }
+int fh_crmod_echo (void) { return CRMOD | ECHO; }
