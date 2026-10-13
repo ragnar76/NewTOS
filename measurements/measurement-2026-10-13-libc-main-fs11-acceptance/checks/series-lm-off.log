@@ -1,0 +1,230 @@
+=== off Di. 13 Okt. 2026 12:31:03 CEST
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.gRSgj6/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.gRSgj6/ser.sock,server=on
+t=  15.6s end marker seen
+t=  18.7s lm-off-rpi4-pparent-end.png {"return": {}}
+prompts seen: 0
+run lm-off-rpi4-pparent: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.ZeDuoS/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.ZeDuoS/ser.sock,server=on
+t=  15.1s end marker seen
+t=  17.2s lm-off-rpi4-envrn-end.png {"return": {}}
+prompts seen: 0
+run lm-off-rpi4-envrn: rc=0
+marker 'MARK A_IDLE' found at 17.3s -> lm-off-ppdesk-A_IDLE.png {"return": {}}
+marker 'MARK B_BACK' found at 35.3s -> lm-off-ppdesk-B_BACK.png {"return": {}}
+run lm-off-rpi4-ppdesk: rc=0 log=/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-main-fs11-acceptance/method/../screendumps/lm-off-rpi4-ppdesk-serial.log
+ppdesk lm-off done
+t=25.0s -> lm-off-rpi4-desktop-t25.png {"return": {}}
+run lm-off-rpi4-desktop: rc=0
+t=35.0s -> lm-off-rpi4-teradesk-t35.png {"return": {}}
+run lm-off-rpi4-teradesk: rc=0
+t=30.0s -> lm-off-rpi4-qed-t30.png {"return": {}}
+run lm-off-rpi4-qed: rc=0
+t=30.0s -> lm-off-rpi4-doom-t30.png {"return": {}}
+t=45.0s -> lm-off-rpi4-doom-t45.png {"return": {}}
+run lm-off-rpi4-doom: rc=0
+t=25.0s -> lm-off-rpi4-apitest-t25.png {"return": {}}
+t=40.0s -> lm-off-rpi4-apitest-t40.png {"return": {}}
+run lm-off-rpi4-apitest: rc=0
+t=25.0s -> lm-off-rpi4-acc-t25.png {"return": {}}
+run lm-off-rpi4-acc: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.131CwY/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.131CwY/ser.sock,server=on
+t=  15.4s end marker seen
+t=  17.5s lm-off-rpi4-e9mem-end.png {"return": {}}
+prompts seen: 0
+run lm-off-rpi4-e9mem: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.vVzkPG/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.vVzkPG/ser.sock,server=on
+t=  15.1s end marker seen
+t=  17.2s lm-off-rpi4-e9plain-end.png {"return": {}}
+prompts seen: 0
+run lm-off-rpi4-e9plain: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.9JQpim/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.9JQpim/ser.sock,server=on
+t=  18.7s end marker seen
+t=  20.9s lm-off-rpi4-s2all-end.png {"return": {}}
+prompts seen: 0
+run lm-off-rpi4-s2all: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.qeJJ9x/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.qeJJ9x/ser.sock,server=on
+t=  18.1s end marker seen
+t=  20.2s lm-off-rpi4-port10-end.png {"return": {}}
+prompts seen: 0
+run lm-off-rpi4-port10: rc=0
+t=40.0s -> lm-off-rpi4-crashtst-t40.png {"return": {}}
+t=70.0s -> lm-off-rpi4-crashtst-t70.png {"return": {}}
+run lm-off-rpi4-crashtst: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.gV8qSy/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.gV8qSy/ser.sock,server=on
+t=  16.0s lm-off-rpi4-uacc3a-crash1.png {"return": {}}
+t=  18.3s lm-off-rpi4-uacc3a-crash2.png {"return": {}}
+t=  20.7s lm-off-rpi4-uacc3a-crash3.png {"return": {}}
+t=  23.2s lm-off-rpi4-uacc3a-crash4.png {"return": {}}
+t=  25.5s lm-off-rpi4-uacc3a-crash5.png {"return": {}}
+t=  27.8s lm-off-rpi4-uacc3a-crash6.png {"return": {}}
+t=  30.2s lm-off-rpi4-uacc3a-crash7.png {"return": {}}
+t=  32.5s lm-off-rpi4-uacc3a-crash8.png {"return": {}}
+t=  34.9s lm-off-rpi4-uacc3a-crash9.png {"return": {}}
+t=  37.4s lm-off-rpi4-uacc3a-crash10.png {"return": {}}
+t=  39.8s lm-off-rpi4-uacc3a-crash11.png {"return": {}}
+t=  42.2s lm-off-rpi4-uacc3a-crash12.png {"return": {}}
+t=  44.3s lm-off-rpi4-uacc3a-crash13.png {"return": {}}
+t=  46.7s lm-off-rpi4-uacc3a-crash14.png {"return": {}}
+t=  49.0s lm-off-rpi4-uacc3a-crash15.png {"return": {}}
+t=  51.4s lm-off-rpi4-uacc3a-crash16.png {"return": {}}
+t=  53.9s lm-off-rpi4-uacc3a-crash17.png {"return": {}}
+t=  56.2s lm-off-rpi4-uacc3a-crash18.png {"return": {}}
+t=  58.6s lm-off-rpi4-uacc3a-crash19.png {"return": {}}
+t=  60.8s lm-off-rpi4-uacc3a-crash20.png {"return": {}}
+t=  63.2s lm-off-rpi4-uacc3a-crash21.png {"return": {}}
+t=  65.6s lm-off-rpi4-uacc3a-crash22.png {"return": {}}
+t=  68.0s lm-off-rpi4-uacc3a-crash23.png {"return": {}}
+t=  70.4s lm-off-rpi4-uacc3a-crash24.png {"return": {}}
+t=  72.8s lm-off-rpi4-uacc3a-crash25.png {"return": {}}
+t=  75.2s lm-off-rpi4-uacc3a-crash26.png {"return": {}}
+t=  76.5s end marker seen
+t=  84.7s lm-off-rpi4-uacc3a-end.png {"return": {}}
+prompts seen: 26
+run lm-off-rpi4-uacc3a: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.h2EVs6/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.h2EVs6/ser.sock,server=on
+t=  15.1s end marker seen
+t=  23.3s lm-off-rpi4-mprot-end.png {"return": {}}
+prompts seen: 0
+run lm-off-rpi4-mprot: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.CUewMh/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.CUewMh/ser.sock,server=on
+t=  15.3s end marker seen
+t=  18.3s lm-off-rpi4-e10-end.png {"return": {}}
+prompts seen: 0
+run lm-off-rpi4-e10: rc=0
+t=20.0s -> lm-off-rpi4-kbdvec-emucon-t20.png {"return": {}}
+t=35.0s -> lm-off-rpi4-kbdvec-emucon-t35.png {"return": {}}
+t=60.0s -> lm-off-rpi4-kbdvec-emucon-t60.png {"return": {}}
+run lm-off-rpi4-kbdvec-emucon: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.XHnuZp/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.XHnuZp/ser.sock,server=on
+t=   4.1s lm-off-virt-crash-crash1.png {"return": {}}
+t=   4.1s answered prompt 1
+t=   5.0s lm-off-virt-crash-crash2.png {"return": {}}
+t=   5.0s answered prompt 2
+t=   6.0s lm-off-virt-crash-crash3.png {"return": {}}
+t=   6.0s answered prompt 3
+t=   9.3s lm-off-virt-crash-crash4.png {"return": {}}
+t=   9.3s answered prompt 4
+t=  12.2s lm-off-virt-crash-crash5.png {"return": {}}
+t=  12.2s answered prompt 5
+t=  14.7s lm-off-virt-crash-crash6.png {"return": {}}
+t=  14.7s answered prompt 6
+t=  17.2s lm-off-virt-crash-crash7.png {"return": {}}
+t=  17.2s answered prompt 7
+t=  20.0s lm-off-virt-crash-crash8.png {"return": {}}
+t=  20.0s answered prompt 8
+t=  22.5s lm-off-virt-crash-crash9.png {"return": {}}
+t=  22.5s answered prompt 9
+t=  25.0s lm-off-virt-crash-crash10.png {"return": {}}
+t=  25.0s answered prompt 10
+t=  27.5s lm-off-virt-crash-crash11.png {"return": {}}
+t=  27.5s answered prompt 11
+t=  30.0s lm-off-virt-crash-crash12.png {"return": {}}
+t=  30.0s answered prompt 12
+t=  32.7s lm-off-virt-crash-crash13.png {"return": {}}
+t=  32.7s answered prompt 13
+t=  35.1s lm-off-virt-crash-crash14.png {"return": {}}
+t=  35.1s answered prompt 14
+t=  37.5s lm-off-virt-crash-crash15.png {"return": {}}
+t=  37.5s answered prompt 15
+t=  40.0s lm-off-virt-crash-crash16.png {"return": {}}
+t=  40.0s answered prompt 16
+t=  42.4s lm-off-virt-crash-crash17.png {"return": {}}
+t=  42.4s answered prompt 17
+t=  44.8s lm-off-virt-crash-crash18.png {"return": {}}
+t=  44.8s answered prompt 18
+t=  47.3s lm-off-virt-crash-crash19.png {"return": {}}
+t=  47.3s answered prompt 19
+t=  49.6s lm-off-virt-crash-crash20.png {"return": {}}
+t=  49.6s answered prompt 20
+t=  51.9s lm-off-virt-crash-crash21.png {"return": {}}
+t=  51.9s answered prompt 21
+t=  54.1s lm-off-virt-crash-crash22.png {"return": {}}
+t=  54.1s answered prompt 22
+t=  56.6s lm-off-virt-crash-crash23.png {"return": {}}
+t=  56.6s answered prompt 23
+t=  58.8s lm-off-virt-crash-crash24.png {"return": {}}
+t=  58.8s answered prompt 24
+t=  61.0s lm-off-virt-crash-crash25.png {"return": {}}
+t=  61.0s answered prompt 25
+t=  63.3s lm-off-virt-crash-crash26.png {"return": {}}
+t=  63.3s answered prompt 26
+t=  65.6s lm-off-virt-crash-crash27.png {"return": {}}
+t=  65.6s answered prompt 27
+t=  68.9s end marker seen
+t=  70.6s lm-off-virt-crash-end.png {"return": {}}
+prompts seen: 27
+run lm-off-virt-crash: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.qS0wq3/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.qS0wq3/ser.sock,server=on
+t=   3.4s end marker seen
+t=   9.5s lm-off-virt-selftests-end.png {"return": {}}
+prompts seen: 0
+run lm-off-virt-selftests: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.j9MYKJ/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.j9MYKJ/ser.sock,server=on
+t=   3.4s end marker seen
+t=   9.5s lm-off-virt-desktop-end.png {"return": {}}
+prompts seen: 0
+run lm-off-virt-desktop: rc=0
+t=30.0s -> lm-off-rpi4-tdqed-t30.png {"return": {}}
+t=50.0s -> lm-off-rpi4-tdqed-t50.png {"return": {}}
+run lm-off-rpi4-tdqed: rc=0
+t=20.0s -> lm-off-rpi4-emucon9-t20.png {"return": {}}
+t=32.0s -> lm-off-rpi4-emucon9-t32.png {"return": {}}
+t=45.0s -> lm-off-rpi4-emucon9-t45.png {"return": {}}
+t=70.0s -> lm-off-rpi4-emucon9-t70.png {"return": {}}
+run lm-off-rpi4-emucon9: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.sVpAP9/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.sVpAP9/ser.sock,server=on
+t=  15.2s end marker seen
+t=  17.3s lm-off-rpi4-atexit-end.png {"return": {}}
+prompts seen: 0
+run lm-off-rpi4-atexit: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.Gw0b7V/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.Gw0b7V/ser.sock,server=on
+t=  15.2s end marker seen
+t=  17.3s lm-off-rpi4-accfree-end.png {"return": {}}
+prompts seen: 0
+run lm-off-rpi4-accfree: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.tw6M0E/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.tw6M0E/ser.sock,server=on
+t=  25.9s end marker seen
+t=  28.0s lm-off-rpi4-mdprobe-end.png {"return": {}}
+prompts seen: 0
+run lm-off-rpi4-mdprobe: rc=0
+marker 'MARK A_IDLE' found at 17.4s -> lm-off-desk3a-A_IDLE.png {"return": {}}
+marker 'MARK B_SUB' found at 25.3s -> lm-off-desk3a-B_SUB.png {"return": {}}
+marker 'MARK C_UP' found at 32.4s -> lm-off-desk3a-C_UP.png {"return": {}}
+marker 'MARK D_SELECTED' found at 37.3s -> lm-off-desk3a-D_SELECTED.png {"return": {}}
+marker 'MARK E_INFO' found at 43.4s -> lm-off-desk3a-E_INFO.png {"return": {}}
+marker 'MARK F_TYPED' found at 47.4s -> lm-off-desk3a-F_TYPED.png {"return": {}}
+marker 'MARK G_RENAMED' found at 54.3s -> lm-off-desk3a-G_RENAMED.png {"return": {}}
+marker 'MARK H_DRIVE_C' found at 63.4s -> lm-off-desk3a-H_DRIVE_C.png {"return": {}}
+run lm-off-rpi4-desk3a: rc=0 log=/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-main-fs11-acceptance/method/../screendumps/lm-off-rpi4-desk3a-serial.log
+desk3a lm-off done
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.nElRXO/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.nElRXO/ser.sock,server=on
+t=  18.9s end marker seen
+t=  21.0s lm-off-rpi4-s2all-crashkernel-end.png {"return": {}}
+prompts seen: 0
+run lm-off-rpi4-s2all-crashkernel: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.ojUpU9/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.ojUpU9/ser.sock,server=on
+t=  15.2s end marker seen
+t=  18.3s lm-off-rpi4-vforkt-alone-end.png {"return": {}}
+prompts seen: 0
+run lm-off-rpi4-vforkt-alone: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.t80kr5/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.t80kr5/ser.sock,server=on
+t=  15.7s end marker seen
+t=  18.7s lm-off-rpi4-asidstr-end.png {"return": {}}
+prompts seen: 0
+run lm-off-rpi4-asidstr: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.z6Sg7B/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.z6Sg7B/ser.sock,server=on
+t=  15.8s end marker seen
+t=  18.8s lm-off-rpi4-asidperf-counters-end.png {"return": {}}
+prompts seen: 0
+run lm-off-rpi4-asidperf-counters: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.XgDQoN/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.XgDQoN/ser.sock,server=on
+t=  15.8s end marker seen
+t=  18.8s lm-off-rpi4-asidperf-end.png {"return": {}}
+prompts seen: 0
+run lm-off-rpi4-asidperf: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.drzOhx/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.drzOhx/ser.sock,server=on
+t=   3.6s end marker seen
+t=   5.7s lm-off-virt-asidstr-end.png {"return": {}}
+prompts seen: 0
+run lm-off-virt-asidstr: rc=0
+=== done Di. 13 Okt. 2026 12:48:32 CEST

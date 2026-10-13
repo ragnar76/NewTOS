@@ -1,0 +1,90 @@
+=== on-asid Di. 13 Okt. 2026 12:31:03 CEST
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.No9EAT/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.No9EAT/ser.sock,server=on
+timeout
+t= 200.1s cm-on-asid-rpi4-stdoutdb-timeout.png {"return": {}}
+prompts seen: 0
+run cm-on-asid-rpi4-stdoutdb: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.hw91xh/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.hw91xh/ser.sock,server=on
+t=  15.2s end marker seen
+t=  17.3s cm-on-asid-rpi4-fseekcon-end.png {"return": {}}
+prompts seen: 0
+run cm-on-asid-rpi4-fseekcon: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.i3kFPO/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.i3kFPO/ser.sock,server=on
+t=  15.4s end marker seen
+t=  17.5s cm-on-asid-rpi4-atexit-end.png {"return": {}}
+prompts seen: 0
+run cm-on-asid-rpi4-atexit: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.mox3r0/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.mox3r0/ser.sock,server=on
+t=  15.5s end marker seen
+t=  17.7s cm-on-asid-rpi4-e9mem-end.png {"return": {}}
+prompts seen: 0
+run cm-on-asid-rpi4-e9mem: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.DpDJ2o/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.DpDJ2o/ser.sock,server=on
+t=  15.3s end marker seen
+t=  17.3s cm-on-asid-rpi4-e9plain-end.png {"return": {}}
+prompts seen: 0
+run cm-on-asid-rpi4-e9plain: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.RY7Pqv/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.RY7Pqv/ser.sock,server=on
+t=  15.8s end marker seen
+t=  17.9s cm-on-asid-rpi4-accfree-end.png {"return": {}}
+prompts seen: 0
+run cm-on-asid-rpi4-accfree: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.p0oMgV/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.p0oMgV/ser.sock,server=on
+t=  15.5s end marker seen
+t=  18.5s cm-on-asid-rpi4-vforkt-alone-end.png {"return": {}}
+prompts seen: 0
+run cm-on-asid-rpi4-vforkt-alone: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.KVtEl1/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.KVtEl1/ser.sock,server=on
+t=  15.3s end marker seen
+t=  17.4s cm-on-asid-rpi4-envrn-end.png {"return": {}}
+prompts seen: 0
+run cm-on-asid-rpi4-envrn: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.JTwF8O/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.JTwF8O/ser.sock,server=on
+t=  16.3s end marker seen
+t=  19.5s cm-on-asid-rpi4-pparent-end.png {"return": {}}
+prompts seen: 0
+run cm-on-asid-rpi4-pparent: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.7rYVNJ/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.7rYVNJ/ser.sock,server=on
+timeout
+t= 300.2s cm-on-asid-rpi4-ppzj-timeout.png {"return": {}}
+prompts seen: 0
+run cm-on-asid-rpi4-ppzj: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.djlqdc/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.djlqdc/ser.sock,server=on
+t=  18.6s end marker seen
+t=  20.7s cm-on-asid-rpi4-s2all-end.png {"return": {}}
+prompts seen: 0
+run cm-on-asid-rpi4-s2all: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.rs5FYr/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.rs5FYr/ser.sock,server=on
+timeout
+t= 400.0s cm-on-asid-rpi4-s2allj-timeout.png {"return": {}}
+prompts seen: 0
+run cm-on-asid-rpi4-s2allj: rc=0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+card on-asid ok (check 1)
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.TE5qwd/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.TE5qwd/ser.sock,server=on
+t=  17.7s end marker seen
+t=  19.8s cm-on-asid-rpi4-port10-rerun-end.png {"return": {}}
+prompts seen: 0
+run cm-on-asid-rpi4-port10-rerun: rc=0
+t=25.0s -> cm-on-asid-rpi4-desktop-t25.png {"return": {}}
+run cm-on-asid-rpi4-desktop: rc=0
+t=25.0s -> cm-on-asid-rpi4-acc-t25.png {"return": {}}
+run cm-on-asid-rpi4-acc: rc=0
+t=35.0s -> cm-on-asid-rpi4-teradesk-t35.png {"return": {}}
+run cm-on-asid-rpi4-teradesk: rc=0
+t=30.0s -> cm-on-asid-rpi4-qed-t30.png {"return": {}}
+run cm-on-asid-rpi4-qed: rc=0
+t=30.0s -> cm-on-asid-rpi4-doom-t30.png {"return": {}}
+t=45.0s -> cm-on-asid-rpi4-doom-t45.png {"return": {}}
+run cm-on-asid-rpi4-doom: rc=0
+t=25.0s -> cm-on-asid-rpi4-apitest-t25.png {"return": {}}
+t=40.0s -> cm-on-asid-rpi4-apitest-t40.png {"return": {}}
+run cm-on-asid-rpi4-apitest: rc=0
+t=30.0s -> cm-on-asid-rpi4-tdqed-t30.png {"return": {}}
+t=50.0s -> cm-on-asid-rpi4-tdqed-t50.png {"return": {}}
+run cm-on-asid-rpi4-tdqed: rc=0
+t=20.0s -> cm-on-asid-rpi4-kbdvec-emucon-t20.png {"return": {}}
+t=35.0s -> cm-on-asid-rpi4-kbdvec-emucon-t35.png {"return": {}}
+t=60.0s -> cm-on-asid-rpi4-kbdvec-emucon-t60.png {"return": {}}
+run cm-on-asid-rpi4-kbdvec-emucon: rc=0
+=== done Di. 13 Okt. 2026 12:54:31 CEST

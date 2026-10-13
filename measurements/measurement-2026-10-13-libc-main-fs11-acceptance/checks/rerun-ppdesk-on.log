@@ -1,0 +1,4 @@
+marker 'MARK A_IDLE' found at 17.3s -> lm-on-ppdesk-A_IDLE.png {"return": {}}
+marker 'MARK B_BACK' found at 89.7s -> lm-on-ppdesk-B_BACK.png {"return": {}}
+run lm-on-rpi4-ppdesk: rc=0 log=/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-main-fs11-acceptance/method/../screendumps/lm-on-rpi4-ppdesk-serial.log
+ppdesk lm-on done

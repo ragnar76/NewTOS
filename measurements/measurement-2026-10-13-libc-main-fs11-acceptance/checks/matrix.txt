@@ -1,0 +1,28 @@
+fseekcon           on=[FSEEKCON: PASS|] off=[FSEEKCON: PASS|] strict=[FSEEKCON: PASS|] on-asid=[FSEEKCON: PASS|]
+atexit             on=[ATEXIT: PASS|] off=[ATEXIT: PASS|] strict=[ATEXIT: PASS|] on-asid=[ATEXIT: PASS|]
+e9mem              on=[E9MEM: PASS|] off=[E9MEM: PASS|] strict=[E9MEM: PASS|] on-asid=[E9MEM: PASS|]
+e9plain            on=[E9PLAIN: PASS|] off=[E9PLAIN: PASS|] strict=[E9PLAIN: PASS|] on-asid=[E9PLAIN: PASS|]
+accfree            on=[ACCFREE: PASS|] off=[ACCFREE: PASS|] strict=[ACCFREE: PASS|] on-asid=[ACCFREE: PASS|]
+vforkt-alone       on=[VFORK: PASS|] off=[VFORK: PASS|] strict=[VFORK: PASS|] on-asid=[VFORK: PASS|]
+envrn              on=[ENVRN: PASS|] off=[ENVRN: PASS|] strict=[ENVRN: PASS|] on-asid=[ENVRN: PASS|]
+ppzj               on=[PPARENT ACC: PASS|PPARENT AUTO: PASS|PPARENT Z: PASS|] off=[PPARENT ACC: PASS|PPARENT AUTO: PASS|PPARENT Z: PASS|] strict=[PPARENT ACC: PASS|PPARENT AUTO: PASS|PPARENT Z: PASS|] on-asid=[PPARENT ACC: PASS|PPARENT AUTO: PASS|PPARENT Z: PASS|]
+kbdvec-emucon      on=[KBDVEC: PASS|] off=[KBDVEC: PASS|] strict=[KBDVEC: PASS|] on-asid=[KBDVEC: PASS|]
+apitest            on=[TOTAL      106   0     5|] off=[TOTAL      106   0     5|] strict=[TOTAL      106   0     5|] on-asid=[TOTAL      106   0     5|]
+doom               on=[VERIFIED via EdDI+scale+vro_cpyfm|] off=[VERIFIED via EdDI+scale+vro_cpyfm|] strict=[VERIFIED via EdDI+scale+vro_cpyfm|] on-asid=[VERIFIED via EdDI+scale+vro_cpyfm|]
+crashtst           on=[CRASHTST: PASS|] off=[CRASHTST: PASS|] strict=[CRASHTST: PASS|] on-asid=[CRASHTST: PASS|]
+uacc3a             on=[UACC3A: PASS|] off=[UACC3A: PASS|] strict=[UACC3A: PASS|] on-asid=[UACC3A: PASS|]
+mprot              on=[MPROT3B: PASS|] off=[MPROT3B: PASS|] strict=[MPROT3B: PASS|] on-asid=[MPROT3B: PASS|]
+e10                on=[E10USR: PASS|] off=[E10USR: PASS|] strict=[E10USR: PASS|] on-asid=[E10USR: PASS|]
+mdprobe            on=[MDPROBE: DONE|] off=[MDPROBE: DONE|] strict=[MDPROBE: DONE|] on-asid=[MDPROBE: DONE|]
+emucon9            on=[E9MEM: PASS|E9PLAIN: PASS|KBDVEC: PASS|] off=[E9MEM: PASS|E9PLAIN: PASS|KBDVEC: PASS|] strict=[E9MEM: PASS|E9PLAIN: PASS|KBDVEC: PASS|] on-asid=[E9MEM: PASS|E9PLAIN: PASS|KBDVEC: PASS|]
+asidstr            on=[ASIDSTR: PASS|] off=[ASIDSTR: PASS|] strict=[ASIDSTR: PASS|] on-asid=[ASIDSTR: PASS|]
+asidperf           on=[ASIDPERF: PASS|] off=[ASIDPERF: PASS|] strict=[ASIDPERF: PASS|] on-asid=[ASIDPERF: PASS|]
+pparent            on=[KID: FAIL|PPARENT ACC: PASS|PPARENT AUTO: PASS|PPARENT Z: FAIL|] off=[KID: FAIL|PPARENT ACC: PASS|PPARENT AUTO: PASS|PPARENT Z: FAIL|] strict=[KID: FAIL|PPARENT ACC: PASS|PPARENT AUTO: PASS|PPARENT Z: FAIL|] on-asid=[KID: FAIL|PPARENT ACC: PASS|PPARENT AUTO: PASS|PPARENT Z: FAIL|]
+ppdeskj            on=[DESK: PASS|KID: PASS|] off=[DESK: PASS|KID: PASS|] strict=[DESK: PASS|KID: PASS|] on-asid=[DESK: PASS|KID: PASS|]
+s2all              on=[MEM03: FAIL|S2ALL: FAIL|] off=[MEM03: FAIL|S2ALL: FAIL|] strict=[MEM03: FAIL|] on-asid=[MEM03: FAIL|S2ALL: FAIL|]
+port10             on=[port10: ALL PASS (44 checks)|] off=[port10: ALL PASS (44 checks)|] strict=[port10: ALL PASS (44 checks)|] on-asid=[port10: ALL PASS (44 checks)|]
+s2allm on      MEM03: PASS|S2ALL: PASS|
+s2allm off     MEM03: PASS|S2ALL: PASS|
+s2allm on-asid MEM03: PASS|S2ALL: PASS|
+s2allsm strict  MEM03: PASS|S2ALL: PASS|
+s2alls (crash kernel) strict  MEM03: FAIL|S2ALL: FAIL|

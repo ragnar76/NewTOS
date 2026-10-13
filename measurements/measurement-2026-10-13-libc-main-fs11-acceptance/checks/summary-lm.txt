@@ -1,0 +1,155 @@
+lm-off-rpi4-acc                     1 accessories have issued; 1 desktop up; 1 memory protection OFF (boot argument `memprot=off`);
+lm-off-rpi4-accfree                 2 accessories have issued; 1 ACCFREE: PASS; 1 desktop up; 1 memory protection OFF (boot argument `memprot=off`);
+lm-off-rpi4-apitest                 1 memory protection OFF (boot argument `memprot=off`); 1 TOTAL 106 0 5;
+lm-off-rpi4-asidperf-counters       10 ASIDACC: PASS; 1 ASIDPERF: PASS; 1 desktop up; 1 memory protection OFF (boot argument `memprot=off`);
+lm-off-rpi4-asidperf                8 ASIDACC: PASS; 1 ASIDPERF: PASS; 1 desktop up; 1 memory protection OFF (boot argument `memprot=off`);
+lm-off-rpi4-asidstr                 8 ASIDACC: PASS; 1 ASIDSTR: PASS; 1 desktop up; 1 memory protection OFF (boot argument `memprot=off`);
+lm-off-rpi4-atexit                  1 ATEXIT: PASS; 1 desktop up; 1 memory protection OFF (boot argument `memprot=off`);
+lm-off-rpi4-crashtst                6 [crash] slot 1 key; 1 CRASHTST: PASS; 1 desktop up; 1 memory protection OFF (boot argument `memprot=off`);
+lm-off-rpi4-desk3a                  1 desktop up; 1 memory protection OFF (boot argument `memprot=off`);
+lm-off-rpi4-desktop                 1 desktop up; 1 memory protection OFF (boot argument `memprot=off`);
+lm-off-rpi4-doom                    1 memory protection OFF (boot argument `memprot=off`); 1 VERIFIED via EdDI+scale+vro_cpyfm;
+lm-off-rpi4-e10                     1 E10USR: PASS; 1 memory protection OFF (boot argument `memprot=off`);
+lm-off-rpi4-e9mem                   1 desktop up; 2 E9MEM: PASS; 1 memory protection OFF (boot argument `memprot=off`);
+lm-off-rpi4-e9plain                 1 desktop up; 1 E9PLAIN: PASS; 1 memory protection OFF (boot argument `memprot=off`);
+lm-off-rpi4-emucon9                 2 desktop up; 2 E9MEM: PASS; 1 E9PLAIN: PASS; 1 KBDVEC: PASS; 1 memory protection OFF (boot argument `memprot=off`);
+lm-off-rpi4-envrn                   1 desktop up; 1 ENVRN: PASS; 1 memory protection OFF (boot argument `memprot=off`);
+lm-off-rpi4-kbdvec-emucon           2 desktop up; 1 KBDVEC: PASS; 1 memory protection OFF (boot argument `memprot=off`);
+lm-off-rpi4-mdprobe                 1 desktop up; 1 memory protection OFF (boot argument `memprot=off`);
+lm-off-rpi4-mprot                   1 desktop up; 1 memory protection OFF (boot argument `memprot=off`); 1 MPROT3B: PASS;
+lm-off-rpi4-port10                  44 10: PASS; 1 desktop up; 1 memory protection OFF (boot argument `memprot=off`); 1 port10: ALL PASS (44 checks);
+lm-off-rpi4-pparent                 1 ACC: PASS; 1 accessories have issued; 1 AUTO: PASS; 1 desktop up; 1 KID: FAIL; 1 memory protection OFF (boot argument `memprot=off`); 1 Z: FAIL;
+lm-off-rpi4-ppdesk                  1 DESK: FAIL; 2 desktop up; 1 KID: FAIL; 1 memory protection OFF (boot argument `memprot=off`);
+lm-off-rpi4-ppdeskj                 1 DESK: PASS; 2 desktop up; 1 KID: PASS; 1 memory protection OFF (boot argument `memprot=off`);
+lm-off-rpi4-qed                     1 memory protection OFF (boot argument `memprot=off`);
+lm-off-rpi4-s2all-crashkernel       1 desktop up; 1 MEM03: FAIL; 1 memory protection OFF (boot argument `memprot=off`); 1 OWN: PASS; 1 P34: PASS; 1 P567: PASS; 2 PFLAGS: PASS; 1 S2ALL: FAIL 0x00000001; 1 TSR: PASS; 1 VFORK: PASS;
+lm-off-rpi4-s2all                   1 desktop up; 1 MEM03: FAIL; 1 memory protection OFF (boot argument `memprot=off`); 1 OWN: PASS; 1 P34: PASS; 1 P567: PASS; 2 PFLAGS: PASS; 1 S2ALL: FAIL 0x00000001; 1 TSR: PASS; 1 VFORK: PASS;
+lm-off-rpi4-stderr-emucon-newkernel  1 desktop up; 1 KBDVEC: PASS; 1 memory protection OFF (boot argument `memprot=off`);
+lm-off-rpi4-stderr-emucon-oldkernel  2 desktop up; 1 KBDVEC: PASS; 1 memory protection OFF (boot argument `memprot=off`);
+lm-off-rpi4-stderr-newkernel-newcrt0  1 desktop up; 1 memory protection OFF (boot argument `memprot=off`);
+lm-off-rpi4-stderr-newkernel-oldcrt0  1 memory protection OFF (boot argument `memprot=off`);
+lm-off-rpi4-stderr-oldkernel-newcrt0  1 desktop up; 1 memory protection OFF (boot argument `memprot=off`);
+lm-off-rpi4-stderr-oldkernel-oldcrt0  1 desktop up; 1 memory protection OFF (boot argument `memprot=off`);
+lm-off-rpi4-tdqed                   1 memory protection OFF (boot argument `memprot=off`);
+lm-off-rpi4-teradesk                1 memory protection OFF (boot argument `memprot=off`);
+lm-off-rpi4-uacc3a                  26 [crash] slot 1 key; 1 desktop up; 1 memory protection OFF (boot argument `memprot=off`); 1 UACC3A: PASS;
+lm-off-rpi4-vforkt-alone            1 desktop up; 1 memory protection OFF (boot argument `memprot=off`); 1 VFORK: PASS;
+lm-off-virt-asidstr                 1 ASIDSTR: PASS; 1 desktop up; 1 memory protection OFF (boot argument `memprot=off`);
+lm-off-virt-crash                   1 [crash] slot 0 key; 26 [crash] slot 1 key; 1 CRASHTST: PASS; 1 E10USR: PASS; 1 memory protection OFF (boot argument `memprot=off`); 1 MPROT3B: PASS; 1 UACC3A: PASS;
+lm-off-virt-desktop                 1 desktop up; 1 memory protection OFF (boot argument `memprot=off`);
+lm-off-virt-selftests               1 === B1 PASS ===; 1 === D3 PASS ===; 1 === D3 PEXEC PASS ===; 1 === D4/D5 PEXEC PASS ===; 1 === D6 PASS ===; 1 === D7 PTERMRES PASS ===; 1 desktop up; 1 memory protection OFF (boot argument `memprot=off`);
+lm-on-asid-rpi4-acc                 1 accessories have issued; 1 ASIDs ON: 16-bit ; 1 desktop up; 1 memory protection ON;
+lm-on-asid-rpi4-accfree             2 accessories have issued; 1 ACCFREE: PASS; 1 ASIDs ON: 16-bit ; 1 desktop up; 1 memory protection ON;
+lm-on-asid-rpi4-apitest             1 ASIDs ON: 16-bit ; 1 memory protection ON; 1 TOTAL 106 0 5;
+lm-on-asid-rpi4-asidperf-counters   10 ASIDACC: PASS; 1 ASIDPERF: PASS; 1 ASIDs ON: 16-bit ; 1 desktop up; 1 memory protection ON;
+lm-on-asid-rpi4-asidperf            10 ASIDACC: PASS; 1 ASIDPERF: PASS; 1 ASIDs ON: 16-bit ; 1 desktop up; 1 memory protection ON;
+lm-on-asid-rpi4-asidstr             1 [crash] slot 2 key; 8 ASIDACC: PASS; 1 ASIDs ON: 16-bit ; 1 ASIDSTR: PASS; 1 desktop up; 1 memory protection ON; 1 Memory violation: free memory, write (translation fault;
+lm-on-asid-rpi4-atexit              1 ASIDs ON: 16-bit ; 1 ATEXIT: PASS; 1 desktop up; 1 memory protection ON;
+lm-on-asid-rpi4-crashtst            6 [crash] slot 1 key; 1 ASIDs ON: 16-bit ; 1 CRASHTST: PASS; 1 desktop up; 1 memory protection ON;
+lm-on-asid-rpi4-desk3a              1 ASIDs ON: 16-bit ; 1 desktop up; 1 memory protection ON;
+lm-on-asid-rpi4-desktop             1 ASIDs ON: 16-bit ; 1 desktop up; 1 memory protection ON;
+lm-on-asid-rpi4-doom                1 ASIDs ON: 16-bit ; 1 memory protection ON; 1 VERIFIED via EdDI+scale+vro_cpyfm;
+lm-on-asid-rpi4-e10                 1 ASIDs ON: 16-bit ; 1 E10USR: PASS; 1 memory protection ON;
+lm-on-asid-rpi4-e9mem               1 ASIDs ON: 16-bit ; 1 desktop up; 2 E9MEM: PASS; 1 memory protection ON;
+lm-on-asid-rpi4-e9plain             1 ASIDs ON: 16-bit ; 1 desktop up; 1 E9PLAIN: PASS; 1 memory protection ON;
+lm-on-asid-rpi4-emucon9             1 ASIDs ON: 16-bit ; 2 desktop up; 2 E9MEM: PASS; 1 E9PLAIN: PASS; 1 KBDVEC: PASS; 1 memory protection ON;
+lm-on-asid-rpi4-envrn               1 ASIDs ON: 16-bit ; 1 desktop up; 1 ENVRN: PASS; 1 memory protection ON;
+lm-on-asid-rpi4-kbdvec-emucon       1 ASIDs ON: 16-bit ; 2 desktop up; 1 KBDVEC: PASS; 1 memory protection ON;
+lm-on-asid-rpi4-mdprobe             1 ASIDs ON: 16-bit ; 1 desktop up; 1 memory protection ON;
+lm-on-asid-rpi4-mprot               1 [crash] slot 1 key; 1 ASIDs ON: 16-bit ; 1 desktop up; 1 memory protection ON; 1 Memory violation: free memory, write (translation fault; 1 MPROT3B: PASS;
+lm-on-asid-rpi4-port10              44 10: PASS; 1 ASIDs ON: 16-bit ; 1 desktop up; 1 memory protection ON; 1 port10: ALL PASS (44 checks);
+lm-on-asid-rpi4-pparent             1 ACC: PASS; 1 accessories have issued; 1 ASIDs ON: 16-bit ; 1 AUTO: PASS; 1 desktop up; 1 KID: FAIL; 1 memory protection ON; 1 Z: FAIL;
+lm-on-asid-rpi4-ppdesk              1 ASIDs ON: 16-bit ; 1 DESK: FAIL; 2 desktop up; 1 KID: FAIL; 1 memory protection ON;
+lm-on-asid-rpi4-ppdeskj             1 ASIDs ON: 16-bit ; 1 DESK: PASS; 2 desktop up; 1 KID: PASS; 1 memory protection ON;
+lm-on-asid-rpi4-qed                 1 ASIDs ON: 16-bit ; 1 memory protection ON;
+lm-on-asid-rpi4-s2all-crashkernel   1 ASIDs ON: 16-bit ; 1 desktop up; 1 MEM03: FAIL; 1 memory protection ON; 1 OWN: PASS; 1 P34: PASS; 1 P567: PASS; 2 PFLAGS: PASS; 1 S2ALL: FAIL 0x00000001; 1 TSR: PASS; 1 VFORK: PASS;
+lm-on-asid-rpi4-s2all               1 ASIDs ON: 16-bit ; 1 desktop up; 1 MEM03: FAIL; 1 memory protection ON; 1 OWN: PASS; 1 P34: PASS; 1 P567: PASS; 2 PFLAGS: PASS; 1 S2ALL: FAIL 0x00000001; 1 TSR: PASS; 1 VFORK: PASS;
+lm-on-asid-rpi4-tdqed               1 ASIDs ON: 16-bit ; 1 memory protection ON;
+lm-on-asid-rpi4-teradesk            1 ASIDs ON: 16-bit ; 1 memory protection ON;
+lm-on-asid-rpi4-uacc3a              26 [crash] slot 1 key; 1 ASIDs ON: 16-bit ; 1 desktop up; 1 memory protection ON; 1 UACC3A: PASS;
+lm-on-asid-rpi4-vforkt-alone        1 ASIDs ON: 16-bit ; 1 desktop up; 1 memory protection ON; 1 VFORK: PASS;
+lm-on-asid-virt-asidstr             1 [crash] slot 1 key; 1 ASIDs ON: 16-bit ; 1 ASIDSTR: PASS; 1 desktop up; 1 memory protection ON; 1 Memory violation: free memory, write (translation fault;
+lm-on-asid-virt-crash               1 [crash] slot 0 key; 27 [crash] slot 1 key; 1 ASIDs ON: 16-bit ; 1 CRASHTST: PASS; 1 E10USR: PASS; 1 memory protection ON; 1 Memory violation: free memory, write (translation fault; 1 MPROT3B: PASS; 1 UACC3A: PASS;
+lm-on-asid-virt-desktop             1 ASIDs ON: 16-bit ; 1 desktop up; 1 memory protection ON;
+lm-on-asid-virt-selftests           1 === B1 PASS ===; 1 === D3 PASS ===; 1 === D3 PEXEC PASS ===; 1 === D4/D5 PEXEC PASS ===; 1 === D6 PASS ===; 1 === D7 PTERMRES PASS ===; 1 ASIDs ON: 16-bit ; 1 desktop up; 1 memory protection ON;
+lm-on-rpi4-acc                      1 accessories have issued; 1 desktop up; 1 memory protection ON;
+lm-on-rpi4-accfree                  2 accessories have issued; 1 ACCFREE: PASS; 1 desktop up; 1 memory protection ON;
+lm-on-rpi4-apitest                  1 memory protection ON; 1 TOTAL 106 0 5;
+lm-on-rpi4-asidperf-counters        10 ASIDACC: PASS; 1 ASIDPERF: PASS; 1 desktop up; 1 memory protection ON;
+lm-on-rpi4-asidperf                 11 ASIDACC: PASS; 1 ASIDPERF: PASS; 1 desktop up; 1 memory protection ON;
+lm-on-rpi4-asidstr                  1 [crash] slot 2 key; 8 ASIDACC: PASS; 1 ASIDSTR: PASS; 1 desktop up; 1 memory protection ON; 1 Memory violation: free memory, write (translation fault;
+lm-on-rpi4-atexit                   1 ATEXIT: PASS; 1 desktop up; 1 memory protection ON;
+lm-on-rpi4-crashtst                 6 [crash] slot 1 key; 1 CRASHTST: PASS; 1 desktop up; 1 memory protection ON;
+lm-on-rpi4-desk3a                   1 desktop up; 1 memory protection ON;
+lm-on-rpi4-desktop                  1 desktop up; 1 memory protection ON;
+lm-on-rpi4-doom                     1 memory protection ON; 1 VERIFIED via EdDI+scale+vro_cpyfm;
+lm-on-rpi4-e10                      1 E10USR: PASS; 1 memory protection ON;
+lm-on-rpi4-e9mem                    1 desktop up; 2 E9MEM: PASS; 1 memory protection ON;
+lm-on-rpi4-e9plain                  1 desktop up; 1 E9PLAIN: PASS; 1 memory protection ON;
+lm-on-rpi4-emucon9                  2 desktop up; 2 E9MEM: PASS; 1 E9PLAIN: PASS; 1 KBDVEC: PASS; 1 memory protection ON;
+lm-on-rpi4-envrn                    1 desktop up; 1 ENVRN: PASS; 1 memory protection ON;
+lm-on-rpi4-kbdvec-emucon            2 desktop up; 1 KBDVEC: PASS; 1 memory protection ON;
+lm-on-rpi4-mdprobe                  1 desktop up; 1 memory protection ON;
+lm-on-rpi4-mprot                    1 [crash] slot 1 key; 1 desktop up; 1 memory protection ON; 1 Memory violation: free memory, write (translation fault; 1 MPROT3B: PASS;
+lm-on-rpi4-port10                   44 10: PASS; 1 desktop up; 1 memory protection ON; 1 port10: ALL PASS (44 checks);
+lm-on-rpi4-pparent                  1 ACC: PASS; 1 accessories have issued; 1 AUTO: PASS; 1 desktop up; 1 KID: FAIL; 1 memory protection ON; 1 Z: FAIL;
+lm-on-rpi4-ppdesk                   1 DESK: FAIL; 2 desktop up; 1 KID: FAIL; 1 memory protection ON;
+lm-on-rpi4-ppdeskj                  1 DESK: PASS; 2 desktop up; 1 KID: PASS; 1 memory protection ON;
+lm-on-rpi4-qed                      1 memory protection ON;
+lm-on-rpi4-s2all-crashkernel        1 desktop up; 1 MEM03: FAIL; 1 memory protection ON; 1 OWN: PASS; 1 P34: PASS; 1 P567: PASS; 2 PFLAGS: PASS; 1 S2ALL: FAIL 0x00000001; 1 TSR: PASS; 1 VFORK: PASS;
+lm-on-rpi4-s2all                    1 desktop up; 1 MEM03: FAIL; 1 memory protection ON; 1 OWN: PASS; 1 P34: PASS; 1 P567: PASS; 2 PFLAGS: PASS; 1 S2ALL: FAIL 0x00000001; 1 TSR: PASS; 1 VFORK: PASS;
+lm-on-rpi4-stderr-emucon-newkernel  1 desktop up; 1 KBDVEC: PASS; 1 memory protection ON;
+lm-on-rpi4-stderr-emucon-oldkernel  2 desktop up; 1 KBDVEC: PASS; 1 memory protection ON;
+lm-on-rpi4-stderr-newkernel-newcrt0  1 desktop up; 1 memory protection ON;
+lm-on-rpi4-stderr-newkernel-oldcrt0  1 memory protection ON;
+lm-on-rpi4-stderr-oldkernel-newcrt0  1 desktop up; 1 memory protection ON;
+lm-on-rpi4-stderr-oldkernel-oldcrt0  1 desktop up; 1 memory protection ON;
+lm-on-rpi4-tdqed                    1 memory protection ON;
+lm-on-rpi4-teradesk                 1 memory protection ON;
+lm-on-rpi4-uacc3a                   26 [crash] slot 1 key; 1 desktop up; 1 memory protection ON; 1 UACC3A: PASS;
+lm-on-rpi4-vforkt-alone             1 desktop up; 1 memory protection ON; 1 VFORK: PASS;
+lm-on-virt-asidstr                  1 [crash] slot 1 key; 1 ASIDSTR: PASS; 1 desktop up; 1 memory protection ON; 1 Memory violation: free memory, write (translation fault;
+lm-on-virt-crash                    1 [crash] slot 0 key; 27 [crash] slot 1 key; 1 CRASHTST: PASS; 1 E10USR: PASS; 1 memory protection ON; 1 Memory violation: free memory, write (translation fault; 1 MPROT3B: PASS; 1 UACC3A: PASS;
+lm-on-virt-desktop                  1 desktop up; 1 memory protection ON;
+lm-on-virt-selftests                1 === B1 PASS ===; 1 === D3 PASS ===; 1 === D3 PEXEC PASS ===; 1 === D4/D5 PEXEC PASS ===; 1 === D6 PASS ===; 1 === D7 PTERMRES PASS ===; 1 desktop up; 1 memory protection ON;
+lm-strict-rpi4-acc                  1 accessories have issued; 1 desktop up; 1 memory protection ON (strict);
+lm-strict-rpi4-accfree              2 accessories have issued; 1 ACCFREE: PASS; 1 desktop up; 1 memory protection ON (strict);
+lm-strict-rpi4-apitest              1 memory protection ON (strict); 1 TOTAL 106 0 5;
+lm-strict-rpi4-asidperf-counters    11 ASIDACC: PASS; 1 ASIDPERF: PASS; 1 desktop up; 1 memory protection ON (strict);
+lm-strict-rpi4-asidperf             10 ASIDACC: PASS; 1 ASIDPERF: PASS; 1 desktop up; 1 memory protection ON (strict);
+lm-strict-rpi4-asidstr              1 [crash] slot 2 key; 9 ASIDACC: PASS; 1 ASIDSTR: PASS; 1 desktop up; 1 memory protection ON (strict); 1 Memory violation: free memory, write (translation fault;
+lm-strict-rpi4-atexit               1 ATEXIT: PASS; 1 desktop up; 1 memory protection ON (strict);
+lm-strict-rpi4-crashtst             6 [crash] slot 1 key; 1 CRASHTST: PASS; 1 desktop up; 1 memory protection ON (strict);
+lm-strict-rpi4-desk3a               1 desktop up; 1 memory protection ON (strict);
+lm-strict-rpi4-desktop              1 desktop up; 1 memory protection ON (strict);
+lm-strict-rpi4-doom                 1 memory protection ON (strict); 1 VERIFIED via EdDI+scale+vro_cpyfm;
+lm-strict-rpi4-e10                  1 [crash] slot 1 key; 1 E10USR: PASS; 1 memory protection ON (strict); 1 Memory violation: private memory, read (translation fault;
+lm-strict-rpi4-e9mem                1 desktop up; 2 E9MEM: PASS; 1 memory protection ON (strict);
+lm-strict-rpi4-e9plain              1 desktop up; 1 E9PLAIN: PASS; 1 memory protection ON (strict);
+lm-strict-rpi4-emucon9              2 desktop up; 2 E9MEM: PASS; 1 E9PLAIN: PASS; 1 KBDVEC: PASS; 1 memory protection ON (strict);
+lm-strict-rpi4-envrn                1 desktop up; 1 ENVRN: PASS; 1 memory protection ON (strict);
+lm-strict-rpi4-kbdvec-emucon        2 desktop up; 1 KBDVEC: PASS; 1 memory protection ON (strict);
+lm-strict-rpi4-mdprobe              1 desktop up; 1 memory protection ON (strict);
+lm-strict-rpi4-mprot                4 [crash] slot 1 key; 1 desktop up; 1 memory protection ON (strict); 1 Memory violation: free memory, write (translation fault; 1 Memory violation: private memory, read (translation fault; 1 Memory violation: private memory, write (translation fault; 1 Memory violation: readable memory, write (permission fault; 1 MPROT3B: PASS;
+lm-strict-rpi4-port10               44 10: PASS; 1 desktop up; 1 memory protection ON (strict); 1 port10: ALL PASS (44 checks);
+lm-strict-rpi4-pparent              1 ACC: PASS; 1 accessories have issued; 1 AUTO: PASS; 1 desktop up; 1 KID: FAIL; 1 memory protection ON (strict); 1 Z: FAIL;
+lm-strict-rpi4-ppdesk              
+lm-strict-rpi4-ppdeskj              1 DESK: PASS; 2 desktop up; 1 KID: PASS; 1 memory protection ON (strict);
+lm-strict-rpi4-qed                  1 memory protection ON (strict);
+lm-strict-rpi4-s2all                1 MEM03: FAIL; 1 memory protection ON (strict); 1 Memory violation: private memory, execute (translation fault; 1 P34: PASS; 2 PFLAGS: PASS;
+lm-strict-rpi4-s2alls-crashkernel   2 [crash] slot 2 key; 1 desktop up; 1 MEM03: FAIL; 1 memory protection ON (strict); 1 Memory violation: private memory, execute (translation fault; 1 Memory violation: private memory, write (translation fault; 1 OWN: PASS; 1 P34: PASS; 1 P567: PASS; 2 PFLAGS: PASS; 1 S2ALL: FAIL 0x00000001; 1 TSR: PASS; 1 VFORK: PASS;
+lm-strict-rpi4-stderr-emucon-newkernel  1 desktop up; 1 KBDVEC: PASS; 1 memory protection ON (strict);
+lm-strict-rpi4-stderr-emucon-oldkernel  2 desktop up; 1 KBDVEC: PASS; 1 memory protection ON (strict);
+lm-strict-rpi4-stderr-newkernel-newcrt0  1 desktop up; 1 memory protection ON (strict);
+lm-strict-rpi4-stderr-newkernel-oldcrt0  1 memory protection ON (strict);
+lm-strict-rpi4-stderr-oldkernel-newcrt0  1 desktop up; 1 memory protection ON (strict);
+lm-strict-rpi4-stderr-oldkernel-oldcrt0  1 desktop up; 1 memory protection ON (strict);
+lm-strict-rpi4-tdqed                1 memory protection ON (strict);
+lm-strict-rpi4-teradesk             1 memory protection ON (strict);
+lm-strict-rpi4-uacc3a               26 [crash] slot 1 key; 1 desktop up; 1 memory protection ON (strict); 1 UACC3A: PASS;
+lm-strict-rpi4-vforkt-alone         1 desktop up; 1 memory protection ON (strict); 1 VFORK: PASS;
+lm-strict-virt-asidstr              1 [crash] slot 1 key; 1 ASIDSTR: PASS; 1 desktop up; 1 memory protection ON (strict); 1 Memory violation: free memory, write (translation fault;
+lm-strict-virt-crash                1 [crash] slot 0 key; 31 [crash] slot 1 key; 1 CRASHTST: PASS; 1 E10USR: PASS; 1 memory protection ON (strict); 1 Memory violation: free memory, write (translation fault; 2 Memory violation: private memory, read (translation fault; 1 Memory violation: private memory, write (translation fault; 1 Memory violation: readable memory, write (permission fault; 1 MPROT3B: PASS; 1 UACC3A: PASS;
+lm-strict-virt-desktop              1 desktop up; 1 memory protection ON (strict);
+lm-strict-virt-selftests            1 === B1 PASS ===; 1 === D3 PASS ===; 1 === D3 PEXEC PASS ===; 1 === D4/D5 PEXEC PASS ===; 1 === D6 PASS ===; 1 === D7 PTERMRES PASS ===; 1 desktop up; 1 memory protection ON (strict);
+lm-virt-vreg                        1 FS11A: PASS; 1 FS11DEV: PASS; 1 memory protection ON; 1 TOTAL 80 2 7;

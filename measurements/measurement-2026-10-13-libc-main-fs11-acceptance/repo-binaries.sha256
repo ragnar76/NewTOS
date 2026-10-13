@@ -1,0 +1,6 @@
+a4f425e83ed1d34eb6aaf11fe526938b9349c87c0b6a0b2163ad86987512ca65  sdk/apps/apitest/APITEST.NCP
+5e114b219b78938edf70c18691069908339448b1e08665150e08f1b60b437f2c  sdk/apps/qed/build/QED.NAP
+30ac6bf24a28ce2c95fab6a7c663bf29f40de9ad9ee1dd6b80ec36c146264a79  sdk/apps/qed/build/qed.rsc
+b0925e1af9e334f4dfb01b1a0d937b5e3957f9ac3a0301e61e666913bae9431e  sdk/apps/teradesk/build/dist/DESKTOP.NAP
+fe96ba73b124c1d12ca3669771678e5ed4ec0c91839ff0b80584de8d71e7c800  sdk/apps/doom/build/DOOM.NAP
+bc8dd22e75f02a1e44092aac876a80dd6426ca54718dd68ffd35f94c9e560651  sdk/libc/libc.a

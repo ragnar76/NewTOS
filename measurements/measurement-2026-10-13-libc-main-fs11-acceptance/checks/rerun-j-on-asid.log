@@ -1,0 +1,19 @@
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.lrxdK8/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.lrxdK8/ser.sock,server=on
+t=  15.9s end marker seen
+t=  19.1s cm-on-asid-rpi4-ppzj-end.png {"return": {}}
+prompts seen: 0
+run cm-on-asid-rpi4-ppzj: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.4n9FfM/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.4n9FfM/ser.sock,server=on
+t=  20.3s end marker seen
+t=  22.4s cm-on-asid-rpi4-s2allj-end.png {"return": {}}
+prompts seen: 0
+run cm-on-asid-rpi4-s2allj: rc=0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.mFE4eM/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.mFE4eM/ser.sock,server=on
+t=  17.5s end marker seen
+t=  19.5s cm-on-asid-rpi4-s2allm-end.png {"return": {}}
+prompts seen: 0
+run cm-on-asid-rpi4-s2allm: rc=0
+=== batch2 done Di. 13 Okt. 2026 12:57:09 CEST

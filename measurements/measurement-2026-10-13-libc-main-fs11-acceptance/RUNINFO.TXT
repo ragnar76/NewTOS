@@ -1,0 +1,71 @@
+measurement-2026-10-13-libc-main-fs11-acceptance -- Tester acceptance of LIBC-MAIN (7e04c872,
+crt0 calls mintlib _main) and FS11 (dbc4e22a, one BIOS char-device table, Fread/Fwrite on device
+handles). Both changes are committed; tested on HEAD fb84e64a, working tree clean (no product code
+touched; only scratch copies of the tree were instrumented). No SD card, Pi or TT touched.
+
+Date 2026-10-13, host macOS, QEMU 11.1.2, raspi4b (-append serial=on [memprot=off|strict] [asid=on])
+and qemu-virt. Kernel images gitignored, sha256 in bin/KERNELS.SHA256; programs in bin/ (+ j, m,
+oldcrt0) in bin/SHA256SUMS; repo binaries (APITEST, QED, TeraDesk, Doom, libc.a) in repo-binaries.sha256.
+All programs/apps relinked in this run against the current sdk (method/build-all.sh, checks/build-*.log;
+sdk/lib-stale.sh guarantees libc.a/gemlib.a are not stale).
+Socket dir: symlink /private/tmp/claude-501/n12 -> session scratchpad.
+
+LABELS (kernels bin/kernel8-<label>*.img): lm = series-lm.sh (a13 series incl. virt, ASID),
+cm = cm-series.sh (crt0-main series; kernels are byte copies of the lm ones), f11 = fs11-series.sh.
+
+1. STATIC BASELINES (method/checks.sh lm; checks/lm-*.txt, checks/checks-lm.log)   expected      measured
+   host tests (tos-api tos-types xtask)                                           1322/0/1      1322 / 0 / 1
+   release warnings tos-api / kernel, fresh after cargo clean --release, rpi4      64 / 94       64 / 94, 0 errors
+                                                                      qemu-virt   64 / 94       64 / 94, 0 errors
+   clippy tos-api / kernel, rpi4 and qemu-virt                                     76 / 125      76 / 125 both
+   sh tools/desk-drift-probe.sh                                                    31            31
+   sdk/run-host-tests.sh                                                           19/0/0        19 / 0 / 0
+   => no deviation.
+
+2. QEMU raspi4b, modes on / off / strict / on-asid (asid=on, memprot on)  (checks/matrix.txt,
+   summary-lm/cm/f11.txt, shots-cm.txt). PASS in every mode unless noted:
+   STDOUTDB (fputs rc 0, printf rc 0x1a, errno 0), FSEEKCON, ATEXIT, E9MEM, E9PLAIN, ACCFREE, VFORKT,
+   ENVRN, PPARENT AUTO + ACC, PPZJ (Z/KID), S2ALLM/S2ALLSM (ENVKIDM), PORT10 44/44, APITEST 106/0/5,
+   Doom VERIFIED, KBDVEC + EmuCON (typed "run hello2.ncp"), EmuCON five programs (E9MEM x2, E9PLAIN,
+   KBDVEC), CRASHTST, UACC3A, MPROT3B, E10USR, MDPROBE (DONE, 0 FAIL), ASIDSTR, ASIDPERF/ASIDACC,
+   PPDESKJ (DESK/KID), virt crash/selftests/desktop/asidstr.
+   Known stale probes, identical FAIL-line set to a13 and crt0-main: PPARENT Z/KID (PPARENT.NAP),
+   PPDESK DESK/KID, S2ALL(S) MEM03 (stale ENVKID), S2ALLJ MEM03 (ENVKIDJ expects PATH=C:\, _main
+   rewrites it to /dev/c/, by design, see LIBC-MAIN).
+   MDPROBE: 1 free MD less at start (252 vs 253 in a13: _main's Malloc), exhaustion at 147021 blocks.
+   [EXC]/[PANIC]: none in any log.
+   Screendumps cm-<mode> vs crt0-main cm-<mode>: all identical except doom-t30/t45 (timing jitter);
+   vs a13: same plus s2allsj-crash1/2 (strict, shifted addresses). lm vs a13: desk3a E_INFO/F_TYPED
+   differ only in the file time field, desk3a H_DRIVE_C / ppdesk size differ by card content,
+   crash dumps by addresses (all inspected / bbox-checked).
+
+3. FS11 (checks/summary-f11.txt, method/fs11-series.sh): FS11A (product kernel) PASS, FS11DEV
+   (keys kernel; Fread on CON, mintlib getchar/fgets) PASS, FSEEKCON, STDOUTDB, ATEXIT, APITEST
+   106/0/5 in on/off/strict.
+
+4. qemu-virt (method/virtreg-instrumentation.py: scratch kernel, probes in the RAM registry, run at
+   the AUTO position): STDOUTDB green, STDERRP stderr text on the console, FS11A PASS,
+   APITEST 80/2/7 (T16 file round trip and BB01 Drvmap fail: virt has no C:); identical 80/2/7 on
+   the pre-FS11 kernel (7bb9579a) (serial/lm-virt-vreg*.log). FS11A on the pre-FS11 kernel = red.
+   qemu-virt boot/desktop/selftests: PASS in all modes (lm-<mode>-virt-*).
+
+5. STDERR (method/stderr-matrix.sh, stderr-emucon.sh; tests/stderrp.c, STDERRQ):
+   a) libc programs relinked with the NEW crt0 on the NEW kernel: stderr (fputs, fprintf, write(2),
+      Fwrite(2), perror) all reach the console (serial and EmuCON screen), also in a spawned child
+      (argv[0] = "STDERRP"; inherits the forced handle 2), all modes.
+   b) pre-LIBC-MAIN binaries (old crt0, no _main/Fforce(2,-1)) on the NEW kernel: the FIRST stderr
+      write HANGS (handle 2 = AUX = absent device, Fwrite -> 0, mintlib retries forever). Reproduces
+      in on/off/strict, serial and EmuCON (screendumps lm-*-stderr-emucon-newkernel-t35/t60: output
+      stops after the first line, no prompt). On the pre-FS11 kernel the same old binary prints fine.
+   c) the 2x2 matrix (new/old crt0 x new/old kernel) in serial/lm-*-rpi4-stderr-*.
+
+6. First-pass hazards found and redone (all outputs here are from the clean re-runs): (i) cm-series and
+   series-lm first ran in parallel with the SAME label (tags collided) -> contaminated first-pass
+   outputs discarded, re-run with distinct labels (lm / cm); (ii) build-ppj/envkidm had been called
+   without <outdir> -> PPZJ/S2ALLJ/S2ALLM re-run (method/rerun-j.sh); (iii) STDOUTDB.NAP name
+   (STDOUTDBG 9 chars) -> re-run (method/rerun-stdoutdb.sh); (iv) ppdesk/desk3a shared one card
+   image across parallel modes -> re-run sequentially.
+
+NOT DRIVEN: real Pi 4 (TeraDesk clean quit, QED from TeraDesk with keyboard, USB input, HDMI,
+cache-sensitive rendering); TeraDesk clean quit is not part of the QEMU key schedule (tdkeys: F1 ->
+QED only); asid=on only in the on+asid mode (no off-asid/strict-asid); virt APITEST has no storage.

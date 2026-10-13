@@ -1,0 +1,18 @@
+f11-off-rpi4-apitest                1 memory protection OFF (boot argument `memprot=off`); 1 TOTAL 106 0 5;
+f11-off-rpi4-atexit                 1 ATEXIT: PASS; 1 desktop up; 1 memory protection OFF (boot argument `memprot=off`);
+f11-off-rpi4-fs11a                  1 desktop up; 1 FS11A: PASS; 1 FS11DEV: PASS; 1 memory protection OFF (boot argument `memprot=off`);
+f11-off-rpi4-fs11dev                1 desktop up; 1 FS11A: PASS; 1 FS11B: PASS; 1 FS11C: PASS; 1 FS11DEV: PASS; 1 memory protection OFF (boot argument `memprot=off`);
+f11-off-rpi4-fseekcon               1 desktop up; 1 FSEEKCON: PASS; 1 memory protection OFF (boot argument `memprot=off`);
+f11-off-rpi4-stdoutdb               1 desktop up; 1 memory protection OFF (boot argument `memprot=off`);
+f11-on-rpi4-apitest                 1 memory protection ON; 1 TOTAL 106 0 5;
+f11-on-rpi4-atexit                  1 ATEXIT: PASS; 1 desktop up; 1 memory protection ON;
+f11-on-rpi4-fs11a                   1 desktop up; 1 FS11A: PASS; 1 FS11DEV: PASS; 1 memory protection ON;
+f11-on-rpi4-fs11dev                 1 desktop up; 1 FS11A: PASS; 1 FS11B: PASS; 1 FS11C: PASS; 1 FS11DEV: PASS; 1 memory protection ON;
+f11-on-rpi4-fseekcon                1 desktop up; 1 FSEEKCON: PASS; 1 memory protection ON;
+f11-on-rpi4-stdoutdb                1 desktop up; 1 memory protection ON;
+f11-strict-rpi4-apitest             1 memory protection ON (strict); 1 TOTAL 106 0 5;
+f11-strict-rpi4-atexit              1 ATEXIT: PASS; 1 desktop up; 1 memory protection ON (strict);
+f11-strict-rpi4-fs11a               1 desktop up; 1 FS11A: PASS; 1 FS11DEV: PASS; 1 memory protection ON (strict);
+f11-strict-rpi4-fs11dev             1 desktop up; 1 FS11A: PASS; 1 FS11B: PASS; 1 FS11C: PASS; 1 FS11DEV: PASS; 1 memory protection ON (strict);
+f11-strict-rpi4-fseekcon            1 desktop up; 1 FSEEKCON: PASS; 1 memory protection ON (strict);
+f11-strict-rpi4-stdoutdb            1 desktop up; 1 memory protection ON (strict);

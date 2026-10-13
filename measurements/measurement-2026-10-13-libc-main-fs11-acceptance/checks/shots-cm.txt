@@ -1,0 +1,32 @@
+### cm-on vs crt0-main cm-on
+DIFF rpi4-doom-t30.png
+DIFF rpi4-doom-t45.png
+cm-on- vs cm-on-: same=25 diff=2 missing=33
+### cm-on vs a13-on
+DIFF asid-rpi4-doom-t30.png
+DIFF asid-rpi4-doom-t45.png
+DIFF rpi4-doom-t30.png
+DIFF rpi4-doom-t45.png
+cm-on- vs a13-on-: same=44 diff=4 missing=12
+### cm-off vs crt0-main cm-off
+DIFF rpi4-doom-t30.png
+DIFF rpi4-doom-t45.png
+cm-off- vs cm-off-: same=25 diff=2 missing=3
+### cm-off vs a13-off
+DIFF rpi4-doom-t30.png
+DIFF rpi4-doom-t45.png
+cm-off- vs a13-off-: same=22 diff=2 missing=6
+### cm-strict vs crt0-main cm-strict
+DIFF rpi4-doom-t30.png
+DIFF rpi4-doom-t45.png
+cm-strict- vs cm-strict-: same=31 diff=2 missing=3
+### cm-strict vs a13-strict
+DIFF rpi4-doom-t30.png
+DIFF rpi4-doom-t45.png
+DIFF rpi4-s2allsj-crash1.png
+DIFF rpi4-s2allsj-crash2.png
+cm-strict- vs a13-strict-: same=20 diff=4 missing=12
+### cm-on-asid vs a13-on-asid
+DIFF rpi4-doom-t30.png
+DIFF rpi4-doom-t45.png
+cm-on-asid- vs a13-on-asid-: same=22 diff=2 missing=6

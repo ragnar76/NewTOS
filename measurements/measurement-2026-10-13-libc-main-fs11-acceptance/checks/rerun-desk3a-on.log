@@ -1,0 +1,3 @@
+marker 'MARK A_IDLE' NOT FOUND after 361.6s
+run lm-on-rpi4-desk3a: rc=2 log=/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-main-fs11-acceptance/method/../screendumps/lm-on-rpi4-desk3a-serial.log
+desk3a lm-on done

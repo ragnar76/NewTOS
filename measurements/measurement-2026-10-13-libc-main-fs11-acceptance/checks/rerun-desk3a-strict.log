@@ -1,0 +1,10 @@
+marker 'MARK A_IDLE' found at 17.3s -> lm-strict-desk3a-A_IDLE.png {"return": {}}
+marker 'MARK B_SUB' found at 25.2s -> lm-strict-desk3a-B_SUB.png {"return": {}}
+marker 'MARK C_UP' found at 32.2s -> lm-strict-desk3a-C_UP.png {"return": {}}
+marker 'MARK D_SELECTED' found at 37.2s -> lm-strict-desk3a-D_SELECTED.png {"return": {}}
+marker 'MARK E_INFO' found at 43.2s -> lm-strict-desk3a-E_INFO.png {"return": {}}
+marker 'MARK F_TYPED' found at 47.3s -> lm-strict-desk3a-F_TYPED.png {"return": {}}
+marker 'MARK G_RENAMED' found at 54.2s -> lm-strict-desk3a-G_RENAMED.png {"return": {}}
+marker 'MARK H_DRIVE_C' found at 63.2s -> lm-strict-desk3a-H_DRIVE_C.png {"return": {}}
+run lm-strict-rpi4-desk3a: rc=0 log=/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-main-fs11-acceptance/method/../screendumps/lm-strict-rpi4-desk3a-serial.log
+desk3a lm-strict done
