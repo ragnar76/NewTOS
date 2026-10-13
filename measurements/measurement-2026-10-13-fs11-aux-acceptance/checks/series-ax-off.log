@@ -1,0 +1,42 @@
+=== off Di. 13 Okt. 2026 15:07:25 CEST
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.98qJrH/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.98qJrH/ser.sock,server=on
+t=  15.3s end marker seen
+t=  17.3s ax-off-rpi4-fs11a-end.png {"return": {}}
+prompts seen: 0
+run ax-off-rpi4-fs11a: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.REjcyg/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.REjcyg/ser.sock,server=on
+t=  17.3s end marker seen
+t=  19.3s ax-off-rpi4-fs11dev-end.png {"return": {}}
+prompts seen: 0
+run ax-off-rpi4-fs11dev: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.kzrFu6/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.kzrFu6/ser.sock,server=on
+t=  15.1s end marker seen
+t=  17.2s ax-off-rpi4-stdoutdb-end.png {"return": {}}
+prompts seen: 0
+run ax-off-rpi4-stdoutdb: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.8j2MLK/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.8j2MLK/ser.sock,server=on
+t=  15.1s end marker seen
+t=  18.2s ax-off-rpi4-stderr-oldcrt0-end.png {"return": {}}
+prompts seen: 0
+run ax-off-rpi4-stderr-oldcrt0: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.q3b1co/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.q3b1co/ser.sock,server=on
+t=  15.1s end marker seen
+t=  18.2s ax-off-rpi4-stderr-newcrt0-end.png {"return": {}}
+prompts seen: 0
+run ax-off-rpi4-stderr-newcrt0: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.dsbGFk/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.dsbGFk/ser.sock,server=on
+t=  15.1s end marker seen
+t=  18.2s ax-off-rpi4-stderra-end.png {"return": {}}
+prompts seen: 0
+run ax-off-rpi4-stderra: rc=0
+t=25.0s -> ax-off-rpi4-apitest-t25.png {"return": {}}
+t=40.0s -> ax-off-rpi4-apitest-t40.png {"return": {}}
+run ax-off-rpi4-apitest: rc=0
+=== done Di. 13 Okt. 2026 15:10:51 CEST

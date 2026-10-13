@@ -1,0 +1,470 @@
+diff --git a/kernel/src/console.rs b/kernel/src/console.rs
+index 9c1551e9..44c0e151 100644
+--- a/kernel/src/console.rs
++++ b/kernel/src/console.rs
+@@ -248,9 +248,9 @@ fn serial_rx_byte(b: u8) {
+ /// into `iorec1`, the **RS-232 device** (BIOS handle 1,
+ /// `bios/serport.c:331-343` `push_serial_iorec`), and *never* into the IKBD
+ /// queue; `push_ascii_ikbdiorec` is not even compiled (`bios/ikbd.c:175,231`).
+-/// NewTOS' device profile declares handle 1 (AUX) absent with EmuTOS'
+-/// `char_dummy` semantics — status 0, input 0 (`tos_api::bios::chardev`) — so
+-/// the byte has no destination and is dropped here.
++/// NewTOS' device profile declares handle 1 (AUX) a port with no cable —
++/// status 0, input 0 (`tos_api::bios::chardev::AuxNoCable`) — so the byte has
++/// no destination and is dropped here.
+ ///
+ /// This is not cosmetic. UART0 is the debug console; on this board CON is the
+ /// USB-HID keyboard alone (STATUS 2026-07-03 K1, `c6e4bfb`), and that commit
+diff --git a/kernel/src/desk/mod.rs b/kernel/src/desk/mod.rs
+index 839fb2ea..5d4f4ea9 100644
+--- a/kernel/src/desk/mod.rs
++++ b/kernel/src/desk/mod.rs
+@@ -61,8 +61,8 @@ pub mod xbiosbind;
+ //    `fbcon::write_byte` → `vdi::alpha_conout`), so a diagnostic would paint
+ //    characters onto the live desktop. EmuTOS's `kprintf` goes to the *debug*
+ //    device, `bconout1(1, c)` (`bios/kprint.c:91-99`), never to `bconout2(2)`
+-//    — and our `Bconout(1)` is an absent device that discards the byte
+-//    (`tos-api/src/bios/chardev.rs:176-186`).
++//    — and our `Bconout(1)` is the no-cable AUX entry that discards the byte
++//    (`tos_api::bios::chardev::AuxNoCable`).
+ //
+ // So the replacement has to be built before the removal (plan §6.3's ordering
+ // rule), and building a debug-output device is not this unit's business.
+diff --git a/kernel/src/selftest_console.rs b/kernel/src/selftest_console.rs
+index 7ee40bc9..97a9ef13 100644
+--- a/kernel/src/selftest_console.rs
++++ b/kernel/src/selftest_console.rs
+@@ -3,9 +3,10 @@
+ //! (Cconout / Cconws output-side Ctrl-C break, the conbrk subset).
+ //!
+ //! * **F2** is driven through the real `svc #1` (GEMDOS) trap path:
+-//!   `Cauxin` (0x03) and `Cauxout` (0x04) must return `0` (the NewTOS
+-//!   profile has no AUX device; both route through the BIOS handle-1
+-//!   pass-through, an absent `char_dummy` slot). See
++//!   both route through the BIOS handle-1 pass-through, the AUX entry
++//!   "port present, no cable" (`docs/api/gemdos/file/3f-fread.md` item 1a):
++//!   `Cauxin` (0x03) returns `0` without blocking (no input), `Cauxout`
++//!   (0x04) accepts and discards the byte and returns `1`. See
+ //!   `docs/api/gemdos/console/{03-cauxin,04-cauxout}.md`.
+ //!
+ //! * **F1** exercises the factored [`tos_api::gemdos::console::edit_line`]
+@@ -145,9 +146,9 @@ pub fn run() {
+         }
+     };
+ 
+-    // ── F2: Cauxin / Cauxout pass through to the absent AUX device ────
+-    check(gemdos(0x03, 0) == 0, "Cauxin() == 0 (no AUX, F2)");
+-    check(gemdos(0x04, b'Z' as u64) == 0, "Cauxout('Z') == 0 (no AUX, F2)");
++    // ── F2: Cauxin / Cauxout pass through to the no-cable AUX entry ───
++    check(gemdos(0x03, 0) == 0, "Cauxin() == 0 (AUX no input, F2)");
++    check(gemdos(0x04, b'Z' as u64) == 1, "Cauxout('Z') == 1 (AUX no cable, F2)");
+ 
+     // ── F1: Ctrl-U kills the line → subsequent input starts at len 0 ──
+     {
+diff --git a/sdk/apps/apitest/apitest.c b/sdk/apps/apitest/apitest.c
+index 4d539694..bc3ea91d 100644
+--- a/sdk/apps/apitest/apitest.c
++++ b/sdk/apps/apitest/apitest.c
+@@ -1836,8 +1836,11 @@ int main(void)
+ 	 *
+ 	 * Handle map per docs/api/bios/{01,02,03,08}-*.md "Pi / BCM2711
+ 	 * binding": CON (2) is the only input device; CON (2) and raw-CON (5)
+-	 * are the output devices; PRT (0), AUX (1), MIDI (3), IKBD-TX (4) and
+-	 * 6/7 are absent and follow EmuTOS' char_dummy / charout_dummy slots.
++	 * are the output devices; PRT (0), MIDI (3), IKBD-TX (4) and 6/7 are
++	 * absent and follow EmuTOS' char_dummy / charout_dummy slots. AUX (1)
++	 * is "port present, no cable" (docs/api/gemdos/file/3f-fread.md item
++	 * 1a): Bconout(1) accepts+discards -> 1, Bcostat(1) -> -1 (EmuTOS
++	 * bconout1/bcostat1 with an MFP port), Bconstat(1) -> 0.
+ 	 * Bcostat is deliberately NOT symmetric with Bconout: bcostat_init[5]
+ 	 * is char_dummy (references/emutos/bios/chardev.c:38-41), so handle 5
+ 	 * writes (returns 1) but reports busy (returns 0).
+@@ -1872,8 +1875,9 @@ int main(void)
+ 
+ 		/* The console-output handles really put their character on the
+ 		 * screen. All eight calls run back to back, so the marker line
+-		 * ends up showing exactly the bytes the BIOS accepted: "CR" from
+-		 * handles 2 and 5, nothing from the six absent devices. */
++		 * ends up showing exactly the bytes that reach the screen: "CR" from
++		 * handles 2 and 5, nothing from the five absent devices and nothing
++		 * from AUX (accepts and discards). */
+ 		b_reset();
+ 		b_str("B1    Bconout(0..7) write here -> ");
+ 		b_emit();
+@@ -1890,7 +1894,7 @@ int main(void)
+ 			ck_eq(G_BCHR, "BC11 Bconout(2,'C') CON ->1",   o2, 1);
+ 			ck_eq(G_BCHR, "BC12 Bconout(5,'R') raw ->1",   o5, 1);
+ 			ck_eq(G_BCHR, "BC13 Bconout(0,'*') PRT ->0",   o0, 0);
+-			ck_eq(G_BCHR, "BC14 Bconout(1,'*') AUX ->0",   o1, 0);
++			ck_eq(G_BCHR, "BC14 Bconout(1,'*') AUX ->1",   o1, 1);
+ 			ck_eq(G_BCHR, "BC15 Bconout(3,'*') MIDI ->0",  o3, 0);
+ 			ck_eq(G_BCHR, "BC16 Bconout(4,'*') IKBD ->0",  o4, 0);
+ 			ck_eq(G_BCHR, "BC17 Bconout(6,'*') dummy ->0", o6, 0);
+@@ -1900,7 +1904,7 @@ int main(void)
+ 		ck_eq(G_BCHR, "BC19 Bcostat(2) CON ->-1",      Bcostat(2), -1);
+ 		ck_eq(G_BCHR, "BC20 Bcostat(5) dummy ->0",     Bcostat(5), 0);
+ 		ck_eq(G_BCHR, "BC21 Bcostat(0) PRT ->0",       Bcostat(0), 0);
+-		ck_eq(G_BCHR, "BC22 Bcostat(1) AUX ->0",       Bcostat(1), 0);
++		ck_eq(G_BCHR, "BC22 Bcostat(1) AUX ->-1",      Bcostat(1), -1);
+ 		ck_eq(G_BCHR, "BC23 Bcostat(3) IKBD-TX ->0",   Bcostat(3), 0);
+ 		ck_eq(G_BCHR, "BC24 Bcostat(4) MIDI-TX ->0",   Bcostat(4), 0);
+ 		ck_eq(G_BCHR, "BC25 Bcostat(9) invalid ->0",   Bcostat(9), 0);
+diff --git a/tos-api/src/bios/chardev.rs b/tos-api/src/bios/chardev.rs
+index 2505c4e6..afd6ac6e 100644
+--- a/tos-api/src/bios/chardev.rs
++++ b/tos-api/src/bios/chardev.rs
+@@ -16,7 +16,9 @@
+ //!
+ //! The NewTOS profile has one real character device — the console (PL011 +
+ //! framebuffer): keyboard **input** on CON (2) only, screen **output** on
+-//! CON (2) and raw-CON (5). PRN, AUX, MIDI, IKBD and 6/7 are the documented
++//! CON (2) and raw-CON (5). AUX (1) is a serial port with **no cable**
++//! ([`AuxNoCable`], `3f-fread.md` item 1a): output accepted and discarded,
++//! always ready, no input. PRN, MIDI, IKBD and 6/7 are the documented
+ //! **absent device** ([`Absent`], EmuTOS' `char_dummy` / `charout_dummy`,
+ //! `bios/chardev.c:49-58`): status 0, input 0 without blocking, output
+ //! discarded with 0 — rather than blocking on hardware that does not exist.
+@@ -97,6 +99,36 @@ impl CharDevice for Absent {
+     }
+ }
+ 
++/// AUX (device 1) as "port present, no cable" (deliberate profile, not a
++/// stub; `docs/api/gemdos/file/3f-fread.md` "NewTOS implementation notes"
++/// item 1a, option A). On a real ST the RS-232 port always exists:
++/// EmuTOS' `bconout1` with an MFP port queues the byte and returns `1`
++/// (`bios/serport.c:289-330`, no CTS wait — `flowctrl` is never read) and
++/// `bcostat1` is `-1` while the out-ring has room (`serport.c:271-283`);
++/// NewTOS discards at once, so the "ring" never fills. With no cable no byte
++/// ever arrives: `bconstat1` on an empty iorec is `0` (`serport.c:255-258`).
++/// `Bconin` returns `0` **without blocking** — a documented divergence from
++/// `bconin1`, which would wait forever (`serport.c:260-263`). An absent AUX
++/// (`Bconout` 0) made `Fwrite(2, …)` return 0 and mintlib's stderr write
++/// loop retry forever (FS11 acceptance finding 1). A UART driver
++/// (`TASK/IO01.md`) replaces the whole entry.
++pub struct AuxNoCable;
++
++impl CharDevice for AuxNoCable {
++    fn bconstat(&self) -> Long {
++        0
++    }
++    fn bconin(&self) -> Long {
++        0
++    }
++    fn bconout(&self, _byte: u8) -> Long {
++        1
++    }
++    fn bcostat(&self) -> Long {
++        -1
++    }
++}
++
+ /// CON (device 2): keyboard input from the console key ring (`bconin2` /
+ /// `bconstat2`, the IKBD queue), screen output (`bconout2`), output always
+ /// ready (`bcostat2`, `bios/chardev.c:112-118`: the PL011 TX drains by
+@@ -164,6 +196,7 @@ impl CharDevice for RawConsole {
+ }
+ 
+ static ABSENT: &dyn CharDevice = &Absent;
++static AUX_NO_CABLE: &dyn CharDevice = &AuxNoCable;
+ static CONSOLE: &dyn CharDevice = &Console;
+ static RAW_CONSOLE: &dyn CharDevice = &RawConsole;
+ 
+@@ -180,14 +213,14 @@ const fn slot(entry: &'static &'static dyn CharDevice) -> Slot {
+ /// all-zero entry: EmuTOS' `bconin_init[4]`/`bconstat_init[4]` are
+ /// `char_dummy` (`bios/chardev.c:30-36`) and NewTOS has no IKBD transmitter.
+ static DEVICES: [Slot; NDEV] = [
+-    slot(&ABSENT),      // 0 PRN
+-    slot(&ABSENT),      // 1 AUX
+-    slot(&CONSOLE),     // 2 CON
+-    slot(&ABSENT),      // 3 MIDI
+-    slot(&ABSENT),      // 4 IKBD
+-    slot(&RAW_CONSOLE), // 5 raw CON
+-    slot(&ABSENT),      // 6
+-    slot(&ABSENT),      // 7
++    slot(&ABSENT),       // 0 PRN
++    slot(&AUX_NO_CABLE), // 1 AUX
++    slot(&CONSOLE),      // 2 CON
++    slot(&ABSENT),       // 3 MIDI
++    slot(&ABSENT),       // 4 IKBD
++    slot(&RAW_CONSOLE),  // 5 raw CON
++    slot(&ABSENT),       // 6
++    slot(&ABSENT),       // 7
+ ];
+ 
+ /// Replace the table entry of BIOS device `dev` with `entry` — the one place a
+@@ -368,15 +401,16 @@ pub fn bconin(args: &TrapArgs) -> Long {
+ 
+ /// `Bconout` (0x03) — write a byte to an output device through its table
+ /// entry. Console handles write to the screen and return `1` (byte accepted,
+-/// `bconout2`/`bconout5`); absent devices discard and return `0`
++/// `bconout2`/`bconout5`); the no-cable AUX discards and returns `1`
++/// ([`AuxNoCable`]); absent devices discard and return `0`
+ /// (`charout_dummy`).
+ pub fn bconout(args: &TrapArgs) -> Long {
+     bconout_handle(args.arg_u16(0), args.arg_u16(1) as u8)
+ }
+ 
+ /// `Bcostat` (0x08) — output-device status through the table, with the
+-/// IKBD/MIDI slot swap ([`bcostat_handle`]). Ready (`-1`) only for CON
+-/// (`bcostat2`); raw-CON's slot is `char_dummy` (`bcostat_init[5]`), so it
++/// IKBD/MIDI slot swap ([`bcostat_handle`]). Ready (`-1`) for CON
++/// (`bcostat2`) and the no-cable AUX ([`AuxNoCable`]); raw-CON's slot is `char_dummy` (`bcostat_init[5]`), so it
+ /// reports busy (`0`) although `Bconout(5)` writes — deliberately **not** the
+ /// same handle set as `Bconout`. Absent devices and the boot guard: `0`.
+ pub fn bcostat(args: &TrapArgs) -> Long {
+diff --git a/tos-api/src/gemdos/console.rs b/tos-api/src/gemdos/console.rs
+index 9ea01478..cbe9f4c7 100644
+--- a/tos-api/src/gemdos/console.rs
++++ b/tos-api/src/gemdos/console.rs
+@@ -110,10 +110,11 @@ pub fn cconout(args: &TrapArgs) -> Long {
+ // ---------------------------------------------------------------------------
+ 
+ /// `Cauxin()` — pass-through to `Bconin(1)`, exactly as EmuTOS' `xauxin`:
+-/// the AUX entry of the device table. That entry is the documented absent
+-/// device (`docs/api/gemdos/console/03-cauxin.md`, FS11 note), so the
+-/// pass-through returns `0` at once instead of blocking on serial hardware
+-/// that does not exist; a UART driver (`TASK/IO01.md`) replaces the entry.
++/// the AUX entry of the device table. That entry is "port present, no
++/// cable" (`docs/api/gemdos/console/03-cauxin.md`, FS11 note; `3f-fread.md`
++/// item 1a), so the pass-through returns `0` at once instead of waiting for
++/// a byte that never arrives; a UART driver (`TASK/IO01.md`) replaces the
++/// entry.
+ pub fn cauxin(_: &TrapArgs) -> Long {
+     chardev::bconin_handle(DEV_AUX)
+ }
+@@ -125,9 +126,9 @@ pub fn cauxin(_: &TrapArgs) -> Long {
+ // ---------------------------------------------------------------------------
+ 
+ /// `Cauxout(ch)` — pass-through to `Bconout(1, ch)`, exactly as EmuTOS'
+-/// `xauxout`: the AUX entry of the device table. With the absent-device
+-/// entry the byte is discarded and the call returns `0`
+-/// (`docs/api/gemdos/console/04-cauxout.md`, FS11 note).
++/// `xauxout`: the AUX entry of the device table. The no-cable entry
++/// discards the byte and returns `1`
++/// (`docs/api/gemdos/console/04-cauxout.md`, option A).
+ pub fn cauxout(args: &TrapArgs) -> Long {
+     let ch = args.arg_u16(0) as u8;
+     chardev::bconout_handle(DEV_AUX, ch)
+@@ -585,7 +586,7 @@ pub fn cprnos(_: &TrapArgs) -> Long {
+ // ---------------------------------------------------------------------------
+ 
+ /// `Cauxis()` — `Bconstat(1)` of the AUX entry (no BDOS typeahead buffer to
+-/// check first); `0` for the absent device.
++/// check first); `0` — the no-cable AUX entry never has input.
+ pub fn cauxis(_: &TrapArgs) -> Long {
+     chardev::bconstat_handle(DEV_AUX)
+ }
+@@ -595,8 +596,8 @@ pub fn cauxis(_: &TrapArgs) -> Long {
+ // Spec: docs/api/gemdos/console/13-cauxos.md (FS11 note).
+ // ---------------------------------------------------------------------------
+ 
+-/// `Cauxos()` — `Bcostat(1)` of the AUX entry; `0` (not ready) for the
+-/// absent device.
++/// `Cauxos()` — `Bcostat(1)` of the AUX entry; `-1` (ready) for the
++/// no-cable entry (`docs/api/gemdos/console/13-cauxos.md`, option A).
+ pub fn cauxos(_: &TrapArgs) -> Long {
+     chardev::bcostat_handle(DEV_AUX)
+ }
+@@ -836,15 +837,17 @@ mod tests {
+     }
+ 
+     /// WT4 (`40-fwrite.md`): the byte is read from the user buffer before the
+-    /// device call — an unreadable byte 0 is `FAULTED`, not the absent
+-    /// device's short count 0.
++    /// device call — an unreadable byte 0 is `FAULTED`, not the device's
++    /// result (the absent PRN's short count 0, the no-cable AUX's count).
+     #[test]
+     fn wt4_fwrite_reads_the_byte_before_the_device_call() {
+         for numl in [-2, -3] {
+             assert_eq!(device_write_with(numl, 3, &FaultBuf::new(0)), crate::uaccess::FAULTED);
+         }
+-        // Readable: the absent device refuses the first byte → short count 0.
+-        assert_eq!(device_write_with(-2, 3, &FaultBuf::new(8)), 0);
++        // Readable: the absent PRN refuses the first byte → short count 0;
++        // the no-cable AUX accepts every byte → 3 (`3f-fread.md` item 1a).
++        assert_eq!(device_write_with(-3, 3, &FaultBuf::new(8)), 0);
++        assert_eq!(device_write_with(-2, 3, &FaultBuf::new(8)), 3);
+     }
+ 
+     /// The device read stops with `FAULTED` at the first byte it cannot store
+diff --git a/tos-api/tests/fs10_fseek_device_handles.rs b/tos-api/tests/fs10_fseek_device_handles.rs
+index c0d693de..d50a274a 100644
+--- a/tos-api/tests/fs10_fseek_device_handles.rs
++++ b/tos-api/tests/fs10_fseek_device_handles.rs
+@@ -210,14 +210,14 @@ fn t13_fdatime_on_a_console_handle_is_invalid() {
+ 
+ /// `Fread` / `Fwrite` read the handle as a signed WORD too: `-1..-3` resolve
+ /// to a character device, `<= -4` is `EIHNDL` (`bdosmain.c:589,601-602`).
+-/// Since FS11 each device is its BIOS device-table entry: CON writes and
+-/// returns the count, the absent AUX/PRN refuse the first byte (short count
+-/// 0, `40-fwrite.md` W15/W18).
++/// Since FS11 each device is its BIOS device-table entry: CON and the
++/// no-cable AUX accept and return the count (`40-fwrite.md` W15, option A),
++/// the absent PRN refuses the first byte (short count 0, W18).
+ #[test]
+ fn fread_fwrite_take_negative_handles_as_devices() {
+     let (_g, _host) = fs();
+     let _p = Pd::new();
+-    for (h, want4, want2) in [(-1, 4, 2), (-2, 0, 0), (-3, 0, 0)] {
++    for (h, want4, want2) in [(-1, 4, 2), (-2, 4, 2), (-3, 0, 0)] {
+         assert_eq!(fwrite(h, b"fs10"), want4, "Fwrite({h})");
+         let zx = call(FWRITE, [h as u16 as u64, 2, b"ok".as_ptr() as u64, 0, 0, 0, 0, 0]);
+         assert_eq!(zx, want2, "Fwrite({h} as u16)");
+diff --git a/tos-api/tests/fs11_device_rw.rs b/tos-api/tests/fs11_device_rw.rs
+index d9bd34ff..66d5aae9 100644
+--- a/tos-api/tests/fs11_device_rw.rs
++++ b/tos-api/tests/fs11_device_rw.rs
+@@ -3,7 +3,7 @@
+ //!
+ //! Spec: `docs/api/gemdos/file/3f-fread.md` and `40-fwrite.md`, sections
+ //! "Character-device path" and the tables "NewTOS host tests" (R1..R32,
+-//! RT1..RT3, W1..W27, WT1..WT3; WT4 is the in-crate unit test
++//! RT1..RT3, W1..W28, WT1..WT3; WT4 is the in-crate unit test
+ //! `gemdos::console::tests::wt4_*`, the host cannot fault a user pointer).
+ //! The device table and the absent-device profile: `3f-fread.md` "NewTOS
+ //! implementation notes"; the BIOS/GEMDOS/XBIOS notes in
+@@ -437,9 +437,10 @@ fn r28_typeahead_survives_between_calls() {
+     assert_eq!(b[0], b'b');
+ }
+ 
+-// ═══ Fread, AUX / PRN (absent devices) ═══════════════════════════════════
++// ═══ Fread, AUX (no cable) / PRN (absent) ═══════════════════════════════
+ 
+-/// R17, R18, R29: AUX is absent — every `Bconin` is 0 without blocking, so a
++/// R17, R18, R29: AUX has no input ("no cable", item 1a) — every `Bconin` is
++/// 0 without blocking, so a
+ /// line read fills the buffer with NULs; nothing reaches the console.
+ #[test]
+ fn r17_r18_r29_absent_aux() {
+@@ -531,7 +532,7 @@ fn r23_fdup_of_console() {
+     assert_eq!(fread(d, &mut b), EIHNDL, "R23 after Fclose");
+ }
+ 
+-/// R24: `Fforce(0, -2)` makes stdin the (absent) AUX.
++/// R24: `Fforce(0, -2)` makes stdin AUX (no cable: no input).
+ #[test]
+ fn r24_fforce_stdin_to_aux() {
+     let (_g, host, p) = setup();
+@@ -707,17 +708,20 @@ fn w14_no_ctrl_s_pause() {
+ 
+ // ═══ Fwrite, AUX / PRN ═══════════════════════════════════════════════════
+ 
+-/// W15-W18: AUX and PRN are absent — the first `Bconout` returns 0, the call
+-/// returns the short count 0; no break check on non-CON.
++/// W15-W17: AUX (1) is "port present, no cable" (`3f-fread.md` item 1a,
++/// option A): every `Bconout(1)` accepts and discards, so `Fwrite(-2|2, n)`
++/// returns `n`; no tab expansion and no break check on non-CON (the queued
++/// Ctrl-C stays). W18: PRN stays absent — the first `Bconout` returns 0, the
++/// call returns the short count 0.
+ #[test]
+-fn w15_to_w18_absent_aux_and_prn() {
++fn w15_to_w18_aux_no_cable_and_absent_prn() {
+     let (_g, host, _p) = setup();
+     host.type_keys(&[CTRL_C]);
+     for h in [-2, 2] {
+-        assert_eq!(fwrite(h, b"ATZ\r"), 0, "W15 Fwrite({h})");
++        assert_eq!(fwrite(h, b"ATZ\r"), 4, "W15 Fwrite({h})");
+     }
+-    assert_eq!(fwrite(-2, b"\tX"), 0, "W16");
+-    assert_eq!(fwrite(-2, b"ab"), 0, "W17");
++    assert_eq!(fwrite(-2, b"\tX"), 2, "W16");
++    assert_eq!(fwrite(-2, b"ab"), 2, "W17");
+     for h in [-3, 3] {
+         assert_eq!(fwrite(h, b"abc"), 0, "W18 Fwrite({h})");
+     }
+@@ -762,15 +766,16 @@ fn w23_w24_invalid_handles() {
+     assert_eq!(fwrite(6 + 15, b"x"), EIHNDL, "W24 free slot");
+ }
+ 
+-/// W25: `Fdup(2)` is AUX (absent: 0); closed → `EIHNDL`.
++/// W25: `Fdup(2)` is AUX (no-cable entry accepts: 2); closed → `EIHNDL`.
+ #[test]
+ fn w25_fdup_of_aux() {
+-    let (_g, _host, _p) = setup();
++    let (_g, host, _p) = setup();
+     let d = fdup(2);
+     assert!(d >= 6, "Fdup(2) -> {d}");
+-    assert_eq!(fwrite(d, b"ok"), 0, "W25");
++    assert_eq!(fwrite(d, b"ok"), 2, "W25");
+     assert_eq!(fclose(d), E_OK);
+     assert_eq!(fwrite(d, b"ok"), EIHNDL, "W25 after Fclose");
++    assert!(host.take_output().is_empty(), "nothing on CON");
+ }
+ 
+ /// W26: `Fforce(1, -3)` sends stdout to the (absent) printer.
+@@ -804,6 +809,21 @@ fn w27_fforce_stdout_to_a_file_and_back() {
+     assert_eq!(fclose(r), E_OK);
+ }
+ 
++/// W28 (regression guard, FS11 acceptance finding 1): a default process with
++/// **no** `Fforce` writes to handle 2 (stderr = AUX). Every write returns its
++/// full count — a 0 made mintlib's write loop retry forever (the pre-
++/// LIBC-MAIN stderr hang). Nothing reaches CON.
++#[test]
++fn w28_fwrite_2_without_fforce_returns_count() {
++    let (_g, host, p) = setup();
++    assert_eq!(p.uft(), DEFAULT, "no Fforce");
++    assert_eq!(fwrite(2, b"hello"), 5, "W28 5");
++    assert_eq!(fwrite(2, b"x"), 1, "W28 1");
++    let buf = vec![0x5Au8; 0x1000];
++    assert_eq!(fwrite(2, &buf), 0x1000, "W28 0x1000");
++    assert!(host.take_output().is_empty(), "nothing on CON");
++}
++
+ // ═══ Fwrite, single dispatch point ═══════════════════════════════════════
+ 
+ /// WT1, WT2: the AUX entry is reached by `Fwrite(-2|2)`, an `Fdup(2)` handle,
+@@ -854,19 +874,25 @@ fn wt3_prn_entry_is_index_0() {
+ 
+ // ═══ BIOS / GEMDOS / XBIOS on the absent profile ═════════════════════════
+ 
+-/// The absent profile per BIOS device (`docs/api/bios/{01,02,03,08}`): PRN,
+-/// AUX, MIDI, IKBD and 6/7 answer 0 everywhere; CON is the console; raw-CON
+-/// writes; handles past the table are 0.
++/// The device profile per BIOS device (`docs/api/bios/{01,02,03,08}`): PRN,
++/// MIDI, IKBD and 6/7 are absent and answer 0 everywhere; AUX is "port
++/// present, no cable" (`Bconout` 1, `Bcostat` -1, `Bconstat`/`Bconin` 0
++/// without blocking); CON is the console; raw-CON writes; handles past the
++/// table are 0.
+ #[test]
+ fn bios_absent_profile() {
+     let (_g, host, _p) = setup();
+-    for dev in [0u64, 1, 3, 4, 6, 7, 8, 0xFFFF] {
++    for dev in [0u64, 3, 4, 6, 7, 8, 0xFFFF] {
+         assert_eq!(bios(BCONSTAT, dev, 0), 0, "Bconstat({dev})");
+         assert_eq!(bios(BCONIN, dev, 0), 0, "Bconin({dev})");
+         assert_eq!(bios(BCONOUT, dev, b'x' as u64), 0, "Bconout({dev})");
+         assert_eq!(bios(BCOSTAT, dev, 0), 0, "Bcostat({dev})");
+     }
+-    assert!(host.take_output().is_empty(), "absent output discarded");
++    assert_eq!(bios(BCONSTAT, 1, 0), 0, "Bconstat(1) AUX no cable");
++    assert_eq!(bios(BCONIN, 1, 0), 0, "Bconin(1) AUX non-blocking");
++    assert_eq!(bios(BCONOUT, 1, b'x' as u64), 1, "Bconout(1) AUX accepts");
++    assert_eq!(bios(BCOSTAT, 1, 0), -1, "Bcostat(1) AUX ready");
++    assert!(host.take_output().is_empty(), "absent/AUX output discarded");
+     assert_eq!(bios(BCOSTAT, 2, 0), -1, "Bcostat(2)");
+     assert_eq!(bios(BCOSTAT, 5, 0), 0, "Bcostat(5) char_dummy");
+     assert_eq!(bios(BCONOUT, 2, b'c' as u64), 1);
+@@ -879,17 +905,18 @@ fn bios_absent_profile() {
+     assert_eq!(bios(BCONSTAT, 5, 0), 0, "Bconstat(5)");
+ }
+ 
+-/// The GEMDOS AUX/PRN calls on the absent profile
+-/// (`docs/api/gemdos/console/{03,04,05,11,12,13}`).
++/// The GEMDOS AUX/PRN calls (`docs/api/gemdos/console/{03,04,05,11,12,13}`):
++/// AUX is the no-cable entry (`Cauxout` 1, `Cauxos` -1, `Cauxin`/`Cauxis` 0),
++/// PRN is absent (all 0).
+ #[test]
+ fn gemdos_aux_prn_absent_profile() {
+     let (_g, host, _p) = setup();
+     assert_eq!(gemdos0(CAUXIN), 0, "Cauxin");
+-    assert_eq!(call(CAUXOUT, [b'x' as u64, 0, 0, 0, 0, 0, 0, 0]), 0, "Cauxout");
++    assert_eq!(call(CAUXOUT, [b'x' as u64, 0, 0, 0, 0, 0, 0, 0]), 1, "Cauxout");
+     assert_eq!(call(CPRNOUT, [b'x' as u64, 0, 0, 0, 0, 0, 0, 0]), 0, "Cprnout");
+     assert_eq!(gemdos0(CPRNOS), 0, "Cprnos");
+     assert_eq!(gemdos0(CAUXIS), 0, "Cauxis");
+-    assert_eq!(gemdos0(CAUXOS), 0, "Cauxos");
++    assert_eq!(gemdos0(CAUXOS), -1, "Cauxos");
+     assert!(host.take_output().is_empty());
+ }
+ 

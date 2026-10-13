@@ -1,0 +1,30 @@
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.eECw9g/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.eECw9g/ser.sock,server=on
+t=  32.6s end marker seen
+t=  34.7s ac-on-virt-vreg-end.png {"return": {}}
+prompts seen: 0
+run ac-on-virt-vreg: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.TpPOWg/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.TpPOWg/ser.sock,server=on
+t=   3.3s end marker seen
+t=   5.5s ac-on-virt-vreg-oldcrt0-end.png {"return": {}}
+prompts seen: 0
+run ac-on-virt-vreg-oldcrt0: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.Rzl2t1/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.Rzl2t1/ser.sock,server=on
+t=  33.8s end marker seen
+t=  35.9s ac-off-virt-vreg-end.png {"return": {}}
+prompts seen: 0
+run ac-off-virt-vreg: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.J67agh/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.J67agh/ser.sock,server=on
+t=   3.3s end marker seen
+t=   5.5s ac-off-virt-vreg-oldcrt0-end.png {"return": {}}
+prompts seen: 0
+run ac-off-virt-vreg-oldcrt0: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.jCRAia/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.jCRAia/ser.sock,server=on
+t=  30.9s end marker seen
+t=  33.0s ac-strict-virt-vreg-end.png {"return": {}}
+prompts seen: 0
+run ac-strict-virt-vreg: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.YrBMzF/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.YrBMzF/ser.sock,server=on
+t=   3.3s end marker seen
+t=   5.5s ac-strict-virt-vreg-oldcrt0-end.png {"return": {}}
+prompts seen: 0
+run ac-strict-virt-vreg-oldcrt0: rc=0

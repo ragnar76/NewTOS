@@ -1,0 +1,20 @@
+DIFF apitest-t25.png
+DIFF doom-t30.png
+DIFF doom-t45.png
+MISSING cm-on-rpi4-stdoutdb-rerun-end.png
+cm-on-rpi4- vs cm-on-rpi4-: same=24 diff=3 missing=1
+DIFF apitest-t25.png
+DIFF doom-t30.png
+DIFF doom-t45.png
+MISSING cm-off-rpi4-stdoutdb-rerun-end.png
+cm-off-rpi4- vs cm-off-rpi4-: same=24 diff=3 missing=1
+DIFF apitest-t25.png
+DIFF doom-t30.png
+DIFF doom-t45.png
+MISSING cm-strict-rpi4-stdoutdb-rerun-end.png
+cm-strict-rpi4- vs cm-strict-rpi4-: same=30 diff=3 missing=1
+DIFF apitest-t25.png
+DIFF doom-t30.png
+DIFF doom-t45.png
+MISSING cm-on-asid-rpi4-stdoutdb-rerun-end.png
+cm-on-asid-rpi4- vs cm-on-asid-rpi4-: same=24 diff=3 missing=1

@@ -1,0 +1,54 @@
+measurement-2026-10-13-fs11-aux-acceptance -- Tester re-acceptance of LIBC-MAIN + FS11 after the AUX follow-up
+(ba3dccb8: AUX = port present, no cable). Tested on HEAD 70192a53, working tree clean (no product code touched;
+only scratch copies of the tree were instrumented). No SD card, Pi or TT touched. Date 2026-10-13, host macOS,
+QEMU raspi4b (-append serial=on [memprot=off|strict] [asid=on]) and qemu-virt.
+Kernels gitignored, sha256 in bin/KERNELS.SHA256; programs in bin/ (+ j, m, oldcrt0) in bin/SHA256SUMS; repo
+binaries in repo-binaries.sha256. All programs rebuilt in this run (method/build-all.sh, build-ppj.sh, build-envkidm.sh,
+build-stderrq.sh; checks/build-*.log). Reused byte copies from measurement-2026-10-13-libc-main-fs11-acceptance/bin:
+oldcrt0/STDERRP.NAP, STDERRO.NAP (old-crt0 binaries), kernel8-pre.img (= its kernel8-lm.img, fb84e64a, FS11 with
+AUX absent), kernel8-prefs11.img (7bb9579a, before FS11), kernel8-keys-stderr-old.img (EmuCON stderr keys kernel, 7bb9579a).
+Labels: aux = checks.sh product kernel (kernel8-cm/-ax are byte copies); cm = scratch-kernels.sh (crash, keys, tdkeys,
+keys9, virt crash/st) + cm-series.sh; ax = aux-series.sh (PRE=0) + fs11-kernels.sh keys kernel; ac = stderr matrix,
+virt vreg, EmuCON stderr. Every parallel series used its own card root per mode and distinct run tags.
+
+1. STATIC BASELINES (method/checks.sh aux; checks/checks-aux.log, aux-*.txt)         expected   measured
+   host tests (tos-api tos-types xtask)                                              1323/0/1   1323 / 0 / 1
+   release warnings tos-api/kernel, fresh, rpi4 and qemu-virt                        64 / 94    64 / 94, 0 errors both
+   clippy tos-api/kernel, rpi4 and qemu-virt                                         76 / 125   76 / 125 both
+   tools/desk-drift-probe.sh                                                         31         31
+   sdk/run-host-tests.sh                                                             19/0/0     19 / 0 / 0
+
+2. STDERR MATRIX, raspi4b (method/stderr-matrix-aux.sh; serial/ac-<mode>-rpi4-stder*, checks/stderr-matrix-*.log)
+   modes on / off / strict / on-asid, every cell identical in all four modes (end screendumps byte-identical across modes):
+   kernel          new crt0 STDERRP   old crt0 STDERRP   STDERRA (ARGV kid, new crt0, handle 2 = AUX)
+   aux (HEAD)      PAR+KID DONE       PAR+KID DONE       PAR+KID DONE   (writes return their counts; text discarded)
+   pre (fb84e64a)  PAR+KID DONE       HANG (last line "STDERRP[PAR] argc=1 argv0len=0")    HANG (last "Fforce(2,-2) rc=0")
+   prefs11         PAR+KID DONE       PAR+KID DONE       PAR+KID DONE
+   (pre/prefs11 = red/old controls only; "pre" hangs reproduce the previous acceptance finding 5b and the developer's red controls.)
+   EmuCON (stderr-emucon.sh, keys kernel with the schedule: "run stderrq.nap" (new crt0), "run stderro.nap" (old crt0)):
+   aux kernel: both programs print all lines, [program exited], prompt returns (ac-*-stderr-emucon-newkernel-t35.png); the
+   previous acceptance (fb84e64a) stopped after the first line of stderro. Pre-FS11 keys kernel (7bb9579a): also completes.
+   Screendumps of aux-kernel EmuCON identical in all four modes.
+3. FS11 / APITEST (aux-series.sh ax, 4 modes; checks/summary-ax.txt): FS11A PASS, FS11DEV (keys kernel) FS11A/B/C/DEV PASS,
+   0 FAIL lines; STDOUTDB fputs rc 0 / printf rc 0x1a (identical DBG lines to the previous acceptance f11 logs in on/off/strict);
+   APITEST TOTAL 106 / 0 / 5 with BC14 got=1 and BC22 got=-1 [OK], all modes. No [EXC]/[PANIC] in any log of this run.
+4. REGRESSION SAMPLE (cm-series.sh cm + cm-batch2.sh; checks/summary-cm.txt) -- verdict lines compared with the previous
+   acceptance's summary-cm.txt: IDENTICAL in on / off / strict / on-asid (apart from the added virt runs and the STDOUTDB rerun)
+   desktop, ACC, ACCFREE PASS, TeraDesk, QED, TeraDesk->QED, Doom (VERIFIED), APITEST 106/0/5, KBDVEC + EmuCON typed command
+   (run hello2.ncp), E9MEM/E9PLAIN, ENVRN, ATEXIT, FSEEKCON, VFORKT, PPARENT AUTO/ACC (+ PPZJ Z/KID PASS), S2ALLM / S2ALLSM
+   (ENVKIDM) MEM03 PASS + S2ALL PASS (strict: S2ALLSM on the crash kernel), PORT10 44/44.
+   Known stale probes (identical FAIL set as before): PPARENT Z/KID, S2ALL/S2ALLJ MEM03.
+   Screendumps cm-<mode>-rpi4-* vs previous acceptance (checks/shotcmp-vs-prev.txt): 24 (30 strict) identical per mode; DIFF only
+   doom-t30/t45 (timing jitter, inspected: Doom running) and apitest-t25 (expected: BC14/BC22 lines now ->1 / ->-1, inspected).
+5. QEMU-VIRT (kernel-virt-*.img; checks/virt-boot.log, virt-vreg.log):
+   boot + selftests (B1, D3, D3 PEXEC, D4/D5 PEXEC, D6, D7 PTERMRES PASS), desktop up, crash kernel (CRASHTST, UACC3A, MPROT3B,
+   E10USR PASS) in on / off / strict / on-asid. RAM-registry probe kernels (virtreg-instrumentation.py, vreg-kernels.sh,
+   virt-vreg-runs.sh) in on/off/strict: STDOUTDB, STDERRP (new crt0), FS11A PASS, STDERRA all run to completion (rc=0);
+   old-crt0 STDERRP + STDERRA kernel: completes (no hang); APITEST 80/2/7 with the same 11 storage-less FAIL lines as the previous
+   acceptance (virt has no C:).
+6. Hazards of this run: (i) bin/STDOUTDB.NAP missing in the first cm-series pass (build-s2-tests.sh names it STDOUTDBG.NAP; known
+   hazard iii) -> first-pass cm-*-rpi4-stdoutdb logs/shots are void (kept), results are from cm-*-rpi4-stdoutdb-rerun; (ii) first
+   vreg-kernels.sh build failed (scratch-dir name collision with the program dir, vreg-kernels.sh fixed, kernels rebuilt).
+NOT RUN: real Pi 4 (TeraDesk clean quit, QED keyboard, USB, HDMI, cache); desk3a/ppdesk desktop interaction scripts, CRASHTST/
+UACC3A/MPROT/E10/MDPROBE/ASIDSTR on raspi4b (not in the requested sample; unchanged kernel paths, previous acceptance green);
+off-asid / strict-asid; virt pre-FS11 red control; real serial wire (AUX bytes discarded by design).

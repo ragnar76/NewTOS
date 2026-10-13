@@ -1,0 +1,9 @@
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+t=25.0s -> ac-strict-rpi4-stderr-emucon-newkernel-t25.png {"return": {}}
+t=35.0s -> ac-strict-rpi4-stderr-emucon-newkernel-t35.png {"return": {}}
+t=60.0s -> ac-strict-rpi4-stderr-emucon-newkernel-t60.png {"return": {}}
+run ac-strict-rpi4-stderr-emucon-newkernel: rc=0
+t=25.0s -> ac-strict-rpi4-stderr-emucon-oldkernel-t25.png {"return": {}}
+t=35.0s -> ac-strict-rpi4-stderr-emucon-oldkernel-t35.png {"return": {}}
+t=60.0s -> ac-strict-rpi4-stderr-emucon-oldkernel-t60.png {"return": {}}
+run ac-strict-rpi4-stderr-emucon-oldkernel: rc=0

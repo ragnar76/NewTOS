@@ -1,0 +1,31 @@
+built kernel8-crash-cm.img
+built kernel-virt-crash-cm.img
+built kernel8-keys-cm.img
+built kernel-virt-st-cm.img
+built kernel8-tdkeys-cm.img
+built kernel8-keys9-cm.img
+built kernel8-asidk-cm.img
+    --> kernel/src/selftest_objc.rs:1275:77
+     |
+1275 |     intin[0] = 0; intin[1] = 8; intin[2] = 0; intin[3] = 0; intin[4] = 640; intin[5] = 480;
+     |                                                                             ^^^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `addrin` is never read
+    --> kernel/src/selftest_objc.rs:1274:5
+     |
+1274 |     addrin[0] = tree.as_ptr() as i64;
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: `kernel` (lib) generated 72 warnings
+error: could not compile `kernel` (lib) due to 3 previous errors; 72 warnings emitted
+warning: build failed, waiting for other jobs to finish...
+warning: `tos-api` (lib) generated 64 warnings
+xtask: `cd "/private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/0c54029c-ee4e-40c3-bb6a-48ecd5c51e63/scratchpad/ac/s/asidkv" && "/Users/ingouhlemann/.rustup/toolchains/nightly-2026-04-15-aarch64-apple-darwin/bin/cargo" "build" "--package" "kernel" "--no-default-features" "--features" "board-qemu-virt" "--release"` exited with exit status: 101
+fs11 schedule: 30 entries, last at 385
+built kernel8-keys-ax.img
+emucon schedule: 78 entries, last at 4445
+ALLKERNELS-DONE

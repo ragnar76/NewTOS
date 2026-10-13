@@ -1,0 +1,2059 @@
+diff --git a/TASK/ARCH03-3b-STATUS-UNFINISHED.MD b/TASK/ARCH03-3b-STATUS-UNFINISHED.MD
+index d738b36..dbff64f 100644
+--- a/TASK/ARCH03-3b-STATUS-UNFINISHED.MD
++++ b/TASK/ARCH03-3b-STATUS-UNFINISHED.MD
+@@ -119,6 +119,14 @@ Zeiger außerhalb der Pools → `hardware memory, …`.
+ 
+ ## Offen / zur Entscheidung
+ 
++> **Stand nach 3c (2026-10-05):** 1 (E10), 3 (E6 vs. strict), 4 (`F_KEEP`)
++> und 5 (Tabellenmangel) sind in Stufe 3c geschlossen. **2 ist nicht
++> geschlossen:** die Lader-Reihenfolge ist jetzt die von EmuTOS, die
++> TSRPAR-Prüfung scheitert unter Schutz an/strict aber weiter — die Ursache
++> ist nicht die Reihenfolge, sondern E9 + E16 (Messung und Begründung:
++> [ARCH03-3c-STATUS-UNFINISHED](ARCH03-3c-STATUS-UNFINISHED.MD)). Die Datei
++> bleibt deshalb „UNFINISHED“.
++
+ 1. **E10 nicht verdrahtet.** `memprot::grant_temp/revoke_temp` sind gebaut
+    und getestet (Hosttest `temporary_rights_for_a_foreign_callout`). Sie
+    anzuschließen heißt, in `aes/object.rs` `ob_user` die A97-Regel
+diff --git a/TASK/ARCH03.md b/TASK/ARCH03.md
+index b37e0c6..a8ef75d 100644
+--- a/TASK/ARCH03.md
++++ b/TASK/ARCH03.md
+@@ -47,3 +47,22 @@ globaler `Mxalloc`-Speicher. Anwender: „es so wie bei FreeMiNT bauen“.
+   Kindes = Rechte-Tabellen des Aufrufers + eigene Seite 0).
+ * **Absturz-Spezifikation** `docs/api/bios/_exception-crash.md` freigegeben;
+   **E11:** EmuTOS-Absturzbericht (kein FreeMiNT-Alert).
++
++## Fortschritt (Stand 2026-10-05, Zweig `arch03`)
++
++| Stufe | Stand | Quittung / Beleg |
++|---|---|---|
++| 0a Track B | erledigt | `docs/analysis/arch03-stage0a-armarm-verification.md` |
++| 0b Spike | erledigt | `docs/analysis/arch03-stage0b-spike.md` |
++| 0c Abbruch statt Halt | umgesetzt, QEMU belegt | [ARCH03-0c-STATUS-DONE](ARCH03-0c-STATUS-DONE.MD) |
++| 0d PIE-Lader | umgesetzt, QEMU belegt | [ARCH03-0d-STATUS-DONE](ARCH03-0d-STATUS-DONE.MD) |
++| 1 gemeinsamer Raum | umgesetzt, QEMU belegt | [ARCH03-1-STATUS-DONE](ARCH03-1-STATUS-DONE.MD) |
++| 2 Pexec 5/6/7, Ptermres, Regionen | umgesetzt, QEMU belegt | [ARCH03-2-STATUS-DONE](ARCH03-2-STATUS-DONE.MD) |
++| 3a Kernelzugriff | umgesetzt, QEMU belegt | [ARCH03-3a-STATUS-DONE](ARCH03-3a-STATUS-DONE.MD) |
++| 3b Rechte je Prozess | umgesetzt, QEMU belegt; Offen 1/3/4/5 in 3c geschlossen, Offen 2 nicht | [ARCH03-3b-STATUS-UNFINISHED](ARCH03-3b-STATUS-UNFINISHED.MD) |
++| 3c E10, Lader-Reihenfolge, E6/strict, F_KEEP, Tabellenmangel | umgesetzt, QEMU belegt; **S2ALL/TSRPAR unter Schutz an/strict weiter FAIL** (Ursache E9+E16, Entscheidung nötig) | [ARCH03-3c-STATUS-UNFINISHED](ARCH03-3c-STATUS-UNFINISHED.MD) |
++| 2b FreeMiNT-Modi 100+ | offen | — |
++| 4 ASIDs | offen (optional) | — |
++
++Abnahme durch den Tester und Pi-Läufe für 0c–3c offen; Pi nur auf Ansage.
++Plan-Abschnitt „Stufe 3 wie gebaut“: `docs/analysis/arch03-implementation-plan.md`.
+diff --git a/docs/COMPATIBILITY.md b/docs/COMPATIBILITY.md
+index 448d05f..eb376d8 100644
+--- a/docs/COMPATIBILITY.md
++++ b/docs/COMPATIBILITY.md
+@@ -751,6 +751,21 @@ every block starts on a page (FreeMiNT `QUANTUM`, `sys/mint/mem.h:152`), so
+ (rights per process), `48-malloc.md`, `49-mfree.md`, `4a-mshrink.md`,
+ `docs/api/bios/_exception-crash.md` (memory protection); tests
+ `tos-api/tests/arch03_3b_memprot.rs`, probe `sdk/examples/mprot3b.c`.
++Stage 3c: `memprot=strict` concerns `Pexec` 0/6 children only — a `Pexec` 4
++child shares its caller's space in every mode (E6); a `G_USERDEF` routine of
++another process runs in the current one with the owner's rights for the
++callout (E10 (a), EmuTOS behaviour, `aes/gemoblib.c:411-426`, in every mode);
++a process that cannot get a private page table keeps non-owner rights there
++and is reported once on the serial line (`[memprot] page-table arena
++exhausted …`).
++
++**`Mxalloc` `F_KEEP` (`0x4000`)** (ARCH03 stage 3c). EmuTOS clears the bit
++(`bdos/umem.c:241`); NewTOS honours it as FreeMiNT does
++(`sys/dosmem.c:131-135,161-165,365-398`, `sys/proc_help.c:242-258`): the
++block survives its last owner's termination, passes to the system and can
++then be freed by any process. In every protection mode. Spec
++`docs/api/gemdos/memory/44-mxalloc.md`, `49-mfree.md`; tests
++`tos-api/tests/arch03_3c_keep.rs`.
+ 
+ ## EmuTOS is the reference, not the template
+ 
+diff --git a/docs/analysis/arch03-implementation-plan.md b/docs/analysis/arch03-implementation-plan.md
+index c16f310..3dd1e5d 100644
+--- a/docs/analysis/arch03-implementation-plan.md
++++ b/docs/analysis/arch03-implementation-plan.md
+@@ -474,6 +474,21 @@ Jede Stufe: eigener Zweig von `desk-rebuild` (Merkregel „Agent-Worktrees start
+ - **Rückrollen:** Schalter „Schutz aus“ zur Bootzeit (wie FreeMiNT `MEM_PROT=NO`, `FM/bootmenu.c:207-219` [S1]): alle `memspace` zeigen wieder auf die geteilten Tabellen — damit ist Stufe 3 zur Laufzeit abschaltbar, zusätzlich Revert.
+ - **Aufwand:** 10–15 Tage.
+ 
++#### Stufe 3 wie gebaut (3a–3c, Stand 2026-10-05)
++
++Quittungen: `TASK/ARCH03-3a-STATUS-DONE.MD`, `TASK/ARCH03-3b-STATUS-UNFINISHED.MD`,
++`TASK/ARCH03-3c-STATUS-UNFINISHED.MD`; Belege `measurements/measurement-2026-10-05-arch03-3{a,b,c}/`.
++
++- **3a — Kernelzugriff:** jede Stelle der Inventur (`docs/analysis/arch03-stage3-access-inventory.md`) läuft über `uaccess` (Aufruferrechte, `ldtr/sttr`, Fehlerabfang) oder prüft mit Aufruferrechten und liest über den Kernel-Alias (`kalias`); ein schlechter Zeiger beendet das Programm statt den Kernel.
++- **3b — Rechte je Adressraum:** `tos-api/src/bdos/process/memprot.rs`. Rechte werden **berechnet, nicht fortgeschrieben**: Änderungen markieren Bereiche/Slots als schmutzig, `sync()` (Ende jeder mutierenden BDOS-Operation, vor jedem `install_ttbr0`, Ende jedes Traps) rechnet die 2-MiB-Regionen aus Pool-Listen, Besitzern (`m_own` + weitere Besitzer), Blocksätzen (Modus, E5-Erbe) und E10-Freigaben neu. Geteilte L3 = Nicht-Besitzer-Rechte, private L3 nur wo ein Slot abweicht (Copy-on-differ, §3.2); jeder Slot hat eigene L2 für alle vier GiB. Tabellen aus einem Vorrat, den der Kernel beim Booten vor den Pools nimmt. Seitenraster (E16) nur bei Schutz an. Bootschalter `memprot=off` (= 3a) / `memprot=strict` (E5 strikt). Schutzverletzung → EmuTOS-Absturzbericht + Zeile `Memory violation: …` (E11, kein Alert). Keine ASIDs (Stufe 4).
++- **3c — Abschluss:**
++  - **E10 (a) verdrahtet, in allen Modi:** `aes/object.rs` `ob_user` führt die `G_USERDEF`-Routine eines **fremden** Baumeigentümers im laufenden Prozess aus wie EmuTOS (`aes/gemoblib.c:411-426` `call_usercode` = `jsr` auf dem laufenden Stapel, aus `ob_user` `:433-448`, `just_draw` `:792-793`); bei Schutz an mit `memprot::grant_temp` vor und `revoke_temp` nach dem Callout (FreeMiNT `prot_temp`, `FM/arch/mprot030.c:775-805`). Die A97-Zurückstellung ist aufgehoben (sie bestand, weil vor Stufe 1 die fremde VA im laufenden Prozess nichts bedeutete). Kein Callout nur ohne EL0-Prozess (Kernel-Aufrufer). Sonde `sdk/examples/e10usr.c` + `e10kid.c`.
++  - **Lader-Reihenfolge wie EmuTOS:** Umgebung vor TPA (`ET/bdos/proc.c:281-299`); beide als Aufrufer angelegt, bei `PE_LOADGO` dem Kind übergeben (`:302-307`).
++  - **E6 vs. strict:** `memprot=strict` betrifft nur Kinder mit eigenem Raum (`Pexec` 0/6); ein `Pexec`-4-Kind teilt den Raum des Aufrufers in jedem Modus (dokumentiert in `4b-pexec.md`, `COMPATIBILITY.md`).
++  - **`F_KEEP`** (`0x4000`) nach FreeMiNT (`FM/dosmem.c:131-135,161-165,365-398`, `FM/proc_help.c:242-258`): Block überlebt den letzten Besitzer, geht an den Kernel (= `rootproc`), danach darf jeder ihn freigeben; Modus unverändert; in jedem Schutzmodus.
++  - **Tabellenvorrat erschöpft:** **Abweichung von Frage 14** („Erschöpfung → `ENSMEM` der auslösenden Allokation“): gebaut ist „der Prozess behält dort die Nicht-Besitzer-Rechte (verliert Zugriff, gewinnt nie welchen)“, gezählt (`table_shortfalls`, `table_shortfalls_of`) und einmal je Prozess seriell gemeldet (`[memprot] page-table arena exhausted …`) — Leitvorgabe 2026-10-05.
++- **Offen nach 3c:** S2ALL/TSRPAR-Prüfung „TPA beyond blkln back in the pool“ unter Schutz an/strict (Ursache E9 + E16, nicht die Lader-Reihenfolge — siehe 3c-Quittung); FreeMiNT-Modi 100+ (2b), `Mvalidate`/`Maccess`, `F_OS_SPECIAL` (nicht gebaut), Pi-Lauf.
++
+ ### Stufe 4 — ASIDs und TLB-Feinpflege (optional, Hardware)
+ 
+ - **Module:** `NT/mmu.rs` (`nG`, ASID-Zuteilung), `KA/boot.rs` (`TCR_EL1.AS` je nach `ASIDBits`), Wechselpfade.
+diff --git a/docs/api/aes/window-graphics.md b/docs/api/aes/window-graphics.md
+index 7138833..018d14d 100644
+--- a/docs/api/aes/window-graphics.md
++++ b/docs/api/aes/window-graphics.md
+@@ -944,11 +944,18 @@ Any unlisted field → `ret = FALSE` (`gemwmlib.c:1736`).
+ > span only through one contiguous alias). A tree whose root record the
+ > owner no longer maps counts as **not registered** (the AES fallback root
+ > is drawn); an unmapped sub-struct, string or raster inside the tree is
+-> drawn as nothing. A `G_USERDEF` in such a tree is called out to only if
+-> the owner *is* the current process — its `ub_code` is code in the owner's
+-> address space. A kernel (EL1) registrant's tree is a kernel VA and is read
+-> directly. Host-tested at the resolver seam (`window.rs`
+-> `newdesk_owner_tests`, the A83 method).
++> drawn as nothing. A `G_USERDEF` in such a tree is called out to in the
++> **current** process, whoever registered the tree — EmuTOS's
++> `call_usercode` is a plain `jsr` on the current stack
++> (`gemoblib.c:411-426`, from `ob_user` `:433-448`). Since ARCH03 stage 1 a
++> user address means the same in every process (VA = PA), so the owner's
++> `ub_code` is reachable; with memory protection on the current process
++> holds the owner's rights for the duration of the callout and loses them
++> afterwards (ARCH03 3c, E10 (a); FreeMiNT `prot_temp`,
++> `sys/arch/mprot030.c:775-805`). Until 3c the callout was skipped when the
++> owner was not the current process (A97). A kernel (EL1) registrant's tree
++> is a kernel VA and is read directly. Host-tested at the resolver seam
++> (`window.rs` `newdesk_owner_tests`, the A83 method).
+ 
+ > **`WF_TOP` on the desktop handle and on a created-but-unopened handle
+ > (A80, 2026-09-20).** `wm_set` runs `wm_mktop(w_handle)` whenever `w_handle !=
+diff --git a/docs/api/gemdos/memory/44-mxalloc.md b/docs/api/gemdos/memory/44-mxalloc.md
+index f62504f..0b19b6e 100644
+--- a/docs/api/gemdos/memory/44-mxalloc.md
++++ b/docs/api/gemdos/memory/44-mxalloc.md
+@@ -307,8 +307,26 @@ nibble of `mode` is **honoured**, with FreeMiNT's encoding (`sys/dosmem.c:
+ no program else), `0x40` `PROT_PR` (owner read/write, everybody read),
+ `0x50` `PROT_I` (nobody); above → `PROT_P`. The pool is still selected by
+ bits 0–1 only. A block a **kernel** caller allocates without a nibble is
+-`PROT_S` (FreeMiNT `sys/memory.c:150-159`). Bit `0x08` and `F_KEEP` are not
+-evaluated (FreeMiNT has `0x08` disabled; `F_KEEP` is an open item).
++`PROT_S` (FreeMiNT `sys/memory.c:150-159`). Bit `0x08` is not evaluated
++(FreeMiNT has it disabled, `sys/dosmem.c:226-236`).
++
++**`F_KEEP` (`0x4000`, ARCH03 stage 3c, FreeMiNT `sys/mint/mem.h:104-105`):**
++"if the owner of this block terminates, don't free this block. Instead, let
++MiNT inherit it" (`sys/dosmem.c:161-165`). The bit marks the block
++(FreeMiNT `M_KEEP`, `sys/dosmem.c:131-135`); it is not part of the
++protection mode (`:237-242`) and does not select a pool. When the process
++holding the block's **last** owner link terminates, the block is not freed
++but passes to the system (FreeMiNT attaches it to the root process,
++`sys/proc_help.c:242-258`; NewTOS: the kernel owner) with its protection
++mode unchanged; from then on **any** process may `Mfree` it by address
++(`sys/dosmem.c:365-398`, `49-mfree.md`). While an owner lives, the block
++behaves like any other (only an owner frees or shrinks it). The bit acts
++with protection on and off — it is region bookkeeping, not protection
++(FreeMiNT keeps `M_KEEP` with `MEM_PROT=NO` too). EmuTOS clears it (`mode &=
++MX_MODEMASK`, `bdos/umem.c:241`): a sanctioned FreeMiNT extension. FreeMiNT
++calls it "a special mode meant for the OS only, and may not remain available
++to user processes"; NewTOS accepts it from programs, as FreeMiNT does today.
++Host tests: `tos-api/tests/arch03_3c_keep.rs`.
+ 
+ **Observable (sanctioned FreeMiNT deviation, plan E16):** with protection on
+ both pools hand out whole 4-KiB pages — the length is rounded up to a page
+diff --git a/docs/api/gemdos/memory/49-mfree.md b/docs/api/gemdos/memory/49-mfree.md
+index e504a11..06f34f8 100644
+--- a/docs/api/gemdos/memory/49-mfree.md
++++ b/docs/api/gemdos/memory/49-mfree.md
+@@ -398,6 +398,17 @@ after freeing it ends with the crash report (`Memory violation: free memory,
+ write (translation fault …)`, `docs/api/bios/_exception-crash.md`). Closes
+ MEM04. With `memprot=off` the pool stays mapped for everybody (stage 3a).
+ 
++### NewTOS: `F_KEEP` blocks the system inherited (ARCH03 stage 3c)
++
++A block allocated with `Mxalloc(…, F_KEEP | mode)` (`44-mxalloc.md`) whose
++last owner terminated belongs to the system (FreeMiNT: the root process,
++`sys/proc_help.c:242-258`). `Mfree` of such a block succeeds for **any**
++caller — FreeMiNT `sys_m_free` falls back to the root process's `M_KEEP`
++regions when the address is not one of the caller's (`sys/dosmem.c:365-398`)
++— and returns it to the pool (`E_OK`). Every other non-owner `Mfree` stays
++`EIMBA` (E15), including one on a kept block whose owner still lives, and on
++resident (`Ptermres`) memory. Host tests: `tos-api/tests/arch03_3c_keep.rs`.
++
+ ---
+ 
+ ## Pi / BCM2711 binding
+diff --git a/docs/api/gemdos/process/4b-pexec.md b/docs/api/gemdos/process/4b-pexec.md
+index 16706da..df85fb7 100644
+--- a/docs/api/gemdos/process/4b-pexec.md
++++ b/docs/api/gemdos/process/4b-pexec.md
+@@ -584,6 +584,20 @@ PHASE-06 D4/D5 status (2026-06-16):
+   undefined" (flag set). The TPA size stays the fixed 4 MiB (E9) — no flag
+   bit is defined that would change it.
+ 
++  **Order (ARCH03 stage 3c):** the environment is allocated **before** the
++  TPA, as EmuTOS `xexec` does ("allocate the environment first, depending on
++  memory policy", `alloc_env`, `bdos/proc.c:281-287`, then `alloc_tpa`,
++  `:289-299`; a TPA that cannot be had frees the environment again,
++  `:294-299`). Both are allocated as the caller and handed to the child for
++  `PE_LOADGO` (`set_owner`, `:302-307`). The order fixes the layout: the
++  environment lies below the TPA, as in EmuTOS. Until 3c the loader took the
++  TPA first (modes 5/7 already followed EmuTOS). Note: because the TPA is a
++  fixed 4 MiB block (E9) rather than EmuTOS's largest free block
++  (`alloc_tpa`, `:460-502`), what a program allocates after its start lies
++  directly behind its TPA under first fit; the tail a `Ptermres` gives back
++  is then a free block of its own, not part of the large free block behind
++  (measured, ARCH03 3c quittance).
++
+   **Producing the note:** both SDK start files (`sdk/crt0.S`,
+   `sdk/libc/crt0.S`) emit it with `PF_STANDARD`; a build overrides it per
+   program by assembling `crt0.S` with `-DNEWTOS_PRGFLAGS=<value>` (the build
+@@ -664,3 +678,16 @@ parent allocates afterwards; with the boot argument `memprot=strict` it
+ inherits nothing. A program the kernel starts (desktop, accessories)
+ inherits nothing. Probe `sdk/examples/mprot3b.c`; host tests
+ `tos-api/tests/arch03_3b_memprot.rs`.
++
++**`memprot=strict` and `PE_GO` (ARCH03 3c, plan E6 confirmed by the lead
++2026-10-05):** strict concerns only children that get a memory space of
++their own — `PE_LOADGO` (0) and `PE_GOTHENFREE` (6). A `PE_GO` (4) child is a
++thread in its caller's space (FreeMiNT `FORK_SHAREVM`, `sys/k_exec.c:224-231,
++421`) and sees the caller's memory in **every** mode, strict included (LDG
++needs it: the module writes into its caller's stack).
++
++**A `G_USERDEF` routine of another process (ARCH03 3c, E10 (a)):** when the
++AES draws a tree of process A while B is current (B composites A's
++`WF_NEWDESK` background), A's `ub_code` runs in B, as in EmuTOS
++(`aes/gemoblib.c:411-426`); B holds A's rights for the callout only
++(`docs/api/aes/window-graphics.md`, `WF_NEWDESK` note).
+diff --git a/kernel/src/arch/aarch64/exceptions.rs b/kernel/src/arch/aarch64/exceptions.rs
+index 28d982f..9ce6b99 100644
+--- a/kernel/src/arch/aarch64/exceptions.rs
++++ b/kernel/src/arch/aarch64/exceptions.rs
+@@ -214,6 +214,18 @@ pub extern "C" fn rust_sync_handler(frame: &mut ExceptionFrame) {
+     // no-op with protection off or nothing pending.
+     // SAFETY: trap context, single CPU, BDOS giant lock implicit.
+     unsafe { tos_api::bdos::process::memprot::sync() };
++    // ARCH03 3c: a process whose rights could not get a private page table
++    // (the arena is exhausted) keeps the non-owner rights there — it can lose
++    // access, never gain any. Not silent: one serial line per process.
++    while let Some(r) = tos_api::bdos::process::memprot::take_shortfall_report() {
++        crate::kprintln!(
++            "[memprot] page-table arena exhausted: process slot {} (PD 0x{:08x}) keeps non-owner rights in {} region(s); shortfalls since boot {}",
++            r.slot,
++            r.pd,
++            r.of_process,
++            r.total,
++        );
++    }
+ }
+ 
+ /// The body of [`rust_sync_handler`].
+diff --git a/tos-api/src/aes/object.rs b/tos-api/src/aes/object.rs
+index a66ca51..89e089c 100644
+--- a/tos-api/src/aes/object.rs
++++ b/tos-api/src/aes/object.rs
+@@ -152,8 +152,8 @@ impl ObjTree {
+     /// `wind_set(DESKWH, WF_NEWDESK, tree)` ([`crate::aes::window`]). Its ABI is
+     /// captured at registration (the app was current then) and replayed here;
+     /// and because the tree lives in EL0 app memory, a `G_USERDEF`'s `ub_code`
+-    /// must be treated as an EL0 callback (`kernel_built = false` → deferred by
+-    /// [`ob_user`], never called at EL1). [`Self::new`] would instead read
++    /// must be treated as an EL0 callback (`kernel_built = false` → an EL0
++    /// callout from [`ob_user`], never called at EL1). [`Self::new`] would instead read
+     /// `current_abi()` at build time (wrong when the app is not current), and
+     /// [`Self::lp64`] would wrongly mark the app tree kernel-built (the
+     /// WF_NEWDESK-background crash: TeraDesk's `ub_bckbox` called at EL1 → PXN
+@@ -531,9 +531,9 @@ impl ObjTree {
+ // (the raw, trap-time view every other accessor has always had). A VA the
+ // owner has no mapping for reads as nothing: a NIL record ([`NIL_RECORD`]),
+ // a zero field, an empty string, a skipped raster. Nothing is dereferenced
+-// through `TTBR0`, nothing is executed in a foreign address space
+-// ([`ob_user`] defers the callout when the tree's owner is not the current
+-// process). [`crate::aes::window::draw_desk_tree`] builds such an accessor
++// through `TTBR0`. A `G_USERDEF` routine of the owner runs in the current
++// process (EmuTOS, `gemoblib.c:411-426`), with the owner's rights for the
++// callout ([`ob_user`], ARCH03 3c E10). [`crate::aes::window::draw_desk_tree`] builds such an accessor
+ // through [`render_tree_app`] with the owner recorded at registration.
+ 
+ impl ObjTree {
+@@ -1333,7 +1333,7 @@ pub unsafe fn render_tree_lp64(
+ /// GEM app registered via `wind_set(DESKWH, WF_NEWDESK, tree)`: read the tree at
+ /// the `abi` captured at registration and treat it as **not** kernel-built
+ /// ([`ObjTree::app_at`]), so a `G_USERDEF`'s `ub_code` is an EL0 callback that
+-/// [`ob_user`] defers instead of calling at EL1. This is the WF_NEWDESK-
++/// [`ob_user`] calls out to at EL0 instead of calling at EL1. This is the WF_NEWDESK-
+ /// background counterpart to the ILP32-app `objc_draw`-via-SVC path
+ /// ([`ObjTree::new`]): the same privilege guard, but with the ABI recorded at
+ /// registration because the composite runs when the app may not be current.
+@@ -1341,8 +1341,9 @@ pub unsafe fn render_tree_lp64(
+ /// `owner` is the process slot the tree belongs to (`Some` for an EL0
+ /// registrant, `None` for a kernel one): every address the drawer follows is
+ /// then resolved through that slot's mapping ([`ObjTree::app_owned`], A97)
+-/// instead of being dereferenced through whichever `TTBR0` is installed, and
+-/// a `G_USERDEF` callout is made only if that slot is the current process.
++/// instead of being dereferenced through whichever `TTBR0` is installed; a
++/// `G_USERDEF` routine runs in the current process with the owner's rights
++/// for the callout (ARCH03 3c, E10).
+ ///
+ /// # Safety
+ /// `tree` must be a valid `OBJECT` array (at `abi` width) with `start` in range
+@@ -1856,8 +1857,8 @@ fn change_clip_t(t: ObjTree, obj: i16, newstate: u16, redraw: bool, clip_overrid
+             // AUD-P3-002: EmuTOS `ob_change` redraws a G_USERDEF by calling its
+             // user routine with (prev=curr_state, curr=new_state) and suppresses
+             // the generic object redraw (`redraw = FALSE`, gemoblib.c:1282-1284).
+-            // The callback is only invoked for a kernel-built tree (see
+-            // `ob_user`); an app tree's EL0 callback is deferred. A null
++            // A kernel-built tree's callback is called directly, an app
++            // tree's runs at EL0 in the current process (see `ob_user`). A null
+             // `ob_spec` (no USERBLK) is left to the generic redraw below so
+             // `ob_user` never dereferences null.
+             G_USERDEF if spec != 0 => {
+@@ -2771,15 +2772,17 @@ fn ob_format(just: i16, raw: &[u8], tmpl: &[u8], out: &mut [u8]) -> usize {
+ /// rect, `ub_parm`) and invoke the user draw/change callback `ub_code(PARMBLK*)`,
+ /// returning its WORD result as the object's new state.
+ ///
+-/// **Privilege split (AUD-P3-002).** The callback is only *invoked* when the
+-/// tree is **kernel-built** ([`ObjTree::kernel_built`]) — then `ub_code` is an
+-/// EL1 function at this AES code's privilege, so a direct same-privilege call is
+-/// sound. For an **app-provided** tree the callback lives in the EL0 app;
+-/// calling it from the EL1 AES trap handler is a cross-privilege upcall (EL1→EL0,
+-/// re-entrant during the app's `svc`) for which NewTOS has no mechanism yet. In
+-/// that case the PARMBLK is fully prepared but the call is **deferred** and the
+-/// state returned unchanged — the upcall infrastructure is an open design
+-/// decision handed to the lead (same class as the vex-vector upcall).
++/// **Privilege split (AUD-P3-002).** For a **kernel-built** tree
++/// ([`ObjTree::kernel_built`]) `ub_code` is an EL1 function at this AES code's
++/// privilege and is called directly. For an **app-provided** tree the callback
++/// is EL0 code: the PARMBLK goes into the current process's page-0 scratch and
++/// the AES fiber stalls while the kernel runs `ub_code` at EL0 in the
++/// **current** process ([`crate::aes::thread::block_for_userdef`]) — also when
++/// the tree belongs to another process (ARCH03 3c, E10 (a): EmuTOS runs it
++/// wherever the draw happens, `gemoblib.c:411-426`; with memory protection on
++/// the current space holds the owner's rights for the callout,
++/// [`crate::bdos::process::memprot::grant_temp`]). Only with no EL0 process to
++/// run it in (a kernel caller) is the state returned unchanged.
+ #[allow(clippy::too_many_arguments)]
+ fn ob_user(
+     t: ObjTree,
+@@ -2835,37 +2838,54 @@ fn ob_user(
+         // (e.g. an EL1 test caller reaching an app tree) falls back to the old
+         // "keep the state" behaviour rather than dereferencing a null basepage.
+         use crate::bdos::process::loader::{PARMBLK_SCRATCH_VA, USER_VA_BASE};
+-        use crate::bdos::process::{current, mmu, slot_for};
+-        // A97: the callback is code in the **tree owner's** address space.
+-        // When an owned tree is drawn while its owner is not the current
+-        // process (a `Pexec` child compositing its parent's `WF_NEWDESK`
+-        // background, the kernel desktop repainting), `ub_code` must not be
+-        // run in the current process — the VA names something else there.
+-        // The state is kept, as for a kernel caller.
+-        let current_slot = slot_for(current());
+-        if let Some(owner) = t.owner {
+-            if current_slot != Some(owner) {
+-                return new_state;
++        use crate::bdos::process::{current, memprot, mmu, slot_for};
++        // ARCH03 3c, E10 (a): the routine runs in the **current** process,
++        // whoever owns the tree — EmuTOS `call_usercode` is a plain `jsr` on
++        // the current stack (`aes/gemoblib.c:411-426`, called from `ob_user`
++        // `:433-448` and `just_draw` `:792-793`), so a `Pexec` child
++        // compositing its parent's `WF_NEWDESK` background runs the parent's
++        // `ub_code`. Since stage 1 a user address means the same in every
++        // process (VA = PA), so the owner's `ub_code`, its tree and its
++        // `ub_parm` are reachable from here. With memory protection on, the
++        // current space is granted the owner's rights for the callout and
++        // loses them afterwards (FreeMiNT `prot_temp`,
++        // `sys/arch/mprot030.c:775-805`; `memprot::grant_temp`). This lifts the
++        // A97 deferral, which existed only because before stage 1 the foreign
++        // VA named nothing in the current process.
++        let Some(slot) = slot_for(current()) else {
++            // No EL0 process to run it in (the kernel desktop or the boot
++            // path is the caller): there is no context for an EL0 callout.
++            return new_state;
++        };
++        let Some(page0) = mmu::page0_kva(slot) else {
++            return new_state;
++        };
++        // The tree owner when it is another process; a dead owner's slot has
++        // no image any more (and its tree would not have resolved).
++        let foreign = match t.owner {
++            Some(o) if o != slot => {
++                if mmu::page0_kva(o).is_none() {
++                    return new_state;
++                }
++                Some(o)
+             }
++            _ => None,
++        };
++        // SAFETY: `page0 + PARMBLK_SCRATCH_VA` is the kernel alias of the
++        // reserved scratch in the process's page 0, RW-mapped, ≥ 40 bytes;
++        // single-CPU under the trap.
++        unsafe { pb.write_abi(page0 as u64 + PARMBLK_SCRATCH_VA, t.abi()); }
++        let parmblk_ptr = USER_VA_BASE + PARMBLK_SCRATCH_VA;
++        if let Some(owner) = foreign {
++            // SAFETY: AES trap context under the BDOS giant lock (single CPU).
++            unsafe { memprot::grant_temp(slot, owner) };
+         }
+-        match current_slot {
+-            Some(slot) => match mmu::page0_kva(slot) {
+-                None => new_state,
+-                Some(page0) => {
+-                    // SAFETY: `page0 + PARMBLK_SCRATCH_VA` is the kernel
+-                    // alias of the reserved scratch in the process's page 0,
+-                    // RW-mapped, ≥ 40 bytes; single-CPU under the trap.
+-                    unsafe { pb.write_abi(page0 as u64 + PARMBLK_SCRATCH_VA, t.abi()); }
+-                    let parmblk_ptr = USER_VA_BASE + PARMBLK_SCRATCH_VA;
+-                    crate::aes::thread::block_for_userdef(
+-                        slot,
+-                        ub.ub_code,
+-                        parmblk_ptr,
+-                    ) as u16
+-                }
+-            },
+-            None => new_state,
++        let word = crate::aes::thread::block_for_userdef(slot, ub.ub_code, parmblk_ptr);
++        if foreign.is_some() {
++            // SAFETY: as above — the callout has returned (`Psigreturn`).
++            unsafe { memprot::revoke_temp(slot) };
+         }
++        word as u16
+     }
+ }
+ 
+@@ -3356,9 +3376,9 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
+         // AUD-P3-002: an application-drawn object. Fill a PARMBLK and call its
+         // `ub_code` (EmuTOS `just_draw` G_USERDEF, gemoblib.c:792-794:
+         // `state = ob_user(tree, obj, &t, spec, state, state)`). The returned
+-        // state feeds the trailing decorations. `ob_user` only *invokes* the
+-        // callback for a kernel-built (same-privilege EL1) tree; an app tree's
+-        // EL0 callback is deferred (see `ob_user`). A null `ob_spec` (no USERBLK)
++        // state feeds the trailing decorations. A kernel-built tree's callback
++        // is called directly, an app tree's runs at EL0 in the current process
++        // (see `ob_user`). A null `ob_spec` (no USERBLK)
+         // is left to the `_` arm so `ob_user` never dereferences null.
+         G_USERDEF if ob_spec != 0 => {
+             ob_state = ob_user(t, obj, x, y, w, h, ob_spec, clip, ob_state, ob_state);
+diff --git a/tos-api/src/aes/window.rs b/tos-api/src/aes/window.rs
+index 35e30d8..0684209 100644
+--- a/tos-api/src/aes/window.rs
++++ b/tos-api/src/aes/window.rs
+@@ -1267,8 +1267,9 @@ static NEWDESK_ROOT: AtomicI16 = AtomicI16::new(0);
+ /// own native `g_screen`. Recorded in [`set_newdesk`] from whether a user
+ /// process is running at registration time (`process::current()` non-null).
+ /// Drives [`paint_bg_clip`]: an app tree is drawn as **not** kernel-built so a
+-/// `G_USERDEF`'s EL0 `ub_code` is deferred by `ob_user` instead of being called
+-/// at EL1 (the WF_NEWDESK crash: TeraDesk `ub_bckbox` → PXN instruction abort).
++/// `G_USERDEF`'s EL0 `ub_code` is an EL0 callout from `ob_user` instead of being
++/// called at EL1 (the WF_NEWDESK crash: TeraDesk `ub_bckbox` → PXN instruction
++/// abort).
+ static NEWDESK_APP: AtomicBool = AtomicBool::new(false);
+ 
+ /// The ABI ([`Abi`] as `u8`) of the caller that registered [`NEWDESK_TREE`],
+@@ -1511,11 +1512,11 @@ fn draw_desk_tree(backend: &dyn RasterBackend, clip: ClipRect) {
+         if NEWDESK_APP.load(Ordering::Acquire) {
+             // App-supplied background tree (EL0 GEM app, e.g. TeraDesk): read it
+             // at the ABI captured at registration and treat it as NOT
+-            // kernel-built, so a `G_USERDEF`'s EL0 `ub_code` is deferred by
+-            // `ob_user` rather than called at EL1 (→ PXN instruction abort at
+-            // the app callback's VA, the WF_NEWDESK crash). The boxes/images of
+-            // the tree still draw; the app userdef simply is not invoked (an
+-            // EL0-upcall mechanism is out of scope — the goal is: no crash).
++            // kernel-built, so a `G_USERDEF`'s EL0 `ub_code` runs as an EL0
++            // callout in the current process (`ob_user`; ARCH03 3c E10: also
++            // when the registrant is not the current process, as in EmuTOS)
++            // rather than at EL1 (→ PXN instruction abort at the app
++            // callback's VA, the WF_NEWDESK crash).
+             //
+             // The tree is a user VA of the registrant, and this runs under
+             // whatever `TTBR0` the current caller has: read it **through the
+diff --git a/tos-api/src/bdos/mem/region.rs b/tos-api/src/bdos/mem/region.rs
+index 1b9e984..ddc7fe6 100644
+--- a/tos-api/src/bdos/mem/region.rs
++++ b/tos-api/src/bdos/mem/region.rs
+@@ -119,6 +119,91 @@ unsafe fn block(addr: Long) -> Option<*mut MD> {
+     None
+ }
+ 
++// ─── F_KEEP: blocks the system inherits ──────────────────────────────
++//
++// FreeMiNT `Mxalloc(…, F_KEEP | mode)` sets `M_KEEP` on the region
++// (`sys/dosmem.c:131-135`, `sys/memory.c:794-795`): "if the owner of this
++// block terminates, don't free this block. Instead, let MiNT inherit it, so
++// it'll never be freed" (`sys/dosmem.c:161-165`). The terminating process's
++// sweep attaches such a region to the root process when it holds the last
++// link (`sys/proc_help.c:242-258`), and any process may then `Mfree` it by
++// address (`sys/dosmem.c:365-398`). NewTOS keeps the flag per block start
++// here; the system holder is the kernel owner ([`traps::kernel_owner`],
++// FreeMiNT's `rootproc`). The block's protection mode does not change.
++
++/// One place per MD: a flag names a live block (cleared by [`forget`]).
++const MAX_KEPT: usize = super::mdpool::MD_BLOCK_COUNT * super::mdpool::MDS_PER_BLOCK;
++
++struct Kept(UnsafeCell<[Long; MAX_KEPT]>);
++// SAFETY: accessed only under the BDOS giant lock (single CPU, trap path).
++unsafe impl Sync for Kept {}
++static KEPT: Kept = Kept(UnsafeCell::new([0; MAX_KEPT]));
++
++/// # Safety
++///
++/// BDOS giant lock held; no other borrow of the table alive.
++unsafe fn kept() -> &'static mut [Long; MAX_KEPT] {
++    // SAFETY: caller contract.
++    unsafe { &mut *KEPT.0.get() }
++}
++
++/// Mark the block at `addr` `F_KEEP` (FreeMiNT `M_KEEP`). `false` only if
++/// the table is full, which cannot happen while every flag names a live
++/// block (one per MD).
++///
++/// # Safety
++///
++/// BDOS giant lock held.
++pub unsafe fn mark_keep(addr: Long) -> bool {
++    if addr == 0 {
++        return false;
++    }
++    // SAFETY: lock held.
++    let k = unsafe { kept() };
++    if k.contains(&addr) {
++        return true;
++    }
++    match k.iter_mut().find(|a| **a == 0) {
++        Some(a) => {
++            *a = addr;
++            true
++        }
++        None => false,
++    }
++}
++
++/// Was the block at `addr` allocated with `F_KEEP`?
++///
++/// # Safety
++///
++/// BDOS giant lock held.
++pub unsafe fn is_kept(addr: Long) -> bool {
++    // SAFETY: lock held.
++    addr != 0 && unsafe { kept() }.contains(&addr)
++}
++
++/// `Mfree` of a kept block the system inherited, by any process (FreeMiNT
++/// `sys_m_free`'s fallback over the root process's `M_KEEP` regions,
++/// `sys/dosmem.c:365-398`). Frees it and returns `true` if `addr` starts
++/// such a block; `false` (nothing changes) for anything else.
++///
++/// # Safety
++///
++/// BDOS giant lock held.
++pub unsafe fn release_kept(addr: Long) -> bool {
++    // SAFETY: lock held.
++    let Some(m) = (unsafe { block(addr) }) else {
++        return false;
++    };
++    // SAFETY: lock held; `m` is on `mp_mal`.
++    let inherited = unsafe { is_kept(addr) && traps::is_kernel_owned((*m).m_own) && links(addr) == 1 };
++    if inherited {
++        // SAFETY: lock held; `addr` starts an allocated block.
++        let _ = unsafe { traps::mfree(addr) };
++    }
++    inherited
++}
++
+ fn entry_of(t: &mut [Entry; MAX_SHARED_BLOCKS], addr: Long) -> Option<&mut Entry> {
+     t.iter_mut().find(|e| e.loc == addr && addr != 0)
+ }
+@@ -271,6 +356,11 @@ pub unsafe fn forget(addr: Long) {
+     if let Some(e) = entry_of(t, addr) {
+         *e = EMPTY;
+     }
++    // ... and its `F_KEEP` flag.
++    // SAFETY: lock held.
++    if let Some(a) = unsafe { kept() }.iter_mut().find(|a| **a == addr && addr != 0) {
++        *a = 0;
++    }
+ }
+ 
+ /// `Pterm`: drop `who` from every block it owns — freeing what nobody else
+@@ -312,9 +402,23 @@ pub unsafe fn detach_all(who: *mut c_void) -> usize {
+             // SAFETY: list invariant.
+             let (next, start, own) = unsafe { ((*m).m_link, (*m).m_start, (*m).m_own) };
+             if own == who {
+-                // SAFETY: lock held; `start` starts a block `who` owns.
+-                if let Ok(Detached::Freed) = unsafe { detach(start, who) } {
+-                    freed += 1;
++                // SAFETY: lock held.
++                let inherit = unsafe { is_kept(start) && links(start) == 1 };
++                if inherit {
++                    // `F_KEEP` and `who` holds the last link: the system
++                    // inherits the block instead of freeing it (FreeMiNT
++                    // `sys/proc_help.c:254-256`: `M_KEEP && links <= 1` →
++                    // `attach_region(rootproc, m)`).
++                    // SAFETY: `m` is on `mp_mal`; lock held.
++                    unsafe {
++                        (*m).m_own = traps::kernel_owner();
++                        prot_changed(start);
++                    }
++                } else {
++                    // SAFETY: lock held; `start` starts a block `who` owns.
++                    if let Ok(Detached::Freed) = unsafe { detach(start, who) } {
++                        freed += 1;
++                    }
+                 }
+             }
+             m = next;
+diff --git a/tos-api/src/bdos/mem/traps.rs b/tos-api/src/bdos/mem/traps.rs
+index dc073a6..3a5fab7 100644
+--- a/tos-api/src/bdos/mem/traps.rs
++++ b/tos-api/src/bdos/mem/traps.rs
+@@ -126,6 +126,14 @@ pub fn is_resident(m_own: *mut c_void) -> bool {
+     m_own == tsr_owner()
+ }
+ 
++/// The kernel's owner cookie ([`KERNEL_PD_SENTINEL`]) — what a kernel
++/// caller's allocations carry, and the holder of `F_KEEP` blocks whose last
++/// owner terminated (FreeMiNT's `rootproc`, [`super::region`]).
++#[inline]
++pub fn kernel_owner() -> *mut c_void {
++    (&KERNEL_PD_SENTINEL as *const u8 as *mut u8).cast()
++}
++
+ /// `true` iff `m_own` is the kernel-owned sentinel cookie.
+ ///
+ /// Used by Phase-06 `Pterm` cleanup to skip kernel-owned MDs cheaply
+@@ -299,6 +307,9 @@ pub unsafe fn mxalloc(amount: Long, mode: i16) -> Long {
+             tos_types::prot_from_mxalloc(mode, flags)
+         }
+     };
++    // FreeMiNT `F_KEEP` (`sys/dosmem.c:131-135,237-242`): the block outlives
++    // its last owner's termination ([`super::region::mark_keep`]).
++    let keep = mode & tos_types::F_KEEP != 0;
+     let mode = mode & MX_MODEMASK;
+     let pmd = init::pmd();
+     let pmdalt = init::pmdalt();
+@@ -388,6 +399,10 @@ pub unsafe fn mxalloc(amount: Long, mode: i16) -> Long {
+         // SAFETY: caller holds the BDOS lock.
+         unsafe {
+             super::region::forget(start);
++            if keep {
++                // Cannot fail: one place per MD, every flag names a live block.
++                super::region::mark_keep(start);
++            }
+             // Its protection mode, and its owner's rights (ARCH03 3b).
+             crate::bdos::process::memprot::on_alloc(start as u32 as u64, len as u32 as u64, prot);
+         }
+diff --git a/tos-api/src/bdos/process/loader.rs b/tos-api/src/bdos/process/loader.rs
+index 0041480..04585a4 100644
+--- a/tos-api/src/bdos/process/loader.rs
++++ b/tos-api/src/bdos/process/loader.rs
+@@ -422,57 +422,82 @@ unsafe fn load_from_source(
+     //     `hdr.h01_flags`, `bdos/proc.c:283,292`). No note → `PF_STANDARD`.
+     let prgflags = read_prgflags(&src, &img)?.unwrap_or(PF_STANDARD);
+ 
+-    // 2. Take the TPA block from the BDOS pool. Its address is the child's
++    // 2. The environment first, then the TPA — EmuTOS `xexec`: "allocate
++    //    the environment first, depending on memory policy" (`alloc_env`,
++    //    `bdos/proc.c:281-287`), then the basepage/TPA (`alloc_tpa`,
++    //    `:289-299`, which frees the environment again if it fails). The
++    //    order fixes the layout: the environment lies below the TPA, as in
++    //    EmuTOS (ARCH03 3c; until then the loader took the TPA first).
++    //    Both are allocated as the caller (`owner = run`) and handed to the
++    //    child below for `PE_LOADGO` (`set_owner`, `:302-307`).
++    // SAFETY: BDOS lock held.
++    let env_addr = unsafe { alloc_env_for(env, prgflags) }?;
++    let free_env = || {
++        if let Some(e) = env_addr {
++            // SAFETY: BDOS lock held; `e` is the block just allocated.
++            let _ = unsafe { crate::bdos::mem::traps::mfree(e) };
++        }
++    };
++
++    // 3. Take the TPA block from the BDOS pool. Its address is the child's
+     //    PD pointer. `Mxalloc` stamped the caller as owner (`owner = run`);
+     //    for `PE_LOADGO` the block goes to the child (`owner = p`,
+     //    EmuTOS `bdos/proc.c:302-307`), so the child's `Pterm`
+     //    `free_all_owned` sweep reclaims it.
+     // SAFETY: BDOS lock held; single-CPU pre-test.
+-    let tpa = unsafe { arena::alloc_tpa(prgflags) }.ok_or(LoadError::NoTpaMemory)?;
++    let Some(tpa) = (unsafe { arena::alloc_tpa(prgflags) }) else {
++        // EmuTOS: "if failed, free env_ptr and return" (`bdos/proc.c:294-299`).
++        free_env();
++        return Err(LoadError::NoTpaMemory);
++    };
+     // The TPA takes the program's protection mode (ARCH03 3b, FreeMiNT
+     // `load_region`: `alloc_region(map, len, protmode)` with the PRGFLAGS
+     // mode, `sys/memory.c:1511-1513`).
+     // SAFETY: BDOS lock held; `tpa.base` starts the block just allocated.
+     unsafe { super::memprot::set_mode(tpa.base, prot_from_prgflags(prgflags)) };
+     if owned_by_child {
+-        // SAFETY: `tpa.base` is on the allocated list; the owner cookie is
++        // SAFETY: both blocks are on the allocated list; the owner cookie is
+         // a pointer-equality tag, never dereferenced by the sweep.
+         unsafe {
+             crate::bdos::mem::traps::set_owner(tpa.base as Long, tpa.base as *mut c_void);
++            if let Some(e) = env_addr {
++                crate::bdos::mem::traps::set_owner(e, tpa.base as *mut c_void);
++            }
+         }
+     }
+ 
+-    // 3. Populate + build the root; free the TPA on any failure — no `Pterm`
+-    //    runs for a load that never launched, so we must not leak the block.
++    // 4. Populate + build the root; free the TPA and the environment on any
++    //    failure — no `Pterm` runs for a load that never launched, so we must
++    //    not leak the blocks.
+     // SAFETY: BDOS lock held; `tpa` is a fresh, exclusively-owned
+     // page-aligned region.
+     match unsafe {
+-        let req = ProcessSetup { tail, env, owned_by_child, prgflags };
++        let req = ProcessSetup { tail, env_addr, prgflags };
+         populate_and_map(&src, slot, &img, &req, &tpa)
+     } {
+         Ok(loaded) => Ok(loaded),
+         Err(e) => {
+             // SAFETY: BDOS lock held; `tpa.base` is still allocated.
+             unsafe { arena::free_tpa(tpa.base as Long) };
++            free_env();
+             Err(e)
+         }
+     }
+ }
+ 
+ /// What a load gives the new process besides its image: the command tail,
+-/// the environment source, who owns TPA and environment, and its
+-/// `PRGFLAGS` (see [`load_to_slot_with`]).
++/// the environment block already allocated for it (EmuTOS order: before the
++/// TPA), and its `PRGFLAGS` (see [`load_to_slot_with`]).
+ #[derive(Copy, Clone)]
+ struct ProcessSetup<'a> {
+     tail: &'a [u8],
+-    env: EnvSpec<'a>,
+-    owned_by_child: bool,
++    env_addr: Option<Long>,
+     prgflags: u32,
+ }
+ 
+-/// Stream the ELF image into `tpa`, zero its BSS, allocate the
+-/// environment, write the basepage and the slot's page 0, sync the code
+-/// caches, build the slot's root and publish the slot metadata.
++/// Stream the ELF image into `tpa`, zero its BSS, write the basepage
++/// (with the environment block the caller allocated) and the slot's page 0,
++/// sync the code caches, build the slot's root and publish the slot metadata.
+ ///
+ /// Factored out of [`load_from_source`] so the caller can free the TPA
+ /// on any error (the `?`/early-return points all propagate here).
+@@ -488,7 +513,7 @@ unsafe fn populate_and_map(
+     req: &ProcessSetup<'_>,
+     tpa: &arena::Tpa,
+ ) -> Result<LoadedImage, LoadError> {
+-    let ProcessSetup { tail, env, owned_by_child, prgflags } = *req;
++    let ProcessSetup { tail, env_addr, prgflags } = *req;
+     let base = tpa.base;
+ 
+     // Whole-TPA mutable byte view via the kernel high-half alias.
+@@ -534,12 +559,6 @@ unsafe fn populate_and_map(
+     // image never runs.
+     reloc::relocate(tpa_bytes, img, base)?;
+ 
+-    // Allocate + copy the environment (EmuTOS `alloc_env`), before the
+-    // basepage so `p_env` is stamped in one pass. Same owner as the TPA.
+-    // SAFETY: BDOS lock held.
+-    let env_addr =
+-        unsafe { alloc_env_for(env, prgflags, base as *mut c_void, owned_by_child)? };
+-
+     // Write the BasePage at the TPA start.
+     populate_basepage(tpa_bytes, img, tail, env_addr, base, prgflags);
+ 
+@@ -662,7 +681,7 @@ pub unsafe fn create_basepage(
+     }
+     // EmuTOS order: the environment first, then the TPA.
+     // SAFETY: BDOS lock held.
+-    let env_addr = unsafe { alloc_env_for(env, flags, core::ptr::null_mut(), false)? };
++    let env_addr = unsafe { alloc_env_for(env, flags)? };
+     let free_env = || {
+         if let Some(e) = env_addr {
+             // SAFETY: BDOS lock held; `e` is the block just allocated.
+@@ -1349,30 +1368,22 @@ fn write_userdef_trampoline(tpa: &mut [u8]) {
+ 
+ /// Resolve an [`EnvSpec`] into an optional pool address for `p_env`,
+ /// allocating + copying the environment via the BDOS pool. Mirrors
+-/// EmuTOS `alloc_env` (`bdos/proc.c:413-431`) plus the `set_owner`
+-/// hand-off (`bdos/proc.c:305-307`).
+-///
+-/// `child_cookie` is the child's PD pointer (the ownership tag
+-/// `free_all_owned` matches); `owned_by_child` selects whether the env
+-/// block is re-tagged to the child (`PE_LOADGO`) or left owned by the
+-/// allocating process (`PE_LOAD`).
++/// EmuTOS `alloc_env` (`bdos/proc.c:413-431`). The block belongs to the
++/// caller (`owner = run`); the `PE_LOADGO` hand-off to the child
++/// (`set_owner`, `bdos/proc.c:302-307`) is the loader's, once the TPA — the
++/// child's PD — exists ([`load_from_source`]).
+ ///
+ /// # Safety
+ ///
+ /// Caller holds the BDOS giant lock.
+-unsafe fn alloc_env_for(
+-    env: EnvSpec<'_>,
+-    prgflags: u32,
+-    child_cookie: *mut c_void,
+-    owned_by_child: bool,
+-) -> Result<Option<Long>, LoadError> {
++unsafe fn alloc_env_for(env: EnvSpec<'_>, prgflags: u32) -> Result<Option<Long>, LoadError> {
+     // Materialise the source env image (including its terminating
+     // double-NUL) as a byte slice, then copy it into a fresh pool block.
+     match env {
+         EnvSpec::None => Ok(None),
+         EnvSpec::Explicit(img) => {
+             // SAFETY: BDOS lock held.
+-            let phys = unsafe { alloc_env(img, prgflags, child_cookie, owned_by_child)? };
++            let phys = unsafe { alloc_env(img, prgflags)? };
+             Ok(Some(phys))
+         }
+         EnvSpec::Inherit => {
+@@ -1391,7 +1402,7 @@ unsafe fn alloc_env_for(
+                         env_slice_from_phys(penv)
+                     }
+                 };
+-                alloc_env(src, prgflags, child_cookie, owned_by_child)?
++                alloc_env(src, prgflags)?
+             };
+             Ok(Some(phys))
+         }
+@@ -1407,12 +1418,7 @@ unsafe fn alloc_env_for(
+ /// # Safety
+ ///
+ /// Caller holds the BDOS giant lock.
+-pub(super) unsafe fn alloc_env(
+-    img: &[u8],
+-    prgflags: u32,
+-    child_cookie: *mut c_void,
+-    owned_by_child: bool,
+-) -> Result<Long, LoadError> {
++pub(super) unsafe fn alloc_env(img: &[u8], prgflags: u32) -> Result<Long, LoadError> {
+     // Round the byte count up to even; never below the 2-byte empty env.
+     let size = (((img.len() + 1) & !1).max(2)) as Long;
+     // EmuTOS `alloc_env`: `(flags & PF_TTRAMLOAD) ? MX_PREFTTRAM : MX_STRAM`
+@@ -1439,13 +1445,6 @@ pub(super) unsafe fn alloc_env(
+             dst.add(i).write(0);
+         }
+     }
+-    // PE_LOADGO: hand ownership to the child so its `Pterm` frees it.
+-    if owned_by_child {
+-        // SAFETY: BDOS lock held; `phys` is on the allocated list.
+-        unsafe {
+-            crate::bdos::mem::traps::set_owner(phys, child_cookie);
+-        }
+-    }
+     Ok(phys)
+ }
+ 
+diff --git a/tos-api/src/bdos/process/memprot.rs b/tos-api/src/bdos/process/memprot.rs
+index 81e83b6..e4af388 100644
+--- a/tos-api/src/bdos/process/memprot.rs
++++ b/tos-api/src/bdos/process/memprot.rs
+@@ -67,6 +67,13 @@
+ //! the end of every trap, and ends with the TLB maintenance the change needs
+ //! ([`mmu::flush_tlb`]).
+ //!
++//! A private copy comes from the page-table arena. When the arena is empty
++//! the slot keeps the shared, non-owner rights in that region — it can lose
++//! access, never gain any — and that is counted ([`table_shortfalls`],
++//! [`table_shortfalls_of`]) and reported once per process
++//! ([`take_shortfall_report`], printed by the kernel at the end of the trap;
++//! ARCH03 3c).
++//!
+ //! ## Concurrency
+ //!
+ //! Everything here runs under the BDOS giant lock (single CPU, trap / boot
+@@ -325,9 +332,21 @@ static REBUILD: AtomicU32 = AtomicU32::new(0);
+ /// [`sync`] is running (it must not re-enter itself).
+ static SYNCING: AtomicBool = AtomicBool::new(false);
+ 
+-/// Times a private table could not be had (arena exhausted) — boot log.
++/// Times a private table could not be had (arena exhausted), all slots.
+ static NO_TABLE: AtomicUsize = AtomicUsize::new(0);
+ 
++/// Per slot: times a private table could not be had for it since its process
++/// started ([`table_shortfalls_of`]).
++static NO_TABLE_SLOT: [AtomicUsize; MAX_PROCESSES] = [const { AtomicUsize::new(0) }; MAX_PROCESSES];
++
++/// Slots with a shortfall the kernel has not reported yet
++/// ([`take_shortfall_report`]).
++static SHORT_PENDING: AtomicU32 = AtomicU32::new(0);
++
++/// Slots whose process has been reported already — once per process; cleared
++/// when the slot is released ([`on_slot_released`]).
++static SHORT_REPORTED: AtomicU32 = AtomicU32::new(0);
++
+ /// Note that the rights of `[lo, hi)` may have changed.
+ ///
+ /// # Safety
+@@ -645,8 +664,9 @@ unsafe fn refresh(lo: u64, hi: u64, full: u32) {
+                 Ok(p) => p,
+                 Err(_) => {
+                     // No table left: the slot keeps the shared (non-owner)
+-                    // rights here — it can lose access, never gain it.
+-                    NO_TABLE.fetch_add(1, Ordering::Relaxed);
++                    // rights here — it can lose access, never gain it. Not
++                    // silent: counted, and reported once per process.
++                    note_shortfall(s);
+                     continue;
+                 }
+             };
+@@ -664,11 +684,60 @@ unsafe fn refresh(lo: u64, hi: u64, full: u32) {
+     }
+ }
+ 
+-/// Times a slot could not get a private table (the arena was exhausted).
++/// Times a slot could not get a private table (the arena was exhausted),
++/// over all processes since boot.
+ pub fn table_shortfalls() -> usize {
+     NO_TABLE.load(Ordering::Relaxed)
+ }
+ 
++/// Times `slot`'s current process could not get a private table.
++pub fn table_shortfalls_of(slot: usize) -> usize {
++    NO_TABLE_SLOT.get(slot).map_or(0, |c| c.load(Ordering::Relaxed))
++}
++
++/// Count a shortfall for `slot` and queue its report if its process has not
++/// been reported yet.
++fn note_shortfall(slot: usize) {
++    NO_TABLE.fetch_add(1, Ordering::Relaxed);
++    NO_TABLE_SLOT[slot].fetch_add(1, Ordering::Relaxed);
++    if SHORT_REPORTED.load(Ordering::Relaxed) & (1 << slot) == 0 {
++        SHORT_PENDING.fetch_or(1 << slot, Ordering::Relaxed);
++    }
++}
++
++/// A page-table shortfall to report on the serial line ([`take_shortfall_report`]).
++#[derive(Copy, Clone, Debug, Eq, PartialEq)]
++pub struct ShortfallReport {
++    /// The process slot that could not get a private table.
++    pub slot: usize,
++    /// Its basepage (PD) address.
++    pub pd: u64,
++    /// Shortfalls of this process so far.
++    pub of_process: usize,
++    /// Shortfalls of all processes since boot ([`table_shortfalls`]).
++    pub total: usize,
++}
++
++/// The next process whose page tables could not get a private table and
++/// has not been reported yet — the kernel prints one line per process
++/// (`kernel/src/arch/aarch64/exceptions.rs`, end of every trap). Marks it
++/// reported: the same process is not reported again.
++pub fn take_shortfall_report() -> Option<ShortfallReport> {
++    let pending = SHORT_PENDING.load(Ordering::Relaxed);
++    if pending == 0 {
++        return None;
++    }
++    let slot = pending.trailing_zeros() as usize;
++    SHORT_PENDING.fetch_and(!(1 << slot), Ordering::Relaxed);
++    SHORT_REPORTED.fetch_or(1 << slot, Ordering::Relaxed);
++    Some(ShortfallReport {
++        slot,
++        pd: super::pd_of(slot) as u64,
++        of_process: table_shortfalls_of(slot),
++        total: table_shortfalls(),
++    })
++}
++
+ // ─── Process events ──────────────────────────────────────────────────
+ 
+ /// A root was (re)built for `slot` ([`super::loader`]): enter its rights.
+@@ -750,6 +819,10 @@ pub unsafe fn on_slot_released(slot: usize) {
+     for t in &TEMP {
+         t.fetch_and(!(1 << slot), Ordering::Relaxed);
+     }
++    // The next process in this slot is reported on its own.
++    NO_TABLE_SLOT[slot].store(0, Ordering::Relaxed);
++    SHORT_PENDING.fetch_and(!(1 << slot), Ordering::Relaxed);
++    SHORT_REPORTED.fetch_and(!(1 << slot), Ordering::Relaxed);
+     REBUILD.fetch_and(!(1 << slot), Ordering::Relaxed);
+     // SAFETY: lock held.
+     unsafe {
+diff --git a/tos-api/src/gemdos/memory.rs b/tos-api/src/gemdos/memory.rs
+index beae2f7..e52888b 100644
+--- a/tos-api/src/gemdos/memory.rs
++++ b/tos-api/src/gemdos/memory.rs
+@@ -141,6 +141,13 @@ unsafe fn owning_identity(addr: Long) -> Option<*mut core::ffi::c_void> {
+ unsafe fn release_as_caller(addr: Long) -> Long {
+     // SAFETY: lock held (caller contract).
+     let Some(who) = (unsafe { owning_identity(addr) }) else {
++        // Not the caller's: an `F_KEEP` block the system inherited may be
++        // freed by anybody (FreeMiNT `sys_m_free`, `sys/dosmem.c:365-398`).
++        // SAFETY: lock held.
++        if unsafe { region::release_kept(addr) } {
++            note_user_free(addr);
++            return E_OK;
++        }
+         return EIMBA;
+     };
+     // SAFETY: lock held.
+diff --git a/tos-api/src/vdi/mouse.rs b/tos-api/src/vdi/mouse.rs
+index b2c5594..6e30a55 100644
+--- a/tos-api/src/vdi/mouse.rs
++++ b/tos-api/src/vdi/mouse.rs
+@@ -558,9 +558,9 @@ pub fn mousex_handler(scancode: u8) {
+ ///
+ ///   Two properties follow from the cooperative model and are deliberate, not
+ ///   oversights: (a) the vector is only called while its **owning** process is
+-///   the running one — an EL0 VA names nothing in another address space, the
+-///   same rule `ob_user` applies to a `G_USERDEF`'s `ub_code`
+-///   (`aes/object.rs`, A97); (b) delivery happens at the next syscall return,
++///   the running one (it is delivered as an upcall into that process; unlike
++///   a `G_USERDEF`'s `ub_code`, which since ARCH03 3c E10 runs in whichever
++///   process draws, `aes/object.rs` `ob_user`); (b) delivery happens at the next syscall return,
+ ///   not inside an interrupt, and a second detent arriving before the first
+ ///   was delivered replaces it ([`crate::bdos::process::post_upcall`]'s
+ ///   last-writer-wins contract). A true ISR-timed call needs the lower-EL IRQ
+diff --git a/tos-types/src/lib.rs b/tos-types/src/lib.rs
+index 5ec7e23..08e02ea 100644
+--- a/tos-types/src/lib.rs
++++ b/tos-types/src/lib.rs
+@@ -18,7 +18,7 @@ pub use basepage::{
+     BasePage, NUMCURDIR, NUMSTD, PDCLSIZE, PF_FASTLOAD, PF_STANDARD, PF_TTRAMLOAD, PF_TTRAMMEM,
+ };
+ pub use memory::{
+-    prot_from_mxalloc, prot_from_prgflags, ProtMode, F_PROTMODE, F_PROTSHIFT, F_PROT_G, F_PROT_I, F_PROT_P, F_PROT_PR, F_PROT_S, MD,
++    prot_from_mxalloc, prot_from_prgflags, ProtMode, F_KEEP, F_PROTMODE, F_PROTSHIFT, F_PROT_G, F_PROT_I, F_PROT_P, F_PROT_PR, F_PROT_S, MD,
+     MPB, MX_MODEMASK, MX_PREFSTRAM, MX_PREFTTRAM, MX_STRAM, MX_TTRAM, PROT_G, PROT_I, PROT_P,
+     PROT_PR, PROT_PROTMODE, PROT_MAX_MODE, PROT_S,
+ };
+diff --git a/tos-types/src/memory.rs b/tos-types/src/memory.rs
+index 1e7b868..3e846ac 100644
+--- a/tos-types/src/memory.rs
++++ b/tos-types/src/memory.rs
+@@ -188,6 +188,12 @@ pub const F_PROT_PR: i16 = 0x30;
+ pub const F_PROT_I: i16 = 0x40;
+ /// Bit position of the protection nibble (`F_PROTSHIFT`, `sys/mint/mem.h:127`).
+ pub const F_PROTSHIFT: u32 = 4;
++/// `Mxalloc` mode bit "don't auto-free this memory" (`F_KEEP`,
++/// `sys/mint/mem.h:104-105`): when the block's last owner terminates, the
++/// block is not freed but passes to the system, and any process may then
++/// `Mfree` it (FreeMiNT `sys/dosmem.c:131-135,161-165,365-398`,
++/// `sys/proc_help.c:242-258`). Not part of the protection mode.
++pub const F_KEEP: i16 = 0x4000;
+ 
+ /// Internal protection value — private (`PROT_P`, `sys/mint/mem.h:130`).
+ pub const PROT_P: u8 = 0;
+diff --git a/sdk/examples/e10kid.c b/sdk/examples/e10kid.c
+new file mode 100644
+index 0000000..a119e17
+--- /dev/null
++++ b/sdk/examples/e10kid.c
+@@ -0,0 +1,142 @@
++/*
++ * e10kid.c -- the child of the ARCH03 stage-3c E10 probe (driver:
++ * e10usr.c). Its parent has registered a WF_NEWDESK background tree with a
++ * G_USERDEF in it; this program makes the AES repaint that background twice
++ * while it is the current process -- form_dial(FMD_FINISH) over the
++ * desktop work area, and a window opened and closed over it -- so the
++ * parent's routine runs here (EmuTOS: wherever the draw happens).
++ *
++ * Command tail "<case> <8 hex digits>":
++ *   d  repaint, end with 0
++ *   r  repaint, then read the parent's private word at the address: 0 if it
++ *      held the parent's pattern, 2 if not. A refused read does not come
++ *      back (crash report, Pterm(-1): the parent sees 0x0000FFFF).
++ *
++ * Build: sdk/build.sh sdk/examples/e10kid.c <out>/E10KID.NAP
++ */
++#include <newtos.h>
++
++#define P_CMDLIN 0x80
++#define PATTERN 0x50415254UL
++
++typedef unsigned long UL;
++
++typedef struct {
++    short *control;
++    short *global;
++    short *intin;
++    short *intout;
++    long *addrin;
++    long *addrout;
++} AESPB;
++
++static short aes_control[6];
++static short aes_global[16];
++static short aes_intin[16];
++static short aes_intout[16];
++static long aes_addrin[4];
++static long aes_addrout[4];
++
++static short aes_call(short opcode, short nin, short nout, short naddrin)
++{
++    AESPB pb;
++    int i;
++    aes_control[0] = opcode;
++    aes_control[1] = nin;
++    aes_control[2] = nout;
++    aes_control[3] = naddrin;
++    aes_control[4] = 0;
++    for (i = 0; i < 16; i++)
++        aes_intout[i] = 0;
++    pb.control = aes_control;
++    pb.global = aes_global;
++    pb.intin = aes_intin;
++    pb.intout = aes_intout;
++    pb.addrin = aes_addrin;
++    pb.addrout = aes_addrout;
++    {
++        register long x0 __asm__("x0") = 200;
++        register long x1 __asm__("x1") = (long)&pb;
++        __asm__ __volatile__("svc\t#2" : "+r"(x0) : "r"(x1) : "memory", "cc");
++    }
++    return aes_intout[0];
++}
++
++static const unsigned char *own_basepage(void)
++{
++    UL sysbase = *(volatile unsigned int *)0x4F2UL;
++    UL run_cell = *(volatile unsigned int *)(sysbase + 0x28);
++    return (const unsigned char *)(UL)*(volatile unsigned int *)run_cell;
++}
++
++static UL hex8(const unsigned char *s)
++{
++    UL v = 0;
++    int i;
++    for (i = 0; i < 8; i++) {
++        unsigned char c = s[i];
++        v <<= 4;
++        if (c >= '0' && c <= '9') v |= (UL)(c - '0');
++        else if (c >= 'a' && c <= 'f') v |= (UL)(c - 'a' + 10);
++        else if (c >= 'A' && c <= 'F') v |= (UL)(c - 'A' + 10);
++    }
++    return v;
++}
++
++int main(void)
++{
++    const unsigned char *tail = own_basepage() + P_CMDLIN;
++    char c = (char)tail[1];
++    volatile unsigned int *a = (volatile unsigned int *)hex8(tail + 3);
++    short dx, dy, dw, dh, h;
++    UL v;
++
++    if (aes_call(10, 0, 1, 0) < 0) /* appl_init */
++        return 3;
++    aes_intin[0] = 0;
++    aes_intin[1] = 4; /* WF_WORKXYWH */
++    aes_call(104, 2, 5, 0); /* wind_get */
++    dx = aes_intout[1];
++    dy = aes_intout[2];
++    dw = aes_intout[3];
++    dh = aes_intout[4];
++
++    /* Repaint 1: form_dial(FMD_FINISH) over the work area (w_drawdesk). */
++    aes_intin[0] = 3;
++    aes_intin[1] = aes_intin[2] = aes_intin[3] = aes_intin[4] = 0;
++    aes_intin[5] = dx;
++    aes_intin[6] = dy;
++    aes_intin[7] = dw;
++    aes_intin[8] = dh;
++    aes_call(51, 9, 1, 0);
++
++    /* Repaint 2: a window over the background, opened and closed. */
++    aes_intin[0] = 0x000B; /* NAME|CLOSER|MOVER */
++    aes_intin[1] = dx;
++    aes_intin[2] = dy;
++    aes_intin[3] = dw;
++    aes_intin[4] = dh;
++    h = aes_call(100, 5, 1, 0); /* wind_create */
++    if (h > 0) {
++        aes_intin[0] = h;
++        aes_intin[1] = dx + 20;
++        aes_intin[2] = dy + 20;
++        aes_intin[3] = 240;
++        aes_intin[4] = 160;
++        aes_call(101, 5, 1, 0); /* wind_open */
++        aes_intin[0] = h;
++        aes_call(102, 1, 1, 0); /* wind_close */
++        aes_intin[0] = h;
++        aes_call(103, 1, 1, 0); /* wind_delete */
++    }
++    Cconws("E10KID: repainted\r\n");
++
++    if (c == 'r') {
++        v = *a;
++        Cconws("E10KID: read done\r\n");
++        aes_call(19, 0, 1, 0); /* appl_exit */
++        return v == PATTERN ? 0 : 2;
++    }
++    aes_call(19, 0, 1, 0); /* appl_exit */
++    return 0;
++}
+diff --git a/sdk/examples/e10usr.c b/sdk/examples/e10usr.c
+new file mode 100644
+index 0000000..b2c5e2b
+--- /dev/null
++++ b/sdk/examples/e10usr.c
+@@ -0,0 +1,345 @@
++/*
++ * e10usr.c -- the ARCH03 stage-3c E10 probe: a G_USERDEF routine of one
++ * process drawn while another process is current.
++ *
++ * EmuTOS runs a USERBLK's ub_code wherever the draw happens -- a plain jsr
++ * on the current stack (aes/gemoblib.c:411-426, from ob_user :433-448 and
++ * just_draw :792-793). The classic case: a desktop registers a background
++ * tree with wind_set(0, WF_NEWDESK) that holds a G_USERDEF, then starts a
++ * program; every background repaint the program causes runs the desktop's
++ * routine inside the program. NewTOS does the same since stage 3c (E10 (a));
++ * with memory protection on, the program holds the owner's rights for the
++ * duration of the callout only (FreeMiNT prot_temp).
++ *
++ * This parent (the "desktop"):
++ *   1. appl_init; registers a WF_NEWDESK tree: a G_BOX root over the
++ *      desktop work area with one G_USERDEF child; the routine
++ *      (ud_draw) counts its calls, records which process it ran in (the
++ *      os_run cell of the page 0 it sees: _sysbase->os_run, which names
++ *      the CURRENT process), checks pb_parm and returns CROSSED, so the
++ *      AES draws a cross over the box (visible in a screendump);
++ *   2. 's': repaints its own background (form_dial FMD_FINISH) -- the
++ *      routine runs in the parent itself (worked before 3c too);
++ *   3. 'd': loads C:\E10KID.NAP with Pexec 3 (so it knows the child's PD)
++ *      and starts it with Pexec 6 (a child with a memory space of its own,
++ *      like Pexec 0); the child repaints the background twice (form_dial,
++ *      and a window opened and closed over it) and ends with 0. Expected:
++ *      the routine ran in the CHILD (os_run == the child's PD), as often as
++ *      the child repainted, with the right pb_parm. Before 3c (A97 rule)
++ *      it did not run at all;
++ *   4. 'r': the same child reads one of the parent's private (PROT_P)
++ *      words after its repaints: protection on (default) -> it may (it
++ *      inherited the parent's blocks at its start, E5); memprot=strict ->
++ *      it may not -- the temporary right of the callout ended (crash
++ *      report, Pexec = 0x0000FFFF); memprot=off -> it may.
++ *   5. prints "E10USR: PASS"/"FAIL", keeps its background 3 x 4 s (for a
++ *      screendump), removes it, appl_exit.
++ *
++ * The expected answers depend on the boot argument, chosen at build time
++ * with E10_MODE: 0 protection on (E10USR.NAP), 1 memprot=strict
++ * (E10USRS.NAP), 2 memprot=off (E10USRO.NAP).
++ *
++ * Build: sdk/build.sh sdk/examples/e10usr.c <out>/E10USR.NAP
++ *        (+ sdk/examples/e10kid.c -> E10KID.NAP)
++ */
++#include <newtos.h>
++
++#ifndef E10_MODE
++#define E10_MODE 0
++#endif
++#define STRICT (E10_MODE == 1)
++
++#define CRASH 0xFFFFUL
++#define MAGIC 0x45313055UL /* "E10U", the USERBLK's ub_parm */
++#define PATTERN 0x50415254UL
++
++typedef unsigned long UL;
++
++/* ---- AES (classic parameter block, LP64 pointers) ---- */
++
++typedef struct {
++    short *control;
++    short *global;
++    short *intin;
++    short *intout;
++    long *addrin;
++    long *addrout;
++} AESPB;
++
++static short aes_control[6];
++static short aes_global[16];
++static short aes_intin[16];
++static short aes_intout[16];
++static long aes_addrin[4];
++static long aes_addrout[4];
++
++static short aes_call(short opcode, short nin, short nout, short naddrin)
++{
++    AESPB pb;
++    int i;
++    aes_control[0] = opcode;
++    aes_control[1] = nin;
++    aes_control[2] = nout;
++    aes_control[3] = naddrin;
++    aes_control[4] = 0;
++    for (i = 0; i < 16; i++)
++        aes_intout[i] = 0;
++    pb.control = aes_control;
++    pb.global = aes_global;
++    pb.intin = aes_intin;
++    pb.intout = aes_intout;
++    pb.addrin = aes_addrin;
++    pb.addrout = aes_addrout;
++    {
++        register long x0 __asm__("x0") = 200;
++        register long x1 __asm__("x1") = (long)&pb;
++        __asm__ __volatile__("svc\t#2" : "+r"(x0) : "r"(x1) : "memory", "cc");
++    }
++    return aes_intout[0];
++}
++
++/* ---- the tree (LP64 OBJECT: 6 WORDs, ob_spec @16, x/y/w/h @24) ---- */
++
++typedef struct {
++    short ob_next, ob_head, ob_tail;
++    unsigned short ob_type, ob_flags, ob_state;
++    long ob_spec;
++    short ob_x, ob_y, ob_width, ob_height;
++} OBJECT;
++
++typedef struct {
++    OBJECT *pb_tree;
++    short pb_obj, pb_prevstate, pb_currstate;
++    short pb_x, pb_y, pb_w, pb_h;
++    short pb_xc, pb_yc, pb_wc, pb_hc;
++    long pb_parm;
++} PARMBLK;
++
++typedef struct {
++    short (*ub_code)(PARMBLK *);
++    long ub_parm;
++} USERBLK;
++
++#define G_BOX 20
++#define G_USERDEF 24
++#define LASTOB 0x0020
++#define CROSSED 0x0002
++#define WF_WORKXYWH 4
++#define WF_NEWDESK 14
++#define FMD_FINISH 3
++
++static OBJECT tree[2];
++static USERBLK ublk;
++
++/* What the routine saw -- written from whichever process it runs in. */
++static volatile UL calls;
++static volatile UL ran_in;
++static volatile UL bad_parm;
++
++/* The parent's private word the 'r' child reads (PROT_P: its BSS). */
++static volatile unsigned int secret;
++
++static UL current_pd(void)
++{
++    /* _sysbase (0x4F2) -> OSHEADER, os_run (+0x28) -> the cell holding the
++       running process's PD. Page 0 is the current process's own. */
++    UL sysbase = *(volatile unsigned int *)0x4F2UL;
++    UL run_cell = *(volatile unsigned int *)(sysbase + 0x28);
++    return (UL)*(volatile unsigned int *)run_cell;
++}
++
++static short ud_draw(PARMBLK *pb)
++{
++    calls++;
++    ran_in = current_pd();
++    if ((UL)pb->pb_parm != MAGIC || pb->pb_tree != tree || pb->pb_obj != 1)
++        bad_parm++;
++    return (short)(pb->pb_currstate | CROSSED);
++}
++
++/* ---- output ---- */
++
++static __attribute__((noinline)) void put_hex(UL v)
++{
++    volatile char buf[11];
++    int i;
++    buf[0] = '0';
++    buf[1] = 'x';
++    for (i = 0; i < 8; i++) {
++        unsigned d = (unsigned)(v >> (28 - 4 * i)) & 0xF;
++        buf[2 + i] = (char)(d < 10 ? '0' + d : 'A' + d - 10);
++    }
++    buf[10] = '\0';
++    Cconws((const char *)buf);
++}
++
++static int fails;
++
++static void verdict(char c, const char *what, UL got, UL want)
++{
++    char line[] = "E10USR: case ? ";
++    line[13] = c;
++    Cconws(line);
++    Cconws(what);
++    Cconws(" got=");
++    put_hex(got);
++    Cconws(" want=");
++    put_hex(want);
++    if (got == want) {
++        Cconws(" OK\r\n");
++    } else {
++        Cconws(" WRONG\r\n");
++        fails++;
++    }
++}
++
++static NLONG Pexec(short mode, const char *path, const char *tail, const char *env)
++{
++    register NLONG x8 __asm__("x8") = 0x4B;
++    register NLONG r0 __asm__("x0") = mode;
++    register NLONG r1 __asm__("x1") = (NLONG)path;
++    register NLONG r2 __asm__("x2") = (NLONG)tail;
++    register NLONG r3 __asm__("x3") = (NLONG)env;
++    __asm__ volatile("svc #1" : "+r"(r0) : "r"(x8), "r"(r1), "r"(r2), "r"(r3) : "memory");
++    return r0;
++}
++
++static void make_tail(char *tail, char c, UL addr)
++{
++    static const char hex[] = "0123456789abcdef";
++    int i;
++    tail[0] = 10;
++    tail[1] = c;
++    tail[2] = ' ';
++    for (i = 0; i < 8; i++)
++        tail[3 + i] = hex[(addr >> ((7 - i) * 4)) & 0xF];
++    tail[11] = '\0';
++}
++
++static short dx, dy, dw, dh;
++
++static void repaint_background(void)
++{
++    int i;
++    for (i = 0; i < 4; i++)
++        aes_intin[1 + i] = 0;
++    aes_intin[0] = FMD_FINISH;
++    aes_intin[5] = dx;
++    aes_intin[6] = dy;
++    aes_intin[7] = dw;
++    aes_intin[8] = dh;
++    aes_call(51, 9, 1, 0); /* form_dial */
++}
++
++static void set_newdesk(OBJECT *t)
++{
++    aes_intin[0] = 0;
++    aes_intin[1] = WF_NEWDESK;
++    aes_intin[2] = aes_intin[3] = aes_intin[4] = aes_intin[5] = 0;
++    aes_addrin[0] = (long)t;
++    aes_call(105, 6, 1, 1); /* wind_set, native addr_in[0] form */
++    aes_addrin[0] = 0;
++}
++
++/* Load the child (Pexec 3: we learn its PD), start it with its own memory
++   space (Pexec 6). Returns the exit code; *pd the child's PD. */
++static UL run_kid(char c, UL addr, UL *pd)
++{
++    char tail[12];
++    NLONG p;
++    make_tail(tail, c, addr);
++    p = Pexec(3, "C:\\E10KID.NAP", tail, 0);
++    *pd = (UL)p;
++    if (p <= 0)
++        return (UL)p;
++    return (UL)Pexec(6, 0, (const char *)p, 0);
++}
++
++int main(void)
++{
++    UL me = current_pd();
++    UL before, kid, rc;
++
++    Cconws(STRICT ? "E10USR: start (expecting memprot=strict)\r\n"
++           : E10_MODE == 2 ? "E10USR: start (expecting memprot=off)\r\n"
++                           : "E10USR: start (expecting protection on, default)\r\n");
++    if (aes_call(10, 0, 1, 0) < 0) { /* appl_init */
++        Cconws("E10USR: FAIL (appl_init)\r\n");
++        return 1;
++    }
++    aes_intin[0] = 0;
++    aes_intin[1] = WF_WORKXYWH;
++    aes_call(104, 2, 5, 0); /* wind_get */
++    dx = aes_intout[1];
++    dy = aes_intout[2];
++    dw = aes_intout[3];
++    dh = aes_intout[4];
++    secret = PATTERN;
++
++    tree[0].ob_next = -1;
++    tree[0].ob_head = 1;
++    tree[0].ob_tail = 1;
++    tree[0].ob_type = G_BOX;
++    tree[0].ob_spec = 0x00001143L; /* the AES's own desktop fill */
++    tree[0].ob_x = dx;
++    tree[0].ob_y = dy;
++    tree[0].ob_width = dw;
++    tree[0].ob_height = dh;
++    ublk.ub_code = ud_draw;
++    ublk.ub_parm = (long)MAGIC;
++    tree[1].ob_next = 0;
++    tree[1].ob_head = -1;
++    tree[1].ob_tail = -1;
++    tree[1].ob_type = G_USERDEF;
++    tree[1].ob_flags = LASTOB;
++    tree[1].ob_spec = (long)&ublk;
++    tree[1].ob_x = 40;
++    tree[1].ob_y = 40;
++    tree[1].ob_width = 160;
++    tree[1].ob_height = 96;
++    set_newdesk(tree);
++
++    /* s: our own repaint -- the routine runs in us. */
++    calls = 0;
++    repaint_background();
++    verdict('s', "own repaint: routine ran", calls ? 1 : 0, 1);
++    verdict('s', "  in this process", ran_in, me);
++
++    /* d: the child's repaints -- the routine runs in the child. */
++    before = calls;
++    ran_in = 0;
++    rc = run_kid('d', 0, &kid);
++    Cconws("E10USR: child PD ");
++    put_hex(kid);
++    Cconws(", routine calls during the child ");
++    put_hex(calls - before);
++    Cconws("\r\n");
++    verdict('d', "child exit", rc, 0);
++    verdict('d', "routine ran during the child", calls - before >= 2 ? 1 : 0, 1);
++    verdict('d', "  in the child (os_run)", ran_in, kid);
++    verdict('d', "  pb_parm/pb_tree/pb_obj right", bad_parm, 0);
++
++    /* r: after its repaints the child reads our private word. */
++    rc = run_kid('r', (UL)&secret, &kid);
++    verdict('r', "child reads parent PROT_P after the callouts", rc, STRICT ? CRASH : 0);
++
++    /* We are unharmed. */
++    verdict('.', "own private word intact", secret, PATTERN);
++
++    /* The verdict first, then 4 s with the background still registered
++       (a screendump shows the CROSSED box), then clean up. */
++    Cconws(fails ? "E10USR: FAIL\r\n" : "E10USR: PASS\r\n");
++    {
++        int i;
++        for (i = 0; i < 3; i++) {
++            aes_intin[0] = 4000;
++            aes_intin[1] = 0;
++            aes_call(24, 2, 1, 0); /* evnt_timer */
++        }
++    }
++    Cconws("E10USR: hold over\r\n");
++    set_newdesk(0);
++    repaint_background();
++    aes_call(19, 0, 1, 0); /* appl_exit */
++    return fails;
++}
+diff --git a/tos-api/tests/arch03_3c_e10.rs b/tos-api/tests/arch03_3c_e10.rs
+new file mode 100644
+index 0000000..dc08064
+--- /dev/null
++++ b/tos-api/tests/arch03_3c_e10.rs
+@@ -0,0 +1,149 @@
++//! ARCH03 stage 3c — E10 (a): a `G_USERDEF` routine of another process runs
++//! in the current one with the owner's rights for the callout
++//! (`aes/object.rs` `ob_user` → `memprot::grant_temp` / `revoke_temp`;
++//! FreeMiNT `prot_temp`, `sys/arch/mprot030.c:775-805`; EmuTOS runs the
++//! routine wherever the draw happens, `aes/gemoblib.c:411-426`).
++//!
++//! The case that needs the grant: `memprot=strict`, a `Pexec(0)` child
++//! compositing its parent's `WF_NEWDESK` background — the child inherited
++//! nothing (E5 strict), so without the grant the parent's `ub_code`, tree and
++//! `ub_parm` would fault. The grant covers the owner's whole memory space
++//! (a `Pexec(4)` thread's blocks too) and ends with the callout.
++
++use std::sync::atomic::Ordering;
++use std::sync::{Mutex, MutexGuard, Once};
++
++use tos_api::bdos::mem::{free_all_owned, traps};
++use tos_api::bdos::process::mmu;
++use tos_api::bdos::process::{self, memprot, PROCESS_TABLE};
++use tos_types::{BasePage, Long, MX_TTRAM};
++
++const ST_START: u64 = 0x0040_0000;
++const ST_LEN: u64 = 10 * 1024 * 1024;
++const TT_START: u64 = 0x0100_0000;
++const TT_LEN: u64 = 64 * 1024 * 1024;
++const ARENA_TABLES: usize = 512;
++
++static LOCK: Mutex<()> = Mutex::new(());
++static SETUP: Once = Once::new();
++
++#[repr(C, align(4096))]
++struct Page([u8; 4096]);
++
++fn lock() -> MutexGuard<'static, ()> {
++    let g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
++    SETUP.call_once(|| {
++        let arena: Vec<Page> = (0..ARENA_TABLES).map(|_| Page([0; 4096])).collect();
++        let arena = Box::leak(arena.into_boxed_slice());
++        // SAFETY: once per binary, before the pools exist.
++        unsafe {
++            memprot::configure(true, false);
++            mmu::set_table_arena(arena.as_mut_ptr() as u64, ARENA_TABLES);
++            tos_api::bdos::mem::init::init(ST_START, ST_LEN, TT_START, TT_LEN).expect("pools");
++            mmu::map_pools().expect("the pools map");
++        }
++    });
++    g
++}
++
++struct Proc {
++    slot: usize,
++    bp: *mut BasePage,
++}
++
++impl Proc {
++    fn new() -> Proc {
++        let slot = process::allocate_slot().expect("a slot");
++        let bp = Box::into_raw(Box::new([0u8; 256])) as *mut BasePage;
++        let p = &PROCESS_TABLE[slot];
++        p.basepage_kva.store(bp, Ordering::Release);
++        // SAFETY: under the lock; the slot is not an installed root.
++        unsafe { mmu::init_slot_tables(slot) }.unwrap();
++        p.l0_pa.store(mmu::l0_pa_for(slot), Ordering::Release);
++        p.set_state(process::State::Running);
++        // SAFETY: under the lock.
++        unsafe { memprot::on_root_built(slot) };
++        Proc { slot, bp }
++    }
++
++    fn pd(&self) -> *mut core::ffi::c_void {
++        process::pd_of(self.slot).cast()
++    }
++
++    fn alloc(&self, n: Long, mode: i16) -> u64 {
++        process::set_current(process::pd_of(self.slot));
++        // SAFETY: under the lock.
++        let a = unsafe { traps::mxalloc(n, mode) };
++        process::set_current(std::ptr::null_mut());
++        assert_ne!(a, 0, "allocation");
++        a as u32 as u64
++    }
++
++    /// `Pterm`'s memory sweep for this process.
++    fn terminate(&self) {
++        // SAFETY: under the lock.
++        unsafe { free_all_owned::free_all_owned(self.pd()) };
++    }
++}
++
++impl Drop for Proc {
++    fn drop(&mut self) {
++        self.terminate();
++        process::free_slot(self.slot);
++        // SAFETY: allocated by `Box::new` in `new`.
++        drop(unsafe { Box::from_raw(self.bp as *mut [u8; 256]) });
++    }
++}
++
++fn access(slot: usize, va: u64) -> Option<u64> {
++    mmu::translate(slot, va).map(|(_, d)| (d >> 6) & 0b11)
++}
++
++const RW: Option<u64> = Some(0b01);
++
++#[test]
++fn strict_child_runs_the_parents_userdef_only_for_the_callout() {
++    let _g = lock();
++    // SAFETY: under the lock; this binary runs strict.
++    unsafe { memprot::configure(true, true) };
++    let parent = Proc::new();
++    let code = parent.alloc(0x2000, MX_TTRAM); // its text + tree + ub_parm
++    let child = Proc::new();
++    // SAFETY: under the lock.
++    unsafe { memprot::on_launch(child.slot, parent.pd().cast()) };
++    assert_eq!(access(child.slot, code), None, "strict: the child inherited nothing");
++
++    // ob_user: foreign owner -> grant, callout, revoke.
++    // SAFETY: under the lock.
++    unsafe { memprot::grant_temp(child.slot, parent.slot) };
++    assert_eq!(access(child.slot, code), RW, "the owner's routine is reachable for the callout");
++    assert_eq!(access(child.slot, code + 0x1000), RW);
++    // SAFETY: under the lock.
++    unsafe { memprot::revoke_temp(child.slot) };
++    assert_eq!(access(child.slot, code), None, "and not after it");
++    // The parent's own rights never changed.
++    assert_eq!(access(parent.slot, code), RW);
++}
++
++#[test]
++fn the_grant_covers_the_owners_whole_space() {
++    let _g = lock();
++    // SAFETY: under the lock; this binary runs strict.
++    unsafe { memprot::configure(true, true) };
++    let owner = Proc::new();
++    let thread = Proc::new();
++    // A `Pexec(4)` thread of the owner (E6): its blocks are the space's.
++    PROCESS_TABLE[thread.slot].space_pd.store(owner.pd().cast(), Ordering::Release);
++    // SAFETY: under the lock.
++    unsafe { memprot::on_launch(thread.slot, owner.pd().cast()) };
++    let by_thread = thread.alloc(0x1000, MX_TTRAM);
++    let host = Proc::new();
++    assert_eq!(access(host.slot, by_thread), None);
++    // SAFETY: under the lock.
++    unsafe { memprot::grant_temp(host.slot, owner.slot) };
++    assert_eq!(access(host.slot, by_thread), RW);
++    // SAFETY: under the lock.
++    unsafe { memprot::revoke_temp(host.slot) };
++    assert_eq!(access(host.slot, by_thread), None);
++    PROCESS_TABLE[thread.slot].space_pd.store(std::ptr::null_mut(), Ordering::Release);
++}
+diff --git a/tos-api/tests/arch03_3c_keep.rs b/tos-api/tests/arch03_3c_keep.rs
+new file mode 100644
+index 0000000..a200965
+--- /dev/null
++++ b/tos-api/tests/arch03_3c_keep.rs
+@@ -0,0 +1,209 @@
++//! ARCH03 stage 3c — `Mxalloc(…, F_KEEP | mode)`: FreeMiNT's "don't
++//! auto-free this memory" bit (`sys/mint/mem.h:104-105`).
++//!
++//! FreeMiNT semantics, checked against the real pool and ownership table:
++//!
++//! * the bit sets `M_KEEP` on the region (`sys/dosmem.c:131-135`); it is not
++//!   part of the protection mode (`:237-242`);
++//! * when the terminating process holds the **last** link, the region is not
++//!   freed but attached to the root process (`sys/proc_help.c:242-258`) — in
++//!   NewTOS the kernel owner; its protection mode stays;
++//! * a block with a further owner simply loses the dying owner (links > 1);
++//! * once the system holds it, **any** process may `Mfree` it by address
++//!   (`sys/dosmem.c:365-398`); before that only an owner may (E15);
++//! * an owner's own `Mfree` frees it like any block.
++
++use std::sync::atomic::Ordering;
++use std::sync::{Mutex, MutexGuard, Once};
++
++use tos_api::bdos::mem::{free_all_owned, region, traps};
++use tos_api::bdos::process::mmu;
++use tos_api::bdos::process::{self, memprot, PROCESS_TABLE};
++use tos_api::trap::TrapArgs;
++use tos_api::uaccess::Space;
++use tos_types::error::{EIMBA, E_OK};
++use tos_types::{BasePage, Long, ProtMode, F_KEEP, MX_TTRAM};
++
++const ST_START: u64 = 0x0040_0000;
++const ST_LEN: u64 = 10 * 1024 * 1024;
++const TT_START: u64 = 0x0100_0000;
++const TT_LEN: u64 = 64 * 1024 * 1024;
++const ARENA_TABLES: usize = 512;
++
++static LOCK: Mutex<()> = Mutex::new(());
++static SETUP: Once = Once::new();
++
++#[repr(C, align(4096))]
++struct Page([u8; 4096]);
++
++fn lock() -> MutexGuard<'static, ()> {
++    let g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
++    SETUP.call_once(|| {
++        let arena: Vec<Page> = (0..ARENA_TABLES).map(|_| Page([0; 4096])).collect();
++        let arena = Box::leak(arena.into_boxed_slice());
++        // SAFETY: once per binary, before the pools exist.
++        unsafe {
++            memprot::configure(true, false);
++            mmu::set_table_arena(arena.as_mut_ptr() as u64, ARENA_TABLES);
++            tos_api::bdos::mem::init::init(ST_START, ST_LEN, TT_START, TT_LEN).expect("pools");
++            mmu::map_pools().expect("the pools map");
++        }
++    });
++    g
++}
++
++struct Proc {
++    slot: usize,
++    bp: *mut BasePage,
++}
++
++impl Proc {
++    fn new() -> Proc {
++        let slot = process::allocate_slot().expect("a slot");
++        let bp = Box::into_raw(Box::new([0u8; 256])) as *mut BasePage;
++        let p = &PROCESS_TABLE[slot];
++        p.basepage_kva.store(bp, Ordering::Release);
++        // SAFETY: under the lock; the slot is not an installed root.
++        unsafe { mmu::init_slot_tables(slot) }.unwrap();
++        p.l0_pa.store(mmu::l0_pa_for(slot), Ordering::Release);
++        p.set_state(process::State::Running);
++        // SAFETY: under the lock.
++        unsafe { memprot::on_root_built(slot) };
++        Proc { slot, bp }
++    }
++
++    fn pd(&self) -> *mut core::ffi::c_void {
++        process::pd_of(self.slot).cast()
++    }
++
++    fn alloc(&self, n: Long, mode: i16) -> u64 {
++        process::set_current(process::pd_of(self.slot));
++        // SAFETY: under the lock.
++        let a = unsafe { traps::mxalloc(n, mode) };
++        process::set_current(std::ptr::null_mut());
++        assert_ne!(a, 0, "allocation");
++        a as u32 as u64
++    }
++
++    /// GEMDOS `Mfree` as this process (the owner rule of E15 applies).
++    fn mfree(&self, addr: u64) -> Long {
++        process::set_current(process::pd_of(self.slot));
++        let args = TrapArgs { regs: [addr, 0, 0, 0, 0, 0, 0, 0], func: 0x49, svc_imm: 1, space: Space::User };
++        let rc = tos_api::gemdos::memory::mfree(&args);
++        process::set_current(std::ptr::null_mut());
++        rc
++    }
++
++    /// `Pterm`'s memory sweep for this process.
++    fn terminate(&self) {
++        // SAFETY: under the lock.
++        unsafe { free_all_owned::free_all_owned(self.pd()) };
++    }
++}
++
++impl Drop for Proc {
++    fn drop(&mut self) {
++        self.terminate();
++        process::free_slot(self.slot);
++        // SAFETY: allocated by `Box::new` in `new`.
++        drop(unsafe { Box::from_raw(self.bp as *mut [u8; 256]) });
++    }
++}
++
++fn allocated(addr: u64) -> bool {
++    // SAFETY: under the lock (callers hold it).
++    unsafe { traps::is_allocated(addr) }
++}
++
++fn access(slot: usize, va: u64) -> Option<u64> {
++    mmu::translate(slot, va).map(|(_, d)| (d >> 6) & 0b11)
++}
++
++const RW: Option<u64> = Some(0b01);
++
++#[test]
++fn a_kept_block_outlives_its_owner_and_anybody_may_free_it_then() {
++    let _g = lock();
++    let a = Proc::new();
++    let b = Proc::new();
++    let kept = a.alloc(0x1000, MX_TTRAM | F_KEEP);
++    let kept_g = a.alloc(0x1000, MX_TTRAM | F_KEEP | 0x20);
++    let plain = a.alloc(0x1000, MX_TTRAM);
++    // SAFETY: under the lock.
++    unsafe {
++        assert!(region::is_kept(kept as Long) && region::is_kept(kept_g as Long));
++        assert!(!region::is_kept(plain as Long));
++        // F_KEEP is not part of the mode: the PRGFLAGS default / PROT_G.
++        assert_eq!(memprot::mode_of(kept), ProtMode::P);
++        assert_eq!(memprot::mode_of(kept_g), ProtMode::G);
++    }
++    // While its owner lives, only an owner frees it (E15).
++    assert_eq!(b.mfree(kept), EIMBA);
++    assert!(allocated(kept));
++
++    // The owner terminates: the plain block goes, the kept ones stay —
++    // the system holds them, their modes unchanged.
++    a.terminate();
++    assert!(!allocated(plain), "an ordinary block is freed with its owner");
++    assert!(allocated(kept) && allocated(kept_g), "F_KEEP blocks are not");
++    // SAFETY: under the lock.
++    unsafe {
++        assert_eq!(region::links(kept as Long), 1);
++        assert!(region::is_owner(kept as Long, traps::kernel_owner()), "inherited by the system");
++        assert_eq!(memprot::mode_of(kept), ProtMode::P);
++    }
++    // Rights follow the mode: private memory of the system is nobody's,
++    // global memory everybody's.
++    assert_eq!(access(b.slot, kept), None);
++    assert_eq!(access(b.slot, kept_g), RW);
++
++    // Now anybody may free them by address.
++    assert_eq!(b.mfree(kept), E_OK);
++    assert_eq!(b.mfree(kept_g), E_OK);
++    assert!(!allocated(kept) && !allocated(kept_g));
++    // SAFETY: under the lock.
++    assert!(!unsafe { region::is_kept(kept as Long) }, "the flag goes with the block");
++    assert_eq!(b.mfree(kept), EIMBA, "and it is gone");
++}
++
++#[test]
++fn an_owner_frees_a_kept_block_like_any_other() {
++    let _g = lock();
++    let a = Proc::new();
++    let kept = a.alloc(0x1000, MX_TTRAM | F_KEEP);
++    assert_eq!(a.mfree(kept), E_OK);
++    assert!(!allocated(kept));
++    // A later block at the same address is not kept.
++    let again = a.alloc(0x1000, MX_TTRAM);
++    assert_eq!(again, kept, "first fit reuses the pages");
++    // SAFETY: under the lock.
++    assert!(!unsafe { region::is_kept(again as Long) });
++    a.terminate();
++    assert!(!allocated(again));
++}
++
++#[test]
++fn a_kept_block_with_a_further_owner_passes_to_it_first() {
++    let _g = lock();
++    let a = Proc::new();
++    let b = Proc::new();
++    let kept = a.alloc(0x1000, MX_TTRAM | F_KEEP);
++    // SAFETY: under the lock.
++    unsafe { region::attach(kept as Long, b.pd()) }.unwrap();
++    // `a` dies with another link left: the block is simply b's (links > 1,
++    // FreeMiNT only decrements).
++    a.terminate();
++    // SAFETY: under the lock.
++    unsafe {
++        assert!(region::is_owner(kept as Long, b.pd()));
++        assert!(!region::is_owner(kept as Long, traps::kernel_owner()));
++    }
++    // `b` dies as the last owner: now the system inherits it.
++    b.terminate();
++    assert!(allocated(kept));
++    // SAFETY: under the lock.
++    assert!(unsafe { region::is_owner(kept as Long, traps::kernel_owner()) });
++    let c = Proc::new();
++    assert_eq!(c.mfree(kept), E_OK);
++    assert!(!allocated(kept));
++}
+diff --git a/tos-api/tests/arch03_3c_table_shortfall.rs b/tos-api/tests/arch03_3c_table_shortfall.rs
+new file mode 100644
+index 0000000..1bd9177
+--- /dev/null
++++ b/tos-api/tests/arch03_3c_table_shortfall.rs
+@@ -0,0 +1,151 @@
++//! ARCH03 stage 3c — the page-table arena runs out: no silent degradation.
++//!
++//! A process whose rights differ from everybody else's in a 2-MiB region
++//! needs a private L3 table from the arena (`memprot` copy-on-differ). When
++//! the arena is empty the process keeps the shared, non-owner rights there —
++//! it can lose access, never gain any — and that is **counted** (since boot
++//! and per process) and **reported once per process**
++//! (`memprot::take_shortfall_report`, printed by the kernel at the end of
++//! the trap). The next process in the same slot is reported on its own.
++//!
++//! The arena here is small on purpose (its own test binary).
++
++use std::sync::atomic::Ordering;
++use std::sync::{Mutex, MutexGuard, Once};
++
++use tos_api::bdos::mem::traps;
++use tos_api::bdos::process::mmu;
++use tos_api::bdos::process::{self, memprot, PROCESS_TABLE};
++use tos_types::{BasePage, Long, MX_TTRAM};
++
++const ST_START: u64 = 0x0040_0000;
++const ST_LEN: u64 = 10 * 1024 * 1024;
++const TT_START: u64 = 0x0100_0000;
++const TT_LEN: u64 = 64 * 1024 * 1024;
++/// The shared L3 tables of the two pools (5 + 32 regions) plus a few.
++const ARENA_TABLES: usize = 44;
++
++static LOCK: Mutex<()> = Mutex::new(());
++static SETUP: Once = Once::new();
++
++#[repr(C, align(4096))]
++struct Page([u8; 4096]);
++
++fn lock() -> MutexGuard<'static, ()> {
++    let g = LOCK.lock().unwrap_or_else(|e| e.into_inner());
++    SETUP.call_once(|| {
++        let arena: Vec<Page> = (0..ARENA_TABLES).map(|_| Page([0; 4096])).collect();
++        let arena = Box::leak(arena.into_boxed_slice());
++        // SAFETY: once per binary, before the pools exist.
++        unsafe {
++            memprot::configure(true, false);
++            mmu::set_table_arena(arena.as_mut_ptr() as u64, ARENA_TABLES);
++            tos_api::bdos::mem::init::init(ST_START, ST_LEN, TT_START, TT_LEN).expect("pools");
++            mmu::map_pools().expect("the pools map");
++        }
++    });
++    g
++}
++
++struct Proc {
++    slot: usize,
++    bp: *mut BasePage,
++}
++
++impl Proc {
++    fn new() -> Proc {
++        let slot = process::allocate_slot().expect("a slot");
++        let bp = Box::into_raw(Box::new([0u8; 256])) as *mut BasePage;
++        let p = &PROCESS_TABLE[slot];
++        p.basepage_kva.store(bp, Ordering::Release);
++        // SAFETY: under the lock; the slot is not an installed root.
++        unsafe { mmu::init_slot_tables(slot) }.unwrap();
++        p.l0_pa.store(mmu::l0_pa_for(slot), Ordering::Release);
++        p.set_state(process::State::Running);
++        // SAFETY: under the lock.
++        unsafe { memprot::on_root_built(slot) };
++        Proc { slot, bp }
++    }
++
++    fn alloc(&self, n: Long, mode: i16) -> u64 {
++        process::set_current(process::pd_of(self.slot));
++        // SAFETY: under the lock.
++        let a = unsafe { traps::mxalloc(n, mode) };
++        process::set_current(std::ptr::null_mut());
++        assert_ne!(a, 0, "allocation");
++        a as u32 as u64
++    }
++
++    /// Allocate private 2-MiB blocks (each in regions of its own) until the
++    /// arena has no table left for this process; the blocks that could not
++    /// get one.
++    fn exhaust(&self) -> Vec<u64> {
++        let mut short = Vec::new();
++        for _ in 0..30 {
++            let before = memprot::table_shortfalls_of(self.slot);
++            let b = self.alloc(2 * 1024 * 1024, MX_TTRAM);
++            if memprot::table_shortfalls_of(self.slot) > before {
++                short.push(b);
++                if short.len() >= 2 {
++                    break;
++                }
++            }
++        }
++        short
++    }
++}
++
++impl Drop for Proc {
++    fn drop(&mut self) {
++        // SAFETY: under the lock.
++        unsafe {
++            tos_api::bdos::mem::free_all_owned::free_all_owned(process::pd_of(self.slot).cast())
++        };
++        process::free_slot(self.slot);
++        // SAFETY: allocated by `Box::new` in `new`.
++        drop(unsafe { Box::from_raw(self.bp as *mut [u8; 256]) });
++    }
++}
++
++#[test]
++fn an_exhausted_arena_is_counted_and_reported_once_per_process() {
++    let _g = lock();
++    while memprot::take_shortfall_report().is_some() {}
++    let total_before = memprot::table_shortfalls();
++
++    let a = Proc::new();
++    let short = a.exhaust();
++    assert!(!short.is_empty(), "the small arena runs out");
++    assert!(memprot::table_shortfalls_of(a.slot) >= short.len());
++    assert!(memprot::table_shortfalls() > total_before, "counted since boot");
++
++    // It can lose access, never gain any: its own private block in a region
++    // without a private table is invalid for it (the non-owner pattern).
++    let last = *short.last().unwrap();
++    let pages = (0..2 * 1024 * 1024 / mmu::PAGE_SIZE).map(|i| last + i * mmu::PAGE_SIZE);
++    let lost = pages.filter(|&va| mmu::translate(a.slot, va).is_none()).count();
++    assert!(lost > 0, "a shortfall leaves the owner without access to part of its block");
++
++    // Reported once for this process ...
++    let r = memprot::take_shortfall_report().expect("a report");
++    assert_eq!(r.slot, a.slot);
++    assert_eq!(r.pd, process::pd_of(a.slot) as u64);
++    assert!(r.of_process >= 1);
++    assert_eq!(r.total, memprot::table_shortfalls());
++    assert_eq!(memprot::take_shortfall_report(), None, "once");
++    // ... also after further shortfalls of the same process.
++    let more = a.alloc(2 * 1024 * 1024, MX_TTRAM);
++    let _ = more;
++    assert_eq!(memprot::take_shortfall_report(), None, "once per process");
++
++    // The slot's next process is reported on its own.
++    let slot = a.slot;
++    drop(a);
++    assert_eq!(memprot::table_shortfalls_of(slot), 0, "the per-process count starts afresh");
++    let b = Proc::new();
++    let short_b = b.exhaust();
++    if !short_b.is_empty() {
++        let r = memprot::take_shortfall_report().expect("the next process is reported");
++        assert_eq!(r.slot, b.slot);
++    }
++}

@@ -1,0 +1,48 @@
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.jPg46A/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.jPg46A/ser.sock,server=on
+t=  15.3s end marker seen
+t=  18.4s ac-on-asid-rpi4-stderr-auxkernel-newcrt0-end.png {"return": {}}
+prompts seen: 0
+run ac-on-asid-rpi4-stderr-auxkernel-newcrt0: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.Xwpqnq/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.Xwpqnq/ser.sock,server=on
+t=  15.2s end marker seen
+t=  18.3s ac-on-asid-rpi4-stderr-auxkernel-oldcrt0-end.png {"return": {}}
+prompts seen: 0
+run ac-on-asid-rpi4-stderr-auxkernel-oldcrt0: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.jYMksA/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.jYMksA/ser.sock,server=on
+t=  15.2s end marker seen
+t=  18.3s ac-on-asid-rpi4-stderra-auxkernel-end.png {"return": {}}
+prompts seen: 0
+run ac-on-asid-rpi4-stderra-auxkernel: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.iOboM3/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.iOboM3/ser.sock,server=on
+t=  15.3s end marker seen
+t=  18.4s ac-on-asid-rpi4-stderr-prekernel-newcrt0-end.png {"return": {}}
+prompts seen: 0
+run ac-on-asid-rpi4-stderr-prekernel-newcrt0: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.lNFUsd/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.lNFUsd/ser.sock,server=on
+timeout
+t=  90.2s ac-on-asid-rpi4-stderr-prekernel-oldcrt0-timeout.png {"return": {}}
+prompts seen: 0
+run ac-on-asid-rpi4-stderr-prekernel-oldcrt0: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.5zA1Nn/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.5zA1Nn/ser.sock,server=on
+timeout
+t=  90.0s ac-on-asid-rpi4-stderra-prekernel-timeout.png {"return": {}}
+prompts seen: 0
+run ac-on-asid-rpi4-stderra-prekernel: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.lO05bU/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.lO05bU/ser.sock,server=on
+t=  15.2s end marker seen
+t=  18.2s ac-on-asid-rpi4-stderr-prefs11kernel-newcrt0-end.png {"return": {}}
+prompts seen: 0
+run ac-on-asid-rpi4-stderr-prefs11kernel-newcrt0: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.4zh45j/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.4zh45j/ser.sock,server=on
+t=  15.2s end marker seen
+t=  18.2s ac-on-asid-rpi4-stderr-prefs11kernel-oldcrt0-end.png {"return": {}}
+prompts seen: 0
+run ac-on-asid-rpi4-stderr-prefs11kernel-oldcrt0: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n12/a31.AeiG7m/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n12/a31.AeiG7m/ser.sock,server=on
+t=  15.2s end marker seen
+t=  18.2s ac-on-asid-rpi4-stderra-prefs11kernel-end.png {"return": {}}
+prompts seen: 0
+run ac-on-asid-rpi4-stderra-prefs11kernel: rc=0
