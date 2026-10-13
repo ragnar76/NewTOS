@@ -15,6 +15,24 @@ use core::ptr;
 use tos_types::{Long, MD, MPB};
 
 use super::mdpool::MdSupply;
+use super::owner_limit;
+
+/// Set the EmuTOS owner tag of `md` and book the change per owner cookie
+/// ([`owner_limit::rebook`], MEM05 design §3.4) — the **one** write point of
+/// `m_own` for MDs that are on, enter or leave an allocated list. A free-list
+/// MD always has `m_own == null`, so booking it is a no-op.
+///
+/// # Safety
+///
+/// `md` is a valid MD; the caller holds the BDOS lock.
+pub unsafe fn set_md_owner(md: *mut MD, new: *mut c_void) {
+    // SAFETY: caller contract.
+    unsafe {
+        let old = (*md).m_own;
+        (*md).m_own = new;
+        owner_limit::rebook(old, new);
+    }
+}
 
 /// Per-pool configuration. The only knob today is alignment.
 ///
@@ -140,7 +158,8 @@ pub unsafe fn ffit(
     unsafe {
         (*q).m_link = mp_ref.mp_mal;
         mp_ref.mp_mal = q;
-        (*q).m_own = owner;
+        // `q` came off the free list, so its tag was null: +1 for `owner`.
+        set_md_owner(q, owner);
     }
     q
 }
@@ -253,8 +272,8 @@ pub unsafe fn freeit(m: *mut MD, mp: *mut MPB, supply: &mut dyn MdSupply) {
         } else {
             mp_ref.mp_mfl = p;
         }
-        // Reset owner so probes see "free".
-        (*p).m_own = ptr::null_mut();
+        // Reset owner so probes see "free" (-1 for the old owner).
+        set_md_owner(p, ptr::null_mut());
     }
 
     // Coalesce upwards: p + p.length == f.start.
@@ -321,7 +340,8 @@ pub unsafe fn shrinkit(
         debug_assert!(newlen <= m_len);
         (*f).m_start = m_start + newlen;
         (*f).m_length = m_len - newlen;
-        (*f).m_own = (*m).m_own;
+        // Unchecked +1, undone by the `freeit` below (net 0; MEM05 §3.4).
+        set_md_owner(f, (*m).m_own);
         // Splice the temporary MD onto the allocated list.
         (*f).m_link = (*mp).mp_mal;
         (*mp).mp_mal = f;
@@ -377,7 +397,8 @@ pub unsafe fn trim_front(
         debug_assert!(pad < m_len);
         (*f).m_start = m_start;
         (*f).m_length = pad;
-        (*f).m_own = (*m).m_own;
+        // Unchecked +1, undone by the `freeit` below (net 0; MEM05 §3.4).
+        set_md_owner(f, (*m).m_own);
         (*f).m_link = (*mp).mp_mal;
         (*mp).mp_mal = f;
         (*m).m_start = m_start + pad;

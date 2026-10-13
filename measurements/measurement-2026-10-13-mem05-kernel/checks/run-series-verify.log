@@ -1,0 +1,19 @@
+=== m5-verify Di. 13 Okt. 2026 21:29:48 CEST APPEND=serial=on memprot=verify
+t=  59.2s end marker seen
+t=  62.3s m5-verify-rpi4-mdpar-end.png {"return": {}}
+prompts seen: 0
+run m5-verify-rpi4-mdpar: rc=0
+t=25.0s -> m5-verify-rpi4-apitest-t25.png {"return": {}}
+t=40.0s -> m5-verify-rpi4-apitest-t40.png {"return": {}}
+run m5-verify-rpi4-apitest: rc=0
+t=25.0s -> m5-verify-rpi4-desktop-t25.png {"return": {}}
+run m5-verify-rpi4-desktop: rc=0
+t=  20.0s end marker seen
+t=  22.0s m5-verify-rpi4-s2allm-end.png {"return": {}}
+prompts seen: 0
+run m5-verify-rpi4-s2allm: rc=0
+t=  15.4s end marker seen
+t=  17.5s m5-verify-rpi4-e9mem-end.png {"return": {}}
+prompts seen: 0
+run m5-verify-rpi4-e9mem: rc=0
+=== m5-verify done Di. 13 Okt. 2026 21:32:36 CEST

@@ -84,6 +84,15 @@ pub const BCACHE: &[u8] = b"bcache=";
 /// (`cnf_mint.c:109,129`).
 pub const BCACHE_PCT: &[u8] = b"bcachepct=";
 
+/// The per-process limit of allocated memory blocks (MEM05):
+/// `mdlimit=<n>`, `0` = no per-process limit (only the global budget of the
+/// MD supply applies). Default
+/// [`tos_api::bdos::mem::owner_limit::DEFAULT_OWNER_MD_LIMIT`] (8192, user
+/// decision E3/E4, `docs/analysis/mem05-design-2026-10-13.md` §3.3). A boot
+/// argument like [`BCACHE`], not an `Ssystem` call: no new run-time contract
+/// surface, and a program cannot lift its own limit.
+pub const MDLIMIT: &[u8] = b"mdlimit=";
+
 /// What the boot arguments say about one numeric setting.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Setting {
@@ -212,6 +221,21 @@ mod tests {
         assert_eq!(numeric_setting(b"xbcache=5", BCACHE, max), Setting::Default);
         assert_eq!(numeric_setting(b"quiet\0bcache=5", BCACHE, max), Setting::Default);
         assert_eq!(numeric_setting(b"bcache=5", b"", max), Setting::Default);
+    }
+
+    #[test]
+    fn mdlimit_parses_like_the_other_numeric_settings() {
+        let max = u32::MAX;
+        assert_eq!(numeric_setting(b"serial=on memprot=on", MDLIMIT, max), Setting::Default);
+        assert_eq!(numeric_setting(b"serial=on mdlimit=64", MDLIMIT, max), Setting::Given(64));
+        assert_eq!(numeric_setting(b"mdlimit=0\r\n", MDLIMIT, max), Setting::Given(0));
+        assert_eq!(numeric_setting(b"mdlimit=4294967295", MDLIMIT, max), Setting::Given(u32::MAX));
+        assert_eq!(numeric_setting(b"mdlimit=4294967296", MDLIMIT, max), Setting::Invalid);
+        assert_eq!(numeric_setting(b"mdlimit=99999999999", MDLIMIT, max), Setting::Invalid);
+        assert_eq!(numeric_setting(b"mdlimit=", MDLIMIT, max), Setting::Invalid);
+        assert_eq!(numeric_setting(b"mdlimit=8k", MDLIMIT, max), Setting::Invalid);
+        assert_eq!(numeric_setting(b"mdlimit=-1", MDLIMIT, max), Setting::Invalid);
+        assert_eq!(numeric_setting(b"xmdlimit=5", MDLIMIT, max), Setting::Default);
     }
 
     #[test]

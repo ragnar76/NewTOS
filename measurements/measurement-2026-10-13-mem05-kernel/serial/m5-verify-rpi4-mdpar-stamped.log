@@ -1,0 +1,98 @@
+     0.002	RB2
+     0.002	NewTOS booting on rpi4
+     0.002	[serial] output on: boot arguments contain `serial=on`
+     0.002	Phase 02 reached.
+     0.003	[mm] DTB at 0x0000000000000100
+     0.003	[mm] firmware: ARM memory bank 0: 0x0000000000000000 + 1006632960 bytes (960 MiB)
+     0.003	[mm] firmware: VC memory: 0x000000003c000000 + 67108864 bytes (64 MiB)
+     0.004	[mm] device tree: no usable /memory node (blob invalid or absent)
+     0.005	[clock] ARM 700 -> 700 MHz (max 700, measured ?, SoC 25.0 C)
+     0.006	[mm] memory map:
+     0.006	[mm]   DRAM  : 0x0000000000000000..0x000000003c000000 (1006632960 bytes) — source: firmware
+     0.006	[mm]   kernel: 0x0000000000080000..0x00000000002db000 (2469888 bytes)
+     0.006	[mm]   ST-RAM: 0x0000000000400000..0x0000000000e00000 (10485760 bytes)
+     0.006	[mm]   TT-RAM: 0x0000000001000000..0x0000000039800000 (947912704 bytes)
+     0.006	[mm]   OSrsvd: 0x0000000039800000..0x000000003c000000 (41943040 bytes)
+     0.006	[mm]     bcach: 0x0000000039800000..0x000000003b800000 (33554432 bytes)
+     0.006	[mm]     heap: 0x000000003b800000..0x000000003c000000 (8388608 bytes)
+     0.006	[mm]   MMIO 00: 0x00000000fd500000..0x00000000fd510000
+     0.006	[mm]   MMIO 01: 0x00000000fe000000..0x00000000ff000000
+     0.007	[mm]   MMIO 02: 0x00000000ff800000..0x0000000100000000
+     0.007	[mm] MMU reinstalled (high-half via TTBR1, TTBR0 deferred to Phase 06).
+     0.007	[mm] frames ST-RAM: total=2560 used=0 free=2560 (10485760 B free)
+     0.007	[mm] frames TT-RAM: total=231424 used=0 free=231424 (947912704 B free)
+     0.008	[mm] alloc ST-RAM frame -> 0x0000000000400000
+     0.008	[mm] alloc TT-RAM frame -> 0x0000000001000000
+     0.008	[mm] heap after init: total=8388608 used=0 free=8388608 largest=8388608 blocks=1
+     0.009	[mm] heap smoke OK
+     0.009	[mm] heap after smoke: total=8388608 used=0 free=8388608 largest=8388608 blocks=1
+     0.010	[fb] VideoCore display geometry detected: 640x480
+     0.010	[fb] alpha mode = 2
+     0.010	[fb] 640x480 pitch 2560 virtual height 960 -> 2 screen page(s), 2400 KiB
+     0.010	[fb] VideoCore fb up: 640x480 stride 640px
+     0.010	[mm] MEM05 per-process block limit: 400 allocated blocks (boot argument)
+     0.010	[mm] MEM05 MD supply: 117 MDs static, grows by 117 MDs per 4096-byte page from the kernel heap; page budget 512 pages (2048 KiB) for MDs + block records + snapshot + F_KEEP flags
+     0.015	[mm] memory protection ON (verify: every sync checked against a full recomputation): table arena 0x01000000+2415 tables
+     0.017	[mm] BDOS pools: ST-RAM 0x00400000+10485760 TT-RAM 0x0196f000+938020864
+     0.018	[mm] user address space: pools mapped VA = PA (453 shared L3 tables, 4-KiB pages, rights per process)
+     0.019	[mm] BDOS ST-RAM after init: total=10485760 free=10485760 used=0 largest_free=10485760 (free_mds=1 alloc_mds=0)
+     0.019	[mm] BDOS TT-RAM after init: total=938020864 free=938020864 used=0 largest_free=938020864 (free_mds=1 alloc_mds=0)
+     0.019	[mm] MEM05 after init: MDs in_use=2 capacity=117 (+0 pages); pages held=0/512 (md=0 recs=0 snap=0 kept=0) peak=0 refused budget=0 heap=0; records=0 snapshot_cap=0 snapshot_short=0; heap used=0 free=8388608 largest=8388608
+     0.020	[input] keyboard/mouse pump: AES waits and console reads; pointer motion also from the 200 Hz tick while a program runs (input=aes switches that off)
+     0.021	[bcache] FS09 block read cache: 32768 KiB at 0x39800000 (asked 32768 KiB, default), 61680 sectors of 512 B, linear-read share 5 % (default), write-through
+     0.023	[emmc] SD card on controller @ 0xffff0000fe300000
+     0.023	[emmc] M1 SLOTISR_VER=0x24020000 (SDHCI spec 0x02) CAPABILITIES=0x052134b4 (base 52 MHz)
+     0.023	[emmc] M1 CONTROL0=0x00000f02 CONTROL1=0x000e0207 div=2 -> SDCLK ~13000000 Hz
+     0.023	[emmc] M1 mailbox clock rate: EMMC(1)=50000000 Hz EMMC2(12)=700000000 Hz
+     0.023	[emmc] FS08 mode: multi-block (CMD18/CMD25 + Auto CMD12) — bus 4-bit (ACMD6 ok, SCR SD_BUS_WIDTHS=0x5), CONTROL0[1] Data Transfer Width=1
+     0.024	[emmc] M1 during identification: 2 error(s), 0 timeout(s), 2 recovery(ies) CTO=2
+     0.029	[clock] no kernel8.img FAT date on C: — clock stays at 1980-01-01
+     0.030	[pcie] RC not present (no response at RC_BASE); USB disabled
+    15.041	[proc] stand-in PDs: initial_basepage 0x00252000, AES PD 0x00252100 (read-only to all)
+    15.054	[aes] gsx_malloc: screen buffer pa=0x0196f000 len=614400 (kernel-owned, WF_SCREEN)
+    15.059	[shell] sh_ldapp: starting C:\MDPAR.NAP, sh_nextapp=2, sh_isgem=1
+    15.118	[launch] EL0: slot 0 entry 0x1a08000
+    17.549	[memprot] verify: 256 checks, 59640576 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 255 regions 1600 pages 458325 rebuilds 1 fallbacks 0
+    19.276	[MDPAR] parent Malloc(16) successes until 0: 397
+    19.276	  ok   parent: Malloc(-1) > 0 at its limit
+    19.276	[MDPAR] => limit (successes + TPA + env): 399
+    19.354	  ok   Pexec(3) MDKID with two blocks of room
+    19.355	  ok   parent at its limit again: Malloc(16) got=0x00000000 want=0x00000000
+    19.378	  ok   Mshrink(child TPA, image + BSS + 256 KiB) got=0x00000000 want=0x00000000
+    19.403	[exec] preparing program (slot 1)
+    19.404	[exec] launching
+    20.783	[memprot] verify: 512 checks, 119476224 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 510 regions 3200 pages 689070 rebuilds 2 fallbacks 0
+    25.147	[memprot] verify: 768 checks, 179349760 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 766 regions 3456 pages 690604 rebuilds 2 fallbacks 0
+    25.932	[MDKID] successes until 0: 0x0000018f Malloc(-1) > 0
+    29.917	[memprot] verify: 1024 checks, 239304192 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 1022 regions 3712 pages 691114 rebuilds 2 fallbacks 0
+    32.827	[memprot] verify: 1209 checks, 282522313 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 1207 regions 3899 pages 691810 rebuilds 2 fallbacks 0
+    32.828	[MDPAR] child (Pexec 4, parent at its limit) successes: 399
+    32.828	  ok   child gets the full limit, unaffected by the parent got=0x0000018f want=0x0000018f
+    32.828	  ok   parent still at its limit after the child got=0x00000000 want=0x00000000
+    32.843	  ok   Mfree(child env) got=0x00000000 want=0x00000000
+    32.858	  ok   Mfree(child PD) got=0x00000000 want=0x00000000
+    32.873	  ok   room for one ...
+    32.886	  ok   ... and a second block
+    32.887	  ok   ... and not a third got=0x00000000 want=0x00000000
+    33.821	[memprot] verify: 1280 checks, 299030272 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 1278 regions 3970 pages 692041 rebuilds 2 fallbacks 0
+    36.928	[memprot] verify: 1536 checks, 358443008 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 1534 regions 4226 pages 692297 rebuilds 2 fallbacks 0
+    37.771	[exec] preparing program (slot 1)
+    37.771	[exec] launching
+    39.692	[memprot] verify: 1792 checks, 418406656 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 1790 regions 6274 pages 1151652 rebuilds 3 fallbacks 0
+    42.577	[MDKID] successes until 0: 0x0000018d Malloc(-1) > 0
+    43.127	[memprot] verify: 2048 checks, 478081536 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 2046 regions 6530 pages 1151908 rebuilds 3 fallbacks 0
+    46.492	[memprot] verify: 2304 checks, 537719040 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 2302 regions 6786 pages 1152235 rebuilds 3 fallbacks 0
+    47.637	[memprot] verify: 2410 checks, 562373386 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 2407 regions 6891 pages 1152773 rebuilds 3 fallbacks 0
+    47.637	[MDPAR] child (Pexec 0, holds TPA + env) successes: 397
+    47.637	  ok   Pexec 0 child gets limit - 2 got=0x0000018d want=0x0000018d
+    49.365	[memprot] verify: 2560 checks, 597185536 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 2557 regions 7041 pages 1152923 rebuilds 3 fallbacks 0
+    53.200	  ok   parent again: limit - TPA - env got=0x0000018d want=0x0000018d
+    53.365	[memprot] verify: 2816 checks, 656631552 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 2813 regions 7297 pages 1153690 rebuilds 3 fallbacks 0
+    57.531	[memprot] verify: 3072 checks, 716067840 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 3069 regions 7553 pages 1153945 rebuilds 3 fallbacks 0
+    59.211	MDPAR: PASS
+    59.236	[memprot] verify: 3206 checks, 747165670 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 3202 regions 7686 pages 1154077 rebuilds 3 fallbacks 0
+    59.236	[launch] returned (program Pterm'd)
+    59.236	[shell] sh_ldapp: 'C:\MDPAR.NAP' exited with rc=0
+    59.237	[mm] MEM05 after program: MDs in_use=3 capacity=819 (+6 pages); pages held=25/512 (md=6 recs=4 snap=15 kept=0) peak=25 refused budget=0 heap=0; records=1 snapshot_cap=840 snapshot_short=0; heap used=102576 free=8286032 largest=8273824
+    59.239	[shell] sh_ldapp: starting NEWDESK, sh_nextapp=3, sh_isgem=1
+    59.260	[desk] desktop up (1 drives, 0 window(s) from the context)

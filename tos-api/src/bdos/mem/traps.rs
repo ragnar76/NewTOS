@@ -355,6 +355,25 @@ pub unsafe fn mxalloc(amount: Long, mode: i16) -> Long {
     // changes `current_owner()` to read `run`, with no further
     // changes to this call site.
     let owner = current_owner();
+    // MEM05: the per-process limit (design §3.1, user decision E3). A
+    // process holding `limit` blocks gets 0, as EmuTOS answers when its MD
+    // pool is exhausted (`bdos/umem.c:324-325`) — before any state changes.
+    // The `-1` probe above is not affected (E5). The one check for
+    // `Malloc`, `Mxalloc` and the loader's `mxalloc_aligned`/`_largest`.
+    // SAFETY: caller holds the BDOS lock.
+    if !unsafe { super::owner_limit::admits(owner) } {
+        return 0;
+    }
+    // MEM05: room for the block in the tables that hold one entry per
+    // allocated block — its protection record, the per-sync snapshot, its
+    // `F_KEEP` flag — before the block exists (design §2.4 point 3). These
+    // tables grow page by page against the MEM05 page budget; when no page
+    // can be had the allocation fails here, like an exhausted MD supply,
+    // and nothing has changed.
+    // SAFETY: caller holds the BDOS lock.
+    if !unsafe { crate::bdos::process::memprot::reserve() } || (keep && !unsafe { super::region::reserve_keep() }) {
+        return 0;
+    }
     let mut supply = unsafe { init::supply() };
 
     let try_pool = |mp: *mut tos_types::MPB,
@@ -400,7 +419,7 @@ pub unsafe fn mxalloc(amount: Long, mode: i16) -> Long {
         unsafe {
             super::region::forget(start);
             if keep {
-                // Cannot fail: one place per MD, every flag names a live block.
+                // Cannot fail: room was reserved above, before `ffit`.
                 super::region::mark_keep(start);
             }
             // Its protection mode, and its owner's rights (ARCH03 3b).
@@ -710,7 +729,8 @@ pub unsafe fn set_owner(addr: Long, owner: *mut c_void) -> bool {
             // SAFETY: `p` is a live MD on `mp_mal`.
             unsafe {
                 let old = (*p).m_own;
-                (*p).m_own = owner;
+                // Re-booked, never refused (MEM05 §3.4).
+                pool::set_md_owner(p, owner);
                 crate::bdos::process::memprot::on_owner_change_by(addr as u32 as u64, &[old, owner]);
             }
             return true;

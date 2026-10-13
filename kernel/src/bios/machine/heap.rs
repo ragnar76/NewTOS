@@ -49,9 +49,11 @@ use super::layout::MemoryMap;
 use crate::sync::SpinMutex;
 
 /// Number of 4-KiB frames the kernel heap arena spans.
-/// 512 frames = 2 MiB. Sized for the kernel's working set through
-/// Phase 06; revisit when filesystem caches (Phase 05) land.
-pub const HEAP_FRAMES: usize = 512;
+/// 2048 frames = 8 MiB (MEM05, user decision E2: 2 → 8 MiB). The kernel's
+/// own working set (desktop, VDI, AES) plus the MEM05 pages — the growing
+/// MD supply and its per-block tables, which never take more than
+/// `tos_api::bdos::mem::pages::MD_PAGE_BUDGET` pages (2 MiB).
+pub const HEAP_FRAMES: usize = 2048;
 /// Total heap arena size in bytes.
 pub const HEAP_BYTES: u64 = (HEAP_FRAMES as u64) * FRAME_SIZE;
 

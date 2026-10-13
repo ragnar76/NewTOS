@@ -1,0 +1,105 @@
+m5-off-rpi4-acc |  1 desktop up; | exc/panic=0
+m5-off-rpi4-apitest |  1 TOTAL 106 0 5 ; | exc/panic=0
+m5-off-rpi4-desktop |  1 desktop up; | exc/panic=0
+m5-off-rpi4-doom |  | exc/panic=0
+m5-off-rpi4-e9mem |  1 desktop up; 2 E9MEM: PASS; | exc/panic=0
+m5-off-rpi4-kbdvec-emucon |  2 desktop up; | exc/panic=0
+m5-off-rpi4-mdbud |  1 desktop up; 1 MDBUD: PASS; | exc/panic=0
+m5-off-rpi4-mdpar |  1 desktop up; 1 MDPAR: PASS; | exc/panic=0
+m5-off-rpi4-mdprobe |  1 desktop up; 1 MDPROBE: DONE; | exc/panic=0
+m5-off-rpi4-qed |  | exc/panic=0
+m5-off-rpi4-s2allm |  1 desktop up; 1 MEM03: PASS; 1 S2ALL: PASS; | exc/panic=0
+m5-off-rpi4-tdqed |  | exc/panic=0
+m5-off-rpi4-teradesk |  | exc/panic=0
+m5-off-virt-crash |  1 E10USR: PASS; | exc/panic=27
+m5-off-virt-desktop |  1 desktop up; | exc/panic=0
+m5-off-virt-selftests |  1 desktop up; | exc/panic=0
+m5-on-asid-rpi4-apitest |  1 TOTAL 106 0 5 ; | exc/panic=0
+m5-on-asid-rpi4-desktop |  1 desktop up; | exc/panic=0
+m5-on-asid-rpi4-mdprobe |  1 desktop up; 1 MDPROBE: DONE; | exc/panic=0
+m5-on-asid-virt-crash |  1 E10USR: PASS; | exc/panic=28
+m5-on-asid-virt-desktop |  1 desktop up; | exc/panic=0
+m5-on-asid-virt-selftests |  1 desktop up; | exc/panic=0
+m5-on-rpi4-acc |  1 desktop up; | exc/panic=0
+m5-on-rpi4-apitest |  1 TOTAL 106 0 5 ; | exc/panic=0
+m5-on-rpi4-desktop |  1 desktop up; | exc/panic=0
+m5-on-rpi4-doom |  | exc/panic=0
+m5-on-rpi4-e9mem |  1 desktop up; 2 E9MEM: PASS; | exc/panic=0
+m5-on-rpi4-kbdvec-emucon |  2 desktop up; | exc/panic=0
+m5-on-rpi4-mdbud |  1 desktop up; 1 MDBUD: PASS; | exc/panic=0
+m5-on-rpi4-mdpar |  1 desktop up; 1 MDPAR: PASS; | exc/panic=0
+m5-on-rpi4-mdprobe |  1 desktop up; 1 MDPROBE: DONE; | exc/panic=0
+m5-on-rpi4-qed |  | exc/panic=0
+m5-on-rpi4-s2allm |  1 desktop up; 1 MEM03: PASS; 1 S2ALL: PASS; | exc/panic=0
+m5-on-rpi4-tdqed |  | exc/panic=0
+m5-on-rpi4-teradesk |  | exc/panic=0
+m5-on-virt-crash |  1 E10USR: PASS; | exc/panic=28
+m5-on-virt-desktop |  1 desktop up; | exc/panic=0
+m5-on-virt-selftests |  1 desktop up; | exc/panic=0
+m5-strict-rpi4-acc |  1 desktop up; | exc/panic=0
+m5-strict-rpi4-apitest |  1 TOTAL 106 0 5 ; | exc/panic=0
+m5-strict-rpi4-desktop |  1 desktop up; | exc/panic=0
+m5-strict-rpi4-doom |  | exc/panic=0
+m5-strict-rpi4-e9mem |  1 desktop up; 2 E9MEM: PASS; | exc/panic=0
+m5-strict-rpi4-kbdvec-emucon |  2 desktop up; | exc/panic=0
+m5-strict-rpi4-mdbud |  1 desktop up; 1 MDBUD: PASS; | exc/panic=0
+m5-strict-rpi4-mdpar |  1 desktop up; 1 MDPAR: PASS; | exc/panic=0
+m5-strict-rpi4-mdprobe |  1 desktop up; 1 MDPROBE: DONE; | exc/panic=0
+m5-strict-rpi4-qed |  | exc/panic=0
+m5-strict-rpi4-s2allsm |  1 desktop up; 1 MEM03: PASS; 1 S2ALL: PASS; | exc/panic=2
+m5-strict-rpi4-tdqed |  | exc/panic=0
+m5-strict-rpi4-teradesk |  | exc/panic=0
+m5-strict-virt-crash |  1 E10USR: PASS; | exc/panic=32
+m5-strict-virt-desktop |  1 desktop up; | exc/panic=0
+m5-strict-virt-selftests |  1 desktop up; | exc/panic=0
+m5-verify-rpi4-apitest |  1 TOTAL 106 0 5 ; | exc/panic=0
+m5-verify-rpi4-desktop |  1 desktop up; | exc/panic=0
+m5-verify-rpi4-e9mem |  1 desktop up; 2 E9MEM: PASS; | exc/panic=0
+m5-verify-rpi4-mdpar |  1 desktop up; 1 MDPAR: PASS; | exc/panic=0
+m5-verify-rpi4-s2allm |  1 desktop up; 1 MEM03: PASS; 1 S2ALL: PASS; | exc/panic=0
+--- MEM05 lines after programs
+m5-off-rpi4-e9mem-serial.log:[mm] MEM05 after program: MDs in_use=3 capacity=117 (+0 pages); pages held=0/512 (md=0 recs=0 snap=0 kept=0) peak=0 refused budget=0 heap=0; records=0 snapshot_cap=0 snapshot_short=0; heap used=0 free=8388608 largest=8388608
+m5-off-rpi4-kbdvec-emucon-serial.log:[mm] MEM05 after program: MDs in_use=3 capacity=117 (+0 pages); pages held=0/512 (md=0 recs=0 snap=0 kept=0) peak=0 refused budget=0 heap=0; records=0 snapshot_cap=0 snapshot_short=0; heap used=0 free=8388608 largest=8388608
+m5-off-rpi4-mdbud-serial.log:[mm] MEM05 after program: MDs in_use=3 capacity=60021 (+512 pages); pages held=512/512 (md=512 recs=0 snap=0 kept=0) peak=512 refused budget=6 heap=0; records=0 snapshot_cap=0 snapshot_short=0; heap used=2105344 free=6283264 largest=6283264
+m5-off-rpi4-mdpar-serial.log:[mm] MEM05 after program: MDs in_use=3 capacity=234 (+1 pages); pages held=1/512 (md=1 recs=0 snap=0 kept=0) peak=1 refused budget=0 heap=0; records=0 snapshot_cap=0 snapshot_short=0; heap used=4112 free=8384496 largest=8384496
+m5-off-rpi4-mdprobe-serial.log:[mm] MEM05 after program: MDs in_use=3 capacity=8307 (+70 pages); pages held=70/512 (md=70 recs=0 snap=0 kept=0) peak=70 refused budget=0 heap=0; records=0 snapshot_cap=0 snapshot_short=0; heap used=287840 free=8100768 largest=8100768
+m5-off-rpi4-s2allm-serial.log:[mm] MEM05 after program: MDs in_use=10 capacity=117 (+0 pages); pages held=0/512 (md=0 recs=0 snap=0 kept=0) peak=0 refused budget=0 heap=0; records=0 snapshot_cap=0 snapshot_short=0; heap used=0 free=8388608 largest=8388608
+m5-on-asid-rpi4-mdprobe-serial.log:[mm] MEM05 after program: MDs in_use=3 capacity=8307 (+70 pages); pages held=250/512 (md=70 recs=33 snap=147 kept=0) peak=250 refused budget=0 heap=0; records=1 snapshot_cap=8232 snapshot_short=0; heap used=1025664 free=7362944 largest=7053104
+m5-on-rpi4-e9mem-serial.log:[mm] MEM05 after program: MDs in_use=3 capacity=117 (+0 pages); pages held=2/512 (md=0 recs=1 snap=1 kept=0) peak=2 refused budget=0 heap=0; records=1 snapshot_cap=56 snapshot_short=0; heap used=8224 free=8380384 largest=8380384
+m5-on-rpi4-kbdvec-emucon-serial.log:[mm] MEM05 after program: MDs in_use=3 capacity=117 (+0 pages); pages held=2/512 (md=0 recs=1 snap=1 kept=0) peak=2 refused budget=0 heap=0; records=1 snapshot_cap=56 snapshot_short=0; heap used=8224 free=8380384 largest=8380384
+m5-on-rpi4-mdbud-serial.log:[mm] MEM05 after program: MDs in_use=3 capacity=16965 (+144 pages); pages held=512/512 (md=144 recs=66 snap=302 kept=0) peak=512 refused budget=3 heap=0; records=1 snapshot_cap=16912 snapshot_short=0; heap used=2100528 free=6288080 largest=5386000
+m5-on-rpi4-mdpar-serial.log:[mm] MEM05 after program: MDs in_use=3 capacity=234 (+1 pages); pages held=5/512 (md=1 recs=1 snap=3 kept=0) peak=5 refused budget=0 heap=0; records=1 snapshot_cap=168 snapshot_short=0; heap used=20528 free=8368080 largest=8368080
+m5-on-rpi4-mdprobe-serial.log:[mm] MEM05 after program: MDs in_use=3 capacity=8307 (+70 pages); pages held=250/512 (md=70 recs=33 snap=147 kept=0) peak=250 refused budget=0 heap=0; records=1 snapshot_cap=8232 snapshot_short=0; heap used=1025664 free=7362944 largest=7053104
+m5-on-rpi4-s2allm-serial.log:[mm] MEM05 after program: MDs in_use=9 capacity=117 (+0 pages); pages held=2/512 (md=0 recs=1 snap=1 kept=0) peak=2 refused budget=0 heap=0; records=5 snapshot_cap=56 snapshot_short=0; heap used=8224 free=8380384 largest=8380384
+m5-strict-rpi4-e9mem-serial.log:[mm] MEM05 after program: MDs in_use=3 capacity=117 (+0 pages); pages held=2/512 (md=0 recs=1 snap=1 kept=0) peak=2 refused budget=0 heap=0; records=1 snapshot_cap=56 snapshot_short=0; heap used=8224 free=8380384 largest=8380384
+m5-strict-rpi4-kbdvec-emucon-serial.log:[mm] MEM05 after program: MDs in_use=3 capacity=117 (+0 pages); pages held=2/512 (md=0 recs=1 snap=1 kept=0) peak=2 refused budget=0 heap=0; records=1 snapshot_cap=56 snapshot_short=0; heap used=8224 free=8380384 largest=8380384
+m5-strict-rpi4-mdbud-serial.log:[mm] MEM05 after program: MDs in_use=3 capacity=16965 (+144 pages); pages held=512/512 (md=144 recs=66 snap=302 kept=0) peak=512 refused budget=3 heap=0; records=1 snapshot_cap=16912 snapshot_short=0; heap used=2100528 free=6288080 largest=5386000
+m5-strict-rpi4-mdpar-serial.log:[mm] MEM05 after program: MDs in_use=3 capacity=234 (+1 pages); pages held=5/512 (md=1 recs=1 snap=3 kept=0) peak=5 refused budget=0 heap=0; records=1 snapshot_cap=168 snapshot_short=0; heap used=20528 free=8368080 largest=8368080
+m5-strict-rpi4-mdprobe-serial.log:[mm] MEM05 after program: MDs in_use=3 capacity=8307 (+70 pages); pages held=250/512 (md=70 recs=33 snap=147 kept=0) peak=250 refused budget=0 heap=0; records=1 snapshot_cap=8232 snapshot_short=0; heap used=1025664 free=7362944 largest=7053104
+m5-strict-rpi4-s2allsm-serial.log:[mm] MEM05 after program: MDs in_use=3 capacity=117 (+0 pages); pages held=2/512 (md=0 recs=1 snap=1 kept=0) peak=2 refused budget=0 heap=0; records=1 snapshot_cap=56 snapshot_short=0; heap used=8224 free=8380384 largest=8380384
+m5-verify-rpi4-e9mem-serial.log:[mm] MEM05 after program: MDs in_use=3 capacity=117 (+0 pages); pages held=2/512 (md=0 recs=1 snap=1 kept=0) peak=2 refused budget=0 heap=0; records=1 snapshot_cap=56 snapshot_short=0; heap used=8224 free=8380384 largest=8380384
+m5-verify-rpi4-mdpar-serial.log:[mm] MEM05 after program: MDs in_use=3 capacity=819 (+6 pages); pages held=25/512 (md=6 recs=4 snap=15 kept=0) peak=25 refused budget=0 heap=0; records=1 snapshot_cap=840 snapshot_short=0; heap used=102576 free=8286032 largest=8273824
+m5-verify-rpi4-s2allm-serial.log:[mm] MEM05 after program: MDs in_use=9 capacity=117 (+0 pages); pages held=2/512 (md=0 recs=1 snap=1 kept=0) peak=2 refused budget=0 heap=0; records=5 snapshot_cap=56 snapshot_short=0; heap used=8224 free=8380384 largest=8380384
+--- screendumps vs libc-tty-acceptance
+DIFF doom-t30.png
+DIFF doom-t45.png
+MISSING tta-on-rpi4-mdbud-end.png
+MISSING tta-on-rpi4-mdpar-end.png
+MISSING tta-on-rpi4-mdprobe-end.png
+m5-on-rpi4- vs tta-on-rpi4-: same=13 diff=2 missing=3
+DIFF doom-t30.png
+DIFF doom-t45.png
+MISSING tta-off-rpi4-mdbud-end.png
+MISSING tta-off-rpi4-mdpar-end.png
+MISSING tta-off-rpi4-mdprobe-end.png
+m5-off-rpi4- vs tta-off-rpi4-: same=13 diff=2 missing=3
+DIFF doom-t30.png
+DIFF doom-t45.png
+MISSING tta-strict-rpi4-mdbud-end.png
+MISSING tta-strict-rpi4-mdpar-end.png
+MISSING tta-strict-rpi4-mdprobe-end.png
+DIFF s2allsm-crash1.png
+DIFF s2allsm-crash2.png
+m5-strict-rpi4- vs tta-strict-rpi4-: same=13 diff=4 missing=3
+MISSING tt-on-asid-rpi4-mdprobe-end.png
+m5-on-asid-rpi4- vs tt-on-asid-rpi4-: same=3 diff=0 missing=1

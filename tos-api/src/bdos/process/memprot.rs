@@ -200,46 +200,76 @@ pub fn pool_align_mask() -> Long {
 }
 
 // ─── Block records ───────────────────────────────────────────────────
+//
+// One record per allocated block, in a dense table of pages from the MEM05
+// page budget (`docs/analysis/mem05-design-2026-10-13.md` §2.4, decision B):
+// entries `0..len` are live, a lookup costs the live records, not a
+// capacity. Room for the next record is secured in `traps::mxalloc` before
+// the block is allocated ([`reserve`]), so recording a fresh block never
+// fails.
 
-/// One record per allocated block: at most one per MD.
-const MAX_RECORDS: usize =
-    crate::bdos::mem::mdpool::MD_BLOCK_COUNT * crate::bdos::mem::mdpool::MDS_PER_BLOCK + 2;
+use crate::bdos::mem::pages::{PageUse, PagedTable, ScratchRun};
 
 #[derive(Copy, Clone)]
 struct Rec {
-    /// Block start (`m_start`); `0` = unused.
+    /// Block start (`m_start`).
     loc: u64,
     mode: ProtMode,
     /// Slots that inherited access at their start (E5, not strict).
     inherit: u32,
 }
 
-const NO_REC: Rec = Rec { loc: 0, mode: ProtMode::P, inherit: 0 };
-
-struct Records(UnsafeCell<[Rec; MAX_RECORDS]>);
+struct Records(UnsafeCell<PagedTable<Rec>>);
 // SAFETY: BDOS giant lock (single CPU).
 unsafe impl Sync for Records {}
-static RECS: Records = Records(UnsafeCell::new([NO_REC; MAX_RECORDS]));
+static RECS: Records = Records(UnsafeCell::new(PagedTable::new(PageUse::Recs)));
 
 /// # Safety
 ///
 /// BDOS giant lock held; no other borrow of the records alive.
-unsafe fn recs() -> &'static mut [Rec; MAX_RECORDS] {
+unsafe fn recs() -> &'static mut PagedTable<Rec> {
     // SAFETY: caller contract.
     unsafe { &mut *RECS.0.get() }
 }
 
-fn rec_of(r: &mut [Rec; MAX_RECORDS], loc: u64) -> Option<&mut Rec> {
+fn rec_of(r: &mut PagedTable<Rec>, loc: u64) -> Option<&mut Rec> {
     if loc == 0 {
         return None;
     }
-    r.iter_mut().find(|e| e.loc == loc)
+    let i = r.position(|e| e.loc == loc)?;
+    Some(r.get(i))
+}
+
+/// Make sure one more block can be allocated without a table page: room for
+/// its record and for one more block in the per-sync snapshot. `false` when
+/// no page can be had (MEM05 budget or kernel heap); the caller
+/// ([`crate::bdos::mem::traps::mxalloc`]) then refuses the allocation before
+/// anything changes. Always `true` with protection off (no tables).
+///
+/// # Safety
+///
+/// BDOS giant lock held.
+pub unsafe fn reserve() -> bool {
+    if !enabled() {
+        return true;
+    }
+    // SAFETY: lock held.
+    let r = unsafe { recs() };
+    // SAFETY: lock held; no record borrowed.
+    if !unsafe { r.reserve(1) } {
+        return false;
+    }
+    // Every allocated block has a record, so the snapshot of the next sync
+    // holds at most `records + 1` blocks.
+    let need = r.len() + 1;
+    // SAFETY: lock held; no snapshot alive outside a sync.
+    unsafe { (*SNAP.0.get()).0.ensure(need) }
 }
 
 /// Record (or re-record) the mode of the block that starts at `loc`. A stale
 /// record of a freed block at the same address is replaced. `false` only if
-/// the table is full, which cannot happen while every record names a live
-/// block (one per MD).
+/// no room could be had, which cannot happen for a block allocated after a
+/// successful [`reserve`].
 ///
 /// # Safety
 ///
@@ -251,12 +281,49 @@ pub unsafe fn record(loc: u64, mode: ProtMode) -> bool {
         *e = Rec { loc, mode, inherit: 0 };
         return true;
     }
-    match r.iter_mut().find(|e| e.loc == 0) {
-        Some(e) => {
-            *e = Rec { loc, mode, inherit: 0 };
-            true
-        }
-        None => false,
+    // SAFETY: lock held.
+    unsafe { r.push(Rec { loc, mode, inherit: 0 }) }
+}
+
+/// Forget the record of the block that starts at `loc`.
+///
+/// # Safety
+///
+/// BDOS giant lock held.
+unsafe fn unrecord(loc: u64) {
+    // SAFETY: lock held.
+    let r = unsafe { recs() };
+    if let Some(i) = r.position(|e| e.loc == loc) {
+        r.swap_remove(i);
+    }
+}
+
+/// The sizes of the per-block tables (MEM05 diagnostics, host tests).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TableStats {
+    /// Live block records.
+    pub records: usize,
+    /// Records the pages held can take.
+    pub record_capacity: usize,
+    /// Blocks the snapshot can take.
+    pub snapshot_capacity: usize,
+    /// Syncs whose snapshot could not hold every block (no page could be
+    /// had; the blocks left out lose their rights until the next sync —
+    /// fail-closed). Cannot happen while [`reserve`] guards every
+    /// allocation.
+    pub snapshot_shortfalls: u64,
+}
+
+/// The per-block tables now.
+pub fn tables() -> TableStats {
+    // SAFETY: reads of sizes under the BDOS lock the caller holds (host
+    // tests: their lock).
+    let (r, snap) = unsafe { (recs(), &(*SNAP.0.get()).0) };
+    TableStats {
+        records: r.len(),
+        record_capacity: r.capacity(),
+        snapshot_capacity: snap.capacity(),
+        snapshot_shortfalls: SNAP_SHORT.load(Ordering::Relaxed),
     }
 }
 
@@ -282,11 +349,9 @@ pub unsafe fn rekey(old: u64, new: u64) {
         return;
     }
     // SAFETY: lock held.
-    let r = unsafe { recs() };
-    if let Some(e) = rec_of(r, new) {
-        *e = NO_REC;
-    }
-    if let Some(e) = rec_of(r, old) {
+    unsafe { unrecord(new) };
+    // SAFETY: lock held.
+    if let Some(e) = rec_of(unsafe { recs() }, old) {
         e.loc = new;
     }
 }
@@ -337,9 +402,7 @@ pub unsafe fn on_freed(loc: u64, len: u64) {
     // SAFETY: lock held.
     unsafe {
         let mode = mode_of(loc);
-        if let Some(e) = rec_of(recs(), loc) {
-            *e = NO_REC;
-        }
+        unrecord(loc);
         released(mode, loc, loc + len);
         sync();
     }
@@ -926,45 +989,70 @@ const NO_SNAP: Snap = Snap {
     owners: 0,
 };
 
-struct SnapBuf(UnsafeCell<([Snap; MAX_RECORDS], usize)>);
+/// The snapshot: a run of pages from the MEM05 budget (sorted and searched
+/// as one slice, rebuilt on every sync), and the number of blocks in it.
+struct SnapBuf(UnsafeCell<(ScratchRun<Snap>, usize)>);
 // SAFETY: BDOS giant lock.
 unsafe impl Sync for SnapBuf {}
-static SNAP: SnapBuf = SnapBuf(UnsafeCell::new(([NO_SNAP; MAX_RECORDS], 0)));
+static SNAP: SnapBuf = SnapBuf(UnsafeCell::new((ScratchRun::new(PageUse::Snap), 0)));
+static SNAP_SHORT: AtomicU64 = AtomicU64::new(0);
 
 /// Every allocated block of both pools, sorted by start, with its mode,
-/// inherited slots and owners under `st`.
+/// inherited slots and owners under `st`. Its room is secured before every
+/// allocation ([`reserve`]); should a block still not fit, the snapshot
+/// grows here, and if no page can be had the blocks left out are counted
+/// ([`TableStats::snapshot_shortfalls`]).
 ///
 /// # Safety
 ///
 /// BDOS giant lock held; the result is valid until the next call.
 unsafe fn snapshot(st: &Structure) -> &'static [Snap] {
-    // SAFETY: lock held; exclusive buffer.
+    // SAFETY: lock held; exclusive buffer, no earlier snapshot alive.
     let (buf, n) = unsafe { &mut *SNAP.0.get() };
-    *n = 0;
-    for mp in [pmd(), pmdalt()] {
-        // SAFETY: lock held; read-only list walk.
-        let mut m = unsafe { (*mp).mp_mal };
-        while !m.is_null() && *n < buf.len() {
-            // SAFETY: list invariant.
-            let (start, len, own, next) =
-                unsafe { ((*m).m_start as u32 as u64, (*m).m_length as u32 as u64, (*m).m_own, (*m).m_link) };
-            if len > 0 {
-                // SAFETY: lock held.
-                let further = unsafe { crate::bdos::mem::region::further_owners(start as Long) };
-                buf[*n] = Snap { start, end: start + len, own, further, ..NO_SNAP };
-                *n += 1;
+    let mut short = false;
+    loop {
+        *n = 0;
+        let mut total = 0usize;
+        for mp in [pmd(), pmdalt()] {
+            // SAFETY: lock held; read-only list walk.
+            let mut m = unsafe { (*mp).mp_mal };
+            while !m.is_null() {
+                // SAFETY: list invariant.
+                let (start, len, own, next) =
+                    unsafe { ((*m).m_start as u32 as u64, (*m).m_length as u32 as u64, (*m).m_own, (*m).m_link) };
+                if len > 0 {
+                    total += 1;
+                    if *n < buf.capacity() {
+                        // SAFETY: lock held.
+                        let further = unsafe { crate::bdos::mem::region::further_owners(start as Long) };
+                        // SAFETY: lock held; `*n < capacity`.
+                        unsafe { buf.write(*n, Snap { start, end: start + len, own, further, ..NO_SNAP }) };
+                        *n += 1;
+                    }
+                }
+                m = next;
             }
-            m = next;
+        }
+        if total <= *n || short {
+            break;
+        }
+        // SAFETY: lock held; nothing of the run is borrowed.
+        if !unsafe { buf.ensure(total) } {
+            short = true;
+            SNAP_SHORT.fetch_add(1, Ordering::Relaxed);
         }
     }
-    let blocks = &mut buf[..*n];
+    // SAFETY: lock held; entries `0..n` written above.
+    let blocks = unsafe { buf.filled(*n) };
     blocks.sort_unstable_by_key(|b| b.start);
     // Modes and inherited slots from the records, one pass.
     // SAFETY: lock held.
-    for r in unsafe { recs() }.iter().filter(|r| r.loc != 0) {
-        if let Ok(i) = blocks.binary_search_by_key(&r.loc, |b| b.start) {
-            blocks[i].mode = r.mode;
-            blocks[i].inherit = r.inherit;
+    let r = unsafe { recs() };
+    for i in 0..r.len() {
+        let rec = *r.get(i);
+        if let Ok(i) = blocks.binary_search_by_key(&rec.loc, |b| b.start) {
+            blocks[i].mode = rec.mode;
+            blocks[i].inherit = rec.inherit;
         }
     }
     for b in blocks.iter_mut() {
@@ -1405,9 +1493,7 @@ pub unsafe fn on_slot_released(slot: usize) {
     unsafe {
         expect_seen(slot, seen_now(slot));
         let before = structure(0);
-        for e in recs().iter_mut() {
-            e.inherit &= !(1 << slot);
-        }
+        recs().for_each_mut(|e| e.inherit &= !(1 << slot));
         TEMP[slot].store(0, Ordering::Relaxed);
         for t in &TEMP {
             t.fetch_and(!(1 << slot), Ordering::Relaxed);
@@ -1638,10 +1724,15 @@ const NO_VBLK: VBlk = VBlk { mode: ProtMode::P, owners: 0, inherit: 0 };
 /// [`NOT_POOL`] = not pool memory — not memprot's).
 const NOT_POOL: u16 = u16::MAX;
 
-struct VScratch(UnsafeCell<([VBlk; MAX_RECORDS], [u16; 512])>);
+/// Blocks one 2-MiB region can overlap: with protection on the pool grain
+/// is one page, so at most one block per page of the region (MEM05: fixed,
+/// no longer tied to the MD supply).
+const VBLKS_PER_REGION: usize = (REGION_SPAN / mmu::PAGE_SIZE) as usize;
+
+struct VScratch(UnsafeCell<([VBlk; VBLKS_PER_REGION], [u16; VBLKS_PER_REGION])>);
 // SAFETY: BDOS giant lock.
 unsafe impl Sync for VScratch {}
-static VSCRATCH: VScratch = VScratch(UnsafeCell::new(([NO_VBLK; MAX_RECORDS], [0; 512])));
+static VSCRATCH: VScratch = VScratch(UnsafeCell::new(([NO_VBLK; VBLKS_PER_REGION], [0; VBLKS_PER_REGION])));
 
 /// The live slot (one with a root) whose PD pointer is `pd` — the
 /// verification's own lookup, independent of [`Structure`].

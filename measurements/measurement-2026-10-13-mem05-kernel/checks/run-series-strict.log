@@ -1,0 +1,45 @@
+=== m5-strict Di. 13 Okt. 2026 20:30:49 CEST APPEND=serial=on memprot=strict
+t=2203.0s end marker seen
+t=2206.2s m5-strict-rpi4-mdprobe-end.png {"return": {}}
+prompts seen: 0
+run m5-strict-rpi4-mdprobe: rc=0
+t=  15.3s end marker seen
+t=  18.4s m5-strict-rpi4-mdpar-end.png {"return": {}}
+prompts seen: 0
+run m5-strict-rpi4-mdpar: rc=0
+t= 292.6s end marker seen
+t= 300.6s m5-strict-rpi4-mdbud-end.png {"return": {}}
+prompts seen: 0
+run m5-strict-rpi4-mdbud: rc=0
+t=25.0s -> m5-strict-rpi4-apitest-t25.png {"return": {}}
+t=40.0s -> m5-strict-rpi4-apitest-t40.png {"return": {}}
+run m5-strict-rpi4-apitest: rc=0
+t=25.0s -> m5-strict-rpi4-desktop-t25.png {"return": {}}
+run m5-strict-rpi4-desktop: rc=0
+t=25.0s -> m5-strict-rpi4-acc-t25.png {"return": {}}
+run m5-strict-rpi4-acc: rc=0
+t=35.0s -> m5-strict-rpi4-teradesk-t35.png {"return": {}}
+run m5-strict-rpi4-teradesk: rc=0
+t=30.0s -> m5-strict-rpi4-qed-t30.png {"return": {}}
+run m5-strict-rpi4-qed: rc=0
+t=30.0s -> m5-strict-rpi4-doom-t30.png {"return": {}}
+t=45.0s -> m5-strict-rpi4-doom-t45.png {"return": {}}
+run m5-strict-rpi4-doom: rc=0
+t=30.0s -> m5-strict-rpi4-tdqed-t30.png {"return": {}}
+t=50.0s -> m5-strict-rpi4-tdqed-t50.png {"return": {}}
+run m5-strict-rpi4-tdqed: rc=0
+t=20.0s -> m5-strict-rpi4-kbdvec-emucon-t20.png {"return": {}}
+t=35.0s -> m5-strict-rpi4-kbdvec-emucon-t35.png {"return": {}}
+t=60.0s -> m5-strict-rpi4-kbdvec-emucon-t60.png {"return": {}}
+run m5-strict-rpi4-kbdvec-emucon: rc=0
+t=  17.0s m5-strict-rpi4-s2allsm-crash1.png {"return": {}}
+t=  19.4s m5-strict-rpi4-s2allsm-crash2.png {"return": {}}
+t=  21.3s end marker seen
+t=  23.4s m5-strict-rpi4-s2allsm-end.png {"return": {}}
+prompts seen: 2
+run m5-strict-rpi4-s2allsm: rc=0
+t=  15.3s end marker seen
+t=  17.3s m5-strict-rpi4-e9mem-end.png {"return": {}}
+prompts seen: 0
+run m5-strict-rpi4-e9mem: rc=0
+=== m5-strict done Di. 13 Okt. 2026 21:18:47 CEST

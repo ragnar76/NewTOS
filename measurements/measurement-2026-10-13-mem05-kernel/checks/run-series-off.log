@@ -1,0 +1,43 @@
+=== m5-off Di. 13 Okt. 2026 20:30:41 CEST APPEND=serial=on memprot=off
+t=2003.8s end marker seen
+t=2006.9s m5-off-rpi4-mdprobe-end.png {"return": {}}
+prompts seen: 0
+run m5-off-rpi4-mdprobe: rc=0
+t=  15.1s end marker seen
+t=  18.2s m5-off-rpi4-mdpar-end.png {"return": {}}
+prompts seen: 0
+run m5-off-rpi4-mdpar: rc=0
+t=  15.7s end marker seen
+t=  23.8s m5-off-rpi4-mdbud-end.png {"return": {}}
+prompts seen: 0
+run m5-off-rpi4-mdbud: rc=0
+t=25.0s -> m5-off-rpi4-apitest-t25.png {"return": {}}
+t=40.0s -> m5-off-rpi4-apitest-t40.png {"return": {}}
+run m5-off-rpi4-apitest: rc=0
+t=25.0s -> m5-off-rpi4-desktop-t25.png {"return": {}}
+run m5-off-rpi4-desktop: rc=0
+t=25.0s -> m5-off-rpi4-acc-t25.png {"return": {}}
+run m5-off-rpi4-acc: rc=0
+t=35.0s -> m5-off-rpi4-teradesk-t35.png {"return": {}}
+run m5-off-rpi4-teradesk: rc=0
+t=30.0s -> m5-off-rpi4-qed-t30.png {"return": {}}
+run m5-off-rpi4-qed: rc=0
+t=30.2s -> m5-off-rpi4-doom-t30.png {"return": {}}
+t=45.0s -> m5-off-rpi4-doom-t45.png {"return": {}}
+run m5-off-rpi4-doom: rc=0
+t=30.0s -> m5-off-rpi4-tdqed-t30.png {"return": {}}
+t=50.0s -> m5-off-rpi4-tdqed-t50.png {"return": {}}
+run m5-off-rpi4-tdqed: rc=0
+t=20.0s -> m5-off-rpi4-kbdvec-emucon-t20.png {"return": {}}
+t=35.0s -> m5-off-rpi4-kbdvec-emucon-t35.png {"return": {}}
+t=60.0s -> m5-off-rpi4-kbdvec-emucon-t60.png {"return": {}}
+run m5-off-rpi4-kbdvec-emucon: rc=0
+t=  17.8s end marker seen
+t=  19.9s m5-off-rpi4-s2allm-end.png {"return": {}}
+prompts seen: 0
+run m5-off-rpi4-s2allm: rc=0
+t=  15.4s end marker seen
+t=  17.4s m5-off-rpi4-e9mem-end.png {"return": {}}
+prompts seen: 0
+run m5-off-rpi4-e9mem: rc=0
+=== m5-off done Di. 13 Okt. 2026 21:10:39 CEST

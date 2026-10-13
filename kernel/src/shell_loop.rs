@@ -366,6 +366,7 @@ fn sh_ldapp() -> i32 {
     }
 
     kprintln!("[shell] sh_ldapp: '{}' exited with rc={}", as_str(&cmd), ret);
+    crate::print_mem05_stats("after program");
 
     if ret < 0 {
         ret

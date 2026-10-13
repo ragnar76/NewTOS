@@ -790,6 +790,38 @@ then be freed by any process. In every protection mode. Spec
 `docs/api/gemdos/memory/44-mxalloc.md`, `49-mfree.md`; tests
 `tos-api/tests/arch03_3c_keep.rs`.
 
+**No fixed memory-descriptor limit; a per-process limit instead** — user
+decision, 2026-10-13 (MEM05; analysis `docs/analysis/mem05-md-pool-2026-10-13.md`,
+design `docs/analysis/mem05-design-2026-10-13.md`, follow-up decision B in
+`TASK/MEM05.md`; `docs/MEMORY.md` ADR-025). EmuTOS draws its memory
+descriptors from a fixed OS pool of 118 blocks, at most 354 MDs for the whole
+system, shared with directory and file structures (`bdos/osmem.c:36-39,
+62-64,104-109`); Atari TOS 1.0 allowed 20 `Malloc` blocks per process and
+1.04 replaced that by the shared pool (`doc/tos14fix.txt:822-833`). NewTOS
+has **no fixed MD count**: the MD supply grows page by page on demand from
+kernel memory, and a **per-process** limit — default 8192 allocated blocks,
+boot argument `mdlimit=<n>`, `0` = off — takes its place. The MD pages and
+the kernel's per-block tables (protection records, the block snapshot of the
+protection sync, `F_KEEP` flags) share one budget of 512 pages (2 MiB of
+kernel memory); that budget is the remaining system-wide bound — roughly
+13 000–17 000 live blocks in total with memory protection on, 30 000–60 000
+with `memprot=off`. When a process reaches its limit, or the budget is
+reached, `Malloc`/`Mxalloc` return 0, `Mshrink` returns `ERROR`, `Maddalt`
+and `Pexec` return `ENSMEM`, exactly as EmuTOS does on exhaustion of its
+pool; `Malloc(-1)` still reports the largest free block, as on EmuTOS. The
+kernel, memory left resident by `Ptermres` and `F_KEEP` blocks the system
+inherited are not limited per process (they count against the budget).
+**Observable differences:** (1) a program can hold far more blocks than any
+TOS (thousands, not 20 or ~350); (2) the number of blocks `Mxalloc(1, …)`
+can take until it fails is no longer a system constant: it is the process's
+remaining allowance, or what the budget or free memory allows; (3) with
+memory protection on, each allocation and free costs time proportional to
+the number of live blocks in the system (the protection sync rebuilds its
+block snapshot; known limit, ticket MEM10). The MD structure, the
+`mp_mfl`/`mp_mal` chains and `Getmpb` are unchanged. (The SDK half of the
+decision — mintlib hunks that keep doubling up to 16 MiB — lands with
+MEM05 part B.)
+
 ## EmuTOS is the reference, not the template
 
 CLAUDE.md Rule 1 says EmuTOS source *is* the spec. Through this charter that

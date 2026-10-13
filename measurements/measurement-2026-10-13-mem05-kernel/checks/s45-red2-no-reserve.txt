@@ -1,0 +1,7 @@
+test far_more_blocks_than_the_old_tables_keep_their_rights ... FAILED
+test forget_scans_nothing_without_keep_blocks_and_keep_flags_grow ... FAILED
+test no_table_page_refuses_the_allocation_before_anything_changes ... FAILED
+thread 'far_more_blocks_than_the_old_tables_keep_their_rights' (3685797) panicked at tos-api/tests/mem05_memprot_tables.rs:134:5:
+thread 'forget_scans_nothing_without_keep_blocks_and_keep_flags_grow' (3685798) panicked at tos-api/src/bdos/process/memprot.rs:1703:9:
+thread 'no_table_page_refuses_the_allocation_before_anything_changes' (3685799) panicked at tos-api/src/bdos/process/memprot.rs:1703:9:
+test result: FAILED. 0 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s

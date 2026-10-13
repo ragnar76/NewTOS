@@ -262,6 +262,11 @@ extern "C" fn kernel_main_rust(dtb_phys: usize, entry_el: u64) -> ! {
     // FS09: the size of the block read cache (`bcache=` / `bcachepct=`);
     // its memory is carved off the top of DRAM with the other OS buffers.
     let bcache = bcache_switch(dtb);
+    // MEM05: the per-process limit of allocated blocks (`mdlimit=<n>`,
+    // 0 = off); applied with the BDOS pools.
+    let mdlimit = boot_switch(dtb, bootargs::Setting::Default, |args: &[u8]| {
+        bootargs::numeric_setting(args, bootargs::MDLIMIT, u32::MAX)
+    });
     // INPUT01: where the keyboard/mouse pump runs. Default: also from the
     // timer interrupt while a program runs at EL0 (pointer motion only);
     // `input=aes` keeps it in the trap-side pump sites only (the behaviour
@@ -338,7 +343,7 @@ extern "C" fn kernel_main_rust(dtb_phys: usize, entry_el: u64) -> ! {
     // ranges — `claim_remaining_pool` enforces this by allocating
     // the entire remaining contiguous run before publishing it to
     // BDOS.
-    bring_up_bdos_pools(memprot);
+    bring_up_bdos_pools(memprot, mdlimit);
     print_bdos_pool_stats("after init");
 
     // Install exception vectors and the TOS-API host before any SVC.
@@ -868,8 +873,38 @@ fn smoke_test_heap() {
 /// before this runs, so ST-RAM is contiguous-from-start and TT-RAM
 /// is contiguous-from-`heap_end`. Both runs satisfy
 /// `alloc_frames_contig`.
-fn bring_up_bdos_pools((protect, strict, verify): (bool, bool, bool)) {
+fn bring_up_bdos_pools((protect, strict, verify): (bool, bool, bool), mdlimit: bootargs::Setting) {
     use bios::machine::frames::{alloc_frames_contig, stats, Pool, FRAME_SIZE};
+
+    // MEM05: the per-process limit of allocated blocks, before any block
+    // exists (design §3.3, decisions E3/E4). An invalid value keeps the
+    // default, as for `bcache=`.
+    {
+        use tos_api::bdos::mem::owner_limit::{set_limit, DEFAULT_OWNER_MD_LIMIT};
+        let (n, src) = match mdlimit {
+            bootargs::Setting::Given(n) => (n, "boot argument"),
+            bootargs::Setting::Default => (DEFAULT_OWNER_MD_LIMIT, "default"),
+            bootargs::Setting::Invalid => (DEFAULT_OWNER_MD_LIMIT, "INVALID boot argument ignored, default"),
+        };
+        set_limit(n);
+        if n == 0 {
+            kprintln!("[mm] MEM05 per-process block limit: OFF (mdlimit=0, {})", src);
+        } else {
+            kprintln!("[mm] MEM05 per-process block limit: {} allocated blocks ({})", n, src);
+        }
+        // The MD supply has no fixed size: it grows page by page from the
+        // kernel heap, MDs and the per-block tables together within one
+        // page budget (design §2.2/§2.5, decision B).
+        use tos_api::bdos::mem::{mdpool, pages};
+        kprintln!(
+            "[mm] MEM05 MD supply: {} MDs static, grows by {} MDs per {}-byte page from the kernel heap; page budget {} pages ({} KiB) for MDs + block records + snapshot + F_KEEP flags",
+            mdpool::MDS_PER_PAGE,
+            mdpool::MDS_PER_PAGE,
+            pages::PAGE_BYTES,
+            pages::MD_PAGE_BUDGET,
+            pages::MD_PAGE_BUDGET * pages::PAGE_BYTES / 1024,
+        );
+    }
 
     // ARCH03 3b: the protection switch, before the pools exist (their grain
     // and their mapping depend on it), and with protection on the table
@@ -1198,6 +1233,27 @@ fn print_bdos_pool_stats(label: &str) {
             s.free_blocks, s.allocated_blocks,
         );
     }
+    print_mem05_stats(label);
+}
+
+/// MEM05: one line with the MD supply, the page budget and the kernel heap
+/// (boot, and after every program the shell ran). Counters only; no list
+/// walk.
+pub(crate) fn print_mem05_stats(label: &str) {
+    use tos_api::bdos::mem::{mdpool, pages};
+    let md = mdpool::stats();
+    let pg = pages::stats();
+    let t = tos_api::bdos::process::memprot::tables();
+    let h = bios::machine::heap::stats();
+    kprintln!(
+        "[mm] MEM05 {}: MDs in_use={} capacity={} (+{} pages); pages held={}/{} (md={} recs={} snap={} kept={}) peak={} refused budget={} heap={}; records={} snapshot_cap={} snapshot_short={}; heap used={} free={} largest={}",
+        label,
+        md.in_use, md.capacity, md.pages,
+        pg.held, pg.budget, pg.md, pg.recs, pg.snap, pg.kept, pg.peak,
+        pg.refused_budget, pg.refused_source,
+        t.records, t.snapshot_capacity, t.snapshot_shortfalls,
+        h.used, h.free(), h.largest_free,
+    );
 }
 
 /// Seed the wall clock from `C:\KERNEL8.IMG`'s FAT directory timestamp at

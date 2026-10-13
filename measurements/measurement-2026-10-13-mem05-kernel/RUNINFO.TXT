@@ -1,0 +1,179 @@
+measurement-2026-10-13-mem05-kernel -- Developer run for MEM05 part A (kernel), design
+docs/analysis/mem05-design-2026-10-13.md (approved 2026-10-13, TASK/MEM05.md "Freigabe Entwurf").
+Base HEAD 6f5196ad, working tree with the MEM05 changes uncommitted. Host macOS, QEMU raspi4b only.
+No SD card, no Pi. Date 2026-10-13.
+
+RESULT: PARTIAL. Design steps 1-3 implemented and checked; STOPPED before steps 4-6 (and the step-9 docs)
+because the design's table inventory (§2.4, "genau zwei" tables coupled to MD_BLOCK_COUNT) is incomplete:
+memprot.rs has two more tables sized MAX_RECORDS (= MD_BLOCK_COUNT*3+2 = 260):
+  * SNAP     memprot.rs:929-932 -- the sorted snapshot of ALL allocated blocks, rebuilt on every sync
+             (sync_now :732, structure_delta :1263). snapshot() stops silently at 260 blocks (:947
+             `*n < buf.len()`): once the MD supply grows past 258 MDs, blocks beyond 260 vanish from the
+             snapshot and refresh() writes descriptor 0 / the wrong rights for their pages (memprot on).
+             It must grow with the live blocks; 72 bytes per block (start, end, mode, inherit, own,
+             4 further owners, owner mask), i.e. more than RECS (16 B) and the MDs (~35 B) together.
+  * VSCRATCH memprot.rs:1641-1644 -- per-2-MiB-region scratch of verify_now (:1738 `nb < blks.len()`).
+             Bounded by the pages of one region (512) with the page grain memprot uses; a fixed 512
+             removes the coupling (no decision needed).
+Open decision for SNAP (budget/heap): see TASK/MEM05-A-STATUS-UNFINISHED.MD.
+
+STEPS DONE
+  1  tos-api/src/bdos/mem/owner_limit.rs (new): count table keyed by owner cookie
+     (2*MAX_PROCESSES+8 entries), rebook(old,new), admits(), count_of(), audit(), lost_bookings();
+     pool::set_md_owner = the one m_own write point for allocated MDs (ffit, freeit, shrinkit,
+     trim_front, traps::set_owner, region::detach / detach_all F_KEEP / keep_resident).
+  2  traps::mxalloc refuses (returns 0) when !admits(current_owner()) -- before ffit, after the -1
+     probe (E5 unchanged); default limit 8192 (E3); kernel/bootargs.rs MDLIMIT "mdlimit=" +
+     kernel/src/lib.rs: decided with the other boot switches, applied at the top of
+     bring_up_bdos_pools, one boot line "[mm] MEM05 per-process block limit: ...".
+  3  mdpool::xmfremd O(1) over the slot index (EmuTOS osmem.c:229-243), wild/double free ignored,
+     debug_assert that the block is the supply's; mdpool::stats() {capacity, in_use, free_steps}.
+
+HOST TESTS (red first, then green)
+  tests/mem05_owner_limit.rs (7): bookings + audit through Malloc/Mxalloc/Mshrink/Mfree/set_owner/
+    detach/F_KEEP inheritance/Ptermres/Pterm, aligned+largest = 1 block, kernel/TSR/null not counted;
+    limit 5: exactly 5 then 0, Mxalloc + mxalloc_aligned 0, Malloc(-1) > 0, Mshrink OK at the limit,
+    other process + kernel unaffected, re-booking above the limit allowed, Mfree makes room; limit 0 off.
+    Red before step 1/2 wiring: 4 FAILED (count 0 != 3 ...), then limit test FAILED until the mxalloc check.
+  tests/mem05_mdpool.rs (2): 200 MDs freed in shuffled order = exactly 200 steps; double/wild/null free
+    ignored. Red with the linear scan (steps > n, in_use underflow on double free), green with O(1).
+  kernel/src/bootargs.rs (via xtask host suite): mdlimit_parses_like_the_other_numeric_settings.
+
+STATIC CHECKS (method/checks.sh s3; checks/s3-*.txt; clippy rerun after one fix: checks/s3b-clippy-*.txt)
+                                                     baseline     this run
+  host tests tos-api tos-types xtask                 1323/0/1     1333/0/1 (+10: 7 + 2 + 1)
+  release warnings tos-api/kernel, fresh, rpi4       64/94        64/94, 0 errors
+  release warnings tos-api/kernel, fresh, qemu-virt  64/94        64/94, 0 errors
+  clippy tos-api/kernel rpi4 / qemu-virt             76/125       76/125 (s3 showed 77: manual_is_multiple_of
+                                                                  in mdpool.rs owns_block, fixed; s3b = 76/125)
+  tools/desk-drift-probe.sh                          31           31
+  sdk/run-host-tests.sh                              19/0/0       19/0/0 (SDK untouched)
+
+QEMU SMOKE (method/smoke.sh: raspi4b, no card, -append as below, one screendump at 45 s;
+  kernel bin/kernel8-s3b.img; serial/<tag>-serial.log, screendumps/<tag>-t45.png)
+  s3-on       "serial=on"                         -> "[mm] MEM05 per-process block limit: 8192 allocated blocks (default)"
+  s3-mdl64    "serial=on mdlimit=64"              -> "... 64 allocated blocks (boot argument)"
+  s3-mdlbad   "serial=on mdlimit=12x"             -> "... 8192 allocated blocks (INVALID boot argument ignored, default)"
+  s3-off-mdl0 "serial=on memprot=off mdlimit=0"   -> "... OFF (mdlimit=0, boot argument)"
+  s3-strict   "serial=on memprot=strict"          -> "... 8192 ... (default)"
+  All five: "[desk] desktop up", no PANIC/EXC; the five screendumps are byte-identical (sha256 14e34bb1...),
+  desktop with menu bar, trash, printer (viewed s3-on-t45).
+
+NOT RUN (stopped before steps 4-6): design QEMU tests 10-16 (MDPROBE with MAXP, malloc(32) far beyond
+147 605, two processes at/below the limit, mdlimit=64 with a direct-Malloc program), APITEST, regression
+sample vs measurement-2026-10-13-libc-tty-acceptance, memprot=verify, asid=on, qemu-virt boot. They need
+the growing supply (step 4/5) to be meaningful and were left for the complete part A.
+
+KERNELS (gitignored): bin/KERNELS.SHA256 (kernel8-s3 = kernel8-s3b: the clippy fix did not change the image).
+
+==================================================================================================================
+CONTINUATION 2026-10-13 (second Developer session): design steps 4-6 + step-9 docs, after the user's follow-up
+decision B (TASK/MEM05.md "Nachentscheidung ... SNAP im Seitenbudget"). Base HEAD b87ecb2a, working tree = the
+step-1-3 changes above + this session's, all uncommitted. Host macOS, QEMU raspi4b + qemu-virt; no SD card, no Pi.
+The text above this line is unchanged; the files listed there are unchanged.
+
+RESULT: DONE for part A (kernel). Steps 4-6 + docs implemented; host tests, static checks, QEMU raspi4b on / off /
+strict / verify / on-asid and qemu-virt on / off / strict / on-asid as below. Nothing committed. docs/STATUS.md not
+touched (by instruction).
+
+STEPS (code)
+  4  tos-api/src/bdos/mem/pages.rs (new): MdPageSource (alloc_pages(n)/free_pages, kernel heap via alloc::alloc,
+     16-byte aligned 4-KiB pages), ONE page budget MD_PAGE_BUDGET = 512 pages for every MEM05 use (decision B), use
+     counters md/recs/snap/kept, peak, refusals (budget / heap); PagedTable<T> (dense, swap-remove, pages never move)
+     and ScratchRun<T> (contiguous run, regrown by give-back-then-take, content not kept).
+     mdpool.rs: the 86-block static arena is replaced by pages of 39 blocks = 117 MDs (size_of asserted: entry 32,
+     block 104); the first page static, further pages from the budget, chained, never moved/given back; stats().pages.
+     init.rs NoFreeMd doc; stats.rs comments.
+  5  memprot.rs: RECS = PagedTable<Rec> (lookup cost = live records); memprot::reserve() = room for one more record AND
+     a snapshot of records+1 blocks; SNAP = ScratchRun<Snap> (sorted/searched as one slice); snapshot() counts all
+     blocks and regrows if a block does not fit, a failed regrow is counted (tables().snapshot_shortfalls; fail-closed)
+     instead of the old silent truncation at 260; VSCRATCH fixed to 512 (blocks per 2-MiB region at page grain).
+     region.rs: KEPT = PagedTable<Long>, forget()/is_kept() scan only live flags (0 while no F_KEEP block),
+     reserve_keep(), kept_len()/kept_scans() (cost instrumentation). traps::mxalloc: memprot::reserve() and (F_KEEP)
+     region::reserve_keep() after the per-process limit check, BEFORE ffit -> 0 with nothing changed.
+  6  kernel: heap 2 -> 8 MiB (heap.rs HEAP_FRAMES 2048, layout.rs KERNEL_HEAP_RESERVE 8 MiB); boot line
+     "[mm] MEM05 MD supply: ..."; print_bdos_pool_stats prints "[mm] MEM05 <label>: MDs ... pages held=../512 (md recs
+     snap kept) peak refused ...; heap used/free/largest" at boot, and shell_loop prints it after every program the
+     shell ran ("after program").
+  9  docs: COMPATIBILITY.md new sanctioned deviation "No fixed memory-descriptor limit; a per-process limit instead"
+     (decision B text: one 512-page budget, ~13 000-17 000 live blocks with protection, 30 000-60 000 without; known
+     per-sync cost, MEM10); docs/api/structures/md.md (sizing, NewTOS exhaustion paths, MD storage);
+     docs/sdk/05-abi-pitfalls.md:98; docs/MEMORY.md ADR-025. NOT docs/STATUS.md.
+  Grep for tables sized by MD_BLOCK_COUNT / MAX_RECORDS (tos-api, kernel, tools, sdk, docs): RECS, SNAP, VSCRATCH
+  (memprot.rs), KEPT (region.rs), the init.rs doc line -- all covered; no other table. Not coupled (checked):
+  memprot DIRTY (32, merges when full), MISMATCHES (8), region TABLE MAX_SHARED_BLOCKS 64 (further owners),
+  owner_limit table (per cookie), mmu UserTable [u64;512].
+
+HOST TESTS (red first via scratch edits of the shared tree, restored from copies; checks/s45-red*.txt)
+  tests/mem05_growth.rs (4: growth one page exactly when full + MDs never move; refused page = Malloc 0 / Mshrink
+    ERROR / Maddalt ENSMEM / Malloc(-1) > 0 / exact fit still OK / pages again -> goes on; budget refuses like the
+    source + clamp; 5 interleaved rounds: every MD back, no page beyond round 1). Red: grow() disabled -> 4 FAILED.
+  tests/mem05_memprot_tables.rs (3, memprot on: 700 live blocks keep owner RW / others none, verify_now = 0; frozen
+    budget -> allocation 0 with records/MDs/owner count/pool unchanged; forget scans 0 with KEPT empty, 1100 F_KEEP
+    flags over 2 pages). Red: no reserve + no snapshot regrow -> 3 FAILED (snapshot capacity, verify mismatches).
+
+STATIC CHECKS (method/checks.sh s6; checks/s6-*.txt, checks/s6-summary.txt)   baseline (s3)   this run
+  host tests tos-api tos-types xtask                                        1333/0/1        1340/0/1 (+7)
+  release warnings tos-api/kernel, fresh, rpi4 / qemu-virt                  64/94           64/94, 0 errors both
+  clippy tos-api/kernel rpi4 / qemu-virt                                    76/125          76/125 (per-file distribution
+                                                                                            identical to s3b)
+  tools/desk-drift-probe.sh                                                 31              31
+  sdk/run-host-tests.sh                                                     19/0/0          19/0/0
+
+KERNELS + PROGRAMS: bin/KERNELS-S6.SHA256 (kernel8-m5 = kernel8-s6 = kernel8-s6a smoke, 3d614627...; scratch kernels
+  crash/keys/tdkeys/keys9/st from method/scratch-kernels.sh m5, same instrumentation as the acceptance run).
+  bin/PROGRAMS.SHA256: the MEM05 probes (method/build-mem05.sh, current libc.a eb9cd4f8..., MAXHUNK still 32 KiB) and
+  byte copies of measurement-2026-10-13-libc-tty-acceptance/bin (identical hashes; MDPROBE.NAP of that run renamed
+  MDPROBE-postE9.NAP). Repo binaries (APITEST, QED, TeraDesk, Doom) identical to that run's repo-binaries.sha256.
+  method/: copies of that run's scripts (seed-card.sh, run-rpi4*.sh, drive.py, mode.sh [+ verify base], shotcmp.py,
+  scratch-kernels.sh + instrumentation scripts, run-virt.sh, ...), new: build-mem05.sh, m5-series.sh, m5-virt.sh,
+  summarize-m5.sh, tests/{mdprobe,mdpar,mdkid,mdbud}.c (+ mdprobe-orig.c, common.h).
+  Cards: private 64 MiB images in the job scratch (/tmp/m5j -> job tmp), one set shared by the modes, copied per run.
+  Parallel: on/off/strict chains at the same time (QEMU timings indicative only).
+
+QEMU RASPI4B (m5-series.sh; serial/m5-<mode>-rpi4-*, screendumps/; checks/summary-m5.txt)
+  T10 MDPROBE (default limit 8192), on / off / strict / on-asid, all "MDPROBE: DONE", no NULL:
+      start: 8189 more blocks allowed (= 8192 - TPA - env - 1 libc block);
+      malloc(32) x 3 000 000 (96 MB payload, 20x the old 147 605 wall) -> 5138 hunks; end: 3051 more allowed
+      (8189 - 5138). MEM05 after program: MD capacity 8307 (+70 pages); pages held/peak 250/512 with protection
+      (md 70, recs 33, snap 147), 70/512 with memprot=off; heap used 1 025 664 / free 7 362 944 (on), 287 840 (off).
+      Time: the libc series is ~2000 s in EVERY mode (off 2004 s, on 2195 s): mintlib's own malloc slows with the hunk
+      count, not the kernel. The 8189 Mxalloc+Mfree of free_mds at start: on 23.3 s vs off 0.06 s; at the end (3051
+      with ~5140..8192 live blocks) on 18.3 s vs off 0.02 s -- the documented per-sync cost O(N*64 + N log N), MEM10.
+  T11/T12 MDPAR + MDKID (mdlimit=64), on / off / strict: MDPAR: PASS. Parent 61 successes (+ TPA + env + 1 libc
+      block = 64); Pexec(3) takes 2 under the parent's cookie -> parent at its limit (Malloc 0); Pexec(4) child under
+      its own cookie gets 63 (+ its libc block = 64) while the parent sits at its limit; after Mfree(env, PD) exactly 2
+      more for the parent; Pexec(0) child gets 61 (TPA + env re-booked to it); parent again 61. Malloc(-1) > 0 at the
+      limit (E5). MDPAR with mdlimit=400 under memprot=verify: 397 / 399 / 397, PASS (> the old 260 live blocks).
+  T16 MDBUD (mdlimit=0: only the page budget), then the desktop: MDBUD: PASS in every mode.
+      on / strict: 16 892 blocks until 0 (pages 512/512: md 144, recs 66, snap 302), refused budget 3, heap 0;
+      off: 60 015 blocks (md 512 pages = 60 021 MDs), refused budget 6, heap 0. Malloc(-1) > 0; one freed -> one more,
+      not two; the second round takes the same number (no leak). Heap after: used 2.10 MB, free 6.29 MB, largest
+      5.39 MB (on) / 6.28 MB (off). Desktop drawn normally afterwards (screendumps m5-*-rpi4-mdbud-end.png, viewed on).
+      Time with protection: 64 s for the first 16 892 allocations (off: 0.16 s for 60 015).
+  T13 APITEST: TOTAL 106/0/5 in on / off / strict / verify / on-asid; [OK]/[FAIL]/[SKIP] lines identical to the
+      acceptance modulo hex (checks/apitest-diff-vs-acc-*.txt: 0 lines).
+  T14 regression sample vs measurement-2026-10-13-libc-tty-acceptance (shotcmp.py, byte compare):
+      on 13 same / off 13 same / strict 13 same (desktop, acc, teradesk, qed, apitest t25/t40, tdqed t30/t50 = TeraDesk
+      -> QED, kbdvec-emucon t20/t35/t60 = EmuCON, s2allm, e9mem); DIFF only doom-t30/t45 (demo timing, as in the
+      acceptance; viewed on-t45: Doom running; serial "VERIFIED via EdDI+scale+vro_cpyfm" all modes) and strict
+      s2allsm-crash1/2 (the intended S2ALLS crash; serial crash/verdict lines identical modulo hex). on-asid: desktop,
+      apitest t25/t40 same as tt-on-asid. S2ALLM: S2ALL PASS + MEM03 PASS all modes; E9MEM PASS all modes.
+      [EXC]/PANIC: none except the intended strict S2ALLS crash (2, as in the acceptance).
+  verify (memprot=verify): MDPAR (mdlimit=400), APITEST, desktop, S2ALLM, E9MEM -- every "[memprot] verify" line
+      reports 0 mismatches (MDPAR: 3206 checks, 747 M pages compared).
+  Boot lines (every run): "[mm] MEM05 per-process block limit: 8192 ... (default)" / "64 (boot argument)" / "OFF
+      (mdlimit=0, boot argument)"; "[mm] MEM05 MD supply: 117 MDs static, grows by 117 MDs per 4096-byte page ...
+      page budget 512 pages (2048 KiB)"; heap total 8 388 608.
+
+QEMU-VIRT (m5-virt.sh; serial/m5-<mode>-virt-*): on / off / strict / on-asid: selftests 9 PASS / 1 FAIL ("[sw3b] FAIL:
+  load B: NoTpaMemory", the SAME line in the acceptance), PASS/FAIL lines identical (checks/virt-selftests-diff-*:
+  0 lines); desktop up; crash kernel CRASHTST/MPROT3B/UACC3A/E10USR PASS, crash-report count identical (27/28/32/28).
+
+VOID: serial/void/, screendumps/void/ m5-on-rpi4-mdpar-try1: the first MDPAR build shrank the Pexec-3 child's TPA to
+  512 KiB, below MDKID's 560 KB BSS -> the child wrote into freed memory (correct Memory violation report). Probe bug;
+  fixed to the shell idiom (image + BSS + 256 KiB), rerun above.
+
+NOT RUN: real Pi 4; mdlimit on qemu-virt; MDPROBE/MDBUD under memprot=verify (a full recomputation per sync with
+  thousands of blocks); accessory path with a raised MAXHUNK (test 15, needs part B); the post-E9 254/255 control with
+  the old kernel (reference run exists); ACCFREE/TSRRES/PFLAGS/CRASHTST on raspi4b (CRASHTST ran on virt).

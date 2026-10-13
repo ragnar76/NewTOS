@@ -8,9 +8,10 @@
 //!
 //! Walks both linked lists (`mp_mfl` for free, `mp_mal` for
 //! allocated) under the BDOS giant lock, so the snapshot is
-//! consistent w.r.t. concurrent traps. Cost is O(n) in MD count;
-//! pool sizes in NewTOS top out at a few hundred MDs, so the
-//! one-time-per-call walk is acceptable.
+//! consistent w.r.t. concurrent traps. Cost is O(n) in MD count
+//! (MEM05: the supply grows, up to tens of thousands of MDs); the
+//! callers are the boot log and the selftests, so the walk is
+//! acceptable.
 //!
 //! ## Example
 //!
@@ -48,9 +49,10 @@ pub enum PoolKind {
 ///
 /// All byte counts are sums of `MD::m_length` across the relevant
 /// list and therefore reflect *user-visible* allocation sizes. The
-/// MD-meta-allocator overhead (the static `MDBlock` arena in
-/// [`super::mdpool`]) is **not** counted here — it is fixed at
-/// build time and tracked separately in PHASE-04 D5.
+/// MD-meta-allocator overhead (the `MDBlock` pages of
+/// [`super::mdpool`], kernel memory outside the pools) is **not**
+/// counted here — see [`super::mdpool::stats`] and
+/// [`super::pages::stats`] (MEM05).
 ///
 /// Field types match the Atari `Long` ABI so the struct can be
 /// shipped to userland verbatim by a future XBIOS / cookie-jar

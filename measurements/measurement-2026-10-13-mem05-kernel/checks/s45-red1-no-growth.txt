@@ -1,0 +1,9 @@
+test a_page_is_taken_only_when_every_md_is_in_use_and_mds_never_move ... FAILED
+test a_refused_page_is_the_old_exhaustion_path ... FAILED
+test interleaved_rounds_give_every_md_back_and_leak_no_page ... FAILED
+test the_budget_refuses_like_the_source ... FAILED
+thread 'a_page_is_taken_only_when_every_md_is_in_use_and_mds_never_move' (3685478) panicked at tos-api/tests/mem05_growth.rs:110:5:
+thread 'a_refused_page_is_the_old_exhaustion_path' (3685479) panicked at tos-api/tests/mem05_growth.rs:141:5:
+thread 'interleaved_rounds_give_every_md_back_and_leak_no_page' (3685480) panicked at tos-api/tests/mem05_growth.rs:221:13:
+thread 'the_budget_refuses_like_the_source' (3685481) panicked at tos-api/tests/mem05_growth.rs:195:5:
+test result: FAILED. 0 passed; 4 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

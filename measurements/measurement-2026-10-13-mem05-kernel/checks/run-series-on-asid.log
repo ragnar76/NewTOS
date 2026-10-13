@@ -1,0 +1,11 @@
+=== m5-on-asid Di. 13 Okt. 2026 21:18:54 CEST APPEND=serial=on asid=on
+t=1833.5s end marker seen
+t=1836.6s m5-on-asid-rpi4-mdprobe-end.png {"return": {}}
+prompts seen: 0
+run m5-on-asid-rpi4-mdprobe: rc=0
+t=25.0s -> m5-on-asid-rpi4-apitest-t25.png {"return": {}}
+t=40.0s -> m5-on-asid-rpi4-apitest-t40.png {"return": {}}
+run m5-on-asid-rpi4-apitest: rc=0
+t=25.0s -> m5-on-asid-rpi4-desktop-t25.png {"return": {}}
+run m5-on-asid-rpi4-desktop: rc=0
+=== m5-on-asid done Di. 13 Okt. 2026 21:50:36 CEST

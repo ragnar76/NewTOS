@@ -2117,6 +2117,115 @@ NewTOS's VDI presents a **Falcon truecolor workstation**, matching EmuTOS's
 
 ---
 
+## ADR-025: The MD supply grows page by page within a page budget; a per-process block limit replaces the fixed pool
+
+**Date:** 2026-10-13
+**Status:** Accepted (MEM05 part A, kernel; part B = SDK `MAXHUNK`, separate)
+**Phase:** cross-cutting (BDOS mem, memory protection, kernel heap)
+
+### Context
+
+Since E9 the libc takes heap from GEMDOS `Malloc` (mintlib `__sbrk`), one
+BDOS block per hunk of 8–32 KiB. The MD supply was a static arena of 86
+`MDBlock`s = 258 MDs (`tos-api/src/bdos/mem/mdpool.rs`); `malloc(32)` ×
+147 605 used every MD in the system and `malloc` returned NULL with ~930 MB
+free (`measurements/measurement-2026-10-06-post-e9/RUNINFO.TXT:79-82`).
+EmuTOS draws its MDs from a fixed OS pool of 118 blocks, at most 354 MDs,
+shared with DND/OFD (`bdos/osmem.c:36-39,62-64,104-109`); TOS 1.0 had
+"20 blocks per process" (`doc/tos14fix.txt:822-833`). Analysis
+`docs/analysis/mem05-md-pool-2026-10-13.md`, design
+`docs/analysis/mem05-design-2026-10-13.md` (approved with E1–E8), follow-up
+decision B (`TASK/MEM05.md`, "Nachentscheidung … SNAP im Seitenbudget").
+
+### Decision
+
+1. **The MD supply grows** page by page (39 blocks = 117 MDs per 4-KiB
+   page) from the **kernel heap**; the first page is static (boot, host
+   tests). Pages never move and are never given back (E8). `xmfremd` is
+   O(1) over the slot index, as EmuTOS' (`osmem.c:229-243`).
+2. **Every table with one entry per allocated block grows with it** —
+   the protection records (`memprot` `RECS`), the per-sync snapshot of all
+   blocks (`SNAP`), the `F_KEEP` flags (`region` `KEPT`) — stored densely
+   (scan cost = live entries), with room for the next block secured in
+   `mxalloc` **before** `ffit`, so a block that exists always has its
+   record. The `memprot=verify` scratch (`VSCRATCH`) is a fixed 512
+   (blocks per 2-MiB region at page grain), no longer tied to the supply.
+3. **One page budget** (`tos_api::bdos::mem::pages::MD_PAGE_BUDGET` = 512
+   pages = 2 MiB) covers MD pages, records, snapshot and flags together
+   (decision B). Budget reached or heap empty = the old exhaustion path:
+   `Malloc`/`Mxalloc` 0, `Mshrink` `ERROR`, `Maddalt` `ENSMEM`,
+   `Pexec` `ENSMEM`.
+4. **Kernel heap 2 → 8 MiB** (E2), so the 2 MiB of MEM05 cannot starve
+   desktop and VDI.
+5. **Per-process limit** of allocated blocks (EmuTOS tag `m_own`), default
+   8192 (E3), boot argument `mdlimit=<n>` (`0` = off, E4); kernel, TSR and
+   inherited `F_KEEP` blocks unlimited; `Malloc(-1)` unchanged (E5).
+
+The pool allocator itself (`ffit`/`freeit`/`shrinkit`, the `MD`/`MPB`
+structures, `Getmpb`) stays EmuTOS-faithful (ADR-021); only the MD supplier
+and the limit change. ADR-023 (`Getmpb` publishes the static `themd`) is
+untouched.
+
+### Rationale
+
+The user's principle: NewTOS runs on hardware with far more memory; internal
+limits may follow it. A fixed system-wide count is the wrong bound for a
+system with 1 GiB; a per-process bound protects against a runaway program
+without limiting the others. Kernel heap (not the BDOS pool) because with
+`memprot=off` every pool page is mapped for EL0 — MD chains there would be
+writable by any program. The budget is counted over *all* MEM05 pages
+because the snapshot alone (72 bytes per live block) is larger than an MD
+and its record together; counting only MD pages would have let MEM05 take
+~7 MiB of the heap at the worst case.
+
+### Consequences
+
+- Positive: `malloc` of small blocks no longer exhausts the system;
+  thousands of blocks per process; Pterm/`Mfree` unchanged in semantics;
+  `forget` (every alloc/free) is O(1) while no block is `F_KEEP`.
+- Negative: the system-wide bound is now the budget: with `memprot=on`
+  (record + snapshot + 1–2 MDs per block) roughly 13 000–17 000 live blocks
+  in total; with `memprot=off` (MDs only) ~30 000–60 000. Per process 8192.
+- Negative, **known limit**: every sync with protection on rebuilds the
+  snapshot of all N live blocks — O(N·64 + N log N) per `Malloc`/`Mfree`
+  (`region::further_owners` searches 64 entries per block, then a sort).
+  With thousands of blocks this is noticeably slower than with tens.
+  Follow-up ticket MEM10 (sync over the dirty range only); not done here.
+- Negative: `Pterm` of a process with L blocks is O(L × N_allocated)
+  (`detach`/`mfree` walk `mp_mal`); the 8192 default keeps that bounded.
+- Neutral: the supply and the tables never shrink after a peak (E8); the
+  budget bounds what they keep.
+- Neutral: the kernel heap's 8 MiB come off the top of DRAM (the TT-RAM
+  pool is 6 MiB smaller).
+
+### Alternatives considered
+
+- **A bigger static arena** (1024 blocks): still a fixed system-wide limit,
+  only later; rejected by the user decision.
+- **MD pages from the BDOS pool** (S2): visible to EL0 with `memprot=off`,
+  recursive (`ffit` needs an MD to get a page for MDs), fragments the TPA.
+- **Boot reserve** (S3): workable, more machinery; the heap already exists.
+- **Budget for MD pages only** (option A of the stop report): worst case
+  ~7 MiB of heap with the snapshot outside the budget.
+- **Smaller snapshot / sync without a full snapshot** (options C/D):
+  `memprot` rework, ticket MEM10.
+
+### References
+
+- `TASK/MEM05.md` (decisions), `TASK/MEM10.md` (sync cost follow-up).
+- Design `docs/analysis/mem05-design-2026-10-13.md`; analysis
+  `docs/analysis/mem05-md-pool-2026-10-13.md`.
+- `docs/COMPATIBILITY.md` "No fixed memory-descriptor limit; a per-process
+  limit instead"; `docs/api/structures/md.md` § "Sizing constraints".
+- Code: `tos-api/src/bdos/mem/{pages,mdpool,owner_limit,region,traps}.rs`,
+  `tos-api/src/bdos/process/memprot.rs`, `kernel/src/bios/machine/heap.rs`,
+  `kernel/src/bios/machine/layout.rs`, `kernel/src/bootargs.rs` (`mdlimit=`).
+- Tests: `tos-api/tests/mem05_{owner_limit,mdpool,growth,memprot_tables}.rs`.
+- Evidence: `measurements/measurement-2026-10-13-mem05-kernel/RUNINFO.TXT`.
+- ADR-021 (pool allocator EmuTOS-faithful), ADR-023 (unaffected).
+
+---
+
 ## Quirks Discovered
 
 Format: `QUIRK-NNN`, dated, with severity (low / medium / high / critical).

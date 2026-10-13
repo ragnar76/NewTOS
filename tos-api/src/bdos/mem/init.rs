@@ -38,8 +38,8 @@ pub enum InitError {
     /// limit.
     AddressOutOfRange,
     /// The MD meta-pool is exhausted before either pool was seeded.
-    /// Indicates a misconfigured arena size; cannot happen with the
-    /// current `MD_BLOCK_COUNT`.
+    /// Cannot happen: seeding takes two MDs and the supply's static
+    /// first page holds [`super::mdpool::MDS_PER_PAGE`] (MEM05).
     NoFreeMd,
 }
 
@@ -49,7 +49,7 @@ struct MpbCell(UnsafeCell<MPB>);
 
 // SAFETY: every access to the cell goes through the BDOS giant
 // lock (Phase 04 D6). The MPB itself only owns raw pointers into
-// the static MD arena, which is `'static`.
+// the MD supply, whose pages live for `'static` (MEM05: never given back).
 unsafe impl Sync for MpbCell {}
 
 impl MpbCell {

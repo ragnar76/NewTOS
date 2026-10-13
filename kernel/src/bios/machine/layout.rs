@@ -132,9 +132,11 @@ pub const TOS_MD_MAX_END: u64 = 0x7FFF_F000;
 /// framebuffer.
 ///
 /// Must be a multiple of `frames::FRAME_SIZE` so the pool below it stays
-/// frame-aligned. 512 frames = 2 MiB, matching
-/// [`crate::bios::machine::heap::HEAP_BYTES`] (asserted there).
-pub const KERNEL_HEAP_RESERVE: u64 = 2 * 1024 * 1024;
+/// frame-aligned. 2048 frames = 8 MiB (MEM05, decision E2: the MD supply
+/// and its tables grow in the kernel heap, at most 2 MiB of it), matching
+/// [`crate::bios::machine::heap::HEAP_BYTES`] (asserted there). A whole
+/// number of 2-MiB steps, so the edge below it stays 2-MiB aligned.
+pub const KERNEL_HEAP_RESERVE: u64 = 8 * 1024 * 1024;
 
 /// Bytes reserved for the framebuffer store on this board. Non-zero only
 /// where the framebuffer is ordinary ARM DRAM (`board-qemu-virt`); on the

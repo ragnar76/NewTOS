@@ -34,6 +34,7 @@
 use core::cell::UnsafeCell;
 use core::ffi::c_void;
 use core::ptr;
+use core::sync::atomic::{AtomicU64, Ordering};
 
 use tos_types::{Long, MD};
 
@@ -131,25 +132,68 @@ unsafe fn block(addr: Long) -> Option<*mut MD> {
 // here; the system holder is the kernel owner ([`traps::kernel_owner`],
 // FreeMiNT's `rootproc`). The block's protection mode does not change.
 
-/// One place per MD: a flag names a live block (cleared by [`forget`]).
-const MAX_KEPT: usize = super::mdpool::MD_BLOCK_COUNT * super::mdpool::MDS_PER_BLOCK;
+// The flags are a dense table in pages from the MEM05 budget
+// ([`super::pages::PagedTable`]): one entry per live `F_KEEP` block, so a
+// lookup costs the kept blocks, not a capacity — `forget` runs on every
+// allocation and free and looks at nothing while no block is kept (MEM05
+// design §2.4). Capacity for a new flag is secured before the block is
+// allocated ([`reserve_keep`], from `traps::mxalloc`).
 
-struct Kept(UnsafeCell<[Long; MAX_KEPT]>);
+struct Kept(UnsafeCell<super::pages::PagedTable<Long>>);
 // SAFETY: accessed only under the BDOS giant lock (single CPU, trap path).
 unsafe impl Sync for Kept {}
-static KEPT: Kept = Kept(UnsafeCell::new([0; MAX_KEPT]));
+static KEPT: Kept = Kept(UnsafeCell::new(super::pages::PagedTable::new(super::pages::PageUse::Kept)));
+
+/// Flags looked at by [`forget`] and [`is_kept`] since boot (the cost
+/// instrumentation of the MEM05 acceptance criterion, test 7).
+static KEPT_SCANS: AtomicU64 = AtomicU64::new(0);
 
 /// # Safety
 ///
 /// BDOS giant lock held; no other borrow of the table alive.
-unsafe fn kept() -> &'static mut [Long; MAX_KEPT] {
+#[allow(clippy::mut_from_ref)]
+unsafe fn kept() -> &'static mut super::pages::PagedTable<Long> {
     // SAFETY: caller contract.
     unsafe { &mut *KEPT.0.get() }
 }
 
+/// The index of the flag for `addr`, counting the flags looked at.
+fn kept_index(k: &super::pages::PagedTable<Long>, addr: Long) -> Option<usize> {
+    if addr == 0 || k.is_empty() {
+        return None;
+    }
+    let i = k.position(|&a| a == addr);
+    KEPT_SCANS.fetch_add(i.map_or(k.len(), |i| i + 1) as u64, Ordering::Relaxed);
+    i
+}
+
+/// Blocks flagged `F_KEEP` right now.
+pub fn kept_len() -> usize {
+    // SAFETY: a read of the length under the BDOS lock the caller holds
+    // (host tests: their lock).
+    unsafe { kept() }.len()
+}
+
+/// Flags looked at by `forget`/`is_kept` since boot.
+pub fn kept_scans() -> u64 {
+    KEPT_SCANS.load(Ordering::Relaxed)
+}
+
+/// Make sure one more block can be flagged `F_KEEP` without a new page.
+/// `false` when no page can be had (MEM05 budget): the caller refuses the
+/// allocation before anything changes.
+///
+/// # Safety
+///
+/// BDOS giant lock held.
+pub unsafe fn reserve_keep() -> bool {
+    // SAFETY: lock held.
+    unsafe { kept().reserve(1) }
+}
+
 /// Mark the block at `addr` `F_KEEP` (FreeMiNT `M_KEEP`). `false` only if
-/// the table is full, which cannot happen while every flag names a live
-/// block (one per MD).
+/// no room could be had, which cannot happen after [`reserve_keep`]
+/// succeeded for this allocation.
 ///
 /// # Safety
 ///
@@ -160,16 +204,11 @@ pub unsafe fn mark_keep(addr: Long) -> bool {
     }
     // SAFETY: lock held.
     let k = unsafe { kept() };
-    if k.contains(&addr) {
+    if kept_index(k, addr).is_some() {
         return true;
     }
-    match k.iter_mut().find(|a| **a == 0) {
-        Some(a) => {
-            *a = addr;
-            true
-        }
-        None => false,
-    }
+    // SAFETY: lock held.
+    unsafe { k.push(addr) }
 }
 
 /// Was the block at `addr` allocated with `F_KEEP`?
@@ -179,7 +218,7 @@ pub unsafe fn mark_keep(addr: Long) -> bool {
 /// BDOS giant lock held.
 pub unsafe fn is_kept(addr: Long) -> bool {
     // SAFETY: lock held.
-    addr != 0 && unsafe { kept() }.contains(&addr)
+    kept_index(unsafe { kept() }, addr).is_some()
 }
 
 /// `Mfree` of a kept block the system inherited, by any process (FreeMiNT
@@ -312,7 +351,7 @@ pub unsafe fn detach(addr: Long, who: *mut c_void) -> Result<Detached, RegionErr
     if let Some(e) = entry_of(t, addr) {
         if let Some(o) = e.owners.iter_mut().find(|o| !o.is_null()) {
             // SAFETY: `m` is on `mp_mal`.
-            unsafe { (*m).m_own = *o };
+            unsafe { super::pool::set_md_owner(m, *o) };
             *o = ptr::null_mut();
             if e.owners.iter().all(|o| o.is_null()) {
                 *e = EMPTY;
@@ -359,8 +398,9 @@ pub unsafe fn forget(addr: Long) {
     }
     // ... and its `F_KEEP` flag.
     // SAFETY: lock held.
-    if let Some(a) = unsafe { kept() }.iter_mut().find(|a| **a == addr && addr != 0) {
-        *a = 0;
+    let k = unsafe { kept() };
+    if let Some(i) = kept_index(k, addr) {
+        k.swap_remove(i);
     }
 }
 
@@ -412,7 +452,7 @@ pub unsafe fn detach_all(who: *mut c_void) -> usize {
                     // `attach_region(rootproc, m)`).
                     // SAFETY: `m` is on `mp_mal`; lock held.
                     unsafe {
-                        (*m).m_own = traps::kernel_owner();
+                        super::pool::set_md_owner(m, traps::kernel_owner());
                         prot_changed(start, &[who, traps::kernel_owner()]);
                     }
                 } else {
@@ -466,7 +506,7 @@ pub unsafe fn keep_resident(who: *mut c_void) -> usize {
             // SAFETY: list invariant.
             unsafe {
                 if (*m).m_own == who {
-                    (*m).m_own = tsr;
+                    super::pool::set_md_owner(m, tsr);
                     kept += 1;
                     // The TSR holder may already be a further owner: one link.
                     if let Some(e) = entry_of(table(), (*m).m_start) {

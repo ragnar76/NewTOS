@@ -219,11 +219,24 @@ follows `md` in memory; pad to keep alignment. See PHASE-04 D5.
   absolute ceiling is `118 * 3 = 354` MDs — minus whatever `osmem` storage the
   DMD/DND/OFD tables consume (they draw from the same pool via
   `MEMTYPE_DMD`/`DND`/`OFD`, `bdos/mem.h`).
-- NewTOS PHASE-04 D5 plans for **256 MDs** (≡ 86 `MDBlock`s) backed
-  by a static array in `tos-api::bdos::mem`. We do **not** port the
-  `osmem` quick-list; we allocate `MDBlock` slots from a static
-  bump arena because we don't share storage with OFD/DND tables
-  (those will get their own arenas in PHASE-08/PHASE-09).
+- NewTOS (MEM05, `docs/MEMORY.md` ADR-025, `docs/COMPATIBILITY.md` "No
+  fixed memory-descriptor limit"): **no fixed MD count.** `MDBlock`s live
+  in 4-KiB pages of 39 blocks = 117 MDs; the first page is static, further
+  pages come from the kernel heap on demand
+  (`tos-api/src/bdos/mem/mdpool.rs`, `pages.rs`) and are never moved or
+  given back. MD pages and the kernel's per-block tables share one budget
+  of 512 pages (2 MiB); reaching it, or a full kernel heap, is the
+  exhaustion path below. A per-process limit of allocated blocks (default
+  8192, boot argument `mdlimit=<n>`, `0` = off) bounds a single program
+  (`owner_limit.rs`). We do **not** port the `osmem` quick-list; MDs do not
+  share storage with OFD/DND tables. `xmfremd` recovers the slot index in
+  O(1) exactly as EmuTOS does.
+- **NewTOS exhaustion** (per-process limit reached, page budget reached,
+  kernel heap full): `xmgetmd` returns null and the callers take their
+  EmuTOS error paths — `Malloc`/`Mxalloc` 0, `Mshrink` `ERROR` (-1),
+  `Maddalt` `ENSMEM`, `Pexec` `ENSMEM`; with memory protection on, the room
+  for a block's record is secured before the block is allocated, so a
+  refused table page also ends in `Malloc` 0 with nothing changed.
 - **On real exhaustion, EmuTOS halts, it does not return an error.**
   `xmgetblk()` (`bdos/osmem.c:291-354`) returns `NULL` only for
   `MEMTYPE_MDBLOCK` requests; for `MEMTYPE_DMD`/`DND`/`OFD` it tries
@@ -288,7 +301,8 @@ Phase 04 plan (specs:
   pre-TT machines is irrelevant here — every NewTOS target has
   TT-RAM.
 - **MD storage.** `MDBlock` (3 MDs + `mdb_next`) in
-  `tos-api/src/bdos/mem/`. Static arena of 86 blocks = 256 MDs.
+  `tos-api/src/bdos/mem/`, in pages of 117 MDs that grow on demand
+  within the MEM05 page budget (see "Sizing constraints").
   The `MDEXT { md, slot }` layout invariant is preserved so the
   `xmfremd`-style index recovery from `*(WORD*)(md+1)` works
   byte-for-byte, even though we will write `xmfremd` in Rust.
