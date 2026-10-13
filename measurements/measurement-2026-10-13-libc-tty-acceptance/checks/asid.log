@@ -1,0 +1,15 @@
+APPEND=serial=on asid=on
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:s/a31.dirrwJ/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.dirrwJ/ser.sock,server=on
+t=  15.3s end marker seen
+t=  17.3s tt-on-asid-rpi4-ttya-end.png {"return": {}}
+prompts seen: 0
+run tt-on-asid-rpi4-ttya: rc=0
+t=25.0s -> tt-on-asid-rpi4-desktop-t25.png {"return": {}}
+run tt-on-asid-rpi4-desktop: rc=0
+t=25.0s -> tt-on-asid-rpi4-apitest-t25.png {"return": {}}
+t=40.0s -> tt-on-asid-rpi4-apitest-t40.png {"return": {}}
+run tt-on-asid-rpi4-apitest: rc=0
+ASID DONE

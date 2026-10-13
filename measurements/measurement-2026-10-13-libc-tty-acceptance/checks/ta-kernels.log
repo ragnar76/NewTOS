@@ -1,0 +1,20 @@
+built kernel8-crash-tta.img
+built kernel-virt-crash-tta.img
+built kernel8-keys-tta.img
+built kernel-virt-st-tta.img
+rsync(64079): error: /Volumes/Daten/Development/PiRusTOS/sdk/examples/libtest/build/host/png/arm_arm_init.o: open (2) in /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-tty-acceptance: No such file or directory
+rsync(64079): error: /Volumes/Daten/Development/PiRusTOS/sdk/examples/libtest/build/host/png/arm_filter_neon_intrinsics.o: open (2) in /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-tty-acceptance: No such file or directory
+rsync(64079): error: /Volumes/Daten/Development/PiRusTOS/sdk/examples/libtest/build/host/png/arm_palette_neon_intrinsics.o: open (2) in /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-tty-acceptance: No such file or directory
+rsync(64079): error: /Volumes/Daten/Development/PiRusTOS/sdk/examples/libtest/build/host/png/pngtrans.o: open (2) in /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-tty-acceptance: No such file or directory
+rsync(64079): error: /Volumes/Daten/Development/PiRusTOS/sdk/examples/libtest/build/host/png/pngwio.o: open (2) in /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-tty-acceptance: No such file or directory
+rsync(64079): error: /Volumes/Daten/Development/PiRusTOS/sdk/examples/libtest/build/host/png/pngwrite.o: open (2) in /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-tty-acceptance: No such file or directory
+rsync(64079): error: /Volumes/Daten/Development/PiRusTOS/sdk/examples/libtest/build/host/png/pngwtran.o: open (2) in /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-tty-acceptance: No such file or directory
+rsync(64079): error: /Volumes/Daten/Development/PiRusTOS/sdk/examples/libtest/build/host/png/pngwutil.o: open (2) in /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-tty-acceptance: No such file or directory
+rsync(64079): error: /Volumes/Daten/Development/PiRusTOS/sdk/examples/libtest/build/host/z/inflate-dfab55b9.o.tmp: open (2) in /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-tty-acceptance: No such file or directory
+scratch-kernels FAILED
+tty schedule: 14 entries, last at 225
+built kernel8-keys-tta.img
+emucon schedule: 78 entries, last at 4445
+built kernel-virt-vreg-ac.img
+built kernel-virt-vreg-old-ac.img
+ta-kernels-done

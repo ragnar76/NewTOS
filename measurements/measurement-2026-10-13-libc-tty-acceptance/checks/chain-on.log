@@ -1,0 +1,224 @@
+=== on Di. 13 Okt. 2026 16:55:00 CEST
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:s/a31.2RfMyu/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.2RfMyu/ser.sock,server=on
+t=  15.2s end marker seen
+t=  17.3s tt-on-rpi4-ttya-end.png {"return": {}}
+prompts seen: 0
+run tt-on-rpi4-ttya: rc=0
+qemu-system-aarch64: -serial unix:s/a31.ok6aDQ/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.ok6aDQ/ser.sock,server=on
+t=  16.3s end marker seen
+t=  18.4s tt-on-rpi4-ttyprobe-end.png {"return": {}}
+prompts seen: 0
+run tt-on-rpi4-ttyprobe: rc=0
+qemu-system-aarch64: -serial unix:s/a31.K8nfay/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.K8nfay/ser.sock,server=on
+t=  15.1s end marker seen
+t=  17.2s tt-on-rpi4-stdoutdb-end.png {"return": {}}
+prompts seen: 0
+run tt-on-rpi4-stdoutdb: rc=0
+qemu-system-aarch64: -serial unix:s/a31.osGUAe/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.osGUAe/ser.sock,server=on
+t=  15.2s end marker seen
+t=  18.2s tt-on-rpi4-stderr-newcrt0-end.png {"return": {}}
+prompts seen: 0
+run tt-on-rpi4-stderr-newcrt0: rc=0
+qemu-system-aarch64: -serial unix:s/a31.VbRrxj/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.VbRrxj/ser.sock,server=on
+t=  15.2s end marker seen
+t=  18.2s tt-on-rpi4-stderra-end.png {"return": {}}
+prompts seen: 0
+run tt-on-rpi4-stderra: rc=0
+t=25.0s -> tt-on-rpi4-desktop-t25.png {"return": {}}
+run tt-on-rpi4-desktop: rc=0
+t=35.0s -> tt-on-rpi4-teradesk-t35.png {"return": {}}
+run tt-on-rpi4-teradesk: rc=0
+t=30.0s -> tt-on-rpi4-qed-t30.png {"return": {}}
+run tt-on-rpi4-qed: rc=0
+t=30.0s -> tt-on-rpi4-doom-t30.png {"return": {}}
+t=45.0s -> tt-on-rpi4-doom-t45.png {"return": {}}
+run tt-on-rpi4-doom: rc=0
+t=25.0s -> tt-on-rpi4-apitest-t25.png {"return": {}}
+t=40.0s -> tt-on-rpi4-apitest-t40.png {"return": {}}
+run tt-on-rpi4-apitest: rc=0
+=== done Di. 13 Okt. 2026 17:00:41 CEST
+=== on Di. 13 Okt. 2026 17:00:41 CEST
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:s/a31.IbkddQ/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.IbkddQ/ser.sock,server=on
+t=  15.1s end marker seen
+t=  17.2s tta-on-rpi4-stdoutdb-end.png {"return": {}}
+prompts seen: 0
+run tta-on-rpi4-stdoutdb: rc=0
+qemu-system-aarch64: -serial unix:s/a31.ESQzVR/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.ESQzVR/ser.sock,server=on
+t=  15.1s end marker seen
+t=  17.2s tta-on-rpi4-fseekcon-end.png {"return": {}}
+prompts seen: 0
+run tta-on-rpi4-fseekcon: rc=0
+qemu-system-aarch64: -serial unix:s/a31.7BBsLY/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.7BBsLY/ser.sock,server=on
+t=  15.2s end marker seen
+t=  17.2s tta-on-rpi4-atexit-end.png {"return": {}}
+prompts seen: 0
+run tta-on-rpi4-atexit: rc=0
+qemu-system-aarch64: -serial unix:s/a31.Q7weku/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.Q7weku/ser.sock,server=on
+t=  15.3s end marker seen
+t=  17.3s tta-on-rpi4-e9mem-end.png {"return": {}}
+prompts seen: 0
+run tta-on-rpi4-e9mem: rc=0
+qemu-system-aarch64: -serial unix:s/a31.1xRBJW/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.1xRBJW/ser.sock,server=on
+t=  15.1s end marker seen
+t=  17.2s tta-on-rpi4-e9plain-end.png {"return": {}}
+prompts seen: 0
+run tta-on-rpi4-e9plain: rc=0
+qemu-system-aarch64: -serial unix:s/a31.LCmRTj/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.LCmRTj/ser.sock,server=on
+t=  15.4s end marker seen
+t=  17.4s tta-on-rpi4-accfree-end.png {"return": {}}
+prompts seen: 0
+run tta-on-rpi4-accfree: rc=0
+qemu-system-aarch64: -serial unix:s/a31.mE6pK0/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.mE6pK0/ser.sock,server=on
+t=  15.1s end marker seen
+t=  18.2s tta-on-rpi4-vforkt-alone-end.png {"return": {}}
+prompts seen: 0
+run tta-on-rpi4-vforkt-alone: rc=0
+qemu-system-aarch64: -serial unix:s/a31.taujTa/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.taujTa/ser.sock,server=on
+t=  15.2s end marker seen
+t=  17.3s tta-on-rpi4-envrn-end.png {"return": {}}
+prompts seen: 0
+run tta-on-rpi4-envrn: rc=0
+qemu-system-aarch64: -serial unix:s/a31.xz8mOd/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.xz8mOd/ser.sock,server=on
+t=  15.6s end marker seen
+t=  18.6s tta-on-rpi4-pparent-end.png {"return": {}}
+prompts seen: 0
+run tta-on-rpi4-pparent: rc=0
+qemu-system-aarch64: -serial unix:s/a31.SJJzdk/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.SJJzdk/ser.sock,server=on
+t=  15.6s end marker seen
+t=  18.6s tta-on-rpi4-ppzj-end.png {"return": {}}
+prompts seen: 0
+run tta-on-rpi4-ppzj: rc=0
+qemu-system-aarch64: -serial unix:s/a31.yC9O7K/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.yC9O7K/ser.sock,server=on
+t=  17.3s end marker seen
+t=  19.3s tta-on-rpi4-s2all-end.png {"return": {}}
+prompts seen: 0
+run tta-on-rpi4-s2all: rc=0
+qemu-system-aarch64: -serial unix:s/a31.5FDUHN/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.5FDUHN/ser.sock,server=on
+t=  17.1s end marker seen
+t=  19.2s tta-on-rpi4-s2allj-end.png {"return": {}}
+prompts seen: 0
+run tta-on-rpi4-s2allj: rc=0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+card on ok (check 1)
+qemu-system-aarch64: -serial unix:s/a31.1x4RRH/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.1x4RRH/ser.sock,server=on
+t=  16.6s end marker seen
+t=  18.7s tta-on-rpi4-port10-rerun-end.png {"return": {}}
+prompts seen: 0
+run tta-on-rpi4-port10-rerun: rc=0
+t=25.0s -> tta-on-rpi4-desktop-t25.png {"return": {}}
+run tta-on-rpi4-desktop: rc=0
+t=25.0s -> tta-on-rpi4-acc-t25.png {"return": {}}
+run tta-on-rpi4-acc: rc=0
+t=35.0s -> tta-on-rpi4-teradesk-t35.png {"return": {}}
+run tta-on-rpi4-teradesk: rc=0
+t=30.0s -> tta-on-rpi4-qed-t30.png {"return": {}}
+run tta-on-rpi4-qed: rc=0
+t=30.0s -> tta-on-rpi4-doom-t30.png {"return": {}}
+t=45.0s -> tta-on-rpi4-doom-t45.png {"return": {}}
+run tta-on-rpi4-doom: rc=0
+t=25.0s -> tta-on-rpi4-apitest-t25.png {"return": {}}
+t=40.0s -> tta-on-rpi4-apitest-t40.png {"return": {}}
+run tta-on-rpi4-apitest: rc=0
+t=30.0s -> tta-on-rpi4-tdqed-t30.png {"return": {}}
+t=50.0s -> tta-on-rpi4-tdqed-t50.png {"return": {}}
+run tta-on-rpi4-tdqed: rc=0
+t=20.0s -> tta-on-rpi4-kbdvec-emucon-t20.png {"return": {}}
+t=35.0s -> tta-on-rpi4-kbdvec-emucon-t35.png {"return": {}}
+t=60.0s -> tta-on-rpi4-kbdvec-emucon-t60.png {"return": {}}
+run tta-on-rpi4-kbdvec-emucon: rc=0
+=== done Di. 13 Okt. 2026 17:12:42 CEST
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:s/a31.dhVYod/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.dhVYod/ser.sock,server=on
+t=  17.6s end marker seen
+t=  19.7s tta-on-rpi4-s2allm-end.png {"return": {}}
+prompts seen: 0
+run tta-on-rpi4-s2allm: rc=0
+=== batch2 done Di. 13 Okt. 2026 17:13:10 CEST
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:s/a31.Sawh8u/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.Sawh8u/ser.sock,server=on
+t=  15.2s end marker seen
+t=  18.2s ac-on-rpi4-stderr-auxkernel-newcrt0-end.png {"return": {}}
+prompts seen: 0
+run ac-on-rpi4-stderr-auxkernel-newcrt0: rc=0
+qemu-system-aarch64: -serial unix:s/a31.4mNjy0/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.4mNjy0/ser.sock,server=on
+t=  15.2s end marker seen
+t=  18.3s ac-on-rpi4-stderr-auxkernel-oldcrt0-end.png {"return": {}}
+prompts seen: 0
+run ac-on-rpi4-stderr-auxkernel-oldcrt0: rc=0
+qemu-system-aarch64: -serial unix:s/a31.5CfYDe/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.5CfYDe/ser.sock,server=on
+t=  15.2s end marker seen
+t=  18.3s ac-on-rpi4-stderra-auxkernel-end.png {"return": {}}
+prompts seen: 0
+run ac-on-rpi4-stderra-auxkernel: rc=0
+qemu-system-aarch64: -serial unix:s/a31.Zbc72t/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.Zbc72t/ser.sock,server=on
+t=  15.2s end marker seen
+t=  18.3s ac-on-rpi4-stderr-prekernel-newcrt0-end.png {"return": {}}
+prompts seen: 0
+run ac-on-rpi4-stderr-prekernel-newcrt0: rc=0
+qemu-system-aarch64: -serial unix:s/a31.MLMAka/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.MLMAka/ser.sock,server=on
+timeout
+t=  90.1s ac-on-rpi4-stderr-prekernel-oldcrt0-timeout.png {"return": {}}
+prompts seen: 0
+run ac-on-rpi4-stderr-prekernel-oldcrt0: rc=0
+qemu-system-aarch64: -serial unix:s/a31.dYok5f/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.dYok5f/ser.sock,server=on
+timeout
+t=  90.2s ac-on-rpi4-stderra-prekernel-timeout.png {"return": {}}
+prompts seen: 0
+run ac-on-rpi4-stderra-prekernel: rc=0
+qemu-system-aarch64: -serial unix:s/a31.bD1DAA/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.bD1DAA/ser.sock,server=on
+t=  15.2s end marker seen
+t=  18.3s ac-on-rpi4-stderr-prefs11kernel-newcrt0-end.png {"return": {}}
+prompts seen: 0
+run ac-on-rpi4-stderr-prefs11kernel-newcrt0: rc=0
+qemu-system-aarch64: -serial unix:s/a31.20lild/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.20lild/ser.sock,server=on
+t=  15.2s end marker seen
+t=  18.3s ac-on-rpi4-stderr-prefs11kernel-oldcrt0-end.png {"return": {}}
+prompts seen: 0
+run ac-on-rpi4-stderr-prefs11kernel-oldcrt0: rc=0
+qemu-system-aarch64: -serial unix:s/a31.IiRreS/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.IiRreS/ser.sock,server=on
+t=  15.2s end marker seen
+t=  18.3s ac-on-rpi4-stderra-prefs11kernel-end.png {"return": {}}
+prompts seen: 0
+run ac-on-rpi4-stderra-prefs11kernel: rc=0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+t=25.0s -> ac-on-rpi4-stderr-emucon-newkernel-t25.png {"return": {}}
+t=35.0s -> ac-on-rpi4-stderr-emucon-newkernel-t35.png {"return": {}}
+t=60.0s -> ac-on-rpi4-stderr-emucon-newkernel-t60.png {"return": {}}
+run ac-on-rpi4-stderr-emucon-newkernel: rc=0
+t=25.0s -> ac-on-rpi4-stderr-emucon-oldkernel-t25.png {"return": {}}
+t=35.0s -> ac-on-rpi4-stderr-emucon-oldkernel-t35.png {"return": {}}
+t=60.0s -> ac-on-rpi4-stderr-emucon-oldkernel-t60.png {"return": {}}
+run ac-on-rpi4-stderr-emucon-oldkernel: rc=0
+CHAIN on DONE

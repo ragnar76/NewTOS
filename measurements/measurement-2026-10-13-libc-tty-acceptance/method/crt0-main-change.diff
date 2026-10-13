@@ -1,0 +1,153 @@
+diff --git a/docs/sdk/03-first-programs.md b/docs/sdk/03-first-programs.md
+index da7ad374..4101c6fc 100644
+--- a/docs/sdk/03-first-programs.md
++++ b/docs/sdk/03-first-programs.md
+@@ -114,14 +114,20 @@ $ ls -l HELLOLIB.NCP ; llvm-nm -u HELLOLIB.NCP | grep -c .
+ 84376 bytes ; 0 undefined symbols
+ ```
+ 
+-Note the **libc crt0** (`sdk/libc/crt0.S`, not `sdk/crt0.S`): it additionally
+-calls `__libc_init_heap(basepage, p_hitpa)`, which sets mintlib's `_base` and
+-points `malloc` at the free TPA between `_end` and the stack reserve
+-(`sdk/libc/newtos-arch/heap_init.c`), and `__libc_parseargs()`, which builds
++Note the **libc crt0** (`sdk/libc/crt0.S`, not `sdk/crt0.S`): it first
++calls `__libc_crtinit(basepage)` (`sdk/libc/newtos-arch/heap_init.c`,
++mintlib's `_crtinit`/`_acc_main`), which sets mintlib's `_base`, builds
+ `environ` from the environment block and `argc`/`argv` from its `ARGV=` part
+-or else the basepage command tail (`sdk/libc/newtos-arch/cmdargs.c`). With no
+-`ARGV=` and no tail — a plain double-click, or an `AUTO` run like the one
+-below — that is `argc = 1, argv = {"", NULL}`.
++or else the basepage command tail (`__libc_parseargs()`,
++`sdk/libc/newtos-arch/cmdargs.c`), applies the `_stksize` policy and shrinks
++the TPA (an accessory gets a `Malloc`'ed stack instead), and returns the new
++stack. Then it calls mintlib's own `_main` (`mintlib/main.c`), which sets up
++the standard streams (stdout line-buffered, text mode on the console, stderr
++unbuffered and, with an empty `argv[0]`, forced to the console) and ends in
++`exit(main(argc, argv, environ))` — atexit handlers and the stdio flush run
++on a `return` from `main` ([07-mintlib-limits.md](07-mintlib-limits.md) §5).
++With no `ARGV=` and no tail — a plain double-click, or an `AUTO` run like the
++one below — that is `argc = 1, argv = {"", NULL}`.
+ 
+ Run: the program was copied to `C:\AUTO\HELLOLIB.NCP` on a scratch image and
+ booted headless in QEMU. Serial log (`[auto]`/`[launch]` lines are the
+diff --git a/docs/sdk/07-mintlib-limits.md b/docs/sdk/07-mintlib-limits.md
+index 97d9961b..574ce1bb 100644
+--- a/docs/sdk/07-mintlib-limits.md
++++ b/docs/sdk/07-mintlib-limits.md
+@@ -183,7 +183,8 @@ neither uses the libm). `libm.a` needs three libc symbols, `memset`, `_ctype`
+ | `environ`, `getenv` | built from the environment block `p_env` as mintlib does (TASK/PORT09): one entry per string up to the empty one, pointing **into** the block; an `ARGV=` string ends the environment and is cut **in place** (its `A` becomes NUL, so a later `Pexec(.., env = NULL)` child inherits the environment without the arguments); the desktop form `"PATH=\0C:\\\0"` — every `#Z`, desktop and accessory start gets a copy of the AES's (TASK/PPARENT, `docs/api/gemdos/process/_parent-and-environment.md`) — is joined **in place** to `"PATH=C:\\"` (`crtinit.c:332-345`). A program that reads its raw `p_env` block after start-up therefore sees mintlib's rewrite, not the bytes the kernel delivered — as on TOS with mintlib. `p_env == 0` or an empty block give the empty environment (one NULL); `environ` is never NULL (mintlib's `_spawnve` indexes it unconditionally, TASK/PORT10). An accessory gets `environ = {"", NULL}` like mintlib's `_acc_main` (no walk). The arrays (environ, the split tail, argv) lie in the TPA just above the BSS, as mintlib lays them out, and count to what the program keeps (`heap_init.c`, `crtinit.c:167-172`); an environment too large for the TPA stops the start with mintlib's "insufficient memory" | `newtos-arch/cmdargs.c`, `newtos-arch/heap_init.c`, `mintlib/globals.c`, `stdlib/getenv.c`; `kernel/src/launch.rs`, `loader.rs` |
+ | `_base` (`BASEPAGE *`) | set by `__libc_init_heap` from the basepage address crt0 hands it (TASK/T05; until then it stayed NULL and dereferencing it worked only because the basepage was at VA 0). Since ARCH03 stage 1 the basepage is the start of the TPA block, so `_base` is that address — never 0 | `newtos-arch/heap_init.c`, `sdk/libc/crt0.S`; readers: `unix/getppid.c`, `gmon.c`, TeraDesk's `environm.c` |
+ | `malloc`/`free`/`realloc` | mintlib's allocator; since ARCH03 E9 the start shrinks the TPA like `_crtinit` and, with the default `_stksize`, malloc takes its memory from GEMDOS `Malloc` (`_split_mem`) | `newtos-arch/heap_init.c`, `crtinit.c:212-247`, `unix/sbrk.c:54-71` |
+-| `exit`/`_exit` | `exit()` is mintlib's: atexit handlers in reverse order, then every stdio stream closed (flushed), then `_exit` = `Pterm(rc)`. A `return` from `main` goes through it: the libc `crt0` ends with `exit(main(argc, argv, environ))`, as mintlib's `__libc_main` ends (`mintlib/main.c:302`) — since post-E9 (2026-10-05); before, crt0 called `Pterm` directly and buffered output and atexit handlers were lost. The rest of `__libc_main` is not run (see `sdk/libc/crt0.S`: it breaks stdout until NewTOS `Fseek` answers 0 on a console handle as EmuTOS does) | `stdlib/exit.c:43-59`, `newtos-arch/proc.S`, `sdk/libc/crt0.S` |
++| start-up (`_main`) | since 2026-10-13 (TASK/LIBC-MAIN) the libc `crt0` ends like mintlib's own start-up, for a program (`_crtinit`, `crtinit.c:257`) and an accessory (`_acc_main`, `crtinit.c:147`) alike: `_main(__libc_argc, __libc_argv, environ)` = `__libc_main` (`mintlib/main.c:77-305`, weak `_main`, so a program can still supply its own). It clears `errno`; finds no `MiNT` cookie (`__mint = 0`); a program calls `Pdomain(1)` and compares `Pgeteuid`/`Pgetuid`, `Pgetegid`/`Pgetgid` — all `EINVFN` on NewTOS as on EmuTOS, so not "secure" and `UNIXMODE` is honoured; clears `__open_stat[]`; with an empty `argv[0]` (no `ARGV=`) and handle 2 a terminal it does `Fforce(2, -1)` (stderr to the console); stdin/stdout/stderr get full/line/no buffering and, being terminals under TOS (`isatty` = fds 0-2, `newtos-arch/isatty.c`), **text mode** with a seek function, whose first flush asks `Fseek(0, h, SEEK_CUR)` — 0 on a character device since TASK/FS10, as on EmuTOS (until then every `stdout` write failed with `EBADF` here, which is why crt0 called only `exit(main())` from post-E9 to FS10); and it rewrites `PATH` (or every variable listed in `PCONVERT`) in `environ` to the Unix form (`PATH=C:\` → `PATH=/dev/c/`, `;`/`,` → `:`, lower case, `unx2dos.c:217`) — `spawnvp`/`execvp`/`system()` convert back; the raw `p_env` block is not touched | `mintlib/main.c`, `mintlib/crtinit.c`, `sdk/libc/crt0.S` |
++| `exit`/`_exit` | `exit()` is mintlib's: atexit handlers in reverse order, then every stdio stream closed (flushed), then `_exit` = `Pterm(rc)`. A `return` from `main` goes through it: `__libc_main` ends with `exit(main(argc, argv, envp))` (`mintlib/main.c:303`) — since post-E9 (2026-10-05) crt0 did that itself, since TASK/LIBC-MAIN (2026-10-13) through `_main`; before post-E9, crt0 called `Pterm` directly and buffered output and atexit handlers were lost | `stdlib/exit.c:43-59`, `newtos-arch/proc.S`, `sdk/libc/crt0.S` |
+ | `clock()` | reads `_hz_200` at `$4BA` through `get_sysvar` — a live 200 Hz tick (verified by `sdk/libc/tests/clocktest.c`) | `newtos-arch/getsysvar.c`, `time/clock.c` |
+ | `time()`/`gettimeofday()` | GEMDOS clock via mintlib's own path (`Tgettimeofday` probe, then `Tgetdate`/`Tgettime`) — **unverified** here beyond linking | `unix/gettimeofday.c` |
+ | `stat`/`fstat` times, uid/gid | zero / from attributes only | §2 |
+diff --git a/sdk/libc/build-libc.sh b/sdk/libc/build-libc.sh
+index 4e4d9d26..78f9fe7a 100755
+--- a/sdk/libc/build-libc.sh
++++ b/sdk/libc/build-libc.sh
+@@ -67,9 +67,10 @@
+ #     (mintlib/setstack.S) are m68k; newtos-arch/vfork.S and setstack.S are
+ #     their AArch64 retargets. With them and thread.c, posix/system.c is
+ #     mintlib's own again (the PORT10 overlay without the POSIX branch is gone).
+-#   - sdk/libc/crt0.S: libc-aware crt0 (calls __libc_crtinit, then
+-#     exit(main(...)) as mintlib's __libc_main ends) -- distinct from
+-#     sdk/crt0.S used by the libc-less examples.
++#   - sdk/libc/crt0.S: libc-aware crt0 (calls __libc_crtinit, then mintlib's
++#     own _main = __libc_main, which ends in exit(main(...)), as crtinit.c's
++#     _crtinit / _acc_main do) -- distinct from sdk/crt0.S used by the
++#     libc-less examples.
+ #
+ # The linker pulls only the archive members it needs, so libc.a is compiled from
+ # whole core directories best-effort (files that fail to assemble for AArch64 --
+diff --git a/sdk/libc/crt0.S b/sdk/libc/crt0.S
+index 560c452f..fe1fddfd 100644
+--- a/sdk/libc/crt0.S
++++ b/sdk/libc/crt0.S
+@@ -17,8 +17,10 @@
+  *     (EmuTOS pgmld);
+  *   - malloc then grows through GEMDOS Malloc (`_split_mem`, unix/sbrk.c),
+  *     as with mintlib on TOS;
+- *   - main's return value goes to exit(), as at the end of mintlib's
+- *     `__libc_main`, so atexit handlers and the stdio flush run.
++ *   - then, for a program and an accessory alike, mintlib's own `_main`
++ *     (= `__libc_main`, mintlib/main.c:77-305), exactly as `_crtinit`
++ *     (crtinit.c:257) and `_acc_main` (crtinit.c:147) end: stdio set-up,
++ *     then exit(main(argc, argv, environ)).
+  *
+  * TPA layout (tos-api/src/bdos/process/loader.rs, sdk/newtos.ld), relative
+  * to the TPA's pool address B (ARCH03 stage 1, VA = PA):
+@@ -57,38 +59,48 @@ _start:
+     bl      __libc_crtinit
+     mov     sp, x0
+ 
+-    /* exit(main(__libc_argc, __libc_argv, environ)) -- how mintlib's own
+-     * start-up ends (mintlib/main.c:302, the last statement of
+-     * `__libc_main`, which _crtinit reaches as `_main`, crtinit.c:257, and
+-     * an accessory's _acc_main too, :147): main's return value goes to
+-     * exit(), which runs the atexit handlers in reverse order and closes
+-     * (flushes) every stdio stream before `_exit` -- Pterm, newtos-arch/
+-     * proc.S (stdlib/exit.c:43-59). __libc_crtinit built `environ` from the
+-     * environment block p_env and argc/argv from its ARGV= part or else the
+-     * BasePage command tail p_cmdlin (newtos-arch/cmdargs.c = crtinit.c
+-     * parseargs()); with no ARGV= and an empty tail that is argc == 1 and
+-     * argv == { "", NULL } -- the TOS "program name not available"
+-     * convention.
++    /* _main(__libc_argc, __libc_argv, environ) -- how mintlib's own
++     * start-up ends, for a program (`_crtinit`, crtinit.c:257) and for an
++     * accessory (`_acc_main`, crtinit.c:147) alike. `_main` is the weak
++     * alias of `__libc_main` (mintlib/main.c:305), so a program may still
++     * supply its own. __libc_crtinit built `environ` from the environment
++     * block p_env and argc/argv from its ARGV= part or else the BasePage
++     * command tail p_cmdlin (newtos-arch/cmdargs.c = crtinit.c parseargs());
++     * with no ARGV= and an empty tail that is argc == 1 and argv ==
++     * { "", NULL }, the TOS "program name not available" convention; an
++     * accessory gets argv = environ = { "", NULL } (crtinit.c:139-140).
+      *
+-     * The rest of `__libc_main` (MiNT cookie, Pdomain, UNIXMODE, stdio
+-     * stream modes, stderr to the console, PATH conversion) is NOT run here,
+-     * as it was not before: with it, every write through stdout fails, since
+-     * its text-mode stream set-up seeks on the console handle and the NewTOS
+-     * Fseek answers EIHNDL there, where EmuTOS answers 0 for every handle
+-     * function but read/write on a character device (bdos/bdosmain.c:
+-     * 571-641). Reported (post-E9); calling `_main` waits for that fix. */
++     * `__libc_main` (mintlib/main.c:77-303) then: clears errno; reads the
++     * MiNT cookie (none on NewTOS: __mint = 0); a program calls Pdomain(1)
++     * and compares Pgeteuid/Pgetuid and Pgetegid/Pgetgid (NewTOS answers
++     * EINVFN to all of them, as EmuTOS does above its last function,
++     * bdos/bdosmain.c:444-445, so not "secure"); applies UNIXMODE; clears __open_stat[]; forces handle
++     * 2 to the console (Fforce(2, -1)) when argv[0] is empty and handle 2
++     * is a terminal; sets stdin/stdout/stderr to full/line/no buffering
++     * and, on a terminal under TOS, to text mode -- which gives the
++     * streams a seek function again, so the first flush asks
++     * Fseek(0, h, SEEK_CUR); that is 0 on a character device, as on EmuTOS
++     * (docs/api/gemdos/file/42-fseek.md, TASK/FS10); converts PATH (or the
++     * PCONVERT list) to the `/dev/c/...:...` form in environ (spawn/exec
++     * convert it back); and ends in exit(main(argc, argv, envp)) --
++     * atexit handlers in reverse order, every stdio stream closed, then
++     * `_exit` = Pterm (stdlib/exit.c:43-59, newtos-arch/proc.S).
++     *
++     * mintlib's start-up also calls `__main()` (global constructors) before
++     * `_main` only under __GCC_HAVE_INITFINI_ARRAY_SUPPORT (crtinit.c:142-
++     * 145, 252-255), which clang does not define for this target -- the
++     * same build of mintlib/__main.c is empty, so there is nothing to call. */
+     adrp    x0, __libc_argc
+     add     x0, x0, :lo12:__libc_argc
+-    ldr     x0, [x0]
++    ldr     x0, [x0]            /* long _argc (main.c:78) */
+     adrp    x1, __libc_argv
+     add     x1, x1, :lo12:__libc_argv
+     ldr     x1, [x1]
+     adrp    x2, environ
+     add     x2, x2, :lo12:environ
+     ldr     x2, [x2]
+-    bl      main
+-    /* exit(main's return): w0 is already the argument. Never returns. */
+-    bl      exit
++    bl      _main
++    /* `__libc_main` ends in exit() and never returns. */
+ 
+     /* Safety net: Pterm does not return, but guard against a runaway PC. */
+ 1:  b       1b

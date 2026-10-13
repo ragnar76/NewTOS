@@ -1,0 +1,341 @@
+qemu-system-aarch64: -serial unix:s/a31.tYnfqn/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.tYnfqn/ser.sock,server=on
+t=   3.3s end marker seen
+t=   9.4s tta-on-virt-selftests-end.png {"return": {}}
+prompts seen: 0
+run tta-on-virt-selftests: rc=0
+qemu-system-aarch64: -serial unix:s/a31.E54Amu/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.E54Amu/ser.sock,server=on
+t=   3.2s end marker seen
+t=   9.3s tta-on-virt-desktop-end.png {"return": {}}
+prompts seen: 0
+run tta-on-virt-desktop: rc=0
+qemu-system-aarch64: -serial unix:s/a31.5fHpZL/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.5fHpZL/ser.sock,server=on
+t=   4.1s tta-on-virt-crash-crash1.png {"return": {}}
+t=   4.1s answered prompt 1
+t=   4.9s tta-on-virt-crash-crash2.png {"return": {}}
+t=   4.9s answered prompt 2
+t=   6.0s tta-on-virt-crash-crash3.png {"return": {}}
+t=   6.0s answered prompt 3
+t=   7.9s tta-on-virt-crash-crash4.png {"return": {}}
+t=   7.9s answered prompt 4
+t=  10.1s tta-on-virt-crash-crash5.png {"return": {}}
+t=  10.1s answered prompt 5
+t=  12.0s tta-on-virt-crash-crash6.png {"return": {}}
+t=  12.0s answered prompt 6
+t=  14.0s tta-on-virt-crash-crash7.png {"return": {}}
+t=  14.0s answered prompt 7
+t=  16.0s tta-on-virt-crash-crash8.png {"return": {}}
+t=  16.0s answered prompt 8
+t=  18.2s tta-on-virt-crash-crash9.png {"return": {}}
+t=  18.2s answered prompt 9
+t=  20.6s tta-on-virt-crash-crash10.png {"return": {}}
+t=  20.6s answered prompt 10
+t=  22.5s tta-on-virt-crash-crash11.png {"return": {}}
+t=  22.5s answered prompt 11
+t=  24.4s tta-on-virt-crash-crash12.png {"return": {}}
+t=  24.4s answered prompt 12
+t=  26.6s tta-on-virt-crash-crash13.png {"return": {}}
+t=  26.6s answered prompt 13
+t=  28.5s tta-on-virt-crash-crash14.png {"return": {}}
+t=  28.5s answered prompt 14
+t=  30.3s tta-on-virt-crash-crash15.png {"return": {}}
+t=  30.3s answered prompt 15
+t=  32.4s tta-on-virt-crash-crash16.png {"return": {}}
+t=  32.4s answered prompt 16
+t=  34.3s tta-on-virt-crash-crash17.png {"return": {}}
+t=  34.3s answered prompt 17
+t=  36.0s tta-on-virt-crash-crash18.png {"return": {}}
+t=  36.0s answered prompt 18
+t=  38.2s tta-on-virt-crash-crash19.png {"return": {}}
+t=  38.2s answered prompt 19
+t=  40.1s tta-on-virt-crash-crash20.png {"return": {}}
+t=  40.1s answered prompt 20
+t=  42.1s tta-on-virt-crash-crash21.png {"return": {}}
+t=  42.1s answered prompt 21
+t=  44.0s tta-on-virt-crash-crash22.png {"return": {}}
+t=  44.0s answered prompt 22
+t=  45.8s tta-on-virt-crash-crash23.png {"return": {}}
+t=  45.8s answered prompt 23
+t=  47.6s tta-on-virt-crash-crash24.png {"return": {}}
+t=  47.6s answered prompt 24
+t=  49.4s tta-on-virt-crash-crash25.png {"return": {}}
+t=  49.4s answered prompt 25
+t=  51.0s tta-on-virt-crash-crash26.png {"return": {}}
+t=  51.0s answered prompt 26
+t=  52.6s tta-on-virt-crash-crash27.png {"return": {}}
+t=  52.6s answered prompt 27
+t=  55.0s tta-on-virt-crash-crash28.png {"return": {}}
+t=  55.0s answered prompt 28
+t=  55.7s end marker seen
+t=  57.4s tta-on-virt-crash-end.png {"return": {}}
+prompts seen: 28
+run tta-on-virt-crash: rc=0
+qemu-system-aarch64: -serial unix:s/a31.gVcKNV/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.gVcKNV/ser.sock,server=on
+t=   3.2s end marker seen
+t=   9.3s tta-off-virt-selftests-end.png {"return": {}}
+prompts seen: 0
+run tta-off-virt-selftests: rc=0
+qemu-system-aarch64: -serial unix:s/a31.itLQE4/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.itLQE4/ser.sock,server=on
+t=   3.2s end marker seen
+t=   9.3s tta-off-virt-desktop-end.png {"return": {}}
+prompts seen: 0
+run tta-off-virt-desktop: rc=0
+qemu-system-aarch64: -serial unix:s/a31.3kLB6j/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.3kLB6j/ser.sock,server=on
+t=   4.0s tta-off-virt-crash-crash1.png {"return": {}}
+t=   4.0s answered prompt 1
+t=   4.9s tta-off-virt-crash-crash2.png {"return": {}}
+t=   4.9s answered prompt 2
+t=   5.8s tta-off-virt-crash-crash3.png {"return": {}}
+t=   5.8s answered prompt 3
+t=   7.3s tta-off-virt-crash-crash4.png {"return": {}}
+t=   7.3s answered prompt 4
+t=   9.0s tta-off-virt-crash-crash5.png {"return": {}}
+t=   9.0s answered prompt 5
+t=  10.6s tta-off-virt-crash-crash6.png {"return": {}}
+t=  10.6s answered prompt 6
+t=  12.2s tta-off-virt-crash-crash7.png {"return": {}}
+t=  12.2s answered prompt 7
+t=  13.9s tta-off-virt-crash-crash8.png {"return": {}}
+t=  13.9s answered prompt 8
+t=  15.5s tta-off-virt-crash-crash9.png {"return": {}}
+t=  15.5s answered prompt 9
+t=  17.1s tta-off-virt-crash-crash10.png {"return": {}}
+t=  17.1s answered prompt 10
+t=  18.7s tta-off-virt-crash-crash11.png {"return": {}}
+t=  18.7s answered prompt 11
+t=  20.2s tta-off-virt-crash-crash12.png {"return": {}}
+t=  20.2s answered prompt 12
+t=  21.9s tta-off-virt-crash-crash13.png {"return": {}}
+t=  21.9s answered prompt 13
+t=  23.5s tta-off-virt-crash-crash14.png {"return": {}}
+t=  23.5s answered prompt 14
+t=  26.3s tta-off-virt-crash-crash15.png {"return": {}}
+t=  26.3s answered prompt 15
+t=  28.0s tta-off-virt-crash-crash16.png {"return": {}}
+t=  28.0s answered prompt 16
+t=  29.6s tta-off-virt-crash-crash17.png {"return": {}}
+t=  29.6s answered prompt 17
+t=  31.1s tta-off-virt-crash-crash18.png {"return": {}}
+t=  31.1s answered prompt 18
+t=  32.7s tta-off-virt-crash-crash19.png {"return": {}}
+t=  32.7s answered prompt 19
+t=  34.3s tta-off-virt-crash-crash20.png {"return": {}}
+t=  34.3s answered prompt 20
+t=  35.9s tta-off-virt-crash-crash21.png {"return": {}}
+t=  35.9s answered prompt 21
+t=  37.4s tta-off-virt-crash-crash22.png {"return": {}}
+t=  37.4s answered prompt 22
+t=  39.0s tta-off-virt-crash-crash23.png {"return": {}}
+t=  39.0s answered prompt 23
+t=  40.6s tta-off-virt-crash-crash24.png {"return": {}}
+t=  40.6s answered prompt 24
+t=  42.2s tta-off-virt-crash-crash25.png {"return": {}}
+t=  42.2s answered prompt 25
+t=  43.8s tta-off-virt-crash-crash26.png {"return": {}}
+t=  43.8s answered prompt 26
+t=  45.4s tta-off-virt-crash-crash27.png {"return": {}}
+t=  45.4s answered prompt 27
+t=  47.0s end marker seen
+t=  48.7s tta-off-virt-crash-end.png {"return": {}}
+prompts seen: 27
+run tta-off-virt-crash: rc=0
+qemu-system-aarch64: -serial unix:s/a31.fq0I5b/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.fq0I5b/ser.sock,server=on
+t=   3.3s end marker seen
+t=   9.3s tta-strict-virt-selftests-end.png {"return": {}}
+prompts seen: 0
+run tta-strict-virt-selftests: rc=0
+qemu-system-aarch64: -serial unix:s/a31.2ENMEw/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.2ENMEw/ser.sock,server=on
+t=   3.6s end marker seen
+t=   9.7s tta-strict-virt-desktop-end.png {"return": {}}
+prompts seen: 0
+run tta-strict-virt-desktop: rc=0
+qemu-system-aarch64: -serial unix:s/a31.HvltM0/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.HvltM0/ser.sock,server=on
+t=   4.0s tta-strict-virt-crash-crash1.png {"return": {}}
+t=   4.0s answered prompt 1
+t=   4.9s tta-strict-virt-crash-crash2.png {"return": {}}
+t=   4.9s answered prompt 2
+t=   5.9s tta-strict-virt-crash-crash3.png {"return": {}}
+t=   5.9s answered prompt 3
+t=   7.5s tta-strict-virt-crash-crash4.png {"return": {}}
+t=   7.5s answered prompt 4
+t=   9.2s tta-strict-virt-crash-crash5.png {"return": {}}
+t=   9.2s answered prompt 5
+t=  10.8s tta-strict-virt-crash-crash6.png {"return": {}}
+t=  10.8s answered prompt 6
+t=  12.4s tta-strict-virt-crash-crash7.png {"return": {}}
+t=  12.4s answered prompt 7
+t=  14.2s tta-strict-virt-crash-crash8.png {"return": {}}
+t=  14.2s answered prompt 8
+t=  15.8s tta-strict-virt-crash-crash9.png {"return": {}}
+t=  15.8s answered prompt 9
+t=  17.4s tta-strict-virt-crash-crash10.png {"return": {}}
+t=  17.4s answered prompt 10
+t=  19.1s tta-strict-virt-crash-crash11.png {"return": {}}
+t=  19.1s answered prompt 11
+t=  20.7s tta-strict-virt-crash-crash12.png {"return": {}}
+t=  20.7s answered prompt 12
+t=  22.5s tta-strict-virt-crash-crash13.png {"return": {}}
+t=  22.5s answered prompt 13
+t=  24.1s tta-strict-virt-crash-crash14.png {"return": {}}
+t=  24.1s answered prompt 14
+t=  25.7s tta-strict-virt-crash-crash15.png {"return": {}}
+t=  25.7s answered prompt 15
+t=  27.4s tta-strict-virt-crash-crash16.png {"return": {}}
+t=  27.4s answered prompt 16
+t=  29.0s tta-strict-virt-crash-crash17.png {"return": {}}
+t=  29.0s answered prompt 17
+t=  31.2s tta-strict-virt-crash-crash18.png {"return": {}}
+t=  31.2s answered prompt 18
+t=  33.6s tta-strict-virt-crash-crash19.png {"return": {}}
+t=  33.6s answered prompt 19
+t=  35.3s tta-strict-virt-crash-crash20.png {"return": {}}
+t=  35.3s answered prompt 20
+t=  37.0s tta-strict-virt-crash-crash21.png {"return": {}}
+t=  37.0s answered prompt 21
+t=  38.6s tta-strict-virt-crash-crash22.png {"return": {}}
+t=  38.6s answered prompt 22
+t=  40.2s tta-strict-virt-crash-crash23.png {"return": {}}
+t=  40.2s answered prompt 23
+t=  41.8s tta-strict-virt-crash-crash24.png {"return": {}}
+t=  41.8s answered prompt 24
+t=  43.4s tta-strict-virt-crash-crash25.png {"return": {}}
+t=  43.4s answered prompt 25
+t=  45.1s tta-strict-virt-crash-crash26.png {"return": {}}
+t=  45.1s answered prompt 26
+t=  46.8s tta-strict-virt-crash-crash27.png {"return": {}}
+t=  46.8s answered prompt 27
+t=  48.6s tta-strict-virt-crash-crash28.png {"return": {}}
+t=  48.6s answered prompt 28
+t=  50.2s tta-strict-virt-crash-crash29.png {"return": {}}
+t=  50.2s answered prompt 29
+t=  52.0s tta-strict-virt-crash-crash30.png {"return": {}}
+t=  52.0s answered prompt 30
+t=  53.8s tta-strict-virt-crash-crash31.png {"return": {}}
+t=  53.8s answered prompt 31
+t=  56.0s tta-strict-virt-crash-crash32.png {"return": {}}
+t=  56.0s answered prompt 32
+t=  56.1s end marker seen
+t=  57.7s tta-strict-virt-crash-end.png {"return": {}}
+prompts seen: 32
+run tta-strict-virt-crash: rc=0
+qemu-system-aarch64: -serial unix:s/a31.Ddm2tZ/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.Ddm2tZ/ser.sock,server=on
+t=   3.3s end marker seen
+t=   9.3s tta-on-asid-virt-selftests-end.png {"return": {}}
+prompts seen: 0
+run tta-on-asid-virt-selftests: rc=0
+qemu-system-aarch64: -serial unix:s/a31.bzo4TI/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.bzo4TI/ser.sock,server=on
+t=   3.3s end marker seen
+t=   9.4s tta-on-asid-virt-desktop-end.png {"return": {}}
+prompts seen: 0
+run tta-on-asid-virt-desktop: rc=0
+qemu-system-aarch64: -serial unix:s/a31.EiCUAe/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.EiCUAe/ser.sock,server=on
+t=   4.1s tta-on-asid-virt-crash-crash1.png {"return": {}}
+t=   4.1s answered prompt 1
+t=   4.9s tta-on-asid-virt-crash-crash2.png {"return": {}}
+t=   4.9s answered prompt 2
+t=   5.9s tta-on-asid-virt-crash-crash3.png {"return": {}}
+t=   5.9s answered prompt 3
+t=   7.9s tta-on-asid-virt-crash-crash4.png {"return": {}}
+t=   7.9s answered prompt 4
+t=   9.9s tta-on-asid-virt-crash-crash5.png {"return": {}}
+t=   9.9s answered prompt 5
+t=  11.8s tta-on-asid-virt-crash-crash6.png {"return": {}}
+t=  11.8s answered prompt 6
+t=  13.7s tta-on-asid-virt-crash-crash7.png {"return": {}}
+t=  13.7s answered prompt 7
+t=  15.7s tta-on-asid-virt-crash-crash8.png {"return": {}}
+t=  15.7s answered prompt 8
+t=  17.5s tta-on-asid-virt-crash-crash9.png {"return": {}}
+t=  17.5s answered prompt 9
+t=  19.3s tta-on-asid-virt-crash-crash10.png {"return": {}}
+t=  19.3s answered prompt 10
+t=  21.1s tta-on-asid-virt-crash-crash11.png {"return": {}}
+t=  21.1s answered prompt 11
+t=  22.9s tta-on-asid-virt-crash-crash12.png {"return": {}}
+t=  22.9s answered prompt 12
+t=  24.9s tta-on-asid-virt-crash-crash13.png {"return": {}}
+t=  24.9s answered prompt 13
+t=  26.9s tta-on-asid-virt-crash-crash14.png {"return": {}}
+t=  26.9s answered prompt 14
+t=  28.7s tta-on-asid-virt-crash-crash15.png {"return": {}}
+t=  28.7s answered prompt 15
+t=  30.6s tta-on-asid-virt-crash-crash16.png {"return": {}}
+t=  30.6s answered prompt 16
+t=  32.4s tta-on-asid-virt-crash-crash17.png {"return": {}}
+t=  32.4s answered prompt 17
+t=  34.2s tta-on-asid-virt-crash-crash18.png {"return": {}}
+t=  34.2s answered prompt 18
+t=  36.0s tta-on-asid-virt-crash-crash19.png {"return": {}}
+t=  36.0s answered prompt 19
+t=  37.9s tta-on-asid-virt-crash-crash20.png {"return": {}}
+t=  37.9s answered prompt 20
+t=  39.8s tta-on-asid-virt-crash-crash21.png {"return": {}}
+t=  39.8s answered prompt 21
+t=  41.6s tta-on-asid-virt-crash-crash22.png {"return": {}}
+t=  41.6s answered prompt 22
+t=  43.4s tta-on-asid-virt-crash-crash23.png {"return": {}}
+t=  43.4s answered prompt 23
+t=  45.2s tta-on-asid-virt-crash-crash24.png {"return": {}}
+t=  45.2s answered prompt 24
+t=  47.0s tta-on-asid-virt-crash-crash25.png {"return": {}}
+t=  47.0s answered prompt 25
+t=  48.8s tta-on-asid-virt-crash-crash26.png {"return": {}}
+t=  48.8s answered prompt 26
+t=  50.7s tta-on-asid-virt-crash-crash27.png {"return": {}}
+t=  50.7s answered prompt 27
+t=  53.5s tta-on-asid-virt-crash-crash28.png {"return": {}}
+t=  53.5s answered prompt 28
+t=  54.5s end marker seen
+t=  56.1s tta-on-asid-virt-crash-end.png {"return": {}}
+prompts seen: 28
+run tta-on-asid-virt-crash: rc=0
+qemu-system-aarch64: -serial unix:s/a31.Vl7Qgt/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.Vl7Qgt/ser.sock,server=on
+t=  25.5s end marker seen
+t=  27.6s ac-on-virt-vreg-end.png {"return": {}}
+prompts seen: 0
+run ac-on-virt-vreg: rc=0
+qemu-system-aarch64: -serial unix:s/a31.hQ5vlu/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.hQ5vlu/ser.sock,server=on
+t=   3.2s end marker seen
+t=   5.4s ac-on-virt-vreg-oldcrt0-end.png {"return": {}}
+prompts seen: 0
+run ac-on-virt-vreg-oldcrt0: rc=0
+qemu-system-aarch64: -serial unix:s/a31.oli5pe/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.oli5pe/ser.sock,server=on
+t=  25.8s end marker seen
+t=  28.0s ac-off-virt-vreg-end.png {"return": {}}
+prompts seen: 0
+run ac-off-virt-vreg: rc=0
+qemu-system-aarch64: -serial unix:s/a31.EbHwCI/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.EbHwCI/ser.sock,server=on
+t=   3.2s end marker seen
+t=   5.3s ac-off-virt-vreg-oldcrt0-end.png {"return": {}}
+prompts seen: 0
+run ac-off-virt-vreg-oldcrt0: rc=0
+qemu-system-aarch64: -serial unix:s/a31.2SeT9b/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.2SeT9b/ser.sock,server=on
+t=  25.3s end marker seen
+t=  27.4s ac-strict-virt-vreg-end.png {"return": {}}
+prompts seen: 0
+run ac-strict-virt-vreg: rc=0
+qemu-system-aarch64: -serial unix:s/a31.knjHxR/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.knjHxR/ser.sock,server=on
+t=   3.2s end marker seen
+t=   5.4s ac-strict-virt-vreg-oldcrt0-end.png {"return": {}}
+prompts seen: 0
+run ac-strict-virt-vreg-oldcrt0: rc=0
+qemu-system-aarch64: -serial unix:s/a31.0ec2XG/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.0ec2XG/ser.sock,server=on
+t=   3.2s end marker seen
+t=   5.3s ta-on-virt-vreg-tty-end.png {"return": {}}
+prompts seen: 0
+run ta-on-virt-vreg-tty: rc=0
+qemu-system-aarch64: -serial unix:s/a31.h7rEni/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.h7rEni/ser.sock,server=on
+t=   3.2s end marker seen
+t=   5.2s ta-off-virt-vreg-tty-end.png {"return": {}}
+prompts seen: 0
+run ta-off-virt-vreg-tty: rc=0
+qemu-system-aarch64: -serial unix:s/a31.LMIvPr/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.LMIvPr/ser.sock,server=on
+t=   3.2s end marker seen
+t=   5.3s ta-strict-virt-vreg-tty-end.png {"return": {}}
+prompts seen: 0
+run ta-strict-virt-vreg-tty: rc=0
+qemu-system-aarch64: -serial unix:s/a31.g3JVBE/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.g3JVBE/ser.sock,server=on
+t=   3.2s end marker seen
+t=   5.3s ta-on-asid-virt-vreg-tty-end.png {"return": {}}
+prompts seen: 0
+run ta-on-asid-virt-vreg-tty: rc=0
+VIRT DONE

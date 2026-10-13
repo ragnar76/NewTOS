@@ -1,0 +1,33 @@
+tt-off-rpi4-apitest                 1 memory protection OFF (boot argument `memprot=off`); 1 TOTAL 106 0 5;
+tt-off-rpi4-desktop                 1 desktop up; 1 memory protection OFF (boot argument `memprot=off`);
+tt-off-rpi4-doom                    1 memory protection OFF (boot argument `memprot=off`); 1 VERIFIED via EdDI+scale+vro_cpyfm;
+tt-off-rpi4-qed                     1 memory protection OFF (boot argument `memprot=off`);
+tt-off-rpi4-stderr-newcrt0          1 desktop up; 1 memory protection OFF (boot argument `memprot=off`);
+tt-off-rpi4-stderra                 1 desktop up; 1 memory protection OFF (boot argument `memprot=off`);
+tt-off-rpi4-stdoutdb                1 desktop up; 1 memory protection OFF (boot argument `memprot=off`);
+tt-off-rpi4-teradesk                1 memory protection OFF (boot argument `memprot=off`);
+tt-off-rpi4-ttya                    1 desktop up; 1 memory protection OFF (boot argument `memprot=off`); 1 TTYPROBE: PASS; 1 TTYT1: PASS; 1 TTYT2: PASS; 1 TTYT3: PASS;
+tt-off-rpi4-ttyprobe                1 desktop up; 1 memory protection OFF (boot argument `memprot=off`); 1 TTYPROBE: PASS; 1 TTYT1: PASS; 1 TTYT2: PASS; 1 TTYT3: PASS; 1 TTYT4: PASS;
+tt-on-asid-rpi4-apitest             1 ASIDs ON: 16-bit ; 1 memory protection ON; 1 TOTAL 106 0 5;
+tt-on-asid-rpi4-desktop             1 ASIDs ON: 16-bit ; 1 desktop up; 1 memory protection ON;
+tt-on-asid-rpi4-ttya                1 ASIDs ON: 16-bit ; 1 desktop up; 1 memory protection ON; 1 TTYPROBE: PASS; 1 TTYT1: PASS; 1 TTYT2: PASS; 1 TTYT3: PASS;
+tt-on-rpi4-apitest                  1 memory protection ON; 1 TOTAL 106 0 5;
+tt-on-rpi4-desktop                  1 desktop up; 1 memory protection ON;
+tt-on-rpi4-doom                     1 memory protection ON; 1 VERIFIED via EdDI+scale+vro_cpyfm;
+tt-on-rpi4-qed                      1 memory protection ON;
+tt-on-rpi4-stderr-newcrt0           1 desktop up; 1 memory protection ON;
+tt-on-rpi4-stderra                  1 desktop up; 1 memory protection ON;
+tt-on-rpi4-stdoutdb                 1 desktop up; 1 memory protection ON;
+tt-on-rpi4-teradesk                 1 memory protection ON;
+tt-on-rpi4-ttya                     1 desktop up; 1 memory protection ON; 1 TTYPROBE: PASS; 1 TTYT1: PASS; 1 TTYT2: PASS; 1 TTYT3: PASS;
+tt-on-rpi4-ttyprobe                 1 desktop up; 1 memory protection ON; 1 TTYPROBE: PASS; 1 TTYT1: PASS; 1 TTYT2: PASS; 1 TTYT3: PASS; 1 TTYT4: PASS;
+tt-strict-rpi4-apitest              1 memory protection ON (strict); 1 TOTAL 106 0 5;
+tt-strict-rpi4-desktop              1 desktop up; 1 memory protection ON (strict);
+tt-strict-rpi4-doom                 1 memory protection ON (strict); 1 VERIFIED via EdDI+scale+vro_cpyfm;
+tt-strict-rpi4-qed                  1 memory protection ON (strict);
+tt-strict-rpi4-stderr-newcrt0       1 desktop up; 1 memory protection ON (strict);
+tt-strict-rpi4-stderra              1 desktop up; 1 memory protection ON (strict);
+tt-strict-rpi4-stdoutdb             1 desktop up; 1 memory protection ON (strict);
+tt-strict-rpi4-teradesk             1 memory protection ON (strict);
+tt-strict-rpi4-ttya                 1 desktop up; 1 memory protection ON (strict); 1 TTYPROBE: PASS; 1 TTYT1: PASS; 1 TTYT2: PASS; 1 TTYT3: PASS;
+tt-strict-rpi4-ttyprobe             1 desktop up; 1 memory protection ON (strict); 1 TTYPROBE: PASS; 1 TTYT1: PASS; 1 TTYT2: PASS; 1 TTYT3: PASS; 1 TTYT4: PASS;

@@ -1,0 +1,72 @@
+built A107PAR.NAP
+built A79COLOR.NAP
+built A96ZOMB.NAP
+built BIG.NCP
+built CMDLINE.NCP
+built CRASHTST.NAP
+built CRCHILD.NAP
+built CURDIR.NCP
+built DTACHILD.NCP
+built HELLO2.NCP
+built KBDVEC.NAP
+built PHYSBASE.NCP
+built SCRFLIP.NCP
+built SYSACC.NAC
+built SYSINFO.NCP
+built WFSCREEN.NAP
+built HELLO.NCP
+built OLDEXEC.NCP
+built P10KID.NCP
+built P10TEST.NCP
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-tty-acceptance/bin/ENVPAR.NAP (48664 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-tty-acceptance/bin/ENVKID.NAP (48664 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-tty-acceptance/bin/P34PAR.NAP (49896 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-tty-acceptance/bin/P34KID.NAP (48872 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-tty-acceptance/bin/PFLAGS1.NCP (49424 bytes) PRGFLAGS=0x10000004
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-tty-acceptance/bin/PFLAGS2.NCP (49408 bytes) PRGFLAGS=0x10000004
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-tty-acceptance/bin/PFLAGS2.NCP: PRGFLAGS 0x10000004 -> 0x00000007 (PF_FASTLOAD | PF_TTRAMLOAD | PF_TTRAMMEM)
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-tty-acceptance/bin/PFLAGS2.NCP: PRGFLAGS 0x00000007 (PF_FASTLOAD | PF_TTRAMLOAD | PF_TTRAMMEM)
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-tty-acceptance/bin/PFLAGS1.NCP: PRGFLAGS 0x10000004 (PF_TTRAMMEM | TPA quantum 2 (x 128 KiB))
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-tty-acceptance/bin/P567.NAP (52056 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-tty-acceptance/bin/TSRPAR.NAP (50080 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-tty-acceptance/bin/TSRRES.NAP (48376 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-tty-acceptance/bin/TSRUSE.NAP (48008 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-tty-acceptance/bin/OWNPAR.NAP (49832 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-tty-acceptance/bin/OWNKID.NAP (48776 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-tty-acceptance/bin/VFORKT.NAP (118160 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-tty-acceptance/bin/S2ALL.NAP (48800 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-tty-acceptance/bin/P567S.NAP (52088 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-tty-acceptance/bin/TSRPARS.NAP (48608 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-tty-acceptance/bin/S2ALLS.NAP (48800 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-tty-acceptance/bin/ATEXITP.NAP (48816 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-tty-acceptance/bin/ATEXITK.NAP (102728 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-tty-acceptance/bin/ACCFREE.NAP (50664 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-tty-acceptance/bin/MDPROBE.NAP (49312 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-tty-acceptance/bin/ENVRN.NAP (50376 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-tty-acceptance/bin/E9MEM.NAP (50528 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-tty-acceptance/bin/FSEEKCON.NAP (48200 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-tty-acceptance/bin/STDOUTDBG.NAP (102344 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-tty-acceptance/bin/STDERRP.NAP (107368 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-tty-acceptance/bin/PPAUTO.NCP (50056 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-tty-acceptance/bin/PPZ.NAP (52896 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-tty-acceptance/bin/PPDESK.NAP (52928 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-tty-acceptance/bin/PPACC.NAC (50584 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-tty-acceptance/bin/FS11DEV.NAP (54064 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-tty-acceptance/bin/FS11A.NAP (51288 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-tty-acceptance/bin/STDERRA.NAP (107552 bytes)
+copied STDOUTDBG.NAP -> STDOUTDB.NAP
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-tty-acceptance/bin/TTYPROBE.NAP (106536 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-libc-tty-acceptance/bin/TTYA.NAP (104520 bytes)
+built E9PLAIN.NCP
+built UAKID.NAP + UACC3A.NAP (cases: all)
+built MPKID.NAP + MPROT3B/MPROTS/MPROTO.NAP
+built E10KID.NAP + E10USR/E10USRS/E10USRO.NAP
+built via apps/apitest/build-apitest.sh
+built via apps/build-qed.sh
+built via apps/build-teradesk.sh
+built via apps/build-doom.sh
+built via apps/gemtest/build-gemtest.sh
+built via apps/chaintest/build-chaintest.sh
+built via apps/build-coremark.sh
+done
+build-all rc=0

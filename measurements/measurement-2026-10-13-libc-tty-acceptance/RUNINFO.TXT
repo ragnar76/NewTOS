@@ -1,0 +1,88 @@
+measurement-2026-10-13-libc-tty-acceptance -- Tester acceptance of LIBC-TTY (66f861f5: mintlib's own isatty replaces the
+NewTOS shim) on HEAD e7b75f37, working tree clean (no product code touched; only scratch copies of the tree were
+instrumented). No SD card, Pi or TT touched. Date 2026-10-13, host macOS, QEMU raspi4b (-append serial=on [memprot=off|strict]
+[asid=on]) and qemu-virt. Verdict: PASS (details below); not-run items at the end.
+
+Method: method/ = copy of measurement-2026-10-13-fs11-aux-acceptance/method overlaid with measurement-2026-10-13-libc-tty/method
+(ttyprobe.c, build-tty.sh, tty-*.sh) plus new: build-extra.sh, ta-kernels.sh, scratch-kernels-part2.sh, vreg-tty-kernel.sh,
+ta-chain.sh, ta-virt.sh, ta-asid.sh. run-rpi4*.sh / run-virt.sh: socket dir changed to the relative s/ in the session scratchpad
+(the scratchpad path is > 104 bytes; cwd = scratchpad), otherwise unchanged. tty-series.sh: KK = bin/kernel8-keys-tty.img, tag
+prefix tt-. Cards: private 64 MiB images in the scratchpad (cards-ta/<mode>/...), one root per mode, distinct tags.
+Parallel: 3 mode chains (on/off/strict) + the virt/asid scripts at times; no card shared.
+Kernels gitignored, sha256 in bin/KERNELS.SHA256; programs bin/SHA256SUMS (+ SHA256SUMS-extra for j/ m/ oldcrt0/);
+repo binaries repo-binaries.sha256 (identical hashes to the developer's run measurement-2026-10-13-libc-tty).
+Labels: tta = checks.sh product kernel + scratch-kernels (crash, keys[EmuCON], st, tdkeys, keys9) + cm-series; tt = tty-series
+(TTYA/TTYPROBE + STDOUTDB/STDERRP/STDERRA/desktop/TeraDesk/QED/Doom/APITEST); ac = stderr matrix + EmuCON stderr; ta = virt vreg tty.
+Reused byte copies from fs11-aux-acceptance/bin: kernel8-pre.img (fb84e64a), kernel8-prefs11.img (7bb9579a),
+kernel8-keys-stderr-old.img (control kernels only). Everything else rebuilt: programs (build-all.sh + build-extra.sh: PPZJ/ENVKID j,
+ENVKID m, STDERRQ, STDERRO and oldcrt0/STDERRP relinked against the CURRENT libc.a), kernels from HEAD.
+libc.a (sha256 in checks/libc-a-before.sha256) had mintlib__isatty.o archived (nm: __isatty T, isatty W, __open_stat B); the
+staleness check of sdk/lib-stale.sh passed, libc.a was not force-rebuilt.
+
+1. STATIC BASELINES (method/checks.sh tta; checks/checks-tta.log, tta-*.txt)           expected   measured
+   host tests (tos-api tos-types xtask)                                                1323/0/1   1323 / 0 / 1
+   release warnings tos-api/kernel, fresh, rpi4 and qemu-virt                          64 / 94    64 / 94, 0 errors both
+   clippy tos-api/kernel, rpi4 and qemu-virt                                           76 / 125   76 / 125 both
+   tools/desk-drift-probe.sh                                                           31         31
+   sdk/run-host-tests.sh (fstat-host 44 checks)                                        19/0/0     19 / 0 / 0
+
+2. RASPI4B on / off / strict (checks/summary-{tt,tta,ac}.txt, checks/shotcmp-vs-aux.txt)
+   TTYA (product kernel): TTYT1/T2/T3 PASS, TTYPROBE PASS            on PASS  off PASS  strict PASS  on-asid PASS
+   TTYPROBE (keys kernel, tty schedule): T1-T4 PASS (getchar 'a', fgets "b\n", "cop\n"; every key popped once, echoed)
+                                                                       on PASS  off PASS  strict PASS
+   (no host stall this time: all first runs completed)
+   EmuCON typed command (KBDVEC keys kernel, "run hello2.ncp"): "Hello from a C program built with clang!", [program exited]
+                                                                       on PASS  off PASS  strict PASS (serial identical to aux-acc)
+   EmuCON stderr (STDERRQ new crt0 / STDERRO old crt0 typed): both print all lines, [program exited], prompt returns,
+                                                                       on / off / strict, serial identical to aux-acc
+   tdkeys TeraDesk -> QED: screens t30/t50 byte-identical to aux-acc (QED menu bar)    on / off / strict SAME
+   KBDVEC PASS, S2ALLM (strict: S2ALLSM on the crash kernel) MEM03/S2ALL PASS, PPZJ Z/KID/ACC/AUTO PASS,
+   PORT10 44/44, ACCFREE PASS, accessories (ACC, PPACC, SYSACC) issued, E9MEM/E9PLAIN/ENVRN/ATEXIT/FSEEKCON/VFORKT PASS
+   cm summary lines (tta-<mode>-rpi4-*) vs aux-acc summary-cm.txt (cm-<mode>-rpi4-*): IDENTICAL in on/off/strict apart from the
+   stdoutdb rows (aux-acc's first pass was void, see its hazard i). Known stale probes, identical FAIL set: PPARENT Z / Z-KID,
+   S2ALL / S2ALLJ MEM03.
+   STDOUTDB: DBG lines identical to aux-acc cm-<mode>-stdoutdb-rerun modulo addresses (fputs rc 0, printf rc 0x1a), 3 modes.
+   Stderr matrix (stderr-matrix-aux.sh): serial STDERR lines identical to aux-acc in all 36 cells (3 modes x aux/pre/prefs11
+   kernels x newcrt0/oldcrt0/STDERRA ARGV kid):
+       aux kernel: new crt0, old crt0 (relinked here), STDERRA -> all complete (PAR+KID DONE, rc 0)
+       pre (fb84e64a, red control): old crt0 and STDERRA HANG as in the previous acceptance (bounded by --timeout)
+       prefs11: all complete
+   APITEST: TOTAL 106 / 0 / 5 in on/off/strict (tt and tta runs) and on-asid; [OK]/FAIL/SKIP lines identical to aux-acc modulo
+   addresses (FAIL: T23/T24/T26 Fopen -33, SKIP: BC26-BC30 no key, as before).
+   Doom: VERIFIED via EdDI+scale+vro_cpyfm in on/off/strict.
+   [EXC]/[PANIC]: none in any log (grep over serial/*.log). The strict crash kernels' intended Bus Error screens are the
+   S2ALLS crash probe.
+   Screendumps vs aux-acc (shotcmp.py, byte compare): per mode on/off 24 same, strict 27 same; ac-* 15/15 same per mode;
+   DIFF: doom-t30/t45 all modes (demo timing; viewed: Doom running); strict s2alls/s2allsj/s2allsm-crash2 (viewed: the same
+   Bus Error screen of the intended S2ALLS crash, only register values/data/bss addresses differ because the relinked
+   binaries changed in size); on-asid desktop/apitest same.
+   Visually inspected: tta-on kbdvec-emucon t60 (desktop after typed command), tdqed t50 (QED), ac-on stderr-emucon-newkernel t60,
+   doom t45, strict s2alls crash2 and its aux-acc reference.
+
+3. ASID=ON (ta-asid.sh; serial/tt-on-asid-*): TTYA T1-T3 PASS; APITEST 106/0/5; desktop up, desktop-t25 / apitest-t40 byte-
+   identical to aux-acc cm-on-asid screendumps. ASIDs ON 16-bit in each boot line.
+
+4. QEMU-VIRT (ta-virt.sh; kernel-virt-*.img; checks/virt.log), modes on / off / strict / on-asid:
+   boot + selftests B1, D3, D3 PEXEC, D4/D5 PEXEC, D6, D7 PTERMRES PASS, desktop up; crash kernel CRASHTST/UACC3A/MPROT3B/E10USR PASS.
+   RAM-registry probes (modes on/off/strict): STDOUTDB, STDERRP new crt0, FS11A/FS11DEV PASS, STDERRA, APITEST TOTAL 80/2/7 (storage-
+   less FAIL lines as before); old-crt0 STDERRP + STDERRA kernel completes; the extracted DBG/STDERR/vreg/TOTAL lines are
+   byte-identical to aux-acc ac-<mode>-virt-vreg[-oldcrt0] (diff 0).
+   TTYA via the RAM registry (kernel-virt-vreg-tty.img, TTYA.NAP + TTYPROBE.NAP registered; method/vreg-tty-kernel.sh), all four
+   modes: TTYT1 PASS (isatty 0/1/2 = 1, __open_stat[fd0].status 1 / flags 5). TTYT2/T3 FAIL on virt by construction: there is no C:
+   (Fcreate fails: "Fcreate raw file >= 6" etc.) -- not applicable, not a regression. T4 (keys) not run on virt.
+
+5. Kernel image hash question: kernel8-aux.img (aux-acc, 70192a53) 8f2a1ec4..., developer kernel8-tty.img (ad789346) 7f5a6fcb...,
+   this run kernel8-tta.img (e7b75f37) ab6ccd2a.... Same size (1181160). cmp -l: exactly two 8-byte spans differ
+   (offsets 869091-869098 and 929221-929228), both the git short hash in the "Built <date> (<hash>)" string: tos-api/build.rs
+   stamps BUILD_STAMP (date + git rev) into the crate (tos_api::build::BUILD_STAMP, shown by initinfo.rs "Built"). Nothing else
+   differs, so kernel code is unchanged and the hash difference is fully explained (no fix needed; kernel8-aux = kernel8-tty
+   modulo the stamp).
+
+NOT RUN: real Pi 4 (HDMI, USB keyboard, TeraDesk/QED interaction, cache-sensitive rendering); EmuCON typed interactive stdin of a
+libc program (T4 ran via the IKBD injector in the GEM autorun path, not through EmuCON); TTYPROBE T4 on virt and in on-asid;
+off-asid / strict-asid; red QEMU control with the old shim (the FS11 smoke log of measurement-2026-10-13-fs11 already shows that
+hang); Fforce after the first isatty query (upstream cache, documented); CRASHTST/UACC3A/MPROT/E10/MDPROBE/ASIDSTR on raspi4b.
+Hazards: first scratch-kernels.sh pass died in rsync (a vanished file in sdk/examples/libtest/build, concurrent writer in the shared
+tree) after crash/keys/st; the rest was rebuilt with scratch-kernels-part2.sh (keys/tdkeys/keys9). tty-kernels.sh and scratch-
+kernels.sh both wrote kernel8-keys-<label>.img; the TTY one was renamed to kernel8-keys-tty.img, the EmuCON one rebuilt as
+kernel8-keys-tta.img (KERNELS.SHA256 is the final state).

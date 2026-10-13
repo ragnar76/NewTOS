@@ -1,0 +1,41 @@
+DIFF doom-t30.png
+DIFF doom-t45.png
+MISSING cm-on-rpi4-stdoutdb-end.png
+tta-on-rpi4- vs cm-on-rpi4-: same=24 diff=2 missing=1
+ac-on-rpi4- vs ac-on-rpi4-: same=15 diff=0 missing=0
+DIFF doom-t30.png
+DIFF doom-t45.png
+MISSING cm-off-rpi4-stdoutdb-end.png
+tta-off-rpi4- vs cm-off-rpi4-: same=24 diff=2 missing=1
+ac-off-rpi4- vs ac-off-rpi4-: same=15 diff=0 missing=0
+DIFF doom-t30.png
+DIFF doom-t45.png
+DIFF s2alls-crash2.png
+DIFF s2allsj-crash2.png
+DIFF s2allsm-crash2.png
+MISSING cm-strict-rpi4-stdoutdb-end.png
+tta-strict-rpi4- vs cm-strict-rpi4-: same=27 diff=5 missing=1
+ac-strict-rpi4- vs ac-strict-rpi4-: same=15 diff=0 missing=0
+MISSING cm-on-asid-rpi4-ttya-end.png
+tt-on-asid-rpi4- vs cm-on-asid-rpi4-: same=3 diff=0 missing=1
+SAME tt-on apitest-t25.png
+SAME tt-on apitest-t40.png
+SAME tt-on desktop-t25.png
+DIFF tt-on doom-t30.png
+DIFF tt-on doom-t45.png
+SAME tt-on qed-t30.png
+SAME tt-on teradesk-t35.png
+SAME tt-off apitest-t25.png
+SAME tt-off apitest-t40.png
+SAME tt-off desktop-t25.png
+DIFF tt-off doom-t30.png
+DIFF tt-off doom-t45.png
+SAME tt-off qed-t30.png
+SAME tt-off teradesk-t35.png
+SAME tt-strict apitest-t25.png
+SAME tt-strict apitest-t40.png
+SAME tt-strict desktop-t25.png
+DIFF tt-strict doom-t30.png
+DIFF tt-strict doom-t45.png
+SAME tt-strict qed-t30.png
+SAME tt-strict teradesk-t35.png
