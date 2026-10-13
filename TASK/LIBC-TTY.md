@@ -30,3 +30,16 @@ Ausserdem meldet der Shim Handles 0–2 auch dann als Terminal, wenn sie per
 ## Arbeitsregel
 
 [Gemeinsame Regeln](README.md) gelten.
+
+## Entscheidung (Anwender 2026-10-13)
+
+Analyse: `docs/analysis/libc-tty-2026-10-13.md`.
+
+1. `newtos-arch/isatty.c` ersatzlos streichen, mintlibs `mintlib/isatty.c`
+   bauen (Fcntl → EINVFN, dann `Fseek`-Probe; seit FS10 korrekt).
+2. ioctl-Fallback `TIOCGETP/TIOCSETP/TIOCGWINSZ` → eigenes Ticket
+   [LIBC-IOCTL](LIBC-IOCTL.md).
+3. Doppellesen im RAW-Weg (`unix/read.c:176-183`) ist mintlib-Verhalten,
+   bleibt; in `docs/sdk/07-mintlib-limits.md` vermerken.
+4. `do_fstat` meldet fds 0–2 auch umgelenkt als `S_IFCHR` → eigenes Ticket
+   [LIBC-FSTAT](LIBC-FSTAT.md).
