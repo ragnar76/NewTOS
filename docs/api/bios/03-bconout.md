@@ -245,17 +245,16 @@ character calls, `Fread`/`Fwrite` on device handles and the `C*aux*`/`Cprn*`
 GEMDOS calls use the **same** per-device entry. A later UART/MIDI/printer driver
 (`TASK/IO01.md`) replaces only that entry.
 
-**Devices 0 (PRN), 1 (AUX), 3 (MIDI):** `Bconout` -> `0`, byte discarded
-(`charout_dummy` semantics, `bios/chardev.c:55-58`; AUX = dummy map entry
-`bios/serport.c:96`). Consistency with EmuTOS: dev 0 without
+**AUX (1) revised 2026-10-13 (option A, user decision, after FS11 acceptance finding 1; see `docs/api/gemdos/file/3f-fread.md` "NewTOS implementation notes" item 1a):** AUX is "port present, no cable" and is **no longer** part of the absent-device profile below: `Bconout(1)` → 1 (accept+discard), `Bcostat(1)` → -1, `Bconstat(1)` → 0, `Bconin(1)` → 0 non-blocking. PRN and MIDI stay absent.
+
+**Devices 0 (PRN), 3 (MIDI):** `Bconout` -> `0`, byte discarded
+(`charout_dummy` semantics, `bios/chardev.c:55-58`). **Device 1 (AUX), option A:** `Bconout(1,b)` -> `1`, byte discarded; EmuTOS `bconout1` with an MFP port returns `1L` (`bios/serport.c:323`; wait loop `:296` on `bcostat1` = ring space, no CTS; `FLOW_CTRL_NONE` default `:89`, `flowctrl` unused). Consistency with EmuTOS: dev 0 without
 `CONF_WITH_PRINTER_PORT` returns 0 at once (`bios/parport.c:144-172`, exact match).
 **Inconsistent with EmuTOS' own `bconout3`** (documented divergence, semantics not
 changed): without `CONF_WITH_MIDI_ACIA` it loops `while(!bcostat3())` and
 `bcostat3` returns 0 (`bios/midi.c:78-79,86-87`), i.e. **never returns**; the
-table row "`bconout3` (MIDI) -> `1L`" holds only with an ACIA. Dev 1: EmuTOS
-`bconout1` without any RS-232 backend returns 0 after its (instantly satisfied)
-wait loop (`bios/serport.c:323-327`; the comment "will never return" there is
-wrong, `bcostat1` returns -1 at `:285`) -- same value 0. The `bconout` wrapper also
+table row "`bconout3` (MIDI) -> `1L`" holds only with an ACIA. (Superseded for dev 1:
+the earlier rule followed EmuTOS `bconout1` *without* an RS-232 backend, which returns 0 (`bios/serport.c:326-327`); option A follows the MFP-present return 1 instead.) The `bconout` wrapper also
 returns 0 for a handle > 7 (`bios/bios.c:1008-1010`) and before
 `CHARDEV_AVAILABLE` (`:997-998`).
 
@@ -273,7 +272,7 @@ returns 0 for a handle > 7 (`bios/bios.c:1008-1010`) and before
 | Handle | TOS device | Pi binding | Return |
 |-------:|------------|------------|--------|
 | 0 | PRT / Centronics | **absent** → discard | `0` |
-| 1 | AUX / RS-232 | PL011 UART0 (debug) — but see note | `0` (dummy today) |
+| 1 | AUX / RS-232 | no-cable port entry (option A); PL011 UART0 later (`TASK/IO01.md`) | `1` (accept+discard) |
 | 2 | CON / screen (VT52) | **framebuffer VT52** (`fbcon.rs`) + UART echo | `1` |
 | 3 | MIDI out | **absent** → discard | `0` |
 | 4 | IKBD command out | **absent** → discard | `0` |
@@ -296,7 +295,7 @@ returns 0 for a handle > 7 (`bios/bios.c:1008-1010`) and before
   section).
 - **Handle 1 (AUX) discarded today.** `is_console_out` is true only for
   handles 2 and 5 (`chardev.rs:29-32`), so `Bconout(1, …)` returns `0`
-  (dummy) even though the PL011 exists — the UART is written only as the
+  (dummy; **superseded by option A: returns `1`, byte discarded**) even though the PL011 exists — the UART is written only as the
   CON debug mirror, not as a proper AUX device. Minor divergence, recorded
   as K-series.
 - **Absent PRT/MIDI/IKBD-out (handles 0/3/4).** Return `0` (discarded),

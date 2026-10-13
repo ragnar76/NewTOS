@@ -175,9 +175,4 @@ Because `Bconout` waits for the transmit register to be free before writing,
 (Empty during Phase 00.)
 
 FS11 / IO01 prep (2026-10-13, user decision 1): see `docs/api/gemdos/file/3f-fread.md` "NewTOS implementation notes" for the device table.
-`Cauxout(ch)` is a pass-through to `Bconout(1, ch)` of the AUX entry. With the
-absent-device entry it returns **0** (byte discarded), like `charout_dummy`
-(`bios/chardev.c:55-58`, `bios/serport.c:96`). The "in practice non-zero" remark in
-the extraction summary describes a real serial backend only; it is not a
-`Cauxout` contract. (EmuTOS without any RS-232 backend also returns 0 from
-`bconout1`, `bios/serport.c:325-327`, so the value agrees.)
+`Cauxout(ch)` is a pass-through to `Bconout(1, ch)` of the AUX entry. **Revised 2026-10-13 (option A, see `docs/api/gemdos/file/3f-fread.md` "NewTOS implementation notes" item 1a):** the AUX entry is "port present, no cable": `Bconout(1,ch)` accepts and discards the byte and returns **1**, as EmuTOS `bconout1` with an MFP port does (`bios/serport.c:323`; no CTS wait, `flowctrl` unused). The earlier "absent entry → 0" rule (`charout_dummy`, `bios/chardev.c:55-58`) is withdrawn for AUX: it hung stderr writes. Note `Cauxout` itself is `void` to the caller (no return value to the program); the observable effect is that it returns and does not retry/loop. PRN (`Cprnout`) stays absent.

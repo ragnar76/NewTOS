@@ -178,7 +178,7 @@ so BIOS 0..2 always use `bconin_vec[]` (`bios/chardev.c:34-36`).
 ### Test cases (device path; **EmuTOS reference expectations**)
 
 > These are the EmuTOS results. The NewTOS expectations (decisions of
-> 2026-10-13, absent AUX/PRN device entries, `edit_line` echo) are the
+> 2026-10-13, AUX = port present/no cable (option A), absent PRN entry, `edit_line` echo) are the
 > table "NewTOS host tests" at the end of this section; where the two
 > differ, the NewTOS table is the one the Developer implements.
 
@@ -219,8 +219,8 @@ AUX queue injectable; per-device output captured. `Q(c…)` = bytes queued.
 ### NewTOS host tests (decisions 2026-10-13; IDs the Developer implements)
 
 Setup as above, but with the NewTOS device table (see "NewTOS implementation
-notes" below): CON = real console, **AUX (BIOS 1) and PRN (BIOS 0) = the
-documented absent-device entry** (`Bconin` → 0 without blocking, `Bconout` → 0,
+notes" below): CON = real console, **AUX (BIOS 1) = the "port present, no cable" entry** (`Bconin` → 0 without blocking, `Bconstat` → 0, `Bconout` accepts+discards → 1, `Bcostat` → -1; item 1a below) and **PRN (BIOS 0) = the
+documented absent-device entry** (`Bconin` → 0, `Bconout` → 0,
 `Bconstat` → 0, `Bcostat` → 0). "Echo" = bytes handed to `Bconout(dev, …)` of
 the device the read is on. Rows marked **(=)** are unchanged from the EmuTOS
 table; **(≠)** differ and give the NewTOS value; "buffer/return only" means the
@@ -245,19 +245,19 @@ echo byte stream is *not* asserted because NewTOS' `edit_line` echoes differentl
 | R14 | **(=)** `Fread(-1,0x10000,b)`, `Fread(-1,-1,b)`, `Fread(-1,0x7FFFFFFF,b)` | 0 each (high word set) |
 | R15 | **(=)** `Fread(-1,0x8000,b)`, `Fread(-1,0xFFFF,b)` | 0 each |
 | R16 | **(=)** `Fread(0|1|4|5, 80, b)` with `Q('x',CR)` | each 1, `"x"` (CON) |
-| R17 | **(≠)** AUX is absent: `Fread(-2,80,b)` and `Fread(2,80,b)` | **80**, `b` = 80 × `0x00`; does not block; no byte read from or echoed to CON; nothing observable on any device |
+| R17 | **(≠)** AUX default entry (no cable; `Bconin`=0 non-blocking): `Fread(-2,80,b)` and `Fread(2,80,b)` | **80**, `b` = 80 × `0x00`; does not block; no byte read from CON; echo to AUX is accepted (`Bconout(1)`=1) and discarded, so nothing observable on any device |
 | R18 | **(≠)** `Fread(-2,1,b)` | 1, `b[0]=0x00` (`conin` stores low byte of `Bconin(1)`=0) |
 | R19 | **(≠)** `Fread(-3,1,b)` / `Fread(3,1,b)` | 1, `b[0]=0x00`; nothing sent anywhere |
 | R20 | **(≠)** `Fread(-3,4,b)` | 4, `b` = `00 00 00 00` (derived by tracing `cgets` over a `Bconin`=0 device, `console.c:548,577-579`; mark inferred in the test) |
 | R21 | **(=)** `Fread(-4,1,b)`, `Fread(-32768,1,b)` | `EIHNDL` |
 | R22 | **(=)** free sft slot `6+k` | `EIHNDL` |
 | R23 | **(=)** `d=Fdup(0)`; `Q('q')`; `Fread(d,1,b)`; `Fclose(d)`; `Fread(d,1,b)` | 1 `'q'`; then `EIHNDL` |
-| R24 | **(≠)** `Fforce(0,-2)`; `Fread(0,80,b)` | 80 NULs (AUX absent, as R17) |
+| R24 | **(≠)** `Fforce(0,-2)`; `Fread(0,80,b)` | 80 NULs (AUX no-cable entry, as R17) |
 | R25 | **(=)** `Fforce(0,fh)` on file "AB"; `Fread(0,10,b)` | 2, file path, no echo |
 | R26 | **(=)** after R25 `Fclose(0)`; `Fread(0,1,b)` | CON read again |
 | R27 | **(=)** `Q(^C)`; `Fread(-1,80,b)` | process terminated (exit -32), no return (observe the terminate hook) |
 | R28 | **(=)** `Q('a','b',CR)`; `Fread(-1,1,b)` then `Fread(-1,80,b)` | 1 (`'a'`), then 1 (`"b"`) |
-| R29 | `Fread(-2,2,b)`; `Fread(2,2,b)` (std handle 2 = AUX by default) | 2 and 2, NULs each |
+| R29 | `Fread(-2,2,b)`; `Fread(2,2,b)` (std handle 2 = AUX by default) | 2 and 2, NULs each (echo to AUX accepted, discarded) |
 | R30 | `Fread(-2,0x7FFF,b)`; `Fread(-3,0x7FFF,b)` | 0x7FFF each, all NUL, returns (no blocking, no timeout) |
 | R31 | `Fread(-3,0x8000,b)`, `Fread(-2,0x10000,b)`, `Fread(-2,0,b)` | 0 each (same guards as CON; the device is not touched) |
 | R32 | `Fread(-3,-1,b)` | 0 (high word set) |
@@ -465,13 +465,12 @@ of the device (`conin`, `getch`, `conbrk`, `cgets` of `console.c`), `Fwrite` cal
 `Bconout`. A later UART/MIDI/printer driver (`TASK/IO01.md`) replaces only the
 table entry.
 
-Current entries (the documented *absent-device* profile): PRN (0), AUX (1),
-MIDI (3) and IKBD-in/6/7: `Bconin` → 0 **without blocking**, `Bconstat` → 0,
+Current entries (the documented *absent-device* profile): PRN (0),
+MIDI (3) and IKBD-in/6/7 (**AUX (1) is no longer absent, see item 1a**): `Bconin` → 0 **without blocking**, `Bconstat` → 0,
 `Bcostat` → 0, `Bconout` → 0 (byte discarded). Source of the values — what
 EmuTOS does for the same situation:
-- AUX: the Bconmap *dummy* map entry `{char_dummy, char_dummy, char_dummy,
-  charout_dummy, …}` (`bios/serport.c:96`), with `char_dummy`/`charout_dummy`
-  returning `0L` (`bios/chardev.c:49-58`).
+- AUX: **superseded by item 1a** (was the Bconmap *dummy* map entry `{char_dummy, char_dummy, char_dummy,
+  charout_dummy, …}`, `bios/serport.c:96`, `bios/chardev.c:49-58`; its `Bconout(1)`=0 hung mintlib's write loop on stderr).
 - PRN: `bconin0` returns 0 (`bios/parport.c:123-127`); `Bconstat(0)` is
   `char_dummy` (`bios/chardev.c:31`); without `CONF_WITH_PRINTER_PORT`
   `bcostat0` returns 0 (`parport.c:139-140`) and `bconout0` returns 0
@@ -487,6 +486,18 @@ like the AUX dummy (`bcostat1` returns -1 and `bconin1` blocks, `serport.c:271-2
 `bconin_iorec` loops `serport.c:202-205`); the AUX profile matches only the
 `BCONMAP_AVAILABLE` dummy entry. Contract is what the entry returns, not that EmuTOS
 configuration.
+
+**1a. AUX profile = "port present, no cable" (option A, user decision 2026-10-13; supersedes the AUX dummy-entry rule above).**
+Trigger: FS11 acceptance finding 1 (`measurements/measurement-2026-10-13-libc-main-fs11-acceptance/RUNINFO.TXT`): with `Bconout(1)`=0, `Fwrite(2,…)`=0 and mintlib's write loop on default stderr retried forever. On a real ST the RS-232 port always exists and accepts bytes with no cable. Entry values:
+
+| BIOS call on AUX (1) | NewTOS value | EmuTOS evidence |
+|---|---|---|
+| `Bconout(1,b)` | accepts, discards, returns **1** | `bconout1` returns `1L`, `bios/serport.c:323` (MFP, interrupt path `:306-323`; debug-print variant `:305`; coldfire `:301` also 1) |
+| `Bcostat(1)` | **-1** (ready) always | `bcostat1` returns `-1L` unless the out-ring is full (`bios/serport.c:271-283`, `:282`); NewTOS discards at once so the ring never fills |
+| `Bconstat(1)` | **0** (unchanged) | EmuTOS `bconstat1` → `bconstat_iorec` returns 0 on empty iorec (`serport.c:255-258`, `:191-200`): same value |
+| `Bconin(1)` | **0, non-blocking** (unchanged) | **Documented divergence from a real port:** EmuTOS `bconin1` blocks forever on an empty iorec (`serport.c:260-263`, loop `:202-205`); NewTOS stays non-blocking so programs do not hang |
+
+No-handshake argument (*cited*): `bconout1` waits only on `bcostat1` (`serport.c:296`), which tests ring space, not CTS; `iorec_init` sets `FLOW_CTRL_NONE` (`serport.c:89`, `serport.h:46`); `flowctrl` is never read by any tx/rx path (only assigned `serport.c:238,793`; `serport.h:61` comment "TODO, flow control"). So EmuTOS software does not block on CTS with no cable. (*Inferred*, not read: whether the MFP hardware gates its transmitter on CTS is hardware behaviour outside the software; the contract here is the returned value.) Not modelled: ring back-pressure, `rsconf`/baud/UCR state; a later UART driver (`TASK/IO01.md`) replaces the whole entry. PRN (0) and MIDI (3) stay absent, unchanged.
 
 **Resulting values (derived from the table above + `osif`/`console.c`):**
 - `Fread(-2|2, n, b)` / `Fread(-3|3, n, b)`:

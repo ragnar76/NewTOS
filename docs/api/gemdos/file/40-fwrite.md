@@ -162,7 +162,7 @@ When `Bconout` returns 0 (BIOS side):
 ### Test cases (device path; **EmuTOS reference expectations**)
 
 > These are the EmuTOS results. The NewTOS expectations (decisions of
-> 2026-10-13: Ctrl-C-only break, no tab expansion, absent AUX/PRN entries) are
+> 2026-10-13: Ctrl-C-only break, no tab expansion, AUX = port present/no cable, PRN absent; AUX revised by option A, 2026-10-13) are
 > the table "NewTOS host tests" below; where they differ, that table is the one
 > the Developer implements.
 
@@ -202,7 +202,7 @@ captured; printer-port accept/reject switchable.
 ### NewTOS host tests (decisions 2026-10-13; IDs the Developer implements)
 
 Device table as in `3f-fread.md` "NewTOS implementation notes": CON real, **AUX
-(1) and PRN (0) = absent-device entry** (`Bconout` → 0). CON write rule:
+(1) = "port present, no cable"** (`Bconout` accepts+discards, → 1; option A) and **PRN (0) = absent-device entry** (`Bconout` → 0). CON write rule:
 per byte `output_break` (Ctrl-C only) then `console_write_byte`, **raw** (no tab
 expansion, no `glbcolumn`, no BDOS typeahead, no Ctrl-S/Ctrl-Q). **(=)** = same
 as the EmuTOS row, **(≠)** = NewTOS value given.
@@ -223,9 +223,9 @@ as the EmuTOS row, **(≠)** = NewTOS value given.
 | W12 | **(≠ mechanism)** keyboard queue `('k')`; `Fwrite(-1,1,"x")` | 1; `'k'` is **not** consumed (no typeahead buffer); it stays in the input ring and the next `Fread(-1,1,…)` returns it — same observable outcome as EmuTOS |
 | W13 | **(≠ detail)** keyboard queue front `(^C)`; `Fwrite(-1,3,"abc")` | terminate (exit -32) requested before the first byte, no byte written, the key consumed (observe the terminate hook); return value not observable by the program |
 | W14 | **(≠)** keyboard queue `(^S)`; `Fwrite(-1,3,"abc")` | 3; `"abc"` written immediately — **no pause**; `^S` stays in the queue and is read later as data (no Ctrl-S/Q flow control) |
-| W15 | **(≠)** AUX absent: `Fwrite(-2,4,"ATZ\r")`, `Fwrite(2,4,…)` | **0** each (first `Bconout(1,…)` returns 0 → short count 0); CON receives nothing |
-| W16 | **(≠)** `Fwrite(-2,2,"\tX")` | 0 |
-| W17 | **(≠)** CON queue `(^C)`; `Fwrite(-2,2,"ab")` | 0, and the Ctrl-C is **not** consumed (no break check on non-CON; stays queued) |
+| W15 | **(=)** AUX default entry (port present, no cable): `Fwrite(-2,4,"ATZ\r")`, `Fwrite(2,4,…)` (separate runs) | **4** each (every `Bconout(1,…)` returns 1); bytes discarded; CON receives nothing |
+| W16 | **(=)** `Fwrite(-2,2,"\tX")` | 2 (raw, discarded; no tab expansion) |
+| W17 | **(=)** CON queue `(^C)`; `Fwrite(-2,2,"ab")` | 2, and the Ctrl-C is **not** consumed (no break check on non-CON; stays queued) |
 | W18 | **(≠)** PRN absent: `Fwrite(-3,3,"abc")`, `Fwrite(3,3,…)` | **0** each; CON nothing |
 | W19 | test device on PRN accepting 2 bytes then returning 0 (`Bconout`) | `Fwrite(-3,5,"abcde")` → 2; device received `ab` |
 | W20 | test device on PRN returning 0 at once | 0 |
@@ -233,17 +233,18 @@ as the EmuTOS row, **(≠)** = NewTOS value given.
 | W22 | **(=)** `Fwrite(-2,0,b)`, `Fwrite(-3,-1,b)` | 0, **-1** |
 | W23 | **(=)** `Fwrite(-4,1,b)`, `Fwrite(-32768,1,b)` | `EIHNDL` |
 | W24 | **(=)** free sft slot `6+k` | `EIHNDL` |
-| W25 | **(≠)** `d=Fdup(2)` (AUX); `Fwrite(d,2,"ok")`; `Fclose(d)`; `Fwrite(d,…)` | 0 (absent AUX); then `EIHNDL` |
+| W25 | **(=)** `d=Fdup(2)` (AUX); `Fwrite(d,2,"ok")`; `Fclose(d)`; `Fwrite(d,…)` | 2 (AUX no-cable entry accepts); then `EIHNDL` |
 | W26 | **(≠)** `Fforce(1,-3)`; `Fwrite(1,2,"ok")` | 0 (absent PRN) |
 | W27 | **(=)** `Fforce(1,fh)` (file); `Fwrite(1,2,"ok")`; `Fclose(1)`; `Fwrite(1,…)` | 2 into the file; then CON again |
+| W28 | **regression guard (hang, FS11 acceptance finding 1).** Default process, **no `Fforce`**: `Fwrite(2,5,"hello")`, then `Fwrite(2,1,"x")`, then `Fwrite(2,0x1000,buf)` | **5**, **1**, **0x1000** — each returns `count` and returns (no retry loop on a 0 result); CON receives nothing. Must complete within the test's step budget |
 | WT1 | **single dispatch point.** Replace the AUX entry by a test device that accepts all bytes and captures `Bconout`: `Fwrite(-2,4,"ATZ\r")` | 4; captured `41 54 5A 0D`; CON untouched. The same fixture must also be hit by `Fwrite(2,…)`, `Fdup(2)`'d handle, `Cauxout`, `Bconout(1,…)`; and `Bcostat(1)`/`Cauxos` read the entry's status (one fixture, all paths) |
 | WT2 | test AUX entry: `Fwrite(-2,2,"\tX")` | 2; captured raw `09 58` (non-CON: no tab expansion) |
 | WT3 | PRN entry replaced: `Fwrite(-3,3,"abc")`, `Fwrite(3,…)`, `Cprnout('a')`, `Bconout(0,…)` | all reach entry 0, none entry 1 |
 | WT4 | absent entries: byte `n` is read from the user buffer **before** the device call (EmuTOS evaluates `*p++` as argument, `:634`): `Fwrite(-2,3,p)` with `p` unreadable at byte 0 | `FAULTED` (existing ARCH03 3a convention), not 0 |
 
-Note W15/W18 (and W25/W26): the value 0 here is a **short count**, per the rule
+Note W18 (and W26): the value 0 here is a **short count**, per the rule
 `Bconout`==0 → return bytes written so far (`:634-635`). It is the intended
-result of the absent-device profile, not an error code.
+result of the PRN absent-device profile, not an error code. (AUX is no longer absent: option A, below.)
 
 ---
 
@@ -353,7 +354,7 @@ count**, never as a negative code, from `Fwrite` itself.
 - **Zero len:** `Fwrite(h, 0, buf)` returns 0, no side effects.
 - **Write to read-only-opened handle succeeds** (mode not enforced).
 - **Error:** `Fwrite(9999, 1, buf)` returns `EIHNDL` (-37).
-- **Character devices:** EmuTOS reference W1..W27; NewTOS host tests W1..W27 + WT1..WT4 (see "NewTOS host tests").
+- **Character devices:** EmuTOS reference W1..W27; NewTOS host tests W1..W28 + WT1..WT4 (see "NewTOS host tests").
 
 ---
 
@@ -439,12 +440,11 @@ handles (also after `Fdup`/`Fforce` to a device) resolves to a BIOS device numbe
 device-table entry's `Bconout`, the same table `Bconout`/`Cauxout`/`Cprnout`/
 `Midiws` use (device table and the absent-device profile are defined in
 `3f-fread.md` "NewTOS implementation notes"; not repeated). No GEMDOS special case
-for AUX/PRN. Documented, deliberate absent-device profile (not a stub): PRN, AUX
-and MIDI entries return 0 from `Bconout` like EmuTOS' `charout_dummy`
+for AUX/PRN. Documented, deliberate profile (not a stub): PRN and MIDI entries return 0 from `Bconout` like EmuTOS' `charout_dummy`
 (`bios/chardev.c:55-58`; AUX map entry `bios/serport.c:96`; PRN without
 `CONF_WITH_PRINTER_PORT` `bios/parport.c:144-172`). Hence, *derived* from the
-`osif` algorithm (`:622-640`): `Fwrite(-2|2, n>0, b)` = **0** and
-`Fwrite(-3|3, n>0, b)` = **0** (the first byte is refused, nothing is retried);
+`osif` algorithm (`:622-640`): `Fwrite(-3|3, n>0, b)` = **0** (PRN: the first byte is refused, nothing is retried). **AUX revision (option A, user decision 2026-10-13, after FS11 acceptance finding 1,
+`measurements/measurement-2026-10-13-libc-main-fs11-acceptance/RUNINFO.TXT`):** the AUX entry is "port present, no cable" — `Bconout(1,b)` accepts, discards, returns 1 (EmuTOS `bconout1` with an MFP port, `bios/serport.c:289-330`, returns `1L`), so `Fwrite(-2|2, n>0, b)` = **n**. The earlier 0 made mintlib's write loop on default handle 2 (stderr) retry forever. Full AUX profile: `3f-fread.md` "NewTOS implementation notes" item 1a;
 `n <= 0` returns `n` itself (0, or the negative count) on every device. A later
 driver (`TASK/IO01.md`) only swaps the entry; short-count semantics are already
 in place (tests W19-W21, WT1-WT3).
@@ -469,7 +469,7 @@ guard, unlike `Fread`); embedded NULs are written; a byte is read from the user
 buffer before the device call (unreadable byte → `FAULTED`, ARCH03 3a, bytes
 written so far remain written).
 
-Host tests the Developer implements for this spec: **W1..W27, WT1..WT4** (table
+Host tests the Developer implements for this spec: **W1..W28, WT1..WT4** (table
 "NewTOS host tests").
 
 PHASE-05: FAT write path with explicit cluster allocation. NewTOS may add an

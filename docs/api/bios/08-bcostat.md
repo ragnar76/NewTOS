@@ -214,12 +214,11 @@ character calls, `Fread`/`Fwrite` on device handles and the `C*aux*`/`Cprn*`
 GEMDOS calls use the **same** per-device entry. A later UART/MIDI/printer driver
 (`TASK/IO01.md`) replaces only that entry.
 
-**Devices 0 (PRN), 1 (AUX), 3, 4 (IKBD-TX/MIDI-TX):** `Bcostat` -> `0` (not ready).
+**AUX (1) revised 2026-10-13 (option A, user decision, after FS11 acceptance finding 1; see `docs/api/gemdos/file/3f-fread.md` "NewTOS implementation notes" item 1a):** AUX is "port present, no cable" and is **no longer** part of the absent-device profile below: `Bconout(1)` → 1 (accept+discard), `Bcostat(1)` → -1, `Bconstat(1)` → 0, `Bconin(1)` → 0 non-blocking. PRN and MIDI stay absent.
+
+**Devices 0 (PRN), 3, 4 (IKBD-TX/MIDI-TX):** `Bcostat` -> `0` (not ready). **Device 1 (AUX), option A:** `Bcostat(1)` -> **-1** (ready) always; EmuTOS `bcostat1` returns -1 while the out-ring has room (`bios/serport.c:271-283`).
 Consistency with EmuTOS: dev 0 `bcostat0` returns 0 without
-`CONF_WITH_PRINTER_PORT` (`bios/parport.c:139-140`, exact match); dev 1 = dummy
-map entry (`bios/serport.c:96`) -- **inconsistent with EmuTOS' `bcostat1` without any
-RS-232 backend, which returns -1** (`serport.c:284-285`), documented divergence,
-the decision follows the dummy entry; MIDI `bcostat3` returns 0 without ACIA
+`CONF_WITH_PRINTER_PORT` (`bios/parport.c:139-140`, exact match); dev 1: superseded by option A (was dummy map entry, `bios/serport.c:96`; now agrees with `bcostat1`, -1); MIDI `bcostat3` returns 0 without ACIA
 (`bios/midi.c:78-79`), same value. **The slot swap must survive the device table:**
 in EmuTOS `bcostat_init[3] = bcostat4` (IKBD) and `[4] = bcostat3` (MIDI)
 (`bios/chardev.c:38-42`), unlike Bconin/Bconout. Both are 0 today, so the swap is
@@ -241,7 +240,7 @@ explicitly). `Cauxos`/`Cprnos` call `Bcostat(1)`/`Bcostat(0)` through the same e
 | Handle | TOS device (per swap) | Pi binding | Status |
 |-------:|-----------------------|------------|--------|
 | 0 | PRT / Centronics | **absent** | `0` (busy) |
-| 1 | AUX / RS-232 | PL011 UART0 | `0` (dummy today) |
+| 1 | AUX / RS-232 | no-cable port entry (option A); PL011 UART0 later | `-1` (ready) |
 | 2 | CON / screen | **framebuffer VT52** | `-1` (always ready) |
 | 3 | **IKBD TX** (swapped) | **absent** | `0` |
 | 4 | **MIDI TX** (swapped) | **absent** | `0` |
@@ -272,7 +271,7 @@ explicitly). `Cauxos`/`Cprnos` call `Bcostat(1)`/`Bcostat(0)` through the same e
   (`chardev.rs:76-82`), so no explicit swap table is needed. Recorded as a
   NOTE in the Step-2 section (swap is contract-relevant only if MIDI/IKBD
   ever come back).
-- **AUX (handle 1).** Returns `0` (dummy) today — the PL011 exists but is not
+- **AUX (handle 1).** Returned `0` (dummy) before option A; **now `-1`**. Earlier text: returns `0` (dummy) today — the PL011 exists but is not
   exposed as a BIOS AUX device (see `03-bconout.md`); its TX is always ready
   in practice (the driver drains by polling), so a proper AUX binding would
   return `-1`. Recorded as K-series.

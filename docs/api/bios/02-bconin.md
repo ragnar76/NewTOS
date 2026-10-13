@@ -276,7 +276,9 @@ character calls, `Fread`/`Fwrite` on device handles and the `C*aux*`/`Cprn*`
 GEMDOS calls use the **same** per-device entry. A later UART/MIDI/printer driver
 (`TASK/IO01.md`) replaces only that entry.
 
-**Devices 0 (PRN), 1 (AUX), 3 (MIDI):** `Bconin` -> `0`, **non-blocking**.
+**AUX (1) revised 2026-10-13 (option A, user decision, after FS11 acceptance finding 1; see `docs/api/gemdos/file/3f-fread.md` "NewTOS implementation notes" item 1a):** AUX is "port present, no cable" and is **no longer** part of the absent-device profile below: `Bconout(1)` → 1 (accept+discard), `Bcostat(1)` → -1, `Bconstat(1)` → 0, `Bconin(1)` → 0 non-blocking. PRN and MIDI stay absent.
+
+**Devices 0 (PRN), 1 (AUX), 3 (MIDI):** `Bconin` -> `0`, **non-blocking** (AUX: unchanged by option A; a **documented divergence** from a real present port, where `bconin1` blocks forever, `serport.c:260-263`).
 Consistency with EmuTOS: dev 0 `bconin0` returns 0 (`bios/parport.c:123-127`,
 exact match); dev 1 = dummy Bconmap entry `char_dummy` (`bios/serport.c:96`).
 **Inconsistent with EmuTOS' own routines** for 1 and 3 (documented divergence,

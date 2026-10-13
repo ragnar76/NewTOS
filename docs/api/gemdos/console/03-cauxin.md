@@ -187,10 +187,10 @@ BIOS serial driver.
 
 FS11 / IO01 prep (2026-10-13, user decision 1): see `docs/api/gemdos/file/3f-fread.md` "NewTOS implementation notes" for the device table.
 `Cauxin` is a pass-through to `Bconin(1)` of the **AUX device-table entry**. The
-entry is currently the documented *absent device* (deliberate profile, not a stub):
-`Bconin` returns **0 immediately**, `Cauxin()` therefore returns `0x00000000` and
+entry is currently the documented AUX profile "port present, no cable" (option A, 2026-10-13, see `docs/api/gemdos/file/3f-fread.md` "NewTOS implementation notes" item 1a; deliberate, not a stub):
+`Bconin` returns **0 immediately** (non-blocking; **documented divergence** from a real port, where `bconin1` would block forever), `Cauxin()` therefore returns `0x00000000` and
 never blocks (the "Blocking" verification criterion above applies to a real
-AUX driver only). Matches EmuTOS' Bconmap dummy map entry `char_dummy`
+AUX driver only). Value matches EmuTOS' Bconmap dummy map entry `char_dummy`
 (`bios/serport.c:96`, `bios/chardev.c:50-53`), **not** EmuTOS' own `bconin1`
 (blocking, `bios/serport.c:260-263`, `bconin_iorec` loop `:202-205`). A later UART
 driver (`TASK/IO01.md`) replaces only the entry.

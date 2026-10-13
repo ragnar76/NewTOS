@@ -242,7 +242,9 @@ character calls, `Fread`/`Fwrite` on device handles and the `C*aux*`/`Cprn*`
 GEMDOS calls use the **same** per-device entry. A later UART/MIDI/printer driver
 (`TASK/IO01.md`) replaces only that entry.
 
-**Devices 0 (PRN), 1 (AUX), 3 (MIDI):** `Bconstat` → `0` (no byte). Consistency
+**AUX (1) revised 2026-10-13 (option A, user decision, after FS11 acceptance finding 1; see `docs/api/gemdos/file/3f-fread.md` "NewTOS implementation notes" item 1a):** AUX is "port present, no cable" and is **no longer** part of the absent-device profile below: `Bconout(1)` → 1 (accept+discard), `Bcostat(1)` → -1, `Bconstat(1)` → 0, `Bconin(1)` → 0 non-blocking. PRN and MIDI stay absent.
+
+**Devices 0 (PRN), 1 (AUX), 3 (MIDI):** `Bconstat` → `0` (no byte; for AUX unchanged by option A: EmuTOS `bconstat1` is also 0 on empty iorec, `serport.c:255-258`). Consistency
 with EmuTOS (read this session): dev 0 = `char_dummy` (`bios/chardev.c:31`);
 dev 1 = dummy Bconmap entry `char_dummy` (`bios/serport.c:96`) — EmuTOS' own
 `bconstat1` is the real iorec test (`serport.c:255-258`) and is what a later
@@ -264,7 +266,7 @@ decided, documented profile until `TASK/IO01.md`.
 | Handle | TOS device | Pi binding | Status source |
 |-------:|------------|------------|---------------|
 | 0 | PRT / Centronics | **absent** → always `0` | no printer (§3.9) |
-| 1 | AUX / RS-232 | PL011 UART0 (debug) | UART RX (see caveat) |
+| 1 | AUX / RS-232 | no-cable port entry (option A); PL011 UART0 later (`TASK/IO01.md`) | always `0` (no input) |
 | 2 | CON | framebuffer VT52 + **USB-HID keyboard** | console RX ring |
 | 3 | MIDI in | **absent** → always `0` | no MIDI ACIA (§3.9) |
 | 4 | IKBD in (historical) | **absent** → always `0` | `char_dummy` |
@@ -296,7 +298,7 @@ decided, documented profile until `TASK/IO01.md`.
 - **AUX (handle 1).** In this spec's table handle 1 is `bconstat1`
   (RS-232). NewTOS `chardev.rs` treats handle 1 as an **absent/dummy** input
   (`is_console_in` returns true only for 2 and 4, `chardev.rs:25-27`), so
-  `Bconstat(1)` returns `0` even though the PL011 exists and could back AUX.
+  `Bconstat(1)` returns `0` even though the PL011 exists and could back AUX (value stays 0 under option A, "port present, no cable").
   A minor divergence — the UART is a debug channel, and its bytes currently
   leak into the CON ring instead of a proper AUX record. Recorded as
   K-series.
