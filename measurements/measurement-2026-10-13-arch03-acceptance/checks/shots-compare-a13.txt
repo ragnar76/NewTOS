@@ -1,0 +1,6 @@
+== on vs off: same=48 differ=60 missing=4
+   1 ;   1 rpi4-asidstr-end;   1 rpi4-crashtst-t40;   1 rpi4-crashtst-t70;   1 rpi4-e10-end;   1 rpi4-emucon9-t45;   1 rpi4-mprot-end;  26 rpi4-uacc3a;   1 rpi4-uacc3a-end;  27 virt-crash;
+== on vs strict: same=99 differ=9 missing=4
+   1 ;   1 rpi4-crashtst-t40;   1 rpi4-crashtst-t70;   1 rpi4-e10-end;   1 rpi4-mprot;   1 rpi4-mprot-end;   1 rpi4-uacc3a;   1 rpi4-uacc3a-end;   1 virt-crash;   1 virt-crash-end;
+== on vs on-asid: same=104 differ=8 missing=0
+   1 ;   1 rpi4-crashtst-t40;   1 rpi4-crashtst-t70;   1 rpi4-mprot-end;   1 rpi4-uacc3a;   1 rpi4-uacc3a-end;   3 virt-crash;

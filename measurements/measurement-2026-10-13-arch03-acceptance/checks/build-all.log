@@ -1,0 +1,64 @@
+built A107PAR.NAP
+built A79COLOR.NAP
+built A96ZOMB.NAP
+built BIG.NCP
+built CMDLINE.NCP
+built CRASHTST.NAP
+built CRCHILD.NAP
+built CURDIR.NCP
+built DTACHILD.NCP
+built HELLO2.NCP
+built KBDVEC.NAP
+built PHYSBASE.NCP
+built SCRFLIP.NCP
+built SYSACC.NAC
+built SYSINFO.NCP
+built WFSCREEN.NAP
+built HELLO.NCP
+built OLDEXEC.NCP
+built P10KID.NCP
+built P10TEST.NCP
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-arch03-acceptance/bin/ENVPAR.NAP (42968 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-arch03-acceptance/bin/ENVKID.NAP (42968 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-arch03-acceptance/bin/P34PAR.NAP (44200 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-arch03-acceptance/bin/P34KID.NAP (43168 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-arch03-acceptance/bin/PFLAGS1.NCP (43728 bytes) PRGFLAGS=0x10000004
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-arch03-acceptance/bin/PFLAGS2.NCP (43728 bytes) PRGFLAGS=0x10000004
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-arch03-acceptance/bin/PFLAGS2.NCP: PRGFLAGS 0x10000004 -> 0x00000007 (PF_FASTLOAD | PF_TTRAMLOAD | PF_TTRAMMEM)
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-arch03-acceptance/bin/PFLAGS2.NCP: PRGFLAGS 0x00000007 (PF_FASTLOAD | PF_TTRAMLOAD | PF_TTRAMMEM)
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-arch03-acceptance/bin/PFLAGS1.NCP: PRGFLAGS 0x10000004 (PF_TTRAMMEM | TPA quantum 2 (x 128 KiB))
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-arch03-acceptance/bin/P567.NAP (46376 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-arch03-acceptance/bin/TSRPAR.NAP (44400 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-arch03-acceptance/bin/TSRRES.NAP (42672 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-arch03-acceptance/bin/TSRUSE.NAP (42312 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-arch03-acceptance/bin/OWNPAR.NAP (44136 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-arch03-acceptance/bin/OWNKID.NAP (43072 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-arch03-acceptance/bin/VFORKT.NAP (114536 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-arch03-acceptance/bin/S2ALL.NAP (43128 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-arch03-acceptance/bin/P567S.NAP (46392 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-arch03-acceptance/bin/TSRPARS.NAP (42920 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-arch03-acceptance/bin/S2ALLS.NAP (43128 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-arch03-acceptance/bin/ATEXITP.NAP (43120 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-arch03-acceptance/bin/ATEXITK.NAP (99224 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-arch03-acceptance/bin/ACCFREE.NAP (44960 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-arch03-acceptance/bin/MDPROBE.NAP (43632 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-arch03-acceptance/bin/ENVRN.NAP (44680 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-arch03-acceptance/bin/E9MEM.NAP (44832 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-arch03-acceptance/bin/PPAUTO.NCP (44352 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-arch03-acceptance/bin/PPZ.NAP (47216 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-arch03-acceptance/bin/PPDESK.NAP (47248 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-arch03-acceptance/bin/PPACC.NAC (44888 bytes)
+built E9PLAIN.NCP
+built UAKID.NAP + UACC3A.NAP (cases: all)
+built MPKID.NAP + MPROT3B/MPROTS/MPROTO.NAP
+built E10KID.NAP + E10USR/E10USRS/E10USRO.NAP
+built via apps/apitest/build-apitest.sh
+built via apps/build-qed.sh
+built via apps/build-teradesk.sh
+built via apps/build-doom.sh
+built via apps/gemtest/build-gemtest.sh
+built via apps/chaintest/build-chaintest.sh
+built via apps/build-coremark.sh
+done
+built ASIDKID.NAP ASIDACC.NAC ASIDSTR/ASIDSTRO/ASIDPERF/ASIDPRFO.NAP
+BUILD-DONE

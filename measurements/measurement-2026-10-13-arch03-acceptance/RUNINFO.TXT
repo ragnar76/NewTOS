@@ -1,0 +1,110 @@
+measurement-2026-10-13-arch03-acceptance -- Tester acceptance of ARCH03 on the
+merged main (HEAD f721c5af, tree clean at start, nothing committed, no product
+code touched). Whole post-E9 QEMU series in memprot=on / off / strict and
+asid=on (+memprot=on), static baselines, and a status check of every open point of
+TASK/ARCH03-3b-/3c-/POSTE9-STATUS-UNFINISHED.MD.
+
+Date 2026-10-13, host macOS, QEMU 11.1.2 (the earlier runs used 11.0.2), raspi4b
+(-append serial=on [memprot=off|strict] [asid=on]) and virt. No SD card, Pi or TT
+touched. Cards: method/seed-card.sh (private 64 MiB images in the session
+scratchpad), never tools/make-sd-image.sh. Images and kernels are gitignored,
+sha256 in bin/KERNELS.SHA256, bin/SHA256SUMS, repo-binaries.sha256.
+
+METHOD (method/ = measurement-2026-10-06-arch03-4/method, the newest complete
+series, copied; the older runs were not modified). Label a13.
+  checks.sh a13                 baselines (checks/a13-*.txt, checks/checks-a13.log)
+  build-all.sh + build-asid.sh  every program/probe rebuilt with the CURRENT SDK
+                                (libc, gemlib, cflib; checks/build-all.log)
+  scratch-kernels.sh, asid-kernels.sh (NEG=0)   injector kernels from scratch copies
+  series-a13.sh = series-arch03-4.sh with L=a13, modes on off strict on-asid
+                                (checks/series-a13.log, serial/, screendumps/)
+  batch2.sh / batch3.sh         follow-up runs (see below)
+  Socket directory of the run scripts moved to the scratchpad (path symlink
+  /private/tmp/claude-501/n3 -> scratchpad; only the symlink is outside).
+
+MEASUREMENT PROBLEMS and how they were handled (attempts <= 3 each)
+  1. The IKBD injector scripts of the old runs did not apply any more:
+     host_env.rs had its usb::poll sites folded into pump_devices() (INPUT01),
+     3 sites -> 2 (one of them the timer-IRQ pump, which must not be injected into).
+     method/inj-0c-apply-instrumentation.py, inj-keys02-apply-instrumentation.py
+     (copies, assert 3 -> 2, replace the first site only) and apply_injector.py
+     (H02 injector, step() now right after the poll in pump_devices()) adapted;
+     scratch-kernels.sh/asid-kernels.sh point at the copies. The adapted injectors
+     drive crash prompt, KBDVEC/EmuCON, TeraDesk->QED, desk3a and ppdesk as before.
+     The first desk3a/ppdesk run of mode "on" ran into the stale anchor and was
+     redone (batch2.sh on).
+  2. Stale probe expectations after PORT09 (libc fa99b4d8: crt0 joins the desktop
+     form PATH=\0C:\ in place and cuts the block at ARGV=). Probes ENVKID (MEM03,
+     inside S2ALL), PPZ and PPDESK (own env / kid env == default_env) therefore
+     report FAIL although the kernel delivers the right block (the AES PD's env
+     printed by the same probe is intact; PPAUTO/PPACC pass). Adapted probes:
+     tests/envkidj.c (checks getenv/argc/argv), tests/pparentj.c (accepts both env
+     forms), built by build-ppj.sh into bin/ENVKIDJ.NAP, PPZJ.NAP, PPDESKJ.NAP, run
+     by batch2.sh in all four modes. The ORIGINAL probes' FAIL stays in the logs.
+  3. A host stall (the Mac throttled background processes for ~45 min in the
+     strict series, caffeinate added afterwards): strict e9plain showed no boot
+     progress (494 s driver timeout), strict s2all/crashtst timers fired at
+     1068 s / 954 s. Rerun (batch3.sh): e9plain twice PASS, crashtst PASS with
+     correct dumps (serial/a13-strict-rpi4-*-rerun*). Not reproducible, a
+     host problem. The stalled crashtst dumps (a13-strict-rpi4-crashtst-t40/t70)
+     are NOT valid; use the -rerun ones.
+
+STATIC BASELINES (docs/STATUS.md)                   expected        measured
+  host tests (cargo test -p tos-api -tos-types -xtask)  1268/0/1     1268 / 0 / 1
+  release warnings tos-api / kernel, fresh after
+    cargo clean -p kernel -p tos-api --target aarch64-unknown-none-softfloat --release
+    rpi4                                               64 / 94      64 / 94, 0 errors
+    qemu-virt                                          64 / 94      64 / 94, 0 errors
+  clippy tos-api / kernel, rpi4 and qemu-virt          76 / 125     76 / 125 both
+  sh tools/desk-drift-probe.sh                         31           31
+  sdk/run-host-tests.sh                                13/0/0 (old) 19 / 0 / 0 (more tests since)
+  => no deviation.
+
+SERIES RESULTS (checks/summary-a13-<mode>.txt, method/summarize.sh)
+                         ON      OFF     STRICT   ON+ASID
+  desktop/TeraDesk/QED/ACC/APITEST/tdqed dumps
+                         byte-identical to each other in all four modes and
+                         (on) to the a4 reference dumps; visually checked
+  APITEST TOTAL          106/0/5 106/0/5 106/0/5  106/0/5
+  Doom                   VERIFIED (all four)
+  KBDVEC+EmuCON, EmuCON 9 (serial: KBDVEC, E9PLAIN, E9MEM x2 PASS; the OLDEXEC refusal
+                         was not asserted in serial, dumps t20/t32/t70 = a4, t45 differs
+                         by the E9MEM kept-size jitter noted in a4)   PASS x4
+  E9MEM / E9PLAIN        PASS    PASS    PASS(*)  PASS
+  ATEXIT / ACCFREE       PASS    PASS    PASS     PASS
+  CRASHTST / UACC3A(26)  PASS    PASS    PASS(*)  PASS     raspi4b and virt
+  MPROT3B (crashes)      PASS(1) PASS(0) PASS(4)  PASS(1)  raspi4b and virt
+  E10USR                 PASS    PASS    PASS     PASS     raspi4b and virt
+  PORT10                 ALL PASS (44) in all four modes (no card defect this time)
+  PPARENT AUTO / ACC     PASS in all four modes
+  PPARENT Z / DESK       FAIL(stale probe) -> PPZJ / PPDESKJ PASS in all four modes
+  ENVRN                  PASS x4
+  S2ALL (S2ALLS strict)  ON/OFF/ASID: only MEM03 FAIL (stale ENVKID); P34, P567, OWN,
+                         PFLAGS, TSR (TSRPAR semantic), VFORK PASS. STRICT (S2ALLS on
+                         the crash kernel): same, denials observed ("private memory,
+                         execute", "private memory, write"). With ENVKIDJ: S2ALL PASS
+                         in all four modes (S2ALLSJ in strict).
+  VFORKT alone           PASS x4; inside S2ALL PASS x4
+  MDPROBE                NULL after 147021 / 146437 (off) / 147021 / 147021 blocks, all 254
+                         MDs used (TASK/MEM05 still open; earlier 147605)
+  ASIDSTR / ASIDPERF / ASIDACC (bad=0)    PASS in all modes (asid=on actually active:
+                         "[mm] ASIDs ON: 16-bit" in serial/a13-on-asid-*)
+  desk3a (8 marks A-H)   all 8 in every mode; A-D, G byte-identical to a4 and between
+                         modes, E/F/H differ only in file time
+  ppdesk                 desktop double click starts PPDESK; dumps identical between modes
+  virt: crash kernel (CRCHILD, CRASHTST, UACC3A, MPROT, E10), selftests B1 D3
+        D3 PEXEC D4/D5 D6 D7 PTERMRES, desktop          PASS in all four modes
+  [EXC]/[PANIC] lines outside the intended crash tests: 0
+  (*) strict e9plain/crashtst rerun after the host stall (see 3.)
+  Screendump comparison (checks/shots-compare-a13.txt): on vs asid-on 104 same /
+  8 differ; on vs strict 99/9; on vs off 48/60. Differing classes only: crash
+  reports (register contents, memory-violation line), CRASHTST/MPROT directory
+  windows (file time), UACC3A crash screens, the invalid stalled strict dumps.
+
+FSEEKCON (new probe, serial/a13-<mode>-rpi4-fseekcon): Fseek(0,h,SEEK_CUR) on the
+standard handles 0,1,2 answers 0xffffffdb (-37, EIHNDL) in all four modes; EmuTOS
+answers 0 (as recorded in POSTE9). OPEN.
+
+NOT DRIVEN: real Pi 4 (TLB retention across ASIDs, rollover flush on silicon, cache
+coherence, USB HID); off-asid / strict-asid / asid=tiny series (not asked; the
+a4 run covered them); raspi4b input path (injector only).

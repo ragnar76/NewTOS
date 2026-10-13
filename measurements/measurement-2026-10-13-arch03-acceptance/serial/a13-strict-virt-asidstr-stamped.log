@@ -1,0 +1,286 @@
+     0.000	RB1
+     0.001	NewTOS booting on qemu-virt
+     0.001	Phase 02 reached.
+     0.001	[mm] DTB at 0x0000000048000000
+     0.002	[mm] firmware: no VideoCore mailbox on this board — device tree decides
+     0.002	[mm] device tree: /memory first bank: 0x0000000040000000 + 285212672 bytes (272 MiB)
+     0.003	[mm] memory map:
+     0.003	[mm]   DRAM  : 0x0000000040000000..0x0000000051000000 (285212672 bytes) — source: device tree
+     0.003	[mm]   kernel: 0x0000000040080000..0x00000000402de000 (2482176 bytes)
+     0.003	[mm]   ST-RAM: 0x0000000040400000..0x0000000040e00000 (10485760 bytes)
+     0.003	[mm]   TT-RAM: 0x0000000041000000..0x0000000050617000 (258043904 bytes)
+     0.003	[mm]   OSrsvd: 0x0000000050617000..0x0000000051000000 (10391552 bytes)
+     0.003	[mm]     heap: 0x0000000050617000..0x0000000050817000 (2097152 bytes)
+     0.004	[mm]     fb  : 0x0000000050817000..0x0000000051000000 (8294400 bytes)
+     0.004	[mm]   MMIO 00: 0x0000000008000000..0x0000000008010000
+     0.004	[mm]   MMIO 01: 0x0000000008010000..0x0000000008020000
+     0.004	[mm]   MMIO 02: 0x0000000009000000..0x0000000009001000
+     0.004	[mm]   MMIO 03: 0x0000000010000000..0x000000003eff0000
+     0.004	[mm] MMU reinstalled (high-half via TTBR1, TTBR0 deferred to Phase 06).
+     0.004	[mm] frames ST-RAM: total=2560 used=0 free=2560 (10485760 B free)
+     0.004	[mm] frames TT-RAM: total=62999 used=0 free=62999 (258043904 B free)
+     0.004	[mm] alloc ST-RAM frame -> 0x0000000040400000
+     0.005	[mm] alloc TT-RAM frame -> 0x0000000041000000
+     0.005	[mm] heap after init: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+     0.006	[mm] heap smoke OK
+     0.006	[mm] heap after smoke: total=2097152 used=0 free=2097152 largest=2097152 blocks=1
+     0.006	[fb] ramfb up: 1920x1080
+     0.008	[mm] memory protection ON (strict): table arena 0x41000000+1431 tables
+     0.008	[mm] BDOS pools: ST-RAM 0x40400000+10485760 TT-RAM 0x41597000+252182528
+     0.009	[mm] user address space: pools mapped VA = PA (127 shared L3 tables, 4-KiB pages, rights per process)
+     0.009	[mm] BDOS ST-RAM after init: total=10485760 free=10485760 used=0 largest_free=10485760 (free_mds=1 alloc_mds=0)
+     0.009	[mm] BDOS TT-RAM after init: total=252182528 free=252182528 used=0 largest_free=252182528 (free_mds=1 alloc_mds=0)
+     0.010	[input] keyboard/mouse pump: AES waits and console reads; pointer motion also from the 200 Hz tick while a program runs (input=aes switches that off)
+     0.010	[bcache] FS09 block read cache: none (no block device on this board)
+     0.011	[usb] PCIe ECAM at 0x4010000000 (size 0x10000000)
+     0.011	[usb] xHCI at PCI 00:02.0 → BAR0 0x10000000 (size 0x4000)
+     0.012	[usb] scratchpad buffers needed: 0
+     0.012	[usb] dma addrs: dcbaap=0x40e47000 crcr=0x40e470c0 erstba=0x40e472c0 dcbaa0=0x0
+     0.012	[usb] reg readback: ac64=1 csz=0 dcbaap_hw=0x40e47000
+     0.012	[usb] xHCI up: 16 slots enabled, 8 root ports
+     0.012	[usb] root ports powered (PPC=false)
+     0.033	[usb] port 1: ccs=0 ped=0 pp=1 speed=0
+     0.033	[usb] port 2: ccs=0 ped=0 pp=1 speed=0
+     0.033	[usb] port 3: ccs=0 ped=0 pp=1 speed=0
+     0.033	[usb] port 4: ccs=0 ped=0 pp=1 speed=0
+     0.033	[usb] port 5: ccs=1 ped=0 pp=1 speed=3
+     0.033	[usb] port 6: ccs=1 ped=0 pp=1 speed=3
+     0.033	[usb] port 7: ccs=0 ped=0 pp=1 speed=0
+     0.033	[usb] port 8: ccs=0 ped=0 pp=1 speed=0
+     0.033	[usb] device slot 1 (root port 5 route 0x0 speed 3)
+     0.084	[usb] device descriptor: bLength=18 type=1 bcdUSB=0200 class=0 maxpkt0=64 VID=0627 PID=0001
+     0.084	[usb] HID iface 0 protocol 1 → int-IN ep 0x81 max 8 interval 7
+     0.084	[usb] HID configured: slot 1 ep 0x81 dci 3 (keyboard)
+     0.084	[usb] device slot 2 (root port 6 route 0x0 speed 3)
+     0.134	[usb] device descriptor: bLength=18 type=1 bcdUSB=0200 class=0 maxpkt0=64 VID=0627 PID=0001
+     0.135	[usb] HID iface 0 protocol 2 → int-IN ep 0x81 max 4 interval 7
+     0.135	[usb] HID configured: slot 2 ep 0x81 dci 3 (mouse)
+     3.154	[proc] stand-in PDs: initial_basepage 0x40254000, AES PD 0x40254100 (read-only to all)
+     3.164	[launch] EL0: slot 0 entry 0x41599000
+     3.166	ASIDSTR: start (part C expects protection on/strict)
+     3.166	ASIDSTR: A begin n=32
+     3.171	[exec] preparing program (slot 1)
+     3.171	[exec] launching
+     3.176	[exec] preparing program (slot 2)
+     3.176	[exec] launching
+     3.183	[exec] preparing program (slot 1)
+     3.183	[exec] launching
+     3.189	[exec] preparing program (slot 2)
+     3.189	[exec] launching
+     3.194	[exec] preparing program (slot 1)
+     3.194	[exec] launching
+     3.199	[exec] preparing program (slot 2)
+     3.199	[exec] launching
+     3.205	[exec] preparing program (slot 1)
+     3.205	[exec] launching
+     3.210	[exec] preparing program (slot 2)
+     3.210	[exec] launching
+     3.215	[exec] preparing program (slot 1)
+     3.215	[exec] launching
+     3.220	[exec] preparing program (slot 2)
+     3.220	[exec] launching
+     3.226	[exec] preparing program (slot 1)
+     3.226	[exec] launching
+     3.231	[exec] preparing program (slot 2)
+     3.231	[exec] launching
+     3.236	[exec] preparing program (slot 1)
+     3.236	[exec] launching
+     3.241	[exec] preparing program (slot 2)
+     3.241	[exec] launching
+     3.247	[exec] preparing program (slot 1)
+     3.247	[exec] launching
+     3.252	[exec] preparing program (slot 2)
+     3.252	[exec] launching
+     3.257	[exec] preparing program (slot 1)
+     3.257	[exec] launching
+     3.263	[exec] preparing program (slot 2)
+     3.263	[exec] launching
+     3.268	[exec] preparing program (slot 1)
+     3.268	[exec] launching
+     3.273	[exec] preparing program (slot 2)
+     3.273	[exec] launching
+     3.278	[exec] preparing program (slot 1)
+     3.278	[exec] launching
+     3.283	[exec] preparing program (slot 2)
+     3.283	[exec] launching
+     3.288	[exec] preparing program (slot 1)
+     3.288	[exec] launching
+     3.293	[exec] preparing program (slot 2)
+     3.293	[exec] launching
+     3.299	[exec] preparing program (slot 1)
+     3.299	[exec] launching
+     3.304	[exec] preparing program (slot 2)
+     3.304	[exec] launching
+     3.309	[exec] preparing program (slot 1)
+     3.309	[exec] launching
+     3.314	[exec] preparing program (slot 2)
+     3.314	[exec] launching
+     3.319	[exec] preparing program (slot 1)
+     3.319	[exec] launching
+     3.324	[exec] preparing program (slot 2)
+     3.324	[exec] launching
+     3.330	[exec] preparing program (slot 1)
+     3.330	[exec] launching
+     3.335	[exec] preparing program (slot 2)
+     3.335	[exec] launching
+     3.336	[swcost] installs=64 restores=64 restore_ticks=11373 install_ticks=16499 cntfrq=62500000 asid gen=1 rollovers=0 assigned=0 limit=0
+     3.340	[exec] preparing program (slot 1)
+     3.340	[exec] launching
+     3.345	[exec] preparing program (slot 2)
+     3.345	[exec] launching
+     3.350	[exec] preparing program (slot 1)
+     3.350	[exec] launching
+     3.355	[exec] preparing program (slot 2)
+     3.355	[exec] launching
+     3.361	[exec] preparing program (slot 1)
+     3.361	[exec] launching
+     3.366	[exec] preparing program (slot 2)
+     3.366	[exec] launching
+     3.371	[exec] preparing program (slot 1)
+     3.371	[exec] launching
+     3.376	[exec] preparing program (slot 2)
+     3.376	[exec] launching
+     3.381	[exec] preparing program (slot 1)
+     3.381	[exec] launching
+     3.386	[exec] preparing program (slot 2)
+     3.386	[exec] launching
+     3.391	[exec] preparing program (slot 1)
+     3.391	[exec] launching
+     3.396	[exec] preparing program (slot 2)
+     3.396	[exec] launching
+     3.402	[exec] preparing program (slot 1)
+     3.402	[exec] launching
+     3.407	[exec] preparing program (slot 2)
+     3.407	[exec] launching
+     3.412	[exec] preparing program (slot 1)
+     3.412	[exec] launching
+     3.417	[exec] preparing program (slot 2)
+     3.417	[exec] launching
+     3.422	[exec] preparing program (slot 1)
+     3.422	[exec] launching
+     3.427	[exec] preparing program (slot 2)
+     3.428	[exec] launching
+     3.433	[exec] preparing program (slot 1)
+     3.433	[exec] launching
+     3.438	[exec] preparing program (slot 2)
+     3.438	[exec] launching
+     3.443	[exec] preparing program (slot 1)
+     3.443	[exec] launching
+     3.448	[exec] preparing program (slot 2)
+     3.448	[exec] launching
+     3.453	[exec] preparing program (slot 1)
+     3.453	[exec] launching
+     3.458	[exec] preparing program (slot 2)
+     3.458	[exec] launching
+     3.464	[exec] preparing program (slot 1)
+     3.464	[exec] launching
+     3.469	[exec] preparing program (slot 2)
+     3.469	[exec] launching
+     3.474	[exec] preparing program (slot 1)
+     3.474	[exec] launching
+     3.479	[exec] preparing program (slot 2)
+     3.479	[exec] launching
+     3.484	[exec] preparing program (slot 1)
+     3.484	[exec] launching
+     3.489	[exec] preparing program (slot 2)
+     3.489	[exec] launching
+     3.495	[exec] preparing program (slot 1)
+     3.495	[exec] launching
+     3.500	[exec] preparing program (slot 2)
+     3.500	[exec] launching
+     3.501	[swcost] installs=128 restores=128 restore_ticks=19498 install_ticks=30812 cntfrq=62500000 asid gen=1 rollovers=0 assigned=0 limit=0
+     3.501	ASIDSTR: A end n=32
+     3.501	ASIDSTR: A children that saw a foreign page 0 got=0x00000000 want=0x00000000 OK
+     3.501	ASIDSTR: A parent page-0 cell/os_run wrong after the child got=0x00000000 want=0x00000000 OK
+     3.501	ASIDSTR: B begin n=24
+     3.506	[exec] preparing program (slot 1)
+     3.506	[exec] launching
+     3.511	[exec] preparing program (slot 2)
+     3.511	[exec] launching
+     3.516	[exec] preparing program (slot 3)
+     3.516	[exec] launching
+     3.522	[exec] preparing program (slot 4)
+     3.522	[exec] launching
+     3.527	[exec] preparing program (slot 5)
+     3.527	[exec] launching
+     3.532	[exec] preparing program (slot 6)
+     3.532	[exec] launching
+     3.538	[exec] preparing program (slot 1)
+     3.538	[exec] launching
+     3.543	[exec] preparing program (slot 2)
+     3.543	[exec] launching
+     3.548	[exec] preparing program (slot 3)
+     3.548	[exec] launching
+     3.553	[exec] preparing program (slot 4)
+     3.553	[exec] launching
+     3.559	[exec] preparing program (slot 5)
+     3.559	[exec] launching
+     3.564	[exec] preparing program (slot 6)
+     3.564	[exec] launching
+     3.570	[exec] preparing program (slot 1)
+     3.570	[exec] launching
+     3.575	[exec] preparing program (slot 2)
+     3.575	[exec] launching
+     3.580	[exec] preparing program (slot 3)
+     3.580	[exec] launching
+     3.585	[exec] preparing program (slot 4)
+     3.585	[exec] launching
+     3.590	[exec] preparing program (slot 5)
+     3.590	[exec] launching
+     3.595	[exec] preparing program (slot 6)
+     3.596	[exec] launching
+     3.601	[exec] preparing program (slot 1)
+     3.601	[exec] launching
+     3.606	[exec] preparing program (slot 2)
+     3.606	[exec] launching
+     3.611	[exec] preparing program (slot 3)
+     3.611	[exec] launching
+     3.616	[exec] preparing program (slot 4)
+     3.617	[exec] launching
+     3.622	[exec] preparing program (slot 5)
+     3.622	[exec] launching
+     3.627	[exec] preparing program (slot 6)
+     3.627	[exec] launching
+     3.628	ASIDSTR: B end n=24
+     3.629	ASIDSTR: B chains with a wrong page 0 got=0x00000000 want=0x00000000 OK
+     3.633	[exec] preparing program (slot 1)
+     3.633	[exec] launching
+     3.639	[exec] preparing program (slot 2)
+     3.639	[exec] launching
+     3.641	ASIDKID: page freed by the thread, writing it again
+     3.642	[crash] slot 1 Bus Error esr=0x92000047 pc=0x415ad4d4 far=Some(1096540160)
+     3.642	
+     3.642	
+     3.642	Panic: Bus Error
+     3.642	esr=92000047
+     3.642	addr=00000000415be000 sr=20000000 pc=00000000415ad4d4
+     3.642	Memory violation: free memory, write (translation fault, level 3)
+     3.642	
+     3.643	X0-3:   0000000000000035 0000000000000000 00000000415c0000 0000000000000000
+     3.643	X4-7:   0000000000000000 0000000000000000 0000000000000000 0000000000000000
+     3.643	X8-11:  0000000000000009 00000000415be000 000000004b494431 00000000415ad6ef
+     3.643	X12-15: 0000000000000030 00000000ffffffa9 00000000ffffffbf 00000000ffffffc9
+     3.644	X16-19: 0000000000000000 0000000000000000 0000000000000000 00000000415ac000
+     3.644	X20-23: 00000000415ad7d0 00000000000117d0 0000000000000000 0000000000000000
+     3.644	X24-27: 0000000000000000 0000000000000000 0000000000000000 0000000000000000
+     3.644	X28-30: 0000000000000000 00000000415bd7c0 00000000415ad068
+     3.644	 USP:   00000000415bd7b0
+     3.644	
+     3.644	basepage=415ac000
+     3.645	text=415ad000 data=415ad700 bss=415ad7d0
+     3.645	Crash at text+000004d4
+     3.645	
+     4.543	*** Press any key to continue ***
+     4.543	[crash] slot 1 key pressed, terminating with Pterm(-1)
+     4.544	ASIDSTR: C write after the thread's Mfree (stopped) got=0x0000FFFF want=0x0000FFFF OK
+     4.545	ASIDSTR: C own page-0 cell after got=0xA5000103 want=0xA5000103 OK
+     4.545	ASIDSTR: D begin n=200
+     4.745	ASIDSTR: D end n=200
+     4.745	ASIDSTR: D page-0 cell/os_run wrong after a wait got=0x00000000 want=0x00000000 OK
+     4.745	ASIDSTR: D _hz_200 went backwards got=0x00000000 want=0x00000000 OK
+     4.746	ASIDSTR: PASS
+     4.746	[launch] returned (program Pterm'd)
+     4.746	[asid4] back in the boot path after ASIDSTR, launch rc=0
+     4.747	[aes] gsx_malloc: screen buffer pa=0x41597000 len=4147200 (kernel-owned, WF_SCREEN)
+     4.756	[shell] sh_ldapp: starting NEWDESK, sh_nextapp=3, sh_isgem=1
+     4.802	[desk] desktop up (0 drives, 0 window(s) from the context)
