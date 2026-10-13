@@ -1,0 +1,86 @@
+measurement-2026-10-13-fs10 -- TASK/FS10: Fseek on character-device and standard
+handles answers 0 (EmuTOS osif, bdos/bdosmain.c:571-642; spec
+docs/api/gemdos/file/42-fseek.md "Character-device and standard handles
+(CORRECTION 2026-10-13)", released with 6b8468bf), and Fread/Fwrite/Fseek read the
+handle as a signed WORD (-1..-3 = CON/AUX/PRN, <= -4 = EIHNDL).
+
+Date 2026-10-13, host macOS, QEMU 11.1.2, raspi4b (-append serial=on [memprot=off|
+strict]). Base HEAD 6b8468bf, tree clean at start; the change is uncommitted in
+the shared tree (tos-api/src/bdos/fs/file.rs, tos-api/tests/fs10_fseek_device_handles.rs).
+No SD card, Pi or TT touched. Cards: method/seed-card.sh (private 64 MiB images in
+the session scratchpad). Kernel images are gitignored, sha256 in bin/KERNELS.SHA256;
+the user programs in bin/ are byte copies of
+measurements/measurement-2026-10-13-arch03-acceptance/bin (built there with the
+current SDK, no SDK change since), sha256 in bin/SHA256SUMS.
+
+WHAT CHANGED (tos-api/src/bdos/fs/file.rs)
+  resolve(handle: i16): signed handle; h >= 6 -> sft entry, 0..5 -> p_uft, h < 0 ->
+    the device itself; a BIOS device below -3 -> invalid (bdosmain.c:601-602).
+  fseek: device -> 0 (any offset, any mode), invalid -> EIHNDL, file -> xlseek as before.
+  fread / fwrite / fdatime: handle read with arg_i16 instead of arg_u16.
+
+METHOD (method/, copied from measurement-2026-10-13-arch03-acceptance/method, that
+run not modified; label f10)
+  checks.sh f10              static baselines (checks/f10-*.txt, checks/checks-f10.log)
+  fs10-kernels.sh f10 <R>    keys kernel (KEYS02 injector + emucon-schedule.py) from a
+                             scratch copy of the shared tree incl. the change
+                             (checks/fs10-kernels-f10.log)
+  fs10-series.sh f10 <cards> on off strict
+                             FSEEKCON + regression sample (checks/series-f10.log)
+  summarize.sh f10           serial verdicts (checks/summary-f10.txt)
+  shotcmp.py                 screendumps vs. a13 (checks/shots-vs-a13.txt)
+  Socket directory: symlink /private/tmp/claude-501/n3 -> session scratchpad (unix
+  socket paths must stay < 104 bytes; only the symlink is outside the scratchpad).
+
+HOST TESTS RED -> GREEN (tos-api/tests/fs10_fseek_device_handles.rs, spec T1-T13 plus
+Fforce to -3/-4 and Fread/Fwrite with negative handles)
+  before the change: 2 passed, 7 failed (checks/f10-fs10-hosttest-red.txt; every
+    device case answered -37; T12 and T13 already passed)
+  after the change:  9 passed, 0 failed (checks/f10-fs10-hosttest-green.txt)
+
+STATIC BASELINES (docs/STATUS.md)                   expected        measured
+  host tests (cargo test -p tos-api -p tos-types -p xtask)
+                                                     1268/0/1 (+9)  1277 / 0 / 1
+  release warnings tos-api / kernel, fresh after
+    cargo clean -p kernel -p tos-api --target aarch64-unknown-none-softfloat --release
+    rpi4                                             64 / 94        64 / 94, 0 errors
+    qemu-virt                                        64 / 94        64 / 94, 0 errors
+  clippy tos-api / kernel, rpi4 and qemu-virt        76 / 125       76 / 125 both
+    (no clippy or build warning in bdos/fs/file.rs)
+  sh tools/desk-drift-probe.sh                       31             31
+  sdk/run-host-tests.sh                              19/0/0         19 / 0 / 0
+  => no deviation.
+
+QEMU raspi4b RESULTS (checks/summary-f10.txt)
+                         ON          OFF         STRICT
+  FSEEKCON               PASS        PASS        PASS     (Fseek(0,h,1) = 0 for h = 0,1,2;
+                                                           a13: 0xffffffdb in all modes)
+  APITEST TOTAL          106/0/5     106/0/5     106/0/5
+  Doom                   VERIFIED    VERIFIED    VERIFIED
+  ATEXIT                 PASS        PASS        PASS
+  KBDVEC + EmuCON        PASS, dumps t20/t35/t60 byte-identical to a13 (all modes)
+  S2ALL                  identical to a13 per mode: on/off only MEM03 FAIL (the stale
+                         ENVKID probe documented in the a13 RUNINFO, point 2), P34, P567,
+                         OWN, PFLAGS, TSR, VFORK PASS; strict (plain S2ALL on the product
+                         kernel) the same lines as a13-strict-rpi4-s2all.
+  desktop / TeraDesk / QED   dumps byte-identical to a13 in every mode.
+  Screendumps vs a13 (checks/shots-vs-a13.txt): on 11 same / 2 differ, off 12/1,
+  strict 12/2 -- the differing files are ONLY doom-t30/t45.
+
+DOOM DUMP DIFFERENCE = timing jitter, not the change (checks: screendumps/ab*-*)
+  Same card, raspi4b on, the a13 kernel (kernel8-a13.img, sha256 9cc43c8a..., from
+  the a13 run) and the f10 kernel run twice each, dumps at 30 s / 45 s:
+    a13 kernel run 1 t30 = a13 original t30; a13 kernel run 2 t30 = a new frame;
+    a13 kernel run 2 t45 = a13 original t45; a13 kernel run 1 t45 = f10 t45
+    (= f10 runs 1 and 2 t45). The a13 kernel does not reproduce its own Doom
+  frames; the demo position at a fixed wall-clock offset varies run to run. Early
+  dumps (ab-*-t08/t12/t16/t20): only the "Built" line of the boot screen differs
+  (date/commit of the build), t16/t20 byte-identical.
+  Serial logs of the Doom runs: identical to a13 (96 lines).
+
+[EXC]/[PANIC] lines in the series: none (a13: none in the same runs either). The
+strict S2ALL "Memory violation: private memory, execute" denial and the PASS/FAIL
+lines are line-for-line the same as a13-strict-rpi4-s2all.
+
+NOT DRIVEN: real Pi 4; virt board QEMU runs (only built); asid=on modes; the AUX/PRN
+distinction in Fread/Fwrite (out of scope, -2/-3 go to the console like -1).

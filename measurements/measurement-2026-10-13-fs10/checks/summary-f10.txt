@@ -1,0 +1,27 @@
+f10-off-rpi4-apitest                1 memory protection OFF (boot argument `memprot=off`); 1 TOTAL 106 0 5;
+f10-off-rpi4-atexit                 1 ATEXIT: PASS; 1 desktop up; 1 memory protection OFF (boot argument `memprot=off`);
+f10-off-rpi4-desktop                1 desktop up; 1 memory protection OFF (boot argument `memprot=off`);
+f10-off-rpi4-doom                   1 memory protection OFF (boot argument `memprot=off`); 1 VERIFIED via EdDI+scale+vro_cpyfm;
+f10-off-rpi4-fseekcon               1 desktop up; 1 FSEEKCON: PASS; 1 memory protection OFF (boot argument `memprot=off`);
+f10-off-rpi4-kbdvec-emucon          2 desktop up; 1 KBDVEC: PASS; 1 memory protection OFF (boot argument `memprot=off`);
+f10-off-rpi4-qed                    1 memory protection OFF (boot argument `memprot=off`);
+f10-off-rpi4-s2all                  1 desktop up; 1 MEM03: FAIL; 1 memory protection OFF (boot argument `memprot=off`); 1 OWN: PASS; 1 P34: PASS; 1 P567: PASS; 2 PFLAGS: PASS; 1 S2ALL: FAIL 0x00000001; 1 TSR: PASS; 1 VFORK: PASS;
+f10-off-rpi4-teradesk               1 memory protection OFF (boot argument `memprot=off`);
+f10-on-rpi4-apitest                 1 memory protection ON; 1 TOTAL 106 0 5;
+f10-on-rpi4-atexit                  1 ATEXIT: PASS; 1 desktop up; 1 memory protection ON;
+f10-on-rpi4-desktop                 1 desktop up; 1 memory protection ON;
+f10-on-rpi4-doom                    1 memory protection ON; 1 VERIFIED via EdDI+scale+vro_cpyfm;
+f10-on-rpi4-fseekcon                1 desktop up; 1 FSEEKCON: PASS; 1 memory protection ON;
+f10-on-rpi4-kbdvec-emucon           2 desktop up; 1 KBDVEC: PASS; 1 memory protection ON;
+f10-on-rpi4-qed                     1 memory protection ON;
+f10-on-rpi4-s2all                   1 desktop up; 1 MEM03: FAIL; 1 memory protection ON; 1 OWN: PASS; 1 P34: PASS; 1 P567: PASS; 2 PFLAGS: PASS; 1 S2ALL: FAIL 0x00000001; 1 TSR: PASS; 1 VFORK: PASS;
+f10-on-rpi4-teradesk                1 memory protection ON;
+f10-strict-rpi4-apitest             1 memory protection ON (strict); 1 TOTAL 106 0 5;
+f10-strict-rpi4-atexit              1 ATEXIT: PASS; 1 desktop up; 1 memory protection ON (strict);
+f10-strict-rpi4-desktop             1 desktop up; 1 memory protection ON (strict);
+f10-strict-rpi4-doom                1 memory protection ON (strict); 1 VERIFIED via EdDI+scale+vro_cpyfm;
+f10-strict-rpi4-fseekcon            1 desktop up; 1 FSEEKCON: PASS; 1 memory protection ON (strict);
+f10-strict-rpi4-kbdvec-emucon       2 desktop up; 1 KBDVEC: PASS; 1 memory protection ON (strict);
+f10-strict-rpi4-qed                 1 memory protection ON (strict);
+f10-strict-rpi4-s2all               1 MEM03: FAIL; 1 memory protection ON (strict); 1 Memory violation: private memory, execute (translation fault; 1 P34: PASS; 2 PFLAGS: PASS;
+f10-strict-rpi4-teradesk            1 memory protection ON (strict);

@@ -23,14 +23,13 @@ Nacharbeiten nach E9).
 
 **ARCH03 ist umgesetzt und abgenommen** (Tester auf `main` 2026-10-13,
 memprot on/off/strict + `asid=on`, `measurements/measurement-2026-10-13-arch03-acceptance/`).
-Offen daraus: [FS10](../TASK/FS10.md) (`Fseek` auf Konsolen-Handles),
-[MEM05](../TASK/MEM05.md), Stufe 2b (`Pexec` 100+), `asid=on` auf echter Pi.
+Offen daraus: [MEM05](../TASK/MEM05.md), Stufe 2b (`Pexec` 100+), `asid=on` auf echter Pi.
 
 **Basislinien** (bei jedem Arbeitsschritt zu halten):
 
 | | |
 |---|---|
-| Hosttests | **1268 / 0 / 1** |
+| Hosttests | **1277 / 0 / 1** |
 | Bau, beide Boards | `tos-api` **64**, `kernel` **94** |
 | Clippy, beide Feature-Saetze | **76 / 125** |
 | `sh tools/desk-drift-probe.sh` | **31** |
@@ -48,13 +47,13 @@ dem Termin; X03 ist erledigt (Driftprobe 31).
 **Offen (Stand 2026-10-13):**
 
 - P1: **DESK43** U5–U10 (Desktop 1:1 EmuTOS, User-Space).
-- P2: **FS10**, **MEM05**, **MEM02** (`Mxalloc` ignoriert `MX_PREFTTRAM`),
+- P2: **MEM05**, **MEM02** (`Mxalloc` ignoriert `MX_PREFTTRAM`),
   **PROC03** (Desktop/AES als EL0-Prozess), **FS06**, **ARCH02**, **DESK48**,
   **DESK57**, PORT02 (zView-Bewertung).
 - P3 / Erweiterungen: ARCH03 Stufe 2b, **SND01/SND02** (Ton), SDL01, RTC01,
-  BALL01, FS05, REF03, T15, DESK49, DESK51–DESK56.
+  BALL01, FS05, FS11 (AUX/PRN in `Fread`/`Fwrite`), REF03, T15, DESK49, DESK51–DESK56.
 - Erledigt seit dem 30.09., hier frueher als offen gefuehrt: MEM03, MEM04,
-  PROC01, PROC02, PORT09, GUI07, ARCH03 (bis auf das Obige).
+  PROC01, PROC02, PORT09, GUI07, ARCH03 (bis auf das Obige), FS10.
 
 **Serielle Ausgabe, seit 2026-10-02 (SER01):** auf der Pi standardmaessig
 **aus**; `serial=on` in `cmdline.txt` schaltet sie ein. QEMU-raspi4b-Laeufe
@@ -451,6 +450,7 @@ Phasenbeginn entschieden sein (siehe `docs/api/_phase00-completion.md`):
 
 | Date       | Decision                                            |
 |------------|-----------------------------------------------------|
+| 2026-10-13 | **FS10 — `Fseek` auf Zeichengeraete-Handles liefert 0 wie EmuTOS; Handles als vorzeichenbehaftetes WORD.** Spec korrigiert und vom Anwender freigegeben (`6b8468bf`): EmuTOS `osif` loest das Handle vor `xlseek` auf und beantwortet jedes Zeichengeraet-Ziel mit 0 (`bdos/bdosmain.c:571-642`); mintlibs stdio braucht das. `tos-api/src/bdos/fs/file.rs`: `resolve(i16)` mit -1..-3 als Geraet, < -3 und ausserhalb der Tabelle `EIHNDL`; `fseek` Geraet → 0; `fread`/`fwrite`/`fdatime` lesen das Handle als `i16` (vorher wurden -1..-3 zu 65533..65535 → `EIHNDL`). Verhaltensaenderung: -2/-3 in `Fread`/`Fwrite` gehen jetzt wie -1 auf die Konsole (EmuTOS: AUX/PRN → [FS11](../TASK/FS11.md)); `Fforce(h,-4)` macht h ungueltig wie EmuTOS. Hosttests 1268 → 1277 (9 neu, rot/gruen), FSEEKCON PASS in memprot on/off/strict, Regressionen bytegleich (`measurements/measurement-2026-10-13-fs10/`). Naechster Schritt: crt0 auf mintlibs `_main`. |
 | 2026-10-13 | **ARCH03 auf `main` abgenommen; Statuskopf auf den Stand nach der OFAM.** Die Stufenquittungen stammten von den Zweigen `arch03`/`desk-rebuild`; der Tester fuhr die volle Serie auf `main` `f721c5af` in memprot on/off/strict und `asid=on`: PASS, Basislinien gehalten (`measurements/measurement-2026-10-13-arch03-acceptance/`, `b10ab22c`). Alle Offen-Punkte der Quittungen 3b/3c/Post-E9 sind geschlossen (E10 `ae097d0f`, `p_parent` `7e97a682`, crt0/`free_accs` `50207c5f`, VFORKT `9882f5ec`, TSRPAR semantisch, strict-Varianten); Abschlussvermerke in den Quittungen, Dateinamen bleiben wegen der Verweise. Neu: [FS10](../TASK/FS10.md) — `Fseek` auf Konsolen-Handles liefert `EIHNDL` (FSEEKCON FAIL in allen Modi; Spec-Pruefung gegen EmuTOS laeuft). Offen: MEM05, Stufe 2b, `asid=on` auf echter Pi (Standard bleibt aus; die Vorfuehrkarte vom 2026-10-08 enthielt alle ARCH03-Commits, lief aber ohne ASIDs). Die Sonden ENVKID/PPZ/PPDESK der aelteren Runs sind seit PORT09 (`fa99b4d8`) veraltet; angepasste Fassungen im Abnahme-Run. |
 | 2026-10-09 | **Vorfuehrkarte auf NewTOS 0.5 (Tag `v0.5`, `03b9025c`).** `kernel8.img` = `e45acf51…` (Startbildschirm im mittleren Drittel, ohne Autorenzeile; About-Box ohne Autorenzeile; Version 0.5); `DOOM.NAP` = `69d7ad87…` (neue Tasten, alle vier Kopien). Rueckfaelle auf der Karte: `KERN1008.IMG` = `2afed1e4…` (abgenommener Kartenstand vom 2026-10-08), `KERNOFAM.IMG` = Tag `ofam-2026`. Auf echter Pi noch nicht gesehen. Offen nach dem Treffen: Cookie `NTOS` noch `0x0100`. |
 | 2026-10-09 | **Produktversion NewTOS 0.5.** Anwenderschema: 1.0 = laeuft wie das Original, 2.0 = spuerbare FreeMiNT-Erweiterungen. Geaendert: der Versionstext an allen Stellen (`kernel/src/initinfo.rs` und `kernel/src/desk/inf.rs` `VERSION_STRING`, `shell.rs` `ver`, Doc-Kommentare in `tos-api/src/host.rs`/`gemdos/ssystem.rs`, Hosttest `gemdos_ssystem_sysinfo.rs`, `docs/api/gemdos/154-ssystem.md`, `docs/api/desktop/deskinf.md`/`deskmain.md`) und `version` der Crates `kernel`/`tos-api`/`tos-types` (0.1.0 → 0.5.0, `xtask` bleibt). `Ssystem(S_NEWTOS_KVERSION)` liefert damit `NewTOS 0.5 <Stempel>`. **Unveraendert** (Kompatibilitaetsvertrag): `Sversion`, OSHEADER `os_version` (0x0404), AES/VDI-Versionsworte, Cookie-Werte — auch der `NTOS`-Cookie bleibt 0x0000_0100 (programmsichtbar, eigene Entscheidung; nur der Kommentar in `kernel/src/lib.rs` sagt das jetzt). SYSACC liest den Text zur Laufzeit, kein Neubau noetig. Beleg: `measurements/measurement-2026-10-09-version05/`. |

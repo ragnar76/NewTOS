@@ -207,7 +207,8 @@ fn getofd(h: i16) -> FOfd {
 
 /// The final I/O target a handle resolves to.
 enum Target {
-    /// The console (a BIOS device — NewTOS maps every one to the console).
+    /// A BIOS character device (`-1` CON, `-2` AUX, `-3` PRN) — NewTOS maps
+    /// every one to the console.
     Console,
     /// The OFD (index into `Tables::ofds`) the handle's entry points at.
     File(usize),
@@ -215,27 +216,37 @@ enum Target {
     None,
 }
 
+/// Lowest BDOS character-device handle (`H_Print`, `bdos/console.h:23-25`).
+const H_PRINT: i16 = -3;
+
 /// Resolve a handle to its I/O target as the dispatcher does for the
-/// handle-based functions (`bdos/bdosmain.c:572-591`): a non-standard handle
+/// handle-based functions `Fread`/`Fwrite`/`Fseek` (`bdos/bdosmain.c:
+/// 571-602`). `handle` is the signed handle WORD: a non-standard handle
 /// takes its entry's `f_ofd`; a standard handle its `p_uft[]` value — `> 0`
-/// the entry it was forced to, else the BIOS handle itself (`0`: none).
-fn resolve(handle: u16) -> Target {
-    let numl = if handle >= NUMSTD {
-        sft().get((handle - NUMSTD) as usize).map_or(FOfd::Null, |e| e.ofd)
-    } else {
-        let h = uft(handle);
+/// the entry it was forced to, else the BIOS handle itself (`0`: none); a
+/// negative handle is the device itself. A device below `-3` is invalid
+/// (`:601-602`). A handle past the table is invalid (spec 42-fseek.md, the
+/// `>= NUMHANDLES` contract row).
+fn resolve(handle: i16) -> Target {
+    let numl = if handle >= NUMSTD as i16 {
+        sft().get((handle - NUMSTD as i16) as usize).map_or(FOfd::Null, |e| e.ofd)
+    } else if handle >= 0 {
+        let h = uft(handle as u16);
         if h > 0 { sft_ofd(h) } else { FOfd::bios(h) }
+    } else {
+        FOfd::Bios(handle)
     };
     match numl {
         FOfd::Null => Target::None,
+        FOfd::Bios(n) if n < H_PRINT => Target::None,
         FOfd::Bios(_) => Target::Console,
         FOfd::File(j) => Target::File(j),
     }
 }
 
-/// Resolve a handle to its open `Ofd` (a file), or `None` for the console /
+/// Resolve a handle to its open `Ofd` (a file), or `None` for a device /
 /// an invalid handle. Used by the file-only ops (`Fseek`, `Fdatime`, …).
-fn ofd_of(handle: u16) -> Option<&'static mut Ofd> {
+fn ofd_of(handle: i16) -> Option<&'static mut Ofd> {
     match resolve(handle) {
         Target::File(j) => ofds().get_mut(j)?.as_mut(),
         _ => None,
@@ -379,7 +390,8 @@ pub fn fcreate(args: &TrapArgs) -> Long {
 
 /// `Fread` (0x3F) — read `len` bytes from a handle into a buffer.
 pub fn fread(args: &TrapArgs) -> Long {
-    let handle = args.arg_u16(0);
+    // The handle is a signed WORD: `-1..-3` name a character device.
+    let handle = args.arg_i16(0);
     let len = args.arg_i32(1);
     let ubuf = args.arg_u64(2);
 
@@ -422,7 +434,8 @@ pub fn fread(args: &TrapArgs) -> Long {
 /// `Fwrite` (0x40) — write `len` bytes from a buffer to a handle,
 /// extending the file (allocating clusters) as needed.
 pub fn fwrite(args: &TrapArgs) -> Long {
-    let handle = args.arg_u16(0);
+    // The handle is a signed WORD: `-1..-3` name a character device.
+    let handle = args.arg_i16(0);
     let len = args.arg_i32(1);
     let ubuf = args.arg_u64(2);
 
@@ -852,7 +865,7 @@ fn fix_dotdot(vol: &Volume, folder_cluster: u32, new_parent: u32) -> bool {
 /// `x2` = `wrt` (0 = get, 1 = set). Values are native byte order.
 pub fn fdatime(args: &TrapArgs) -> Long {
     let buf = args.arg_u64(0);
-    let handle = args.arg_u16(1);
+    let handle = args.arg_i16(1);
     let wrt = args.arg_u16(2);
 
     let ofd = match ofd_of(handle) {
@@ -883,14 +896,25 @@ pub fn fdatime(args: &TrapArgs) -> Long {
 }
 
 /// `Fseek` (0x42) — reposition a handle's file pointer.
+///
+/// The handle (a signed WORD) is resolved first, as EmuTOS `osif` does for
+/// `Fseek` (`bdos/bdosmain.c:571-642`; spec `42-fseek.md` §"Character-device
+/// and standard handles"): one that ends on a character device answers `0`
+/// whatever `n` and `flg` are — `xlseek` never runs, so an invalid mode is
+/// not `EINVFN` there; an unmapped handle or a device below `-3` is
+/// `EIHNDL`; a file seeks.
 pub fn fseek(args: &TrapArgs) -> Long {
     let n = args.arg_i32(0) as i64;
-    let handle = args.arg_u16(1);
+    let handle = args.arg_i16(1);
     let flg = args.arg_u16(2);
 
-    let ofd = match ofd_of(handle) {
-        Some(o) => o,
-        None => return EIHNDL,
+    let ofd = match resolve(handle) {
+        Target::Console => return 0,
+        Target::None => return EIHNDL,
+        Target::File(j) => match ofds().get_mut(j).and_then(Option::as_mut) {
+            Some(o) => o,
+            None => return EIHNDL,
+        },
     };
     // `xlseek` (`bdos/fsio.c:321-337`) folds the mode into an absolute
     // target; `ixlseek` positions the cluster fields (FS08, `fsio`).

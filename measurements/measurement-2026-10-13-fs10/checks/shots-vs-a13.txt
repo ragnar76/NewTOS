@@ -1,0 +1,8 @@
+DIFF doom-t30.png
+DIFF doom-t45.png
+f10-on-rpi4- vs a13-on-rpi4-: same=11 diff=2 missing=0
+DIFF doom-t30.png
+f10-off-rpi4- vs a13-off-rpi4-: same=12 diff=1 missing=0
+DIFF doom-t30.png
+DIFF doom-t45.png
+f10-strict-rpi4- vs a13-strict-rpi4-: same=12 diff=2 missing=0
