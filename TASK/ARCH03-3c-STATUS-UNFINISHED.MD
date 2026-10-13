@@ -1,5 +1,7 @@
 # ARCH03 Stufe 3c — Quittung
 
+> **Abschluss 2026-10-13 (Lead):** Tester-Abnahme auf `main` (`f721c5af`) in memprot on/off/strict und `asid=on`: PASS, Beleg `measurements/measurement-2026-10-13-arch03-acceptance/RUNINFO.TXT`. Alle Offen-Punkte dieser Quittung sind auf `main` geschlossen: S2ALL/TSRPAR unter on PASS (semantische TSRPAR-Prüfung), unter strict durch die strict-Varianten P567S/TSRPARS/S2ALLS (Verweigerungen erwartet); Spec nennt strict für `Pexec` 0 und 6. Auf echter Pi lief dieser Stand mit der Vorführkarte vom 2026-10-08 (Tag `ofam-2026` enthält alle genannten Commits); `asid=on` auf echter Pi offen. Dateiname bleibt wegen der Verweise darauf.
+
 **Status: UMGESETZT bis auf einen Punkt, der eine Entscheidung braucht
 (S2ALL/TSRPAR unter Schutz an/strict) · in QEMU auf beiden Boards in allen
 drei Modi belegt · Abnahme durch den Tester offen · Pi offen** · 2026-10-05 ·

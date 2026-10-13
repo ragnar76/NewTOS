@@ -1,5 +1,7 @@
 # ARCH03 Nacharbeiten nach E9 — Quittung
 
+> **Abschluss 2026-10-13 (Lead):** Tester-Abnahme auf `main` (`f721c5af`) in memprot on/off/strict und `asid=on`: PASS, Beleg `measurements/measurement-2026-10-13-arch03-acceptance/RUNINFO.TXT`. Punkt 1 (`p_parent`) mit `7e97a682` (Weg A, [PPARENT](PPARENT-STATUS-DONE.MD)), Punkt 2 (`exit()`-crt0) mit `50207c5f`, der VFORKT-Absturz mit `9882f5ec` (mintlib-`tfork`, `docs/analysis/vfork-malloc-ownership-2026-10-06.md`), Punkt 3 mit `50207c5f`. **Weiter offen, in eigenen Tickets:** `Fseek` auf Konsolen-Handles liefert `EIHNDL` → [FS10](FS10.md); MD-Erschöpfung → [MEM05](MEM05.md). Auf echter Pi lief dieser Stand mit der Vorführkarte vom 2026-10-08 (Tag `ofam-2026` enthält alle genannten Commits); `asid=on` auf echter Pi offen. Dateiname bleibt wegen der Verweise darauf.
+
 **Status: TEILWEISE · Punkte 3, 4, 5 und die MD-Sonde erledigt und in QEMU
 in allen drei Schutzmodi belegt · Punkt 2 umgesetzt, legt aber einen
 vorhandenen vfork-Defekt frei (S2ALL unter ON FAIL in VFORKT) · Punkt 1 nach

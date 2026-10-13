@@ -1,6 +1,6 @@
 # ARCH03 — Prozess- und Speicherarchitektur nach FreeMiNT: ein gemeinsamer Adressraum mit Schutzrechten
 
-Status: **IN ARBEIT** auf Zweig `arch03` · Prioritaet: **P1** — Umsetzung **vor der OFAM** begonnen (Anwender 2026-10-04: „leg los“) · Typ: Architektur — Anwenderentscheidung 2026-10-04
+Status: **UMGESETZT, abgenommen** (Tester auf `main` 2026-10-13; Pi mit der Vorfuehrkarte 2026-10-08) · offen nur Stufe 2b, `asid=on` auf echter Pi, Nebenfunde [FS10](FS10.md)/[MEM05](MEM05.md) · Prioritaet: **P1** · Typ: Architektur — Anwenderentscheidung 2026-10-04
 
 Abhaengigkeiten: — · blockiert spaeter: [MEM03](MEM03.md), [PROC01](PROC01.md), [PORT09](PORT09.md), LDG/SLB (zView, `docs/analysis/zview-ldg-2026-10-04.md`), Accessories/TSR, `kbdvec`-Haken fuer alle (KEYS02 D1)
 
@@ -59,13 +59,22 @@ globaler `Mxalloc`-Speicher. Anwender: „es so wie bei FreeMiNT bauen“.
 | 1 gemeinsamer Raum | umgesetzt, QEMU belegt | [ARCH03-1-STATUS-DONE](ARCH03-1-STATUS-DONE.MD) |
 | 2 Pexec 5/6/7, Ptermres, Regionen | umgesetzt, QEMU belegt | [ARCH03-2-STATUS-DONE](ARCH03-2-STATUS-DONE.MD) |
 | 3a Kernelzugriff | umgesetzt, QEMU belegt | [ARCH03-3a-STATUS-DONE](ARCH03-3a-STATUS-DONE.MD) |
-| 3b Rechte je Prozess | umgesetzt, QEMU belegt; Offen 1/3/4/5 in 3c geschlossen, Offen 2 nicht | [ARCH03-3b-STATUS-UNFINISHED](ARCH03-3b-STATUS-UNFINISHED.MD) |
-| 3c E10, Lader-Reihenfolge, E6/strict, F_KEEP, Tabellenmangel | umgesetzt, QEMU belegt; **S2ALL/TSRPAR unter Schutz an/strict weiter FAIL** (Ursache E9+E16, Entscheidung nötig) | [ARCH03-3c-STATUS-UNFINISHED](ARCH03-3c-STATUS-UNFINISHED.MD) |
-| E9 TPA = größter Block (EmuTOS), Start-Mshrink wie mintlib | umgesetzt, QEMU belegt (ON/OFF/STRICT); TSRPAR-Layoutprüfung weiter Entscheidung | [ARCH03-E9-STATUS-DONE](ARCH03-E9-STATUS-DONE.MD) |
+| 3b Rechte je Prozess | umgesetzt, abgenommen 2026-10-13; alle Offen-Punkte geschlossen | [ARCH03-3b-STATUS-UNFINISHED](ARCH03-3b-STATUS-UNFINISHED.MD) |
+| 3c E10, Lader-Reihenfolge, E6/strict, F_KEEP, Tabellenmangel | umgesetzt, abgenommen 2026-10-13; S2ALL on PASS, strict ueber die strict-Varianten | [ARCH03-3c-STATUS-UNFINISHED](ARCH03-3c-STATUS-UNFINISHED.MD) |
+| E9 TPA = größter Block (EmuTOS), Start-Mshrink wie mintlib | umgesetzt, abgenommen 2026-10-13 (TSRPAR semantisch) | [ARCH03-E9-STATUS-DONE](ARCH03-E9-STATUS-DONE.MD) |
 | 2b FreeMiNT-Modi 100+ | offen | — |
 | 4 ASIDs + TLB-Feinpflege | umgesetzt hinter Bootargument `asid=on` (Standard aus), QEMU belegt (alle Schutzmodi × ASID aus/an/tiny); Pi offen | [ARCH03-4-STATUS-DONE](ARCH03-4-STATUS-DONE.MD) |
 
-Abnahme durch den Tester und Pi-Läufe für 0c–3c offen; Pi nur auf Ansage.
+Nacharbeiten nach E9 ([Quittung](ARCH03-POSTE9-STATUS-UNFINISHED.MD)): `p_parent` `7e97a682`, `exit()`-crt0 und `free_accs` `50207c5f`, VFORKT `9882f5ec`.
+
+**Abnahme 2026-10-13:** Tester auf `main` `f721c5af`, memprot on/off/strict
+und `asid=on`: Serie PASS, Basislinien gehalten
+(`measurements/measurement-2026-10-13-arch03-acceptance/RUNINFO.TXT`).
+Offen: `Fseek` auf Konsolen-Handles → [FS10](FS10.md); MD-Erschoepfung →
+[MEM05](MEM05.md); Stufe 2b; `asid=on` auf echter Pi (bleibt bis dahin
+Standard aus). Die Sonden ENVKID/PPZ/PPDESK in den aelteren Run-Ordnern
+erwarten die Umgebung vor PORT09 (`fa99b4d8`) und melden deshalb FAIL;
+angepasste Fassungen liegen im Abnahme-Run (`method/tests/*j.c`).
 Plan-Abschnitt „Stufe 3 wie gebaut“: `docs/analysis/arch03-implementation-plan.md`.
 
 ## Pi-Abnahme 2026-10-05

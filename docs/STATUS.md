@@ -5,19 +5,26 @@
 
 ## Current Phase
 
-### Stand 2026-09-30 — vor der OFAM (9.–10. Oktober 2026)
+### Stand 2026-10-13 — nach der OFAM, NewTOS 0.5
 
-**Harter Termin.** Zweig `main` (seit 2026-10-08; `desk-rebuild` aufgeloest). Priorisiert ist **Vorfuehrbarkeit**:
-nichts darf haengen, sichtbare Fehler gehen vor Konformitaet
-(Anwendervorgabe).
+Zweig `main`, Tag `v0.5` (`03b9025c`). Die OFAM (9.–10. Oktober) ist
+vorbei; der Vorrang „Vorfuehrbarkeit vor Konformitaet“ ist damit
+ausgelaufen. Vorgeschlagenes Ziel: der feste Stand `base-1`
+(`docs/analysis/inventory-2026-10-08.md` §3, Definition zur Bestaetigung
+durch den Anwender offen).
 
 **Auf echter Pi 4 abgenommen:** Boot, Desktop, TeraDesk (Start und sauberes
 Beenden), QED aus TeraDesk heraus, EmuCON, **USB-Maus samt Mausrad**,
-Dateikopieren ueber Partitionsgrenzen (FS04: 2182 → 467 ms), seit 2026-10-03 Doom (40–75 fps) und Tastenwiederholung, seit 2026-09-30
-der `.NTP`-Parameterdialog (DESK47); seit 2026-10-04 Doom mit exakter Tastatur ueber `kbdvec` (KEYS02) und das Fensteroeffnen ueber `do_wopen`/`do_diropen` (DESK50); seit 2026-10-01 die vier nativen
-Endungen aus TeraDesk heraus (DESK41).
+Dateikopieren ueber Partitionsgrenzen (FS04), Doom (40–75 fps, `kbdvec`
+KEYS02), Tastenwiederholung, `.NTP`-Parameterdialog (DESK47), die vier
+nativen Endungen aus TeraDesk (DESK41), Fensteroeffnen (DESK50), zView;
+die Vorfuehrkarte vom 2026-10-08 mit Speicherschutz an (ARCH03 bis zu den
+Nacharbeiten nach E9).
 
-**Kein P1-Defekt offen.** P1-Tickets mit Strukturthema bleiben (DESK43 Desktop im User-Space, nach dem Treffen); Gesamtstand und Bereinigungsliste: `docs/analysis/inventory-2026-10-08.md`.
+**ARCH03 ist umgesetzt und abgenommen** (Tester auf `main` 2026-10-13,
+memprot on/off/strict + `asid=on`, `measurements/measurement-2026-10-13-arch03-acceptance/`).
+Offen daraus: [FS10](../TASK/FS10.md) (`Fseek` auf Konsolen-Handles),
+[MEM05](../TASK/MEM05.md), Stufe 2b (`Pexec` 100+), `asid=on` auf echter Pi.
 
 **Basislinien** (bei jedem Arbeitsschritt zu halten):
 
@@ -38,17 +45,16 @@ durch die AES-Falle, ohne Umgehungen. Die DESK43-Reihe hat U1–U4 abgenommen
 (Driftprobe 47 → 32, die Linie des Plans ist erreicht); U5–U10 kommen nach
 dem Termin; X03 ist erledigt (Driftprobe 31).
 
-**Offen, nach Naehe zum Termin:**
+**Offen (Stand 2026-10-13):**
 
-- **PORT06 — Doom, vorgezogen (P1, Anwender 2026-10-02):** ein Quelltext
-  fuer NewTOS und TT+Nova, nur VDI/AES/BIOS/GEMDOS; Pixelweg `vr_trnfm`
-  und EdDI `vq_scrninfo`. Schritt 1 laeuft in QEMU; auslieferbarer Bau
-  PORT10 erledigt (Doom linkt); als Naechstes Vergroesserung x2/x3/x4.
-- ~~**MEM03**~~ (mit ARCH03 Stufe 1 geschlossen), ~~**PORT09**~~ (erledigt 2026-10-06), **DESK49**.
-- Nach dem Termin: **ARCH03** (Prozess-/Speicherarchitektur nach FreeMiNT, Plan liegt vor, Freigabe offen), **MEM04**, **MEM02** (`Mxalloc` ignoriert `MX_PREFTTRAM`), DESK43
-  U5–U10, **SND01/SND02** (Ton — zuerst ein DMA-Treiber, der auch HW05
-  traegt), SDL01, PORT06 (Doom), PORT02 (zView), GUI07, HW04–HW07,
-  DESK48, REF03, FS05/FS06, ARCH02, DESK51–DESK56 (Nebenfunde DESK50), T15, PROC01 (`Pexec` 5/6/7), PROC02 (Handle-Vererbung/`Fforce`).
+- P1: **DESK43** U5–U10 (Desktop 1:1 EmuTOS, User-Space).
+- P2: **FS10**, **MEM05**, **MEM02** (`Mxalloc` ignoriert `MX_PREFTTRAM`),
+  **PROC03** (Desktop/AES als EL0-Prozess), **FS06**, **ARCH02**, **DESK48**,
+  **DESK57**, PORT02 (zView-Bewertung).
+- P3 / Erweiterungen: ARCH03 Stufe 2b, **SND01/SND02** (Ton), SDL01, RTC01,
+  BALL01, FS05, REF03, T15, DESK49, DESK51–DESK56.
+- Erledigt seit dem 30.09., hier frueher als offen gefuehrt: MEM03, MEM04,
+  PROC01, PROC02, PORT09, GUI07, ARCH03 (bis auf das Obige).
 
 **Serielle Ausgabe, seit 2026-10-02 (SER01):** auf der Pi standardmaessig
 **aus**; `serial=on` in `cmdline.txt` schaltet sie ein. QEMU-raspi4b-Laeufe
@@ -445,6 +451,7 @@ Phasenbeginn entschieden sein (siehe `docs/api/_phase00-completion.md`):
 
 | Date       | Decision                                            |
 |------------|-----------------------------------------------------|
+| 2026-10-13 | **ARCH03 auf `main` abgenommen; Statuskopf auf den Stand nach der OFAM.** Die Stufenquittungen stammten von den Zweigen `arch03`/`desk-rebuild`; der Tester fuhr die volle Serie auf `main` `f721c5af` in memprot on/off/strict und `asid=on`: PASS, Basislinien gehalten (`measurements/measurement-2026-10-13-arch03-acceptance/`, `b10ab22c`). Alle Offen-Punkte der Quittungen 3b/3c/Post-E9 sind geschlossen (E10 `ae097d0f`, `p_parent` `7e97a682`, crt0/`free_accs` `50207c5f`, VFORKT `9882f5ec`, TSRPAR semantisch, strict-Varianten); Abschlussvermerke in den Quittungen, Dateinamen bleiben wegen der Verweise. Neu: [FS10](../TASK/FS10.md) — `Fseek` auf Konsolen-Handles liefert `EIHNDL` (FSEEKCON FAIL in allen Modi; Spec-Pruefung gegen EmuTOS laeuft). Offen: MEM05, Stufe 2b, `asid=on` auf echter Pi (Standard bleibt aus; die Vorfuehrkarte vom 2026-10-08 enthielt alle ARCH03-Commits, lief aber ohne ASIDs). Die Sonden ENVKID/PPZ/PPDESK der aelteren Runs sind seit PORT09 (`fa99b4d8`) veraltet; angepasste Fassungen im Abnahme-Run. |
 | 2026-10-09 | **Vorfuehrkarte auf NewTOS 0.5 (Tag `v0.5`, `03b9025c`).** `kernel8.img` = `e45acf51…` (Startbildschirm im mittleren Drittel, ohne Autorenzeile; About-Box ohne Autorenzeile; Version 0.5); `DOOM.NAP` = `69d7ad87…` (neue Tasten, alle vier Kopien). Rueckfaelle auf der Karte: `KERN1008.IMG` = `2afed1e4…` (abgenommener Kartenstand vom 2026-10-08), `KERNOFAM.IMG` = Tag `ofam-2026`. Auf echter Pi noch nicht gesehen. Offen nach dem Treffen: Cookie `NTOS` noch `0x0100`. |
 | 2026-10-09 | **Produktversion NewTOS 0.5.** Anwenderschema: 1.0 = laeuft wie das Original, 2.0 = spuerbare FreeMiNT-Erweiterungen. Geaendert: der Versionstext an allen Stellen (`kernel/src/initinfo.rs` und `kernel/src/desk/inf.rs` `VERSION_STRING`, `shell.rs` `ver`, Doc-Kommentare in `tos-api/src/host.rs`/`gemdos/ssystem.rs`, Hosttest `gemdos_ssystem_sysinfo.rs`, `docs/api/gemdos/154-ssystem.md`, `docs/api/desktop/deskinf.md`/`deskmain.md`) und `version` der Crates `kernel`/`tos-api`/`tos-types` (0.1.0 → 0.5.0, `xtask` bleibt). `Ssystem(S_NEWTOS_KVERSION)` liefert damit `NewTOS 0.5 <Stempel>`. **Unveraendert** (Kompatibilitaetsvertrag): `Sversion`, OSHEADER `os_version` (0x0404), AES/VDI-Versionsworte, Cookie-Werte — auch der `NTOS`-Cookie bleibt 0x0000_0100 (programmsichtbar, eigene Entscheidung; nur der Kommentar in `kernel/src/lib.rs` sagt das jetzt). SYSACC liest den Text zur Laufzeit, kein Neubau noetig. Beleg: `measurements/measurement-2026-10-09-version05/`. |
 | 2026-10-09 | **About-Box ohne Autorenzeile (`kernel/src/desk/inf.rs` `do_aboutdesk`).** Anwendervorgabe: die Zeile „Adapted by Ingo Uhlemann with Claude AI...“ entfaellt jetzt auch in der Desktop-About-Box (Startbildschirm schon `a2b58038`); `AUTHORSHIP_LINE` entfernt, `DEOK` 15→14, OK-Knopf von Zeile 18 auf 16, Box 384×436 → 376×396 (laengste Zeile jetzt die EmuTOS-Copyrightzeile). Naeher an EmuTOS' `ADDINFO` (`desk_rsc.c:772-873`), das keine solche Zeile hat. Doku: `docs/api/desktop/deskinf.md`, `deskmain.md`. Beleg: `measurements/measurement-2026-10-09-version05/`. |

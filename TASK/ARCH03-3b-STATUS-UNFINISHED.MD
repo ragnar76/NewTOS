@@ -1,5 +1,7 @@
 # ARCH03 Stufe 3b — Quittung
 
+> **Abschluss 2026-10-13 (Lead):** Tester-Abnahme auf `main` (`f721c5af`) in memprot on/off/strict und `asid=on`: PASS, Beleg `measurements/measurement-2026-10-13-arch03-acceptance/RUNINFO.TXT`. Alle Offen-Punkte dieser Quittung sind auf `main` geschlossen: E10 mit `ae097d0f` (3c), TSRPAR durch die semantische Prüfung (Post-E9 Punkt 4), E6/strict in `docs/api/gemdos/process/4b-pexec.md`; `F_KEEP` und Tabellenmangel nur per Hosttest belegt (in QEMU nicht auslösbar). Auf echter Pi lief dieser Stand mit der Vorführkarte vom 2026-10-08 (Tag `ofam-2026` enthält alle genannten Commits); `asid=on` auf echter Pi offen. Dateiname bleibt wegen der Verweise darauf.
+
 **Status: UMGESETZT bis auf einen offenen Punkt (E10-Verdrahtung, Entscheidung
 nötig) · in QEMU auf beiden Boards in allen drei Modi belegt · Abnahme durch
 den Tester offen · Pi offen** · 2026-10-05 · Zweig `arch03`, Basis HEAD
