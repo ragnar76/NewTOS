@@ -1,0 +1,147 @@
+measurement-2026-10-13-crt0-main -- TASK/LIBC-MAIN: the libc start-up code
+sdk/libc/crt0.S calls mintlib's own `_main` (= `__libc_main`,
+mintlib/main.c:77-305) again instead of `exit(main(__libc_argc, __libc_argv,
+environ))`, for programs and accessories alike, as mintlib's `_crtinit`
+(crtinit.c:257) and `_acc_main` (crtinit.c:147) end. Follow-up of TASK/FS10
+(f3970e1e), which removed the cause of the first attempt's failure
+(measurements/measurement-2026-10-06-post-e9/diag-libc-main/README.TXT: every
+stdout write -1/EBADF, because `init_stream_mode` gives the console streams a
+seek function and NewTOS answered the first Fseek(0, h, SEEK_CUR) with EIHNDL).
+
+Date 2026-10-13, host macOS, QEMU 11.1.2, raspi4b (-append serial=on
+[memprot=off|strict]). Base HEAD f3970e1e, tree clean at start; the change is
+uncommitted in the shared tree (method/crt0-main-change.diff): sdk/libc/crt0.S,
+sdk/libc/build-libc.sh (comment), docs/sdk/03-first-programs.md,
+docs/sdk/07-mintlib-limits.md. No kernel / tos-api code changed. No SD card,
+Pi or TT touched. Cards: method/seed-card.sh (private 64 MiB images in the
+session scratchpad). Kernel images gitignored, sha256 in bin/KERNELS.SHA256;
+programs in bin/ (+ bin/j, bin/m) with sha256 in bin/SHA256SUMS,
+bin/j/SHA256SUMS; the app binaries in sdk/apps (gitignored) in
+repo-binaries.sha256.
+
+WHAT `_main` DOES BEYOND exit(main()) (mintlib-0.60.1, sdk/libc/mintlib/mintlib/main.c)
+  :87      __set_errno(0)
+  :95-98   Getcookie(C_MiNT) -> __mint (NewTOS: no MiNT cookie -> 0, TOS path)
+  :100-101 _app: Pdomain(1)  (NewTOS: EINVFN, as EmuTOS above MAX_FNCALL,
+           references/emutos bdos/bdosmain.c:444-445; result only stored)
+  :107-108 Pgeteuid==Pgetuid && Pgetegid==Pgetgid -> not secure (all EINVFN -> equal)
+  :115-142 UNIXMODE (b, r<c>) -> __default_mode__, _rootdir
+  :147-158 MiNT-only (Dgetdrv for U:) -- skipped, __mint = 0
+  :161-162 __open_stat[] = FH_UNKNOWN
+  :168-169 !*argv[0] && isatty(2) -> Fforce(2, -1)  (spec docs/api/gemdos/file/46-fforce.md:
+           BIOS handle stored as is, E_OK; NewTOS isatty = fds 0..2)
+  :191-198 setvbuf stdin _IOFBF / stdout _IOLBF / stderr _IONBF (size 0: EINVAL
+           after the mode bits are set -- mintlib's own quirk, identical on TOS)
+  :201-203 init_stream_mode: tty under TOS -> text mode, io functions replaced
+           (seek function back) -> first flush Fseek(0, h, SEEK_CUR) = 0 since FS10
+  :226-291 PATH (or PCONVERT list) in environ -> malloc'ed Unix form
+           (_path_dos2unx, unx2dos.c:217): PATH=C:\ -> PATH=/dev/c/; raw p_env untouched
+  :294     __set_errno(0)
+  :303     exit(main(argc, argv, envp))
+  `__main()` (global ctors, crtinit.c:142-145/252-255) exists only under
+  __GCC_HAVE_INITFINI_ARRAY_SUPPORT, which clang does not define for
+  aarch64-unknown-none-elf (checked with -dM -E): mintlib/__main.c is empty in
+  our build, nothing to call.
+  Duplication check: newtos-arch/heap_init.c (`__libc_crtinit`) and cmdargs.c do
+  _base, parseargs (environ/argv, PATH=\0C:\ join, ARGV= cut), _stksize policy,
+  Mshrink / accessory stack, _app, acc argv/environ -- none of the above. No
+  overlap; crt0 now passes the same (argc, argv, environ) as before, only to
+  `_main` instead of main.
+
+METHOD (method/; scripts copied from measurement-2026-10-13-arch03-acceptance/method
+and measurement-2026-10-13-fs10/method, those runs not modified; label cm)
+  sdk/libc/build-libc.sh       libc.a + libtest (checks/build-libc.log; 9 expected
+                               failures, 0 new; crt0.o pulls mintlib__main.o for `_main`)
+  build-all.sh                 every program/probe/app of the acceptance series rebuilt
+                               with the new crt0 (checks/build-all.log): examples,
+                               P10KID/P10TEST, S2 probes incl. ATEXITP/K, ACCFREE,
+                               FSEEKCON, STDOUTDBG (renamed STDOUTDB.NAP for 8.3),
+                               PPAUTO/PPZ/PPDESK/PPACC, UACC3A, MPROT, E10, APITEST,
+                               QED, TeraDesk, Doom, gemtest, chaintest, coremark.
+                               llvm-nm: QED, DESKTOP, DOOM, APITEST, PPACC.NAC, ATEXITP,
+                               STDOUTDB, P10TEST all contain __libc_main/_main/
+                               init_stream_mode; SYSACC.NAC (plain sdk/crt0.S) not.
+  build-ppj.sh -> bin/j        ENVKIDJ (a13), PPZJ, PPDESKJ
+  build-envkidm.sh -> bin/m    ENVKID from tests/envkidm.c (new, see S2ALL below)
+  checks.sh cm                 static baselines (checks/cm-*.txt, checks/checks-cm.log);
+                               also the product kernels kernel8-cm / kernel-virt-cm (HEAD)
+  cm-kernels.sh cm <scratch>   crash / keys / tdkeys injector kernels from scratch
+                               copies of HEAD (checks/cm-kernels.log)
+  cm-series.sh cm <cards> on off strict   (checks/series-cm.log)
+  cm-batch2.sh cm <cards> on off strict   S2ALL(S) with ENVKIDM (checks/batch2-cm.log)
+  summarize.sh -> checks/summary-cm.txt; shotcmp.py -> checks/shots-vs-a13-f10.txt
+  Socket directory: symlink /private/tmp/claude-501/n3 -> session scratchpad.
+
+RED -> GREEN (the diagnosis case: stdout through `_main`; method/tests/stdoutdbg.c,
+the post-E9 diag probe, built with the NEW crt0)
+  red   a13 kernel (pre-FS10, kernel8-a13.img of the a13 run), on:
+        fputs rc=0xffffffff errno=0x25 (EBADF), printf rc=0xffffffff
+        (serial/red-a13kernel-on-rpi4-stdoutdb-serial.log)
+  green f10 kernel (smoke) and cm kernel, on/off/strict:
+        fputs rc=0, printf rc=0x1a, errno 0, the lines appear
+        (serial/green-f10kernel-on-rpi4-stdoutdb-serial.log, cm-<mode>-rpi4-stdoutdb)
+
+STATIC BASELINES (docs/STATUS.md)                   expected        measured
+  host tests (cargo test -p tos-api -p tos-types -p xtask)  1277/0/1  1277 / 0 / 1
+  release warnings tos-api / kernel, fresh after
+    cargo clean -p kernel -p tos-api --target aarch64-unknown-none-softfloat --release
+    rpi4                                             64 / 94        64 / 94, 0 errors
+    qemu-virt                                        64 / 94        64 / 94, 0 errors
+  clippy tos-api / kernel, rpi4 and qemu-virt        76 / 125       76 / 125 both
+  sh tools/desk-drift-probe.sh                       31             31
+  sdk/run-host-tests.sh                              19/0/0         19 / 0 / 0
+  => no deviation (no Rust code touched).
+
+QEMU raspi4b RESULTS (checks/summary-cm.txt)
+                         ON          OFF         STRICT
+  STDOUTDB (diag case)   green       green       green
+  FSEEKCON               PASS        PASS        PASS
+  ATEXIT (ATEXITP+K)     PASS        PASS        PASS   file "main-body;atexit-handler;", exit code 7
+  E9MEM (x2) / E9PLAIN   PASS        PASS        PASS
+  ACCFREE                PASS        PASS        PASS   (2 AES sessions with SYSACC)
+  accessory start        PPACC.NAC (libc accessory, `_acc_main` path -> `_main`):
+                         ACC PASS in pparent and ppzj, all modes; desktop + SYSACC (acc
+                         t25 dump) = a13
+  PPARENT AUTO           PASS        PASS        PASS
+  PPZJ (Z, KID)          PASS        PASS        PASS
+  PPARENT Z / Z-KID      FAIL        FAIL        FAIL   stale original probe, same lines as a13
+  ENVRN                  PASS        PASS        PASS
+  VFORKT alone           PASS        PASS        PASS
+  S2ALL (strict: S2ALLS) MEM03 FAIL (stale ENVKID, as a13), all other groups PASS
+  S2ALLJ (ENVKIDJ)       MEM03 FAIL in all modes -- NEW, by design: envkidj.c expects
+                         getenv("PATH") == "C:\", `_main` now converts it to "/dev/c/"
+                         (main.c:268-288). Serial: "FAIL PATH=C:\ arrived (getenv)",
+                         argc/argv checks ok.
+  S2ALLM (ENVKIDM)       PASS        PASS        PASS(S2ALLS on crash kernel, denials
+                         "private memory, execute/write" as a13) -- envkidm.c checks
+                         getenv("PATH") == "/dev/c/" AND raw p_env "PATH=C:\" + argv.
+  PORT10                 ALL PASS (44) in all modes (cards verified after seeding)
+  APITEST TOTAL          106/0/5     106/0/5     106/0/5
+  Doom                   VERIFIED    VERIFIED    VERIFIED
+  KBDVEC + EmuCON        PASS        PASS        PASS
+  desktop / TeraDesk / QED / TeraDesk->QED (tdqed t30/t50) / acc
+                         dumps byte-identical to a13 in every mode.
+  [EXC]/[PANIC] lines: none in any cm-* serial log.
+
+SCREENDUMPS (checks/shots-vs-a13-f10.txt; f10 has fewer runs -> "missing")
+  vs a13: on 24 same / 0 diff, off 24 / 0, strict 20 / 4
+  vs f10: on 11 / 2, off 12 / 1, strict 11 / 1
+  Differing files only: doom-t30/t45 (timing jitter, documented in the fs10 RUNINFO;
+  on/off Doom dumps are even identical to a13) and strict s2allsj-crash1/crash2:
+  the same intended strict denials (P567S Pexec-6 execute, TSRPARS write), only the
+  addresses/registers differ (PD 0x01a49000 vs 0x01a43000 etc.) -- `_main` mallocs
+  stdio buffers and the PATH copy before main, so later blocks move. Same effect in
+  the Doom serial log: the only difference to f10 is "zone memory: 0x1c01000"
+  (f10: 0x1bff000).
+
+OBSERVABLE BEHAVIOUR CHANGES of the switch (mintlib's own start-up, as on TOS)
+  * stdout line-buffered + text mode on the console, stderr unbuffered, stdin
+    _IOFBF request (EINVAL, size 0); Fforce(2,-1) when argv[0] is "".
+  * environ PATH is the Unix form "/dev/c/..." (getenv); p_env unchanged;
+    spawnvp/execvp/system convert back (PORT10 44/44 green).
+  * a few more Malloc blocks before main (addresses above).
+
+NOT DRIVEN: real Pi 4; virt board QEMU runs (kernel only built); asid=on modes;
+EmuCON five-program run (keys9 kernel), desk3a/ppdesk double-click runs, MDPROBE,
+CRASHTST/UACC3A/MPROT/E10 (crash-path probes; their programs were rebuilt but not
+run -- most use the plain sdk/crt0.S).

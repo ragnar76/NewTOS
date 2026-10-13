@@ -1,0 +1,20 @@
+clang: Apple clang version 21.0.0 (clang-2100.3.34.2)
+abi  : LP64 (8-byte long/pointer, ELF64 AArch64)
+libs : gemlib.a + libc.a
+src  : /Volumes/Daten/Development/PiRusTOS/sdk/apps/chaintest/chaintest.c
+out  : /Volumes/Daten/Development/PiRusTOS/sdk/apps/chaintest/CHAINTST.NAP
+
+compiled chaintest.c OK
+
+LINK OK -> /Volumes/Daten/Development/PiRusTOS/sdk/apps/chaintest/CHAINTST.NAP (49536 bytes)
+    Class: 64-bit (0x2)
+    DataEncoding: LittleEndian (0x1)
+  Type: SharedObject (0x3)
+  Machine: EM_AARCH64 (0xB7)
+  Entry: 0x1000
+
+undefined symbols in the final image (goal 0): 0
+
+GEM trap sites (svc #2) reachable from the linked program:
+    00000000000011e4 <aes>:
+        11ec: d4000041     	svc	#0x2

@@ -114,14 +114,20 @@ $ ls -l HELLOLIB.NCP ; llvm-nm -u HELLOLIB.NCP | grep -c .
 84376 bytes ; 0 undefined symbols
 ```
 
-Note the **libc crt0** (`sdk/libc/crt0.S`, not `sdk/crt0.S`): it additionally
-calls `__libc_init_heap(basepage, p_hitpa)`, which sets mintlib's `_base` and
-points `malloc` at the free TPA between `_end` and the stack reserve
-(`sdk/libc/newtos-arch/heap_init.c`), and `__libc_parseargs()`, which builds
+Note the **libc crt0** (`sdk/libc/crt0.S`, not `sdk/crt0.S`): it first
+calls `__libc_crtinit(basepage)` (`sdk/libc/newtos-arch/heap_init.c`,
+mintlib's `_crtinit`/`_acc_main`), which sets mintlib's `_base`, builds
 `environ` from the environment block and `argc`/`argv` from its `ARGV=` part
-or else the basepage command tail (`sdk/libc/newtos-arch/cmdargs.c`). With no
-`ARGV=` and no tail — a plain double-click, or an `AUTO` run like the one
-below — that is `argc = 1, argv = {"", NULL}`.
+or else the basepage command tail (`__libc_parseargs()`,
+`sdk/libc/newtos-arch/cmdargs.c`), applies the `_stksize` policy and shrinks
+the TPA (an accessory gets a `Malloc`'ed stack instead), and returns the new
+stack. Then it calls mintlib's own `_main` (`mintlib/main.c`), which sets up
+the standard streams (stdout line-buffered, text mode on the console, stderr
+unbuffered and, with an empty `argv[0]`, forced to the console) and ends in
+`exit(main(argc, argv, environ))` — atexit handlers and the stdio flush run
+on a `return` from `main` ([07-mintlib-limits.md](07-mintlib-limits.md) §5).
+With no `ARGV=` and no tail — a plain double-click, or an `AUTO` run like the
+one below — that is `argc = 1, argv = {"", NULL}`.
 
 Run: the program was copied to `C:\AUTO\HELLOLIB.NCP` on a scratch image and
 booted headless in QEMU. Serial log (`[auto]`/`[launch]` lines are the

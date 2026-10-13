@@ -17,8 +17,10 @@
  *     (EmuTOS pgmld);
  *   - malloc then grows through GEMDOS Malloc (`_split_mem`, unix/sbrk.c),
  *     as with mintlib on TOS;
- *   - main's return value goes to exit(), as at the end of mintlib's
- *     `__libc_main`, so atexit handlers and the stdio flush run.
+ *   - then, for a program and an accessory alike, mintlib's own `_main`
+ *     (= `__libc_main`, mintlib/main.c:77-305), exactly as `_crtinit`
+ *     (crtinit.c:257) and `_acc_main` (crtinit.c:147) end: stdio set-up,
+ *     then exit(main(argc, argv, environ)).
  *
  * TPA layout (tos-api/src/bdos/process/loader.rs, sdk/newtos.ld), relative
  * to the TPA's pool address B (ARCH03 stage 1, VA = PA):
@@ -57,38 +59,48 @@ _start:
     bl      __libc_crtinit
     mov     sp, x0
 
-    /* exit(main(__libc_argc, __libc_argv, environ)) -- how mintlib's own
-     * start-up ends (mintlib/main.c:302, the last statement of
-     * `__libc_main`, which _crtinit reaches as `_main`, crtinit.c:257, and
-     * an accessory's _acc_main too, :147): main's return value goes to
-     * exit(), which runs the atexit handlers in reverse order and closes
-     * (flushes) every stdio stream before `_exit` -- Pterm, newtos-arch/
-     * proc.S (stdlib/exit.c:43-59). __libc_crtinit built `environ` from the
-     * environment block p_env and argc/argv from its ARGV= part or else the
-     * BasePage command tail p_cmdlin (newtos-arch/cmdargs.c = crtinit.c
-     * parseargs()); with no ARGV= and an empty tail that is argc == 1 and
-     * argv == { "", NULL } -- the TOS "program name not available"
-     * convention.
+    /* _main(__libc_argc, __libc_argv, environ) -- how mintlib's own
+     * start-up ends, for a program (`_crtinit`, crtinit.c:257) and for an
+     * accessory (`_acc_main`, crtinit.c:147) alike. `_main` is the weak
+     * alias of `__libc_main` (mintlib/main.c:305), so a program may still
+     * supply its own. __libc_crtinit built `environ` from the environment
+     * block p_env and argc/argv from its ARGV= part or else the BasePage
+     * command tail p_cmdlin (newtos-arch/cmdargs.c = crtinit.c parseargs());
+     * with no ARGV= and an empty tail that is argc == 1 and argv ==
+     * { "", NULL }, the TOS "program name not available" convention; an
+     * accessory gets argv = environ = { "", NULL } (crtinit.c:139-140).
      *
-     * The rest of `__libc_main` (MiNT cookie, Pdomain, UNIXMODE, stdio
-     * stream modes, stderr to the console, PATH conversion) is NOT run here,
-     * as it was not before: with it, every write through stdout fails, since
-     * its text-mode stream set-up seeks on the console handle and the NewTOS
-     * Fseek answers EIHNDL there, where EmuTOS answers 0 for every handle
-     * function but read/write on a character device (bdos/bdosmain.c:
-     * 571-641). Reported (post-E9); calling `_main` waits for that fix. */
+     * `__libc_main` (mintlib/main.c:77-303) then: clears errno; reads the
+     * MiNT cookie (none on NewTOS: __mint = 0); a program calls Pdomain(1)
+     * and compares Pgeteuid/Pgetuid and Pgetegid/Pgetgid (NewTOS answers
+     * EINVFN to all of them, as EmuTOS does above its last function,
+     * bdos/bdosmain.c:444-445, so not "secure"); applies UNIXMODE; clears __open_stat[]; forces handle
+     * 2 to the console (Fforce(2, -1)) when argv[0] is empty and handle 2
+     * is a terminal; sets stdin/stdout/stderr to full/line/no buffering
+     * and, on a terminal under TOS, to text mode -- which gives the
+     * streams a seek function again, so the first flush asks
+     * Fseek(0, h, SEEK_CUR); that is 0 on a character device, as on EmuTOS
+     * (docs/api/gemdos/file/42-fseek.md, TASK/FS10); converts PATH (or the
+     * PCONVERT list) to the `/dev/c/...:...` form in environ (spawn/exec
+     * convert it back); and ends in exit(main(argc, argv, envp)) --
+     * atexit handlers in reverse order, every stdio stream closed, then
+     * `_exit` = Pterm (stdlib/exit.c:43-59, newtos-arch/proc.S).
+     *
+     * mintlib's start-up also calls `__main()` (global constructors) before
+     * `_main` only under __GCC_HAVE_INITFINI_ARRAY_SUPPORT (crtinit.c:142-
+     * 145, 252-255), which clang does not define for this target -- the
+     * same build of mintlib/__main.c is empty, so there is nothing to call. */
     adrp    x0, __libc_argc
     add     x0, x0, :lo12:__libc_argc
-    ldr     x0, [x0]
+    ldr     x0, [x0]            /* long _argc (main.c:78) */
     adrp    x1, __libc_argv
     add     x1, x1, :lo12:__libc_argv
     ldr     x1, [x1]
     adrp    x2, environ
     add     x2, x2, :lo12:environ
     ldr     x2, [x2]
-    bl      main
-    /* exit(main's return): w0 is already the argument. Never returns. */
-    bl      exit
+    bl      _main
+    /* `__libc_main` ends in exit() and never returns. */
 
     /* Safety net: Pterm does not return, but guard against a runaway PC. */
 1:  b       1b

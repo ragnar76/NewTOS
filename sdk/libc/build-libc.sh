@@ -67,9 +67,10 @@
 #     (mintlib/setstack.S) are m68k; newtos-arch/vfork.S and setstack.S are
 #     their AArch64 retargets. With them and thread.c, posix/system.c is
 #     mintlib's own again (the PORT10 overlay without the POSIX branch is gone).
-#   - sdk/libc/crt0.S: libc-aware crt0 (calls __libc_crtinit, then
-#     exit(main(...)) as mintlib's __libc_main ends) -- distinct from
-#     sdk/crt0.S used by the libc-less examples.
+#   - sdk/libc/crt0.S: libc-aware crt0 (calls __libc_crtinit, then mintlib's
+#     own _main = __libc_main, which ends in exit(main(...)), as crtinit.c's
+#     _crtinit / _acc_main do) -- distinct from sdk/crt0.S used by the
+#     libc-less examples.
 #
 # The linker pulls only the archive members it needs, so libc.a is compiled from
 # whole core directories best-effort (files that fail to assemble for AArch64 --
