@@ -1,0 +1,32 @@
+# LIBC-TTY — mintlib-`getchar`/`fgets` auf der Konsole: RAW-Weg, doppelt gelesene Tasten
+
+Status: **OFFEN** · Prioritaet: **P2** · Typ: SDK / libc — Nebenfund FS11 (2026-10-13)
+
+Abhaengigkeiten: [FS11](FS11.md) (Zeilenlesen ueber `Fread` auf CON)
+
+## Sachverhalt
+
+`sdk/libc/newtos-arch/isatty.c` meldet die Handles 0–2 immer als Terminal,
+setzt aber `__open_stat[].flags` nie. mintlibs `__read` nimmt deshalb fuer
+stdin den RAW-Weg (`_console_read_byte` → `Crawcin`, `unix/read.c:173-217`)
+statt `Fread`: kein Echo, kein CRMOD; dieser Weg liest zwei Tasten pro Byte
+und verwirft die erste (`unix/read.c:176,183`). `fgets` auf stdin endet nie.
+Mit den Flags, die mintlibs eigenes `__isatty` setzt (CRMOD|ECHO,
+`mintlib/isatty.c:55-57`), laufen `getchar` und `fgets` ueber den
+FS11-Zeilenweg korrekt (Beleg: `measurements/measurement-2026-10-13-fs11/`,
+Probe FS11DEV Teil C und `serial/smoke-on-rpi4-fs11dev-serial.log`).
+
+Ausserdem meldet der Shim Handles 0–2 auch dann als Terminal, wenn sie per
+`Fforce` auf eine Datei umgelenkt sind.
+
+## Arbeit
+
+1. Researcher: belegen, was mintlibs `__isatty` auf TOS tut (ohne MiNT:
+   Erkennung per `Fseek`/`Finstat`?) und warum der NewTOS-Shim davon
+   abweicht; ob der Shim entfallen kann. Verhalten des RAW-Wegs pruefen.
+2. Developer: umsetzen; SDK-Hosttests; QEMU-Sonde `getchar`/`fgets`
+   (FS11DEV Teil C ohne Flag-Setzen), EmuCON/APITEST gegentesten.
+
+## Arbeitsregel
+
+[Gemeinsame Regeln](README.md) gelten.
