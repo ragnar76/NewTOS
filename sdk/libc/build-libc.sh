@@ -29,7 +29,8 @@
 #                    overlay include/setjmp.h (TASK/T07)
 #       heap_init.c -> __libc_crtinit: mintlib crtinit.c _crtinit/_acc_main
 #                    for TOS (_stksize policy, Mshrink of the TPA, malloc via
-#                    GEMDOS Malloc); called by crt0.S (ARCH03 E9).
+#                    GEMDOS Malloc); called by crt0.S (ARCH03 E9). First
+#                    sets malloc's MAXHUNK to 16 MiB (MEM05 part B).
 #       cmdargs.c -> crtinit.c parseargs(), which does not compile here:
 #                    environ from p_env, argc/argv from its ARGV= part or the
 #                    BasePage command tail p_cmdlin, program_invocation_name;
@@ -59,6 +60,10 @@
 #                                decision 2026-10-02)
 #       mintlib/thread.c         LP64 casts for the 32-bit basepage fields
 #                                (tfork, __waitval, __waittime; TASK/PROC01)
+#       mintlib/malloc.c         + __newtos_malloc_maxhunk(siz), which sets
+#                                only MAXHUNK (the ceiling of the hunk
+#                                doubling); heap_init.c calls it with 16 MiB
+#                                (TASK/MEM05 part B, design E6)
 #       include/sys/wait.h       struct __wait bit-fields in little-endian
 #                                order (same int layout: exit code bits
 #                                8..15, termsig 0..6), so WEXITSTATUS & co.

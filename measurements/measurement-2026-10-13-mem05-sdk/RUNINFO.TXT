@@ -1,0 +1,130 @@
+measurement-2026-10-13-mem05-sdk -- Developer run for MEM05 part B (SDK), design docs/analysis/mem05-design-2026-10-13.md
+§4 / step 7, user decision E6 (TASK/MEM05.md "Freigabe Entwurf"): mintlib's MAXHUNK raised to 16 MiB through an overlay
+setter called once by the C start-up. Base HEAD c06d370c (part A committed as d2e3c384), working tree with the part-B
+changes uncommitted. Host macOS, QEMU raspi4b only. No SD card, no Pi. Date 2026-10-13.
+
+RESULT: DONE. Host tests, static checks, relink of every libc program, QEMU raspi4b on / off / strict / on-asid as below.
+Nothing committed. docs/STATUS.md not touched (by instruction).
+
+CHANGE (product, SDK)
+  sdk/libc/overlay/mintlib/malloc.c (new)  pristine mintlib-0.60.1 mintlib/malloc.c + one documented function
+      void __newtos_malloc_maxhunk(size_t siz) { MAXHUNK = siz; }   (diff vs the tarball: 13 added lines, nothing else)
+  sdk/libc/newtos-arch/heap_init.c          weak extern __newtos_malloc_maxhunk; at the very start of __libc_crtinit
+      (before _base, before the p_parent == 0 accessory branch -> acc_main): if (__newtos_malloc_maxhunk)
+      __newtos_malloc_maxhunk(16 MiB)
+  sdk/libc/build-libc.sh                    overlay list + heap_init line in the header comment (the overlay mechanism
+      copies every file under overlay/ -- no code change needed)
+  sdk/libshare/libshare-link.sh, sdk/zview/build-zview.sh, sdk/ldg/build-ldg-{demo,client}.sh: ls_undefined_count --
+      the undefined-symbol gate (goal 0) skips exactly the weak __newtos_malloc_maxhunk. Reason: an LDG module runs on
+      libshare's allocator and must NOT pull mintlib's malloc.o (ls_check_module_map), so in every module the weak
+      reference stays undefined BY DESIGN (design §4.3 "schwache Referenz, damit Programme ohne malloc malloc.o nicht
+      mitlinken muessen"); build-zview.sh failed on it ("BMP.NLD has undefined symbols: 1", checks/relink-build-zview.log
+      first attempt, overwritten by the rerun; the ldg scripts printed 1). Checked: in all 12 modules (zView codecs,
+      EX_LIB, POPUP) the symbol is 'w', relocations 0 non-RELATIVE (static link resolves it to 0, GOT slot 0, no dynamic
+      relocation); a probe link of a weak-only reference with -pie --no-dynamic-linker: 0 relocations.
+  Host test: sdk/libc/tests/malloc-host.{sh,c}, malloc-host-gemdos.h, wired into sdk/run-host-tests.sh (pattern of
+      quickstat-host): the overlay malloc.c built with build-libc.sh's DEFS against a recording __sbrk, one process per
+      scenario. pristine (no call) = the post-E9 QEMU measurement 1/3/19/87/173/254/255 hunks (calibration); maxhunk +
+      acc (= acc_main's _split_mem 0) = 1/3/7/10/14 (design table §4.4), hunk i = 8 KiB << i up to 16 MiB; small: a
+      hello-world = one 8 KiB hunk, a 32 KiB buffer gets its own 40 KiB hunk and does not advance the doubling;
+      chunksize: _mallocChunkSize(64 KiB) after the setter still gives 64 KiB hunks. 30 checks. Red: setter body emptied
+      (scratch copy, MALLOC_SRC=) -> 10 FAILED (1 000 000 -> 1714 hunks as in the design's 32-KiB column).
+  Docs: docs/sdk/07-mintlib-limits.md (header, §5 malloc row, new §10 with the measured table), docs/COMPATIBILITY.md
+      (MEM05 deviation: the "(SDK half lands with part B)" sentence replaced by observable difference (4)),
+      docs/MEMORY.md ADR-025 status line.
+
+STATIC CHECKS (method/checks.sh b0; checks/b0-*.txt, checks/b0-summary.txt)   expected     measured
+  host tests tos-api tos-types xtask                                         1340/0/1     1340/0/1
+  release warnings tos-api/kernel, fresh, rpi4 / qemu-virt                   64/94        64/94, 0 errors both
+  clippy tos-api/kernel rpi4 / qemu-virt                                     76/125       76/125 both
+  tools/desk-drift-probe.sh                                                  31           31
+  sdk/run-host-tests.sh                                                      19/0/0       20/0/0 (+1: malloc-host)
+  Kernel: bin/kernel8-b0.img (HEAD c06d370c) vs part A's kernel8-m5.img: same size, cmp -l = 16 bytes = the two 8-byte
+  git-hash stamps ("(c06d370c)" vs "(b87ecb2a)"): the kernel is unchanged by part B. The QEMU runs therefore use BYTE
+  COPIES of part A's kernels (bin/KERNELS-REUSED.SHA256: kernel8-m5, -crash-m5, -keys-m5, -tdkeys-m5), so the SDK is
+  the only variable against the part-A run.
+
+LIBRARIES / RELINK
+  sdk/libc/libc.a eb9cd4f8 (part A) -> 313a7bc0 (checks/libs.sha256); build: 9 known failures, 0 new; malloc.c compiled
+  from the overlay (cmp = overlay). gemlib.a was rebuilt by lib_ensure (stale: overlay dir newer), 67fb8b86.
+  Relinked against the new libc.a, all OK, 0 undefined symbols (logs checks/build-*.log, checks/relink-*.log):
+    method/build-all.sh (copy of the libc-tty-acceptance script + build-extra.sh + build-mem05.sh + build-mem05b.sh):
+      every probe in bin/ (43 libc programs changed hash vs part A's bin/PROGRAMS.SHA256; the 29 unchanged are the
+      libc-less sdk/crt0.S programs), APITEST, QED, TeraDesk, Doom, gemtest, chaintest, coremark (repo-binaries.sha256);
+    present, zView (+10 codecs), LDG lib/client/demo, libtest (examples), fsbench, libm mathtst,
+    build-libc.sh clients argvtest, clocktest, setjmptst, libtest, P10KID, P10TEST.
+  bin/SHA256SUMS, SHA256SUMS-extra. HELLOOLD.NAP linked against the part-A libc.a (libc-before.a in the job scratch).
+
+PROBES (method/tests, built by method/build-mem05b.sh)
+  MDPROBE.NAP part A's mdprobe.c unchanged (malloc(32) x 3 000 000, free_mds() at start/end, default limit 8192)
+  MDSTEP.NAP  mdstep.c: per step the GEMDOS blocks malloc took (free_mds() delta; run with mdlimit=128 so a probe is
+              <= 128 Mxalloc) AND mintlib's own hunk list (hunks.h: VAL_BORDER chunks of _mchunk_free_list); up to
+              10 000 000 blocks
+  MDTIME.NAP  mdstep.c -DMDSTEP_NOPROBE, default limit: timing only
+  HELLOMEM.NAP / HELLOOLD.NAP  hellomem.c against the new / the part-A libc.a: hunks before main, after printf + mallocs
+  MDACC.NAC   mdacc.c, accessory in C:\ACC\ (design QEMU test 15): malloc(32) x 147 605 in acc_main context, hunks +
+              GEMDOS blocks, free all, then appl_init/menu_register/evnt_mesag like PPACC; prints MDACC: PASS/FAIL
+
+QEMU RASPI4B (method/b-series.sh; serial/b-<mode>-rpi4-*, screendumps/; checks/summary-b.txt, checks/series-b.txt).
+  Timed probes (mdstep, mdtime, mdprobe) ran one mode at a time with nothing else on the host except where noted; the
+  sample ran as three parallel mode chains. QEMU timings are indicative only.
+
+  T10 MDSTEP (mdlimit=128), identical in on / off / strict / on-asid:
+      blocks       hunks (mintlib)  GEMDOS blocks taken in main  model §4.4
+      100           1                0                           1
+      1 000         3                2                           3
+      10 000        7                6                           7
+      100 000      10                9                           -
+      147 605      10                9                           10   sizes 8,16,...,4096 KiB
+      147 606      10                9                           -
+      1 000 000    14               13                           14
+      2 000 000    17               16                           -
+      3 000 000    21               20                           -   (part A, 32-KiB hunks: 5138)
+      5 000 000    27               26                           -
+      10 000 000   44               43                           44   sizes 8 KiB..16 MiB (12) + 32 x 16 MiB = 570 417 152 B
+      The first 8 KiB hunk is taken by the start-up (_main stdio) BEFORE main's first free_mds() (HELLOMEM: "mintlib at
+      main hunks=1", 8189 = 8192 - TPA - env - 1 allowed), hence GEMDOS delta = hunks - 1: every hunk is exactly one
+      GEMDOS block. No malloc NULL. Model and measurement agree at every model point.
+      Kernel MD supply after MDSTEP: capacity 234 (+1 page), pages held 5/512 (on) / 1/512 (off).
+  Times (first step -> step), seconds:     on      off     strict  on-asid
+      MDTIME   3 000 000                    0.89    4.53    0.94    2.30
+      MDTIME  10 000 000                   37.0    38.5    37.4    45.8
+      MDSTEP  10 000 000                   37.4    38.0    38.2    39.5
+      MDPROBE 3 000 000                     0.89    4.38    1.07    0.96
+      Part A (same MDPROBE source, 32-KiB hunks): ~2000 s for the 3 000 000 series in every mode (off 2004 s, on 2195 s).
+      Not investigated: the per-block cost grows beyond ~3 000 000 blocks (3M->5M 4.6 s, 5M->10M 31.5 s, on) and the
+      off mode is slower than on below 3M (4.4 s vs 0.9 s) -- QEMU-only timings, not analysed further.
+  MDPROBE (default limit 8192, part A's probe): more blocks allowed at start 8189 (as part A), end 8169 -> taken by
+      malloc = 20 (part A: 5138); MEM05 after program: pages held 250/512 with protection (= part A: the peak comes from
+      free_mds() holding 8189 blocks, not from malloc), 70/512 off. free_mds() at start: on 20.7 s, strict 25.2 s,
+      on-asid 23.1 s, off 0.05 s (the documented per-sync cost, MEM10 -- unchanged by part B).
+  T15 MDACC (accessory, mdlimit=128), on / off / strict: MDACC: PASS. _app == 0, p_parent == 0; malloc(32) x 147 605
+      without NULL; GEMDOS blocks taken = 10 = mintlib hunks; sizes 8,16,32,64,128,256,512,1024,2048,4096 KiB (bit set
+      0x3ff) -- the accessory path gets MAXHUNK. After freeing all blocks mintlib keeps 1 hunk (4 MiB) -- mintlib's own
+      free/Mfree rule, unchanged. Desktop up afterwards (screendumps b-<mode>-rpi4-mdacc-end.png, viewed on).
+  Footprint HELLOMEM / HELLOOLD, on / off / strict: both "mintlib at main hunks=1 total=8192", "more blocks allowed at
+      main 8189", after printf + malloc(100) + malloc(1000): taken in main 0, still 1 hunk of 8 KiB; Malloc(-1) unchanged.
+      New and old libc identical: a small program still takes one 8 KiB hunk.
+  T13 APITEST: TOTAL 106/0/5 in on / off / strict / on-asid; [OK]/[FAIL]/[SKIP] lines identical to part A modulo hex
+      (126 lines, 0 differing, checks/summary-b.txt).
+  T14 regression sample vs measurement-2026-10-13-mem05-kernel (shotcmp.py byte compare, prefix m5-<mode>-rpi4-):
+      on 13 same / off 13 same / strict 14 same (desktop, acc, teradesk, qed, apitest t25/t40, tdqed t30/t50 = TeraDesk
+      -> QED, kbdvec-emucon t20/t35/t60 = EmuCON, s2allm/s2allsm crash1, e9mem); DIFF only doom-t30/t45 (demo timing, as
+      in part A; viewed on-t45: Doom running, serial "VERIFIED via EdDI+scale+vro_cpyfm" all modes) and strict
+      s2allsm-crash2 (the intended S2ALLS crash, viewed: Bus Error report for TSRPARS as expected; S2ALL PASS + MEM03
+      PASS, 2 EXC lines = the intended crash, as in part A). on-asid: apitest t25/t40 + mdprobe-end same as part A.
+      S2ALLM: S2ALL PASS + MEM03 PASS (on/off); E9MEM PASS all modes. [EXC]/PANIC: none except the intended strict crash.
+      "MISSING" in shotcmp = the new part-B tags (no part-A counterpart).
+
+VOID (serial/void/, screendumps/void/)
+  b-on-rpi4-hellomem/-hellold (first two tries): probe bugs -- MAXP 4096 below the default limit 8192 (both free_mds()
+    capped, delta 0), then the "before main" hunk not reported; fixed in hellomem.c, rerun above.
+  b-<mode>-rpi4-kbdvec-emucon-*-nooldexec[2]: OLDEXEC.NCP was missing from bin/ (build-oldexec.sh needs crt0-pre0d.S +
+    newtos-pre0d.ld, not copied at first; EmuCON then showed "error 33" instead of the expected EPLFMT "error 66"); the
+    second try reused the old card (zsh glob aborted the rm). Files copied from the acceptance method, OLDEXEC.NCP
+    rebuilt = byte-identical to part A's, kbdvec card reseeded; rerun: t20/t35/t60 byte-identical to part A, all modes.
+
+NOT RUN: real Pi 4; qemu-virt (not asked; the kernel is unchanged); memprot=verify; the old-kernel 254/255 control on
+  QEMU (the host harness reproduces it from the pristine schedule, and the post-E9 run is the reference); MDPAR/MDBUD
+  (kernel-side, unchanged); ACCFREE/TSRRES/PFLAGS/CRASHTST; zView/LDG/present/fsbench/coremark/gemtest/chaintest/libtest
+  programs were relinked and link-checked but not run.

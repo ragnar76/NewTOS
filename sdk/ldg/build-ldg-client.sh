@@ -128,7 +128,7 @@ link() { # link <module|client> <out> <objs...>
   fi
   echo "LINK OK -> $out ($(wc -c < "$out" | tr -d ' ') bytes)"
   "$READOBJ" --file-headers "$out" | grep -E '^ *Type:'
-  echo "  undefined symbols (goal 0): $("$NM" -u "$out" 2>/dev/null | grep -c . || true)"
+  echo "  undefined symbols (goal 0): $(ls_undefined_count "$out")"
   if [ "$kind" = module ]; then
     ls_check_module_map "$map" "$(basename "$out")" || { rm -f "$out"; exit 1; }
   fi

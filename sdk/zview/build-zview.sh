@@ -209,7 +209,7 @@ zv_link() { # zv_link <module|program> <out> <map> <archives...> -- <objs...>
       -Map="$map" -o "$out" 2>"$out.err"; then
     echo "error: link of $(basename "$out") failed:" >&2; sed 's/^/    /' "$out.err" >&2; exit 1
   fi
-  local u; u=$("$NM" -u "$out" 2>/dev/null | grep -c . || true)
+  local u; u=$(ls_undefined_count "$out")
   echo "LINK OK -> $(basename "$out") ($(wc -c < "$out" | tr -d ' ') bytes, $("$READOBJ" --file-headers "$out" | sed -n 's/^ *Type: //p'), undefined symbols: $u)"
   [ "$u" -eq 0 ] || { echo "error: $(basename "$out") has undefined symbols" >&2; exit 1; }
   if [ "$kind" = module ]; then

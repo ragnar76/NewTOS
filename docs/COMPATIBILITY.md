@@ -818,9 +818,12 @@ remaining allowance, or what the budget or free memory allows; (3) with
 memory protection on, each allocation and free costs time proportional to
 the number of live blocks in the system (the protection sync rebuilds its
 block snapshot; known limit, ticket MEM10). The MD structure, the
-`mp_mfl`/`mp_mal` chains and `Getmpb` are unchanged. (The SDK half of the
-decision — mintlib hunks that keep doubling up to 16 MiB — lands with
-MEM05 part B.)
+`mp_mfl`/`mp_mal` chains and `Getmpb` are unchanged. (4) The SDK half
+(MEM05 part B): mintlib programs built with the NewTOS SDK ask the OS for heap
+in hunks that keep doubling up to 16 MiB instead of stopping at 32 KiB
+(`sdk/libc/overlay/mintlib/malloc.c`, `docs/sdk/07-mintlib-limits.md` §10),
+so a large heap needs tens of blocks, not thousands; a program calling
+`_mallocChunkSize()` is unaffected.
 
 ## EmuTOS is the reference, not the template
 

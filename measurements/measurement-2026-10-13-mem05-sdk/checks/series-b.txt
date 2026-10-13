@@ -1,0 +1,172 @@
+on       mdstep   start->main   0.06 s
+   blocks     MDs  hunks  t(s since 100)
+         100     0      1     0.000
+        1000     2      3     0.011
+       10000     6      7     0.023
+      100000     9     10     0.046
+      147605     9     10     0.065
+      147606     9     10     0.076
+     1000000    13     14     0.266
+     2000000    16     17     0.553
+     3000000    20     21     0.954
+     5000000    26     27     5.561
+    10000000    43     44    37.413
+   main start -> DONE 37.47 s; first step -> last step 37.413 s
+on       mdtime   start->main   5.29 s
+   blocks     MDs  hunks  t(s since 100)
+         100     -      1     0.000
+        1000     -      3     0.000
+       10000     -      7     0.002
+      100000     -     10     0.018
+      147605     -     10     0.028
+      147606     -     10     0.029
+     1000000     -     14     0.228
+     2000000     -     17     0.509
+     3000000     -     21     0.888
+     5000000     -     27     5.496
+    10000000     -     44    37.046
+   main start -> DONE 37.05 s; first step -> last step 37.046 s
+on       mdprobe  start->main  20.71 s
+   blocks     MDs  hunks  t(s since 100)
+         100     -      -     0.000
+        1000     -      -     0.000
+       10000     -      -     0.002
+      100000     -      -     0.018
+      147605     -      -     0.028
+      147606     -      -     0.028
+      200000     -      -     0.040
+      500000     -      -     0.107
+     1000000     -      -     0.229
+     2000000     -      -     0.512
+     3000000     -      -     0.892
+   end probe: more allowed=8169 taken by malloc=20; end-probe time 20.89 s
+   main start -> DONE 21.78 s; first step -> last step 0.892 s
+off      mdstep   start->main   0.02 s
+   blocks     MDs  hunks  t(s since 100)
+         100     0      1     0.000
+        1000     2      3     0.001
+       10000     6      7     0.003
+      100000     9     10     0.020
+      147605     9     10     0.032
+      147606     9     10     0.033
+     1000000    13     14     0.311
+     2000000    16     17     1.945
+     3000000    20     21     4.424
+     5000000    26     27    11.120
+    10000000    43     44    37.977
+   main start -> DONE 38.02 s; first step -> last step 37.977 s
+off      mdtime   start->main   0.04 s
+   blocks     MDs  hunks  t(s since 100)
+         100     -      1     0.000
+        1000     -      3     0.001
+       10000     -      7     0.002
+      100000     -     10     0.020
+      147605     -     10     0.032
+      147606     -     10     0.033
+     1000000     -     14     0.330
+     2000000     -     17     2.047
+     3000000     -     21     4.527
+     5000000     -     27    11.407
+    10000000     -     44    38.543
+   main start -> DONE 38.55 s; first step -> last step 38.543 s
+off      mdprobe  start->main   0.05 s
+   blocks     MDs  hunks  t(s since 100)
+         100     -      -     0.000
+        1000     -      -     0.000
+       10000     -      -     0.001
+      100000     -      -     0.017
+      147605     -      -     0.027
+      147606     -      -     0.027
+      200000     -      -     0.041
+      500000     -      -     0.130
+     1000000     -      -     0.311
+     2000000     -      -     1.948
+     3000000     -      -     4.376
+   end probe: more allowed=8169 taken by malloc=20; end-probe time 0.03 s
+   main start -> DONE 4.41 s; first step -> last step 4.376 s
+strict   mdstep   start->main   0.06 s
+   blocks     MDs  hunks  t(s since 100)
+         100     0      1     0.000
+        1000     2      3     0.009
+       10000     6      7     0.019
+      100000     9     10     0.043
+      147605     9     10     0.061
+      147606     9     10     0.072
+     1000000    13     14     0.256
+     2000000    16     17     0.546
+     3000000    20     21     0.941
+     5000000    26     27     5.612
+    10000000    43     44    38.205
+   main start -> DONE 38.26 s; first step -> last step 38.205 s
+strict   mdtime   start->main   5.75 s
+   blocks     MDs  hunks  t(s since 100)
+         100     -      1     0.000
+        1000     -      3     0.001
+       10000     -      7     0.003
+      100000     -     10     0.020
+      147605     -     10     0.030
+      147606     -     10     0.030
+     1000000     -     14     0.234
+     2000000     -     17     0.537
+     3000000     -     21     0.936
+     5000000     -     27     5.632
+    10000000     -     44    37.424
+   main start -> DONE 37.43 s; first step -> last step 37.424 s
+strict   mdprobe  start->main  25.22 s
+   blocks     MDs  hunks  t(s since 100)
+         100     -      -     0.000
+        1000     -      -     0.001
+       10000     -      -     0.003
+      100000     -      -     0.023
+      147605     -      -     0.034
+      147606     -      -     0.035
+      200000     -      -     0.048
+      500000     -      -     0.129
+     1000000     -      -     0.271
+     2000000     -      -     0.605
+     3000000     -      -     1.066
+   end probe: more allowed=8169 taken by malloc=20; end-probe time 24.73 s
+   main start -> DONE 25.80 s; first step -> last step 1.066 s
+on-asid  mdstep   start->main   0.05 s
+   blocks     MDs  hunks  t(s since 100)
+         100     0      1     0.000
+        1000     2      3     0.007
+       10000     6      7     0.015
+      100000     9     10     0.037
+      147605     9     10     0.052
+      147606     9     10     0.059
+     1000000    13     14     0.252
+     2000000    16     17     0.546
+     3000000    20     21     0.946
+     5000000    26     27     6.878
+    10000000    43     44    39.491
+   main start -> DONE 39.54 s; first step -> last step 39.491 s
+on-asid  mdtime   start->main   8.84 s
+   blocks     MDs  hunks  t(s since 100)
+         100     -      1     0.000
+        1000     -      3     0.001
+       10000     -      7     0.003
+      100000     -     10     0.090
+      147605     -     10     0.172
+      147606     -     10     0.198
+     1000000     -     14     1.250
+     2000000     -     17     1.888
+     3000000     -     21     2.301
+     5000000     -     27     8.173
+    10000000     -     44    45.813
+   main start -> DONE 45.82 s; first step -> last step 45.813 s
+on-asid  mdprobe  start->main  23.06 s
+   blocks     MDs  hunks  t(s since 100)
+         100     -      -     0.000
+        1000     -      -     0.000
+       10000     -      -     0.001
+      100000     -      -     0.019
+      147605     -      -     0.031
+      147606     -      -     0.031
+      200000     -      -     0.045
+      500000     -      -     0.123
+     1000000     -      -     0.264
+     2000000     -      -     0.572
+     3000000     -      -     0.961
+   end probe: more allowed=8169 taken by malloc=20; end-probe time 20.54 s
+   main start -> DONE 21.50 s; first step -> last step 0.961 s

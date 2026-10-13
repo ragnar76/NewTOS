@@ -169,6 +169,16 @@ report fstat-host $rc "mintlib tree absent or host not LP64"
 [ $rc -eq 0 ] || [ $rc -eq 77 ] || sed 's/^/      /' "$WORK/waith-host.log"
 report waith-host $rc "mintlib tree absent or host not little-endian LP64"
 
+# malloc-host (MEM05 part B, user decision E6): the overlay mintlib/malloc.c's
+# __newtos_malloc_maxhunk raises only MAXHUNK -- hunks still start at 8 KiB and
+# double, now up to 16 MiB (malloc(32) x 147 605 = 10 hunks instead of 254);
+# without the call the counts equal the post-E9 QEMU measurement; a
+# hello-world takes one 8 KiB hunk; _mallocChunkSize still overrides. With the
+# setter's body emptied 10 of 30 fail.
+"$SDK/libc/tests/malloc-host.sh" > "$WORK/malloc-host.log" 2>&1; rc=$?
+[ $rc -eq 0 ] || [ $rc -eq 77 ] || sed 's/^/      /' "$WORK/malloc-host.log"
+report malloc-host $rc "mintlib tree absent or host not LP64"
+
 # --- app host tests --------------------------------------------------------------
 # c2p-host (PORT06, user decision 2026-10-04): DOOM's table chunky-to-planar
 # (sdk/apps/doom/doomgeneric_gem.c, compiled without its GEM half) equals the

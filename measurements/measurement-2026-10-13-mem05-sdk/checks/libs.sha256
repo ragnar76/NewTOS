@@ -1,0 +1,3 @@
+313a7bc0a1cc04031bd970ac6d504ae50907d85d42c50524da1678002bdb2327  sdk/libc/libc.a
+67fb8b86cde4f51a196fc8f5f4e6a0af312248e4256bb16c50c48e6eff05e1fc  sdk/gemlib/gemlib.a
+eb9cd4f894bdf73a70b2e381df70971639bf594bb0d865b495642e2017c1e6cb  libc.a before part B (= part A run; kept in the job scratch as libc-before.a, used for HELLOOLD.NAP)

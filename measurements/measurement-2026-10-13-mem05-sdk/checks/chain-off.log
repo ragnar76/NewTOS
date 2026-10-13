@@ -1,0 +1,48 @@
+=== b-off Di. 13 Okt. 2026 22:30:41 CEST APPEND=serial=on memprot=off
+qemu-system-aarch64: -serial unix:s/a31.aUyaD8/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.aUyaD8/ser.sock,server=on
+t=  15.2s end marker seen
+t=  17.2s b-off-rpi4-hellomem-end.png {"return": {}}
+prompts seen: 0
+run b-off-rpi4-hellomem: rc=0
+qemu-system-aarch64: -serial unix:s/a31.cuf6yn/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.cuf6yn/ser.sock,server=on
+t=  15.2s end marker seen
+t=  17.3s b-off-rpi4-hellold-end.png {"return": {}}
+prompts seen: 0
+run b-off-rpi4-hellold: rc=0
+qemu-system-aarch64: -serial unix:s/a31.Y3hiwh/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.Y3hiwh/ser.sock,server=on
+t=  74.2s end marker seen
+t=  82.2s b-off-rpi4-mdacc-end.png {"return": {}}
+prompts seen: 0
+run b-off-rpi4-mdacc: rc=0
+t=25.0s -> b-off-rpi4-apitest-t25.png {"return": {}}
+t=40.0s -> b-off-rpi4-apitest-t40.png {"return": {}}
+run b-off-rpi4-apitest: rc=0
+t=25.0s -> b-off-rpi4-desktop-t25.png {"return": {}}
+run b-off-rpi4-desktop: rc=0
+t=25.0s -> b-off-rpi4-acc-t25.png {"return": {}}
+run b-off-rpi4-acc: rc=0
+t=35.0s -> b-off-rpi4-teradesk-t35.png {"return": {}}
+run b-off-rpi4-teradesk: rc=0
+t=30.0s -> b-off-rpi4-qed-t30.png {"return": {}}
+run b-off-rpi4-qed: rc=0
+t=30.0s -> b-off-rpi4-doom-t30.png {"return": {}}
+t=45.0s -> b-off-rpi4-doom-t45.png {"return": {}}
+run b-off-rpi4-doom: rc=0
+t=30.0s -> b-off-rpi4-tdqed-t30.png {"return": {}}
+t=50.0s -> b-off-rpi4-tdqed-t50.png {"return": {}}
+run b-off-rpi4-tdqed: rc=0
+t=20.0s -> b-off-rpi4-kbdvec-emucon-t20.png {"return": {}}
+t=35.0s -> b-off-rpi4-kbdvec-emucon-t35.png {"return": {}}
+t=60.0s -> b-off-rpi4-kbdvec-emucon-t60.png {"return": {}}
+run b-off-rpi4-kbdvec-emucon: rc=0
+qemu-system-aarch64: -serial unix:s/a31.ywEV4Y/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.ywEV4Y/ser.sock,server=on
+t=  17.3s end marker seen
+t=  19.4s b-off-rpi4-s2allm-end.png {"return": {}}
+prompts seen: 0
+run b-off-rpi4-s2allm: rc=0
+qemu-system-aarch64: -serial unix:s/a31.vSwsVJ/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.vSwsVJ/ser.sock,server=on
+t=  15.2s end marker seen
+t=  17.3s b-off-rpi4-e9mem-end.png {"return": {}}
+prompts seen: 0
+run b-off-rpi4-e9mem: rc=0
+=== b-off done Di. 13 Okt. 2026 22:38:27 CEST

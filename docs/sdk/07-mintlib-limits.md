@@ -17,7 +17,9 @@ bits of `stat()`/`access()` follow the same native extensions (§8). TASK/PORT-W
 correctly on little-endian AArch64 (header overlay). TASK/PORT09 (2026-10-06)
 updated §1 and §5: `newtos-arch/cmdargs.c` is now all of `parseargs()` —
 `environ` from `p_env`, the `ARGV=` extension with `NULL:`,
-`program_invocation_name`.
+`program_invocation_name`. TASK/MEM05 part B (2026-10-13) updated §5
+(`malloc`) and added §10: the overlay `mintlib/malloc.c` lets malloc's hunks
+keep doubling up to 16 MiB.
 
 ## 1. mintlib files that do not compile (recorded, not repaired)
 
@@ -182,7 +184,7 @@ neither uses the libm). `libm.a` needs three libc symbols, `memset`, `_ctype`
 | `argc`/`argv` | mintlib's `parseargs()` rules (TASK/PORT01, TASK/PORT09). **With an `ARGV=` variable in the environment** (Atari's extended argument spec, `references/freemint/doc/programmer/atari/ARGV.txt`): `argv[0]` is the string after `ARGV=` (the launcher's path name), the arguments are the strings after it — unbounded, blanks inside an argument kept; the command tail is not read. As in mintlib the tail's length byte 127 is **not** required (`STRICTLY_COMPATIBLE_WITH_STANDARD` is off, `crtinit.c:61-70`). `ARGV=NULL:i,j,...` cuts the listed entries to `""` (`ARGV-blank.txt`). `program_invocation_name` / `_short_name` become `argv[0]` and its last `\`- or `/`-component. **Without `ARGV=`**: from the command tail `p_cmdlin` — `argv[0]` = `""`, leading blanks skipped, split on runs of blanks/tabs, MagX single-quoting; `1` / `{"", NULL}` when the tail is empty; `program_invocation_name` stays mintlib's `"unknown application"`. Who sends `ARGV=`: mintlib's own `spawn*`/`system()` always (`mintlib/spawn.c:353-420`), TeraDesk for a `PT_ARGV` program type when the command line is not empty (`applik.c:1470`, `startprg.c:543-567`). Host-checked by `tests/cmdargs-host.sh` (21 cases), proved on the machine by `C:\ARGVTEST.NAP` (14 arguments through `ARGV=`: argc 15; `measurements/measurement-2026-10-06-port09/`) | `newtos-arch/cmdargs.c`, `newtos-arch/heap_init.c`, `sdk/libc/crt0.S` |
 | `environ`, `getenv` | built from the environment block `p_env` as mintlib does (TASK/PORT09): one entry per string up to the empty one, pointing **into** the block; an `ARGV=` string ends the environment and is cut **in place** (its `A` becomes NUL, so a later `Pexec(.., env = NULL)` child inherits the environment without the arguments); the desktop form `"PATH=\0C:\\\0"` — every `#Z`, desktop and accessory start gets a copy of the AES's (TASK/PPARENT, `docs/api/gemdos/process/_parent-and-environment.md`) — is joined **in place** to `"PATH=C:\\"` (`crtinit.c:332-345`). A program that reads its raw `p_env` block after start-up therefore sees mintlib's rewrite, not the bytes the kernel delivered — as on TOS with mintlib. `p_env == 0` or an empty block give the empty environment (one NULL); `environ` is never NULL (mintlib's `_spawnve` indexes it unconditionally, TASK/PORT10). An accessory gets `environ = {"", NULL}` like mintlib's `_acc_main` (no walk). The arrays (environ, the split tail, argv) lie in the TPA just above the BSS, as mintlib lays them out, and count to what the program keeps (`heap_init.c`, `crtinit.c:167-172`); an environment too large for the TPA stops the start with mintlib's "insufficient memory" | `newtos-arch/cmdargs.c`, `newtos-arch/heap_init.c`, `mintlib/globals.c`, `stdlib/getenv.c`; `kernel/src/launch.rs`, `loader.rs` |
 | `_base` (`BASEPAGE *`) | set by `__libc_init_heap` from the basepage address crt0 hands it (TASK/T05; until then it stayed NULL and dereferencing it worked only because the basepage was at VA 0). Since ARCH03 stage 1 the basepage is the start of the TPA block, so `_base` is that address — never 0 | `newtos-arch/heap_init.c`, `sdk/libc/crt0.S`; readers: `unix/getppid.c`, `gmon.c`, TeraDesk's `environm.c` |
-| `malloc`/`free`/`realloc` | mintlib's allocator; since ARCH03 E9 the start shrinks the TPA like `_crtinit` and, with the default `_stksize`, malloc takes its memory from GEMDOS `Malloc` (`_split_mem`) | `newtos-arch/heap_init.c`, `crtinit.c:212-247`, `unix/sbrk.c:54-71` |
+| `malloc`/`free`/`realloc` | mintlib's allocator; since ARCH03 E9 the start shrinks the TPA like `_crtinit` and, with the default `_stksize`, malloc takes its memory from GEMDOS `Malloc` (`_split_mem`). Since TASK/MEM05 part B the hunks it asks for keep doubling from 8 KiB up to **16 MiB** instead of stopping at mintlib's 32 KiB — §10 | `newtos-arch/heap_init.c`, `crtinit.c:212-247`, `unix/sbrk.c:54-71`, `overlay/mintlib/malloc.c` |
 | start-up (`_main`) | since 2026-10-13 (TASK/LIBC-MAIN) the libc `crt0` ends like mintlib's own start-up, for a program (`_crtinit`, `crtinit.c:257`) and an accessory (`_acc_main`, `crtinit.c:147`) alike: `_main(__libc_argc, __libc_argv, environ)` = `__libc_main` (`mintlib/main.c:77-305`, weak `_main`, so a program can still supply its own). It clears `errno`; finds no `MiNT` cookie (`__mint = 0`); a program calls `Pdomain(1)` and compares `Pgeteuid`/`Pgetuid`, `Pgetegid`/`Pgetgid` — all `EINVFN` on NewTOS as on EmuTOS, so not "secure" and `UNIXMODE` is honoured; clears `__open_stat[]`; with an empty `argv[0]` (no `ARGV=`) and handle 2 a terminal it does `Fforce(2, -1)` (stderr to the console); stdin/stdout/stderr get full/line/no buffering (stdout full when `isatty(1)` is 0, i.e. redirected to a file) and, where `isatty` (mintlib's own since TASK/LIBC-TTY, §2) says terminal, **text mode** — a standard stream redirected to a file stays binary, because `fstat` still reports fds 0-2 as `S_IFCHR` (TASK/LIBC-FSTAT) — with a seek function, whose first flush asks `Fseek(0, h, SEEK_CUR)` — 0 on a character device since TASK/FS10, as on EmuTOS (until then every `stdout` write failed with `EBADF` here, which is why crt0 called only `exit(main())` from post-E9 to FS10); and it rewrites `PATH` (or every variable listed in `PCONVERT`) in `environ` to the Unix form (`PATH=C:\` → `PATH=/dev/c/`, `;`/`,` → `:`, lower case, `unx2dos.c:217`) — `spawnvp`/`execvp`/`system()` convert back; the raw `p_env` block is not touched | `mintlib/main.c`, `mintlib/crtinit.c`, `sdk/libc/crt0.S` |
 | console `read()`, `getchar`, `fgets` | mintlib's `__read` (`unix/read.c`). With `__open_stat[].flags` as `isatty` leaves them (`CRMOD\|ECHO`) a tty read is `Fread(fd, min(size, 4096))` — on CON the GEMDOS line read with echo and editing (TASK/FS11, `docs/api/gemdos/file/3f-fread.md`); `^D` first = EOF; a line ended by Return gets `\r` appended, `CRMOD` turns it into `\n` and echoes `Cconout('\n')` (`read.c:147-169`). QEMU-verified: `getchar()` = first key, `fgets` = the rest of the line + `\n` (`measurements/measurement-2026-10-13-libc-tty/`). Until TASK/LIBC-TTY the shim left `flags` 0, so every read took the RAW path below. **RAW path** (`flags` with `RAW`/`CBREAK`, or `ECHO` clear — reachable only by a program that sets the flags itself; `ioctl(TIOCSETP)` cannot, TASK/LIBC-IOCTL): `_console_read_byte` → `Fgetchar` (`EINVFN`) → `Crawcin`, no echo, no `CRMOD`, and it **reads two keys per byte, the first one discarded** (`read.c:176` result overwritten at `:183`). That is upstream mintlib-0.60.1 code, byte-identical to the tarball, and stays as it is (user decision 2026-10-13, TASK/LIBC-TTY decision 3) | `mintlib/unix/read.c`, `mintlib/console.c`; `docs/analysis/libc-tty-2026-10-13.md` §3 |
 | `exit`/`_exit` | `exit()` is mintlib's: atexit handlers in reverse order, then every stdio stream closed (flushed), then `_exit` = `Pterm(rc)`. A `return` from `main` goes through it: `__libc_main` ends with `exit(main(argc, argv, envp))` (`mintlib/main.c:303`) — since post-E9 (2026-10-05) crt0 did that itself, since TASK/LIBC-MAIN (2026-10-13) through `_main`; before post-E9, crt0 called `Pterm` directly and buffered output and atexit handlers were lost | `stdlib/exit.c:43-59`, `newtos-arch/proc.S`, `sdk/libc/crt0.S` |
@@ -424,3 +426,80 @@ and mintlib's unmodified `wait4.c`/`waitpid.c`/`wait.c` with the `__waitval`
 (`waitpid` after `_exit(42)` → `WEXITSTATUS == 42`, `_exit(7)` → 7, POSIX
 `system()` → `WIFEXITED && WEXITSTATUS == 127`), QEMU raspi4b,
 `measurements/measurement-2026-10-06-waith/`.
+
+## 10. `malloc` hunk sizes: doubling up to 16 MiB (TASK/MEM05 part B)
+
+mintlib's `malloc` asks the OS for memory in **hunks**: one `__sbrk` = one
+GEMDOS `Malloc` = one memory descriptor (`unix/sbrk.c:54-73`). A hunk is
+`MINHUNK` bytes, 8 KiB at the start; after each hunk `MINHUNK` doubles until
+it reaches `MAXHUNK`; a request larger than `MINHUNK` gets a hunk of its own
+size and does not advance the doubling (`mintlib/malloc.c:64-92`). mintlib's
+`MAXHUNK` is 32 KiB and `static` (`malloc.c:26-27`); its only setter,
+`_mallocChunkSize(siz)`, sets **both** values (`:30-32`), so a program could
+only choose "every hunk `siz`".
+
+With 32 KiB hunks a program that keeps allocating needs one GEMDOS block per
+32 KiB: `malloc(32)` × 147 605 took 254 blocks — the whole system MD pool
+before MEM05 part A (`measurements/measurement-2026-10-06-post-e9/`), and 5138
+blocks for 3 000 000 after it, at ~2000 s, because mintlib's free list walks
+past one border chunk per hunk on every `malloc`
+(`measurements/measurement-2026-10-13-mem05-kernel/`).
+
+**Overlay** `sdk/libc/overlay/mintlib/malloc.c` = the pristine file plus one
+function (user decision E6, design `docs/analysis/mem05-design-2026-10-13.md`
+§4):
+
+```c
+void __newtos_malloc_maxhunk(size_t siz) { MAXHUNK = siz; }
+```
+
+It raises only the ceiling; `MINHUNK` and the doubling are mintlib's. The C
+start-up calls it once, with **16 MiB**, at the very start of `__libc_crtinit`
+(`sdk/libc/newtos-arch/heap_init.c`), before anything can call `malloc` and
+before the accessory branch — so programs and accessories (`acc_main`) both
+get it. The reference is **weak**: a program or module that does not link
+mintlib's `malloc.o` — an LDG module runs on libshare's allocator
+(`sdk/libshare/libshare-link.sh`) — keeps the symbol undefined, the static link
+resolves it to 0 (no dynamic relocation), and the call is skipped. The
+undefined-symbol gates of the module builds (`build-zview.sh`,
+`build-ldg-demo.sh`, `build-ldg-client.sh`) therefore count every undefined
+symbol except this one weak reference (`ls_undefined_count`).
+
+| `malloc(32)` × N | hunks before (32 KiB) | hunks now (16 MiB) |
+|---|---|---|
+| 100 | 1 | 1 |
+| 1 000 | 3 | 3 |
+| 10 000 | 19 | 7 |
+| 147 605 | 254 | 10 (8 KiB … 4 MiB) |
+| 1 000 000 | 1 714 | 14 |
+| 3 000 000 | 5 138 | 21 |
+| 10 000 000 | — | 44 (12 doubling hunks to 16 MiB, then 32 × 16 MiB; 570 MB) |
+
+Measured on QEMU raspi4b in every protection mode
+(`measurements/measurement-2026-10-13-mem05-sdk/`, MDSTEP: GEMDOS blocks and
+mintlib's own hunk list agree with the design's model at every step); the
+"before" column is the post-E9 / part-A measurement and the host harness with
+the setter not called. `malloc(32)` × 3 000 000 now takes 1–5 s of QEMU
+time (by protection mode) instead of ~2000 s; × 10 000 000 about 37–46 s.
+
+**Small programs stay small**: a hello-world (`printf` + a few small
+`malloc`s) takes one 8 KiB hunk, as before (HELLOMEM vs HELLOOLD in the same
+run). An accessory gets the same schedule (MDACC: 147 605 × `malloc(32)` = 10
+hunks, 8 KiB … 4 MiB).
+
+Costs to know:
+
+| What | Effect |
+|------|--------|
+| a hunk can fail where a smaller one would not | from the 12th hunk on mintlib asks for 16 MiB at once and does not retry smaller (`malloc.c:90-92`, `sbrk.c:62-72`): with less than 16 MiB free the `malloc` returns NULL. The schedule only gets there after ~32 MiB of heap |
+| over-allocation | at most the last hunk unused: up to 16 MiB more than the heap needs, against 32 KiB before |
+| `_mallocChunkSize(siz)` | unchanged: a program that calls it gets `siz` for every hunk, as in mintlib |
+| `free` | unchanged mintlib: a hunk goes back with `Mfree` only once it is entirely free and merged (`malloc.c:196-243`) |
+
+Checks: host `sdk/libc/tests/malloc-host.sh` (in `sdk/run-host-tests.sh`) —
+the overlay `malloc.c` against a recording `__sbrk`: without the call the
+counts equal the post-E9 QEMU measurement (1/3/19/87/173/254/255); with it
+1/3/7/10/14 and every hunk `8 KiB << i` up to 16 MiB; the accessory settings
+give the same; a hello-world takes one 8 KiB hunk and a 32 KiB buffer gets
+its own hunk without advancing the doubling; `_mallocChunkSize(64 KiB)` still
+wins. With the setter's body emptied 10 of 30 checks fail.

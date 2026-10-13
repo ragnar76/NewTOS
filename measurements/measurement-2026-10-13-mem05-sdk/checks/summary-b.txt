@@ -1,0 +1,89 @@
+b-off-rpi4-acc |  1 desktop up; | exc/panic=0
+b-off-rpi4-apitest |  1 TOTAL 106 0 5 ; | exc/panic=0
+b-off-rpi4-desktop |  1 desktop up; | exc/panic=0
+b-off-rpi4-doom |  1 VERIFIED via EdDI+scale+v; | exc/panic=0
+b-off-rpi4-e9mem |  1 desktop up; 2 E9MEM: PASS; | exc/panic=0
+b-off-rpi4-hellold |  1 desktop up; 1 HELLOMEM: DONE; | exc/panic=0
+b-off-rpi4-hellomem |  1 desktop up; 1 HELLOMEM: DONE; | exc/panic=0
+b-off-rpi4-kbdvec-emucon |  2 desktop up; | exc/panic=0
+b-off-rpi4-mdacc |  1 desktop up; 1 MDACC: PASS; | exc/panic=0
+b-off-rpi4-mdprobe |  1 desktop up; 1 MDPROBE: DONE; | exc/panic=0
+b-off-rpi4-mdstep |  1 desktop up; 1 MDSTEP: DONE; | exc/panic=0
+b-off-rpi4-mdtime |  1 desktop up; 1 MDSTEP: DONE; | exc/panic=0
+b-off-rpi4-qed |  | exc/panic=0
+b-off-rpi4-s2allm |  1 desktop up; 1 MEM03: PASS; 1 S2ALL: PASS; | exc/panic=0
+b-off-rpi4-tdqed |  | exc/panic=0
+b-off-rpi4-teradesk |  | exc/panic=0
+b-on-asid-rpi4-apitest |  1 TOTAL 106 0 5 ; | exc/panic=0
+b-on-asid-rpi4-mdprobe |  1 desktop up; 1 MDPROBE: DONE; | exc/panic=0
+b-on-asid-rpi4-mdstep |  1 desktop up; 1 MDSTEP: DONE; | exc/panic=0
+b-on-asid-rpi4-mdtime |  1 desktop up; 1 MDSTEP: DONE; | exc/panic=0
+b-on-rpi4-acc |  1 desktop up; | exc/panic=0
+b-on-rpi4-apitest |  1 TOTAL 106 0 5 ; | exc/panic=0
+b-on-rpi4-desktop |  1 desktop up; | exc/panic=0
+b-on-rpi4-doom |  1 VERIFIED via EdDI+scale+v; | exc/panic=0
+b-on-rpi4-e9mem |  1 desktop up; 2 E9MEM: PASS; | exc/panic=0
+b-on-rpi4-hellold |  1 desktop up; 1 HELLOMEM: DONE; | exc/panic=0
+b-on-rpi4-hellomem |  1 desktop up; 1 HELLOMEM: DONE; | exc/panic=0
+b-on-rpi4-kbdvec-emucon |  2 desktop up; | exc/panic=0
+b-on-rpi4-mdacc |  1 desktop up; 1 MDACC: PASS; | exc/panic=0
+b-on-rpi4-mdprobe |  1 desktop up; 1 MDPROBE: DONE; | exc/panic=0
+b-on-rpi4-mdstep |  1 desktop up; 1 MDSTEP: DONE; | exc/panic=0
+b-on-rpi4-mdtime |  1 desktop up; 1 MDSTEP: DONE; | exc/panic=0
+b-on-rpi4-qed |  | exc/panic=0
+b-on-rpi4-s2allm |  1 desktop up; 1 MEM03: PASS; 1 S2ALL: PASS; | exc/panic=0
+b-on-rpi4-tdqed |  | exc/panic=0
+b-on-rpi4-teradesk |  | exc/panic=0
+b-strict-rpi4-acc |  1 desktop up; | exc/panic=0
+b-strict-rpi4-apitest |  1 TOTAL 106 0 5 ; | exc/panic=0
+b-strict-rpi4-desktop |  1 desktop up; | exc/panic=0
+b-strict-rpi4-doom |  1 VERIFIED via EdDI+scale+v; | exc/panic=0
+b-strict-rpi4-e9mem |  1 desktop up; 2 E9MEM: PASS; | exc/panic=0
+b-strict-rpi4-hellold |  1 desktop up; 1 HELLOMEM: DONE; | exc/panic=0
+b-strict-rpi4-hellomem |  1 desktop up; 1 HELLOMEM: DONE; | exc/panic=0
+b-strict-rpi4-kbdvec-emucon |  2 desktop up; | exc/panic=0
+b-strict-rpi4-mdacc |  1 desktop up; 1 MDACC: PASS; | exc/panic=0
+b-strict-rpi4-mdprobe |  1 desktop up; 1 MDPROBE: DONE; | exc/panic=0
+b-strict-rpi4-mdstep |  1 desktop up; 1 MDSTEP: DONE; | exc/panic=0
+b-strict-rpi4-mdtime |  1 desktop up; 1 MDSTEP: DONE; | exc/panic=0
+b-strict-rpi4-qed |  | exc/panic=0
+b-strict-rpi4-s2allsm |  1 desktop up; 1 MEM03: PASS; 1 S2ALL: PASS; | exc/panic=2
+b-strict-rpi4-tdqed |  | exc/panic=0
+b-strict-rpi4-teradesk |  | exc/panic=0
+--- APITEST result lines vs part A (modulo hex)
+on: 0 differing lines (126 lines)
+off: 0 differing lines (126 lines)
+strict: 0 differing lines (126 lines)
+on-asid: 0 differing lines (126 lines)
+--- screendumps vs mem05-kernel (part A)
+DIFF doom-t30.png
+DIFF doom-t45.png
+MISSING m5-on-rpi4-hellold-end.png
+MISSING m5-on-rpi4-hellomem-end.png
+DIFF kbdvec-emucon-t35.png
+MISSING m5-on-rpi4-mdacc-end.png
+MISSING m5-on-rpi4-mdstep-end.png
+MISSING m5-on-rpi4-mdtime-end.png
+b-on-rpi4- vs m5-on-rpi4-: same=13 diff=3 missing=5
+DIFF doom-t30.png
+DIFF doom-t45.png
+MISSING m5-off-rpi4-hellold-end.png
+MISSING m5-off-rpi4-hellomem-end.png
+DIFF kbdvec-emucon-t35.png
+MISSING m5-off-rpi4-mdacc-end.png
+MISSING m5-off-rpi4-mdstep-end.png
+MISSING m5-off-rpi4-mdtime-end.png
+b-off-rpi4- vs m5-off-rpi4-: same=13 diff=3 missing=5
+DIFF doom-t30.png
+DIFF doom-t45.png
+MISSING m5-strict-rpi4-hellold-end.png
+MISSING m5-strict-rpi4-hellomem-end.png
+DIFF kbdvec-emucon-t35.png
+MISSING m5-strict-rpi4-mdacc-end.png
+MISSING m5-strict-rpi4-mdstep-end.png
+MISSING m5-strict-rpi4-mdtime-end.png
+DIFF s2allsm-crash2.png
+b-strict-rpi4- vs m5-strict-rpi4-: same=14 diff=4 missing=5
+MISSING m5-on-asid-rpi4-mdstep-end.png
+MISSING m5-on-asid-rpi4-mdtime-end.png
+b-on-asid-rpi4- vs m5-on-asid-rpi4-: same=3 diff=0 missing=2

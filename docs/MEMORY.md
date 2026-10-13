@@ -2120,7 +2120,7 @@ NewTOS's VDI presents a **Falcon truecolor workstation**, matching EmuTOS's
 ## ADR-025: The MD supply grows page by page within a page budget; a per-process block limit replaces the fixed pool
 
 **Date:** 2026-10-13
-**Status:** Accepted (MEM05 part A, kernel; part B = SDK `MAXHUNK`, separate)
+**Status:** Accepted (MEM05 part A, kernel; part B, SDK: mintlib `MAXHUNK` 16 MiB via the overlay `sdk/libc/overlay/mintlib/malloc.c`, `docs/sdk/07-mintlib-limits.md` §10)
 **Phase:** cross-cutting (BDOS mem, memory protection, kernel heap)
 
 ### Context

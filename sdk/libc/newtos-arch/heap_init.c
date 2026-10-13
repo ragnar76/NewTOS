@@ -79,6 +79,15 @@ extern long __libc_parseargs (unsigned long basepage, char *area,
 			      const char *limit);
 extern char **__libc_argv;
 
+/* overlay mintlib/malloc.c (TASK/MEM05 part B): raises the ceiling of
+   malloc's hunk-doubling schedule. Weak, so a program that never links
+   malloc.o does not pull it in for this call alone. */
+extern void __newtos_malloc_maxhunk (size_t) __attribute__ ((weak));
+
+/* MEM05 design E6: hunks keep doubling from 8 KiB up to 16 MiB instead of
+   stopping at 32 KiB (mintlib's MAXHUNK), docs/sdk/07-mintlib-limits.md. */
+#define NEWTOS_MAXHUNK (16UL * 1024UL * 1024UL)
+
 /* crtinit.c:104 -- an accessory has no name and no arguments. */
 static char *acc_argv[] = { "", NULL };
 
@@ -126,6 +135,11 @@ __libc_crtinit (unsigned long basepage)
 	BASEPAGE *bp = (BASEPAGE *) basepage;
 	long m, freemem;
 	char *s;
+
+	/* NewTOS (MEM05 part B): before anything can call malloc and before the
+	   accessory branch, so programs and accessories (acc_main) both get it */
+	if (__newtos_malloc_maxhunk)
+		__newtos_malloc_maxhunk (NEWTOS_MAXHUNK);
 
 	/* startup/crt0.S:52-58: `_base` first, for both kinds */
 	_base = bp;

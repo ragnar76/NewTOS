@@ -1,0 +1,50 @@
+=== b-strict Di. 13 Okt. 2026 22:30:41 CEST APPEND=serial=on memprot=strict
+qemu-system-aarch64: -serial unix:s/a31.dAz6N5/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.dAz6N5/ser.sock,server=on
+t=  88.2s end marker seen
+t=  90.3s b-strict-rpi4-hellomem-end.png {"return": {}}
+prompts seen: 0
+run b-strict-rpi4-hellomem: rc=0
+qemu-system-aarch64: -serial unix:s/a31.PBerfI/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.PBerfI/ser.sock,server=on
+t=  91.4s end marker seen
+t=  93.5s b-strict-rpi4-hellold-end.png {"return": {}}
+prompts seen: 0
+run b-strict-rpi4-hellold: rc=0
+qemu-system-aarch64: -serial unix:s/a31.MIBjYp/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.MIBjYp/ser.sock,server=on
+t=  73.8s end marker seen
+t=  81.9s b-strict-rpi4-mdacc-end.png {"return": {}}
+prompts seen: 0
+run b-strict-rpi4-mdacc: rc=0
+t=25.0s -> b-strict-rpi4-apitest-t25.png {"return": {}}
+t=40.0s -> b-strict-rpi4-apitest-t40.png {"return": {}}
+run b-strict-rpi4-apitest: rc=0
+t=25.0s -> b-strict-rpi4-desktop-t25.png {"return": {}}
+run b-strict-rpi4-desktop: rc=0
+t=25.0s -> b-strict-rpi4-acc-t25.png {"return": {}}
+run b-strict-rpi4-acc: rc=0
+t=35.0s -> b-strict-rpi4-teradesk-t35.png {"return": {}}
+run b-strict-rpi4-teradesk: rc=0
+t=30.0s -> b-strict-rpi4-qed-t30.png {"return": {}}
+run b-strict-rpi4-qed: rc=0
+t=30.0s -> b-strict-rpi4-doom-t30.png {"return": {}}
+t=45.0s -> b-strict-rpi4-doom-t45.png {"return": {}}
+run b-strict-rpi4-doom: rc=0
+t=30.0s -> b-strict-rpi4-tdqed-t30.png {"return": {}}
+t=50.0s -> b-strict-rpi4-tdqed-t50.png {"return": {}}
+run b-strict-rpi4-tdqed: rc=0
+t=20.0s -> b-strict-rpi4-kbdvec-emucon-t20.png {"return": {}}
+t=35.0s -> b-strict-rpi4-kbdvec-emucon-t35.png {"return": {}}
+t=60.0s -> b-strict-rpi4-kbdvec-emucon-t60.png {"return": {}}
+run b-strict-rpi4-kbdvec-emucon: rc=0
+qemu-system-aarch64: -serial unix:s/a31.iTrIP2/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.iTrIP2/ser.sock,server=on
+t=  16.7s b-strict-rpi4-s2allsm-crash1.png {"return": {}}
+t=  19.0s b-strict-rpi4-s2allsm-crash2.png {"return": {}}
+t=  20.8s end marker seen
+t=  22.8s b-strict-rpi4-s2allsm-end.png {"return": {}}
+prompts seen: 2
+run b-strict-rpi4-s2allsm: rc=0
+qemu-system-aarch64: -serial unix:s/a31.FNgaqJ/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.FNgaqJ/ser.sock,server=on
+t=  15.2s end marker seen
+t=  17.3s b-strict-rpi4-e9mem-end.png {"return": {}}
+prompts seen: 0
+run b-strict-rpi4-e9mem: rc=0
+=== b-strict done Di. 13 Okt. 2026 22:40:59 CEST

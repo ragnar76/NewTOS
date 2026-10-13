@@ -1,0 +1,4 @@
+LINK OK -> /Volumes/Daten/Development/PiRusTOS/sdk/examples/libtest/build/LIBTEST.NCP (992224 bytes)
+  Type: SharedObject (0x3)
+  undefined symbols (goal 0): 0
+  relocation types: 3221 R_AARCH64_RELATIVE 

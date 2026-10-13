@@ -37,3 +37,16 @@ ls_check_module_map() {
   echo "  allocator: libshare only ($pulled); none of libc.a's $LS_MINTLIB_ALLOC_MEMBERS"
   return 0
 }
+
+# ls_undefined_count <ELF> -- the undefined symbols of a linked program or
+# module (goal 0), not counting ONE expected weak reference: the C start-up
+# (sdk/libc/newtos-arch/heap_init.c __libc_crtinit, TASK/MEM05 part B) refers
+# weakly to __newtos_malloc_maxhunk, which only mintlib's malloc.o defines
+# (overlay mintlib/malloc.c). A module runs on libshare's allocator and must
+# NOT pull malloc.o (ls_check_module_map), so in a module that reference stays
+# undefined by design: the static link resolves it to 0 without a dynamic
+# relocation and __libc_crtinit skips the call. Any other undefined symbol --
+# and a strong reference to this one -- still counts. Needs $NM (llvm-nm).
+ls_undefined_count() {
+  "$NM" -u "$1" 2>/dev/null | grep -v -E '^[[:space:]]*w __newtos_malloc_maxhunk$' | grep -c . || true
+}
