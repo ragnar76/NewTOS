@@ -1,0 +1,2186 @@
+diff --git a/tos-api/src/bdos/fs/file.rs b/tos-api/src/bdos/fs/file.rs
+index d257a114..50929274 100644
+--- a/tos-api/src/bdos/fs/file.rs
++++ b/tos-api/src/bdos/fs/file.rs
+@@ -207,9 +207,10 @@ fn getofd(h: i16) -> FOfd {
+ 
+ /// The final I/O target a handle resolves to.
+ enum Target {
+-    /// A BIOS character device (`-1` CON, `-2` AUX, `-3` PRN) — NewTOS maps
+-    /// every one to the console.
+-    Console,
++    /// A BDOS character-device handle (`-1` CON, `-2` AUX, `-3` PRN); its BIOS
++    /// device (`HXFORM`) is served by the device table
++    /// ([`crate::bios::chardev`], FS11).
++    Device(i16),
+     /// The OFD (index into `Tables::ofds`) the handle's entry points at.
+     File(usize),
+     /// An invalid handle.
+@@ -239,7 +240,7 @@ fn resolve(handle: i16) -> Target {
+     match numl {
+         FOfd::Null => Target::None,
+         FOfd::Bios(n) if n < H_PRINT => Target::None,
+-        FOfd::Bios(_) => Target::Console,
++        FOfd::Bios(n) => Target::Device(n),
+         FOfd::File(j) => Target::File(j),
+     }
+ }
+@@ -395,10 +396,13 @@ pub fn fread(args: &TrapArgs) -> Long {
+     let len = args.arg_i32(1);
+     let ubuf = args.arg_u64(2);
+ 
+-    // Route standard handles / redirects: a console-mapped handle reads
+-    // from the keyboard, a file handle reads the file (below).
++    // Route standard handles / redirects: a handle that ends on a character
++    // device reads that device (`osif`, `bdos/bdosmain.c:608-620`: HUGE guard,
++    // `conin`, `cgets`), a file handle reads the file (below).
+     match resolve(handle) {
+-        Target::Console => return console_read(args.space, len, ubuf),
++        Target::Device(numl) => {
++            return crate::gemdos::console::device_read(numl, args.space, len, ubuf)
++        }
+         Target::None => return EIHNDL,
+         Target::File(_) => {}
+     }
+@@ -439,10 +443,14 @@ pub fn fwrite(args: &TrapArgs) -> Long {
+     let len = args.arg_i32(1);
+     let ubuf = args.arg_u64(2);
+ 
+-    // Route standard handles / redirects: a console-mapped handle writes
+-    // to the console, a file handle writes the file (below).
++    // Route standard handles / redirects: a handle that ends on a character
++    // device writes that device (`osif`, `bdos/bdosmain.c:622-640`: CON like
++    // `Cconws`, others through `Bconout` with a short count on 0), a file
++    // handle writes the file (below).
+     match resolve(handle) {
+-        Target::Console => return console_write(args.space, len, ubuf),
++        Target::Device(numl) => {
++            return crate::gemdos::console::device_write(numl, args.space, len, ubuf)
++        }
+         Target::None => return EIHNDL,
+         Target::File(_) => {}
+     }
+@@ -909,7 +917,7 @@ pub fn fseek(args: &TrapArgs) -> Long {
+     let flg = args.arg_u16(2);
+ 
+     let ofd = match resolve(handle) {
+-        Target::Console => return 0,
++        Target::Device(_) => return 0,
+         Target::None => return EIHNDL,
+         Target::File(j) => match ofds().get_mut(j).and_then(Option::as_mut) {
+             Some(o) => o,
+@@ -1045,46 +1053,6 @@ pub unsafe fn close_process_files(r: *mut tos_types::BasePage) {
+     }
+ }
+ 
+-/// Read `len` bytes from the console (keyboard) into `ubuf` (in `space`, the
+-/// caller's) — the target of a console-mapped `Fread`. Blocks until `len`
+-/// bytes arrive. Each byte is stored as it arrives, so a buffer the program
+-/// cannot write stops the read at the first such byte (ARCH03 3a).
+-fn console_read(space: crate::uaccess::Space, len: i32, ubuf: u64) -> Long {
+-    if len <= 0 {
+-        return 0;
+-    }
+-    let Some(h) = crate::host::host() else {
+-        return 0;
+-    };
+-    for i in 0..len as u64 {
+-        let b = h.console_read_byte_blocking();
+-        if space.put_u8(ubuf + i, b).is_err() {
+-            return crate::uaccess::FAULTED;
+-        }
+-    }
+-    len as Long
+-}
+-
+-/// Write `len` bytes from `ubuf` (in `space`, the caller's) to the console —
+-/// the target of a console-mapped `Fwrite`. The bytes before one the program
+-/// cannot read are written, then the call stops (ARCH03 3a; EmuTOS takes the
+-/// bus error at that byte).
+-fn console_write(space: crate::uaccess::Space, len: i32, ubuf: u64) -> Long {
+-    if len <= 0 {
+-        return 0;
+-    }
+-    let Some(h) = crate::host::host() else {
+-        return 0;
+-    };
+-    for i in 0..len as u64 {
+-        let Ok(b) = space.get_u8(ubuf + i) else {
+-            return crate::uaccess::FAULTED;
+-        };
+-        h.console_write_byte(b);
+-    }
+-    len as Long
+-}
+-
+ /// `Fdup` (0x45) — duplicate standard handle `h` (0..NUMSTD) into a fresh
+ /// non-standard handle (EmuTOS `xdup`, `bdos/fshand.c:93-123`): the first
+ /// entry without an owner becomes `run`'s with `f_use = 1` and the current
+diff --git a/tos-api/src/bios/chardev.rs b/tos-api/src/bios/chardev.rs
+index 3c155fcf..2505c4e6 100644
+--- a/tos-api/src/bios/chardev.rs
++++ b/tos-api/src/bios/chardev.rs
+@@ -1,55 +1,250 @@
+ //! BIOS character devices — `Bconstat` / `Bconin` / `Bconout` /
+ //! `Bcostat` (BIOS 0x01 / 0x02 / 0x03 / 0x08).
+ //!
+-//! Spec: `docs/api/bios/{01,02,03,08}-*.md`. EmuTOS dispatches each
+-//! through a per-handle vector table (`bcon*_vec[8]`). The NewTOS profile
+-//! has one real character device — the console (PL011 + framebuffer):
+-//! keyboard **input** on handle 2 (CON) only, screen **output** on
+-//! handles 2 (CON) and 5 (raw-CON). The absent devices (0 PRT, 1 AUX,
+-//! 3 MIDI, 4 IKBD-TX) follow EmuTOS' `char_dummy` slot semantics —
+-//! status 0, input 0, output discarded — rather than blocking on hardware
+-//! that does not exist. All four guard on an installed host (EmuTOS'
+-//! `CHARDEV_AVAILABLE` boot gate: return 0 before the console is up).
++//! Spec: `docs/api/bios/{01,02,03,08}-*.md`; the device table and the
++//! absent-device profile: `docs/api/gemdos/file/3f-fread.md` "NewTOS
++//! implementation notes" (FS11). EmuTOS dispatches each call through a
++//! per-handle vector table (`bconstat_vec[]` / `bconin_vec[]` /
++//! `bconout_vec[]` / `bcostat_vec[]`, `bios/bios.c:932,976,1009,1161`,
++//! filled from `bios/chardev.c:30-45`). NewTOS keeps **one** table of
++//! [`CharDevice`] entries indexed by BIOS device number — PRN 0, AUX 1,
++//! CON 2, MIDI 3, IKBD 4, raw-CON 5, 6/7 unused — and every character-device
++//! path goes through it: the BIOS calls here, `Fread`/`Fwrite` on device
++//! handles, the `Ccon*`/`Caux*`/`Cprn*` GEMDOS calls and `Midiws`. A later
++//! UART/MIDI/printer driver (`TASK/IO01.md`) replaces only its table entry
++//! ([`install_device`]).
++//!
++//! The NewTOS profile has one real character device — the console (PL011 +
++//! framebuffer): keyboard **input** on CON (2) only, screen **output** on
++//! CON (2) and raw-CON (5). PRN, AUX, MIDI, IKBD and 6/7 are the documented
++//! **absent device** ([`Absent`], EmuTOS' `char_dummy` / `charout_dummy`,
++//! `bios/chardev.c:49-58`): status 0, input 0 without blocking, output
++//! discarded with 0 — rather than blocking on hardware that does not exist.
++//! The console entries answer 0 before a host is installed (EmuTOS'
++//! `CHARDEV_AVAILABLE` boot gate, `bios/bios.c:920-921,964-965,997-998`).
++
++use core::sync::atomic::{AtomicPtr, Ordering};
+ 
+ use tos_types::Long;
+ 
+ use crate::host;
+ use crate::trap::TrapArgs;
+ 
+-// Device handles (EmuTOS `bios/bios.c`, `bios/chardev.c`).
+-const CON: u16 = 2;
+-const RAW_CON: u16 = 5;
+-
+-/// Handles whose input is the console keyboard ring. **Only CON (handle
+-/// 2).** EmuTOS routes keyboard input through `bconin2` / `bconstat2`
+-/// (the IKBD queue); handle 4 (IKBD) is an *output* channel
+-/// (keyboard-controller TX) whose *input* slot is `char_dummy`
+-/// (`bios/chardev.c:34-36`, `bconin_init[4] = char_dummy`), so
+-/// `Bconstat(4)` and `Bconin(4)` return `0` immediately. Treating 4 as a
+-/// console-input handle made `Bconin(4)` block forever waiting for a key
+-/// that never routes there (the handle-4 hang).
+-fn is_console_in(handle: u16) -> bool {
+-    handle == CON
+-}
+-
+-/// Handles whose output is the console screen: CON (`bconout2`) and
+-/// raw-CON (`bconout5` → `ascii_out`), both `bios/chardev.c:43-45`. Note
+-/// this is *not* symmetric with output *status*: `Bcostat` reports ready
+-/// only for CON — handle 5's `bcostat` slot is `char_dummy` (see
+-/// [`bcostat`]).
+-fn is_console_out(handle: u16) -> bool {
+-    handle == CON || handle == RAW_CON
+-}
+-
+-/// `Bconstat` (0x01) — input-device status. `-1` when a byte is ready on
+-/// a console-input handle, else `0` (also the boot-guard / absent-device
++// ---------------------------------------------------------------------------
++// The device table.
++// ---------------------------------------------------------------------------
++
++/// BIOS device number of the printer port (`PRN:`).
++pub const DEV_PRN: u16 = 0;
++/// BIOS device number of the serial port (`AUX:`).
++pub const DEV_AUX: u16 = 1;
++/// BIOS device number of the console (`CON:`).
++pub const DEV_CON: u16 = 2;
++/// BIOS device number of the MIDI port.
++pub const DEV_MIDI: u16 = 3;
++/// BIOS device number of the keyboard controller (IKBD).
++pub const DEV_IKBD: u16 = 4;
++/// BIOS device number of the raw console (screen without VT52).
++pub const DEV_RAWCON: u16 = 5;
++/// Size of the table (EmuTOS' vectors have 8 slots; `> 7` is no device).
++const NDEV: usize = 8;
++
++/// One BIOS character device — the four routines EmuTOS keeps per handle in
++/// its `bcon*_vec[]` tables. Return values are the BIOS contract
++/// (`docs/api/bios/{01,02,03,08}-*.md`).
++pub trait CharDevice: Sync {
++    /// `Bconstat`: `-1` when an input byte is ready, else `0`.
++    fn bconstat(&self) -> Long;
++    /// `Bconin`: the next input byte (for CON the packed key LONG). Blocks
++    /// on a real device until input arrives, and **never gives way** — the
++    /// read the GEMDOS line reader (`Fread` → `cgets`) uses.
++    fn bconin(&self) -> Long;
++    /// `Bconin` as the trap entry point: like [`Self::bconin`], but `None`
++    /// when the read has to give way to the running process's `kbdvec` hook
++    /// (KEYS02; the caller then requests a restart, see
++    /// [`crate::xbios::kbdvecs::request_restart`]). Only for reads with no
++    /// side effect before the byte arrives. Default: never gives way.
++    fn bconin_restartable(&self) -> Option<Long> {
++        Some(self.bconin())
++    }
++    /// `Bconout`: send `byte`; non-zero = accepted, `0` = refused/absent.
++    fn bconout(&self, byte: u8) -> Long;
++    /// The device's own output status (`-1` ready, `0` busy/absent). Note
++    /// that `Bcostat(3)`/`Bcostat(4)` swap slots ([`bcostat_handle`]).
++    fn bcostat(&self) -> Long;
++}
++
++/// The documented absent device (deliberate profile, not a stub): EmuTOS'
++/// `char_dummy` / `charout_dummy` (`bios/chardev.c:49-58`), also its Bconmap
++/// dummy map entry for AUX (`bios/serport.c:96`) and `bconin0`/`bcostat0`/
++/// `bconout0` without a printer port (`bios/parport.c:123-172`). Every call
++/// answers `0` at once: no input ready, input `0` without blocking, output
++/// discarded and refused, output not ready.
++pub struct Absent;
++
++impl CharDevice for Absent {
++    fn bconstat(&self) -> Long {
++        0
++    }
++    fn bconin(&self) -> Long {
++        0
++    }
++    fn bconout(&self, _byte: u8) -> Long {
++        0
++    }
++    fn bcostat(&self) -> Long {
++        0
++    }
++}
++
++/// CON (device 2): keyboard input from the console key ring (`bconin2` /
++/// `bconstat2`, the IKBD queue), screen output (`bconout2`), output always
++/// ready (`bcostat2`, `bios/chardev.c:112-118`: the PL011 TX drains by
++/// polling). The only console-input device: IKBD (4) is an *output* channel
++/// whose input slot is `char_dummy` (`bconin_init[4]`,
++/// `bios/chardev.c:34-36`) — treating 4 as console input made `Bconin(4)`
++/// block forever (the handle-4 hang).
++struct Console;
++
++impl CharDevice for Console {
++    fn bconstat(&self) -> Long {
++        match host::host() {
++            Some(h) if h.console_has_input() => -1,
++            _ => 0,
++        }
++    }
++    fn bconin(&self) -> Long {
++        match host::host() {
++            Some(h) => pack_console_key(h.console_read_key_blocking()),
++            None => 0,
++        }
++    }
++    fn bconin_restartable(&self) -> Option<Long> {
++        match host::host() {
++            Some(h) => h.console_read_key_restartable().map(pack_console_key),
++            None => Some(0),
++        }
++    }
++    fn bconout(&self, byte: u8) -> Long {
++        match host::host() {
++            Some(h) => {
++                h.console_write_byte(byte);
++                1
++            }
++            None => 0,
++        }
++    }
++    fn bcostat(&self) -> Long {
++        match host::host() {
++            Some(_) => -1,
++            None => 0,
++        }
++    }
++}
++
++/// Raw-CON (device 5): screen output without VT52 (`bconout5` →
++/// `ascii_out`, `bios/chardev.c:43-45`); its input and output-status slots
++/// are `char_dummy` (`bconin_init[5]`, `bcostat_init[5]`), so status and
++/// input are `0` — `Bconout(5)` writes and returns `1`, `Bcostat(5)` is `0`.
++struct RawConsole;
++
++impl CharDevice for RawConsole {
++    fn bconstat(&self) -> Long {
++        0
++    }
++    fn bconin(&self) -> Long {
++        0
++    }
++    fn bconout(&self, byte: u8) -> Long {
++        Console.bconout(byte)
++    }
++    fn bcostat(&self) -> Long {
++        0
++    }
++}
++
++static ABSENT: &dyn CharDevice = &Absent;
++static CONSOLE: &dyn CharDevice = &Console;
++static RAW_CONSOLE: &dyn CharDevice = &RawConsole;
++
++/// A table cell: a pointer to a `&'static dyn CharDevice` (a fat pointer
++/// cannot be swapped atomically, the cell holding it can) — the same scheme
++/// [`crate::host`] uses for the host.
++type Slot = AtomicPtr<&'static dyn CharDevice>;
++
++const fn slot(entry: &'static &'static dyn CharDevice) -> Slot {
++    AtomicPtr::new(entry as *const &'static dyn CharDevice as *mut &'static dyn CharDevice)
++}
++
++/// The table, indexed by BIOS device number. IKBD (4) keeps its existing
++/// all-zero entry: EmuTOS' `bconin_init[4]`/`bconstat_init[4]` are
++/// `char_dummy` (`bios/chardev.c:30-36`) and NewTOS has no IKBD transmitter.
++static DEVICES: [Slot; NDEV] = [
++    slot(&ABSENT),      // 0 PRN
++    slot(&ABSENT),      // 1 AUX
++    slot(&CONSOLE),     // 2 CON
++    slot(&ABSENT),      // 3 MIDI
++    slot(&ABSENT),      // 4 IKBD
++    slot(&RAW_CONSOLE), // 5 raw CON
++    slot(&ABSENT),      // 6
++    slot(&ABSENT),      // 7
++];
++
++/// Replace the table entry of BIOS device `dev` with `entry` — the one place a
++/// driver (`TASK/IO01.md`) plugs in. Returns the previous entry, or `None`
++/// (nothing changed) when `dev` is not a table slot (`> 7`).
++pub fn install_device(
++    dev: u16,
++    entry: &'static &'static dyn CharDevice,
++) -> Option<&'static &'static dyn CharDevice> {
++    let cell = DEVICES.get(dev as usize)?;
++    let new = entry as *const &'static dyn CharDevice as *mut &'static dyn CharDevice;
++    let prev = cell.swap(new, Ordering::AcqRel);
++    // SAFETY: every value in the table came from a `&'static &'static dyn
++    // CharDevice` (the initialisers above or an earlier call).
++    Some(unsafe { &*prev })
++}
++
++/// The entry of BIOS device `dev`, or `None` for a handle past the table
++/// (EmuTOS `bconout`: `handle > 7` → 0, `bios/bios.c:1008-1010`).
++pub fn device(dev: u16) -> Option<&'static dyn CharDevice> {
++    let cell = DEVICES.get(dev as usize)?;
++    // SAFETY: as in `install_device`.
++    Some(unsafe { *cell.load(Ordering::Acquire) })
++}
++
++/// `Bconstat` core keyed by BIOS device number.
++pub fn bconstat_handle(dev: u16) -> Long {
++    device(dev).map_or(0, |d| d.bconstat())
++}
++
++/// `Bconout` core keyed by BIOS device number. Shared with the GEMDOS
++/// pass-throughs (`Cconout`/`Cconws` = device 2, `Cauxout` = `Bconout(1)`,
++/// EmuTOS `xauxout`, `bdos/console.c:331`; `Cprnout` = `Bconout(0)`) and
++/// `Fwrite` on a device handle.
++pub fn bconout_handle(dev: u16, byte: u8) -> Long {
++    device(dev).map_or(0, |d| d.bconout(byte))
++}
++
++/// `Bcostat` core keyed by BIOS handle, **with EmuTOS' slot swap**:
++/// `bcostat_init[3] = bcostat4` (IKBD) and `bcostat_init[4] = bcostat3`
++/// (MIDI) (`bios/chardev.c:38-42`), unlike `Bconin`/`Bconout`. So
++/// `Bcostat(3)` reads the IKBD entry's status and `Bcostat(4)` the MIDI
++/// entry's (`docs/api/bios/08-bcostat.md`).
++pub fn bcostat_handle(handle: u16) -> Long {
++    let dev = match handle {
++        DEV_MIDI => DEV_IKBD,
++        DEV_IKBD => DEV_MIDI,
++        h => h,
++    };
++    device(dev).map_or(0, |d| d.bcostat())
++}
++
++/// `Bconstat` (0x01) — input-device status of the device's table entry:
++/// `-1` when a byte is ready, else `0` (also the boot-guard / absent-device
+ /// value).
+ pub fn bconstat(args: &TrapArgs) -> Long {
+-    let handle = args.arg_u16(0);
+-    match host::host() {
+-        Some(h) if is_console_in(handle) && h.console_has_input() => -1,
+-        _ => 0,
+-    }
++    bconstat_handle(args.arg_u16(0))
+ }
+ 
+ /// Per-process `conterm` sysvar address ($484) — the classic TOS
+@@ -138,19 +333,20 @@ fn shift_fold() -> Long {
+     ((shift as u32) << 24) as Long
+ }
+ 
+-/// `Bconin` core keyed by device handle — the value part of `Bconin`
+-/// without the [`TrapArgs`] marshalling. For the CON handle (2) it blocks
+-/// and returns the packed console LONG (IKBD scancode in bits 16-23, ASCII
+-/// in bits 0-7); every absent device returns `0` immediately (`char_dummy`).
++/// `Bconin` core keyed by BIOS device number, as the trap entry: the entry's
++/// [`CharDevice::bconin_restartable`]. For CON (2) it blocks and returns the
++/// packed console LONG (IKBD scancode in bits 16-23, ASCII in bits 0-7) — or,
++/// when a `kbdvec` hook has bytes waiting, requests a restart (KEYS02) and
++/// returns `0`, which the trap handler discards. An absent device returns `0`
++/// immediately.
+ ///
+-/// Shared with the GEMDOS `Cauxin` pass-through, which routes through
+-/// `Bconin(1)` exactly as EmuTOS' `xauxin` does (`bdos/console.c:432`);
+-/// handle 1 (AUX) is an absent device in the NewTOS profile, so it yields
+-/// `0` rather than blocking on serial hardware that does not exist.
+-pub(crate) fn bconin_handle(handle: u16) -> Long {
+-    match host::host() {
+-        Some(h) if is_console_in(handle) => match h.console_read_key_restartable() {
+-            Some(word) => pack_console_key(word),
++/// Shared with the GEMDOS pass-throughs (`Cauxin` = `Bconin(1)`, EmuTOS
++/// `xauxin`, `bdos/console.c:432`; `Cconin`/`Cnecin`/`Crawcin` = `Bconin(2)`)
++/// and the one-byte `Fread` on a device (`conin`).
++pub fn bconin_handle(dev: u16) -> Long {
++    match device(dev) {
++        Some(d) => match d.bconin_restartable() {
++            Some(v) => v,
+             None => {
+                 // A `kbdvec` hook has bytes waiting: restart after it ran
+                 // (KEYS02); the result is discarded by the trap handler.
+@@ -158,57 +354,31 @@ pub(crate) fn bconin_handle(handle: u16) -> Long {
+                 0
+             }
+         },
+-        _ => 0,
++        None => 0,
+     }
+ }
+ 
+ /// `Bconin` (0x02) — blocking read from an input device. For the CON
+ /// handle (2) the packed LONG carries the IKBD scancode in bits 16-23 and
+ /// the ASCII value in bits 0-7 (non-ASCII keys → ASCII 0 + scancode), per
+-/// `docs/api/bios/02-bconin.md`. Absent devices return `0`.
++/// `docs/api/bios/02-bconin.md`. Absent devices return `0` without blocking.
+ pub fn bconin(args: &TrapArgs) -> Long {
+     bconin_handle(args.arg_u16(0))
+ }
+ 
+-/// `Bconout` core keyed by device handle — the value part of `Bconout`
+-/// without the [`TrapArgs`] marshalling. Console handles (CON, raw-CON)
+-/// write to the screen and return `1`; every absent device discards the
+-/// byte and returns `0` (`char_dummy`).
+-///
+-/// Shared with the GEMDOS `Cauxout` pass-through, which routes through
+-/// `Bconout(1, ch)` exactly as EmuTOS' `xauxout` does
+-/// (`bdos/console.c:331`); handle 1 (AUX) is an absent device in the
+-/// NewTOS profile, so it discards and returns `0`.
+-pub(crate) fn bconout_handle(handle: u16, byte: u8) -> Long {
+-    match host::host() {
+-        Some(h) if is_console_out(handle) => {
+-            h.console_write_byte(byte);
+-            1
+-        }
+-        _ => 0,
+-    }
+-}
+-
+-/// `Bconout` (0x03) — write a byte to an output device. Console handles
+-/// write to the screen and return `1` (byte accepted, per the standard
+-/// `bconout2`/`bconout5` handlers); absent devices discard and return
+-/// `0` (`char_dummy`).
++/// `Bconout` (0x03) — write a byte to an output device through its table
++/// entry. Console handles write to the screen and return `1` (byte accepted,
++/// `bconout2`/`bconout5`); absent devices discard and return `0`
++/// (`charout_dummy`).
+ pub fn bconout(args: &TrapArgs) -> Long {
+     bconout_handle(args.arg_u16(0), args.arg_u16(1) as u8)
+ }
+ 
+-/// `Bcostat` (0x08) — output-device status. Ready (`-1`) only for CON
+-/// (handle 2 → `bcostat2`, `bios/chardev.c:112-118`): the PL011 TX drains
+-/// by polling so it is always ready. Every other handle — including
+-/// raw-CON (handle 5), whose `bcostat` slot is `char_dummy`
+-/// (`bcostat_init[5]`, `bios/chardev.c:38-41`) — reports busy (`0`), as do
+-/// the boot guard and absent devices. This is deliberately **not** the
+-/// same handle set as `Bconout`: `Bconout(5)` writes and returns `1`, but
+-/// `Bcostat(5)` is `0`.
++/// `Bcostat` (0x08) — output-device status through the table, with the
++/// IKBD/MIDI slot swap ([`bcostat_handle`]). Ready (`-1`) only for CON
++/// (`bcostat2`); raw-CON's slot is `char_dummy` (`bcostat_init[5]`), so it
++/// reports busy (`0`) although `Bconout(5)` writes — deliberately **not** the
++/// same handle set as `Bconout`. Absent devices and the boot guard: `0`.
+ pub fn bcostat(args: &TrapArgs) -> Long {
+-    let handle = args.arg_u16(0);
+-    match host::host() {
+-        Some(_) if handle == CON => -1,
+-        _ => 0,
+-    }
++    bcostat_handle(args.arg_u16(0))
+ }
+diff --git a/tos-api/src/gemdos/console.rs b/tos-api/src/gemdos/console.rs
+index a993cab8..9ea01478 100644
+--- a/tos-api/src/gemdos/console.rs
++++ b/tos-api/src/gemdos/console.rs
+@@ -2,15 +2,21 @@
+ //!
+ //! Specs: `docs/api/gemdos/console/*.md`.
+ //!
++//! Every character-device access goes through the BIOS device table
++//! ([`crate::bios::chardev`], FS11): the `Ccon*`/`Caux*`/`Cprn*` calls are the
++//! BIOS calls of CON (2) / AUX (1) / PRN (0), and `Fread`/`Fwrite` on a device
++//! handle use [`device_read`] / [`device_write`] — EmuTOS' `conin`/`cgets`/
++//! `tabout` over `Bconin`/`Bconout` of that device (`bdos/bdosmain.c:604-640`).
++//!
+ //! All functions take a borrow of [`TrapArgs`] and return a `Long`
+ //! (`i32` in `x0`). The semantics mirror EmuTOS exactly so binary
+ //! programs see TOS-bit-compatible behaviour; per-function citations
+ //! point to the EmuTOS source location used to derive the code.
+ 
+-use crate::bios::chardev::pack_console_key;
++use crate::bios::chardev::{self, pack_console_key, CharDevice, DEV_AUX, DEV_CON, DEV_PRN};
+ use crate::host::host;
+ use crate::trap::TrapArgs;
+-use tos_types::error::{EUNDEV, E_OK};
++use tos_types::error::EUNDEV;
+ use tos_types::Long;
+ 
+ // Helper: fetch the host or fall through with `EUNDEV`. In normal
+@@ -51,7 +57,7 @@ macro_rules! host_or_eundev {
+ /// as data later). A Ctrl-C queued strictly behind unread normal keys is
+ /// deferred until those keys are read (the peek only sees the front). See
+ /// `docs/api/gemdos/console/{02-cconout,09-cconws}.md`.
+-fn output_break(h: &dyn crate::host::Host) -> bool {
++pub(crate) fn output_break(h: &dyn crate::host::Host) -> bool {
+     match h.console_peek_key() {
+         Some(word) if (word & 0xFF) as u8 == CTRL_C => {
+             // Consume exactly the peeked front key, then defer terminate.
+@@ -77,14 +83,15 @@ fn output_break(h: &dyn crate::host::Host) -> bool {
+ ///
+ /// EmuTOS' `xconout` runs `conbrk` before writing; NewTOS mirrors that
+ /// with the Ctrl-C-only [`output_break`] — a pending Ctrl-C aborts the
+-/// write and defers `Pterm(-32)`.
++/// write and defers `Pterm(-32)`. The byte goes out through the CON entry of
++/// the device table (`Bconout(2, ch)`, return ignored as in `conout`).
+ pub fn cconout(args: &TrapArgs) -> Long {
+     let ch = args.arg_u16(0) as u8;
+     let h = host_or_eundev!();
+     if output_break(h) {
+         return 1; // Ctrl-C: aborted; SVC handler redirects to Pterm.
+     }
+-    h.console_write_byte(ch);
++    chardev::bconout_handle(DEV_CON, ch);
+     1
+ }
+ 
+@@ -92,9 +99,9 @@ pub fn cconout(args: &TrapArgs) -> Long {
+ // AUX BIOS handle. EmuTOS' `xauxin`/`xauxout` resolve stdaux from
+ // `run->p_uft[2]` (default `H_Aux = -2`) and call `Bconin(HXFORM(-2))` /
+ // `Bconout(HXFORM(-2), ch)` where `HXFORM(h) = 3 + h`, i.e. BIOS handle 1
+-// (`docs/api/gemdos/console/{03-cauxin,04-cauxout}.md`).
++// (`docs/api/gemdos/console/{03-cauxin,04-cauxout}.md`) — `DEV_AUX` of the
++// device table.
+ // ---------------------------------------------------------------------------
+-const AUX_BIOS_HANDLE: u16 = 1;
+ 
+ // ---------------------------------------------------------------------------
+ // 0x03 Cauxin — read a single byte from AUX.
+@@ -102,14 +109,13 @@ const AUX_BIOS_HANDLE: u16 = 1;
+ // (docs/api/gemdos/console/03-cauxin.md).
+ // ---------------------------------------------------------------------------
+ 
+-/// `Cauxin()` — pass-through to `Bconin(1)`, exactly as EmuTOS' `xauxin`.
+-/// The NewTOS profile has no separate AUX device: BIOS handle 1 is an
+-/// absent (`char_dummy`) slot, so the pass-through returns `0` (no AUX
+-/// byte) instead of blocking on serial hardware that does not exist. Not
+-/// a stub — it routes through the same BIOS input path a real AUX device
+-/// would use; the value falls out of the absent-device contract.
++/// `Cauxin()` — pass-through to `Bconin(1)`, exactly as EmuTOS' `xauxin`:
++/// the AUX entry of the device table. That entry is the documented absent
++/// device (`docs/api/gemdos/console/03-cauxin.md`, FS11 note), so the
++/// pass-through returns `0` at once instead of blocking on serial hardware
++/// that does not exist; a UART driver (`TASK/IO01.md`) replaces the entry.
+ pub fn cauxin(_: &TrapArgs) -> Long {
+-    crate::bios::chardev::bconin_handle(AUX_BIOS_HANDLE)
++    chardev::bconin_handle(DEV_AUX)
+ }
+ 
+ // ---------------------------------------------------------------------------
+@@ -119,30 +125,29 @@ pub fn cauxin(_: &TrapArgs) -> Long {
+ // ---------------------------------------------------------------------------
+ 
+ /// `Cauxout(ch)` — pass-through to `Bconout(1, ch)`, exactly as EmuTOS'
+-/// `xauxout`. BIOS handle 1 (AUX) is an absent (`char_dummy`) slot in the
+-/// NewTOS profile, so the byte is discarded and the call returns `0`. Not
+-/// a stub — it routes through the same BIOS output path a real AUX device
+-/// would use.
++/// `xauxout`: the AUX entry of the device table. With the absent-device
++/// entry the byte is discarded and the call returns `0`
++/// (`docs/api/gemdos/console/04-cauxout.md`, FS11 note).
+ pub fn cauxout(args: &TrapArgs) -> Long {
+     let ch = args.arg_u16(0) as u8;
+-    crate::bios::chardev::bconout_handle(AUX_BIOS_HANDLE, ch)
++    chardev::bconout_handle(DEV_AUX, ch)
+ }
+ 
+ // ---------------------------------------------------------------------------
+ // 0x05 Cprnout — write a single byte to the printer.
+ // EmuTOS: bdos/console.c:340 `xprtout(WORD ch)` = `Bconout(0, ch)`.
+-// NewTOS profile: no printer, so the parport `bconout0` equivalent times
+-// out / is absent and returns `0` — which is exactly what the spec
+-// requires (docs/api/gemdos/console/05-cprnout.md:87-89: `0` = printer
+-// busy/absent, a non-negative ready/busy signal, *not* a TOS error code).
++// Spec: docs/api/gemdos/console/05-cprnout.md (`0` = printer busy/absent, a
++// non-negative ready/busy signal, *not* a TOS error code).
+ // ---------------------------------------------------------------------------
+ 
+-/// `Cprnout(ch)` — printer output. NewTOS has no printer port, so the byte
+-/// is never accepted and the call returns `0` (the printer-busy/absent
+-/// ready signal, per `docs/api/gemdos/console/05-cprnout.md`), the same
+-/// value EmuTOS' `bconout0` returns on timeout / with the port disabled.
+-pub fn cprnout(_: &TrapArgs) -> Long {
+-    0
++/// `Cprnout(ch)` — pass-through to `Bconout(0, ch)`: the PRN entry of the
++/// device table. With the absent-device entry (no printer port) the byte is
++/// never accepted and the call returns `0` at once — the value EmuTOS'
++/// `bconout0` returns without `CONF_WITH_PRINTER_PORT`
++/// (`bios/parport.c:144-172`; FS11 note in the spec).
++pub fn cprnout(args: &TrapArgs) -> Long {
++    let ch = args.arg_u16(0) as u8;
++    chardev::bconout_handle(DEV_PRN, ch)
+ }
+ 
+ // ---------------------------------------------------------------------------
+@@ -218,21 +223,19 @@ const CTRL_X: u8 = 0x18;
+ /// console LONG (scancode in bits 16-23, ASCII in bits 0-7); non-ASCII
+ /// keys echo nothing (their ASCII byte is 0).
+ pub fn cconin(_: &TrapArgs) -> Long {
+-    let h = host_or_eundev!();
+-    let Some(word) = h.console_read_key_restartable() else {
+-        // A `kbdvec` hook has bytes waiting: restart after it ran (KEYS02).
+-        crate::xbios::kbdvecs::request_restart();
+-        return 0; // discarded — the trap handler re-executes the call
+-    };
+-    let ascii = (word & 0xFF) as u8;
++    // `Bconin(2)` of the CON entry: the packed key LONG, or `0` after a
++    // `kbdvec` restart request (KEYS02) — ASCII 0, so nothing below happens
++    // and the trap handler re-executes the call.
++    let key = chardev::bconin_handle(DEV_CON);
++    let ascii = (key & 0xFF) as u8;
+     if ascii == CTRL_C {
+         crate::bdos::process::request_terminate(CTRLC_RC);
+         return 0; // value ignored — handler redirects to Pterm.
+     }
+     if ascii != 0 {
+-        h.console_write_byte(ascii); // echo (conin → conout)
++        chardev::bconout_handle(DEV_CON, ascii); // echo (conin → conout)
+     }
+-    pack_console_key(word)
++    key
+ }
+ 
+ // ---------------------------------------------------------------------------
+@@ -245,12 +248,8 @@ pub fn cconin(_: &TrapArgs) -> Long {
+ /// Ctrl-C handling (a Ctrl-C byte is returned as `0x03`). Returns the
+ /// packed console LONG (scancode in bits 16-23, ASCII in bits 0-7).
+ pub fn crawcin(_: &TrapArgs) -> Long {
+-    let Some(word) = host_or_eundev!().console_read_key_restartable() else {
+-        // A `kbdvec` hook has bytes waiting: restart after it ran (KEYS02).
+-        crate::xbios::kbdvecs::request_restart();
+-        return 0; // discarded — the trap handler re-executes the call
+-    };
+-    pack_console_key(word)
++    // `Bconin(2)` of the CON entry (restart request → 0, discarded).
++    chardev::bconin_handle(DEV_CON)
+ }
+ 
+ // ---------------------------------------------------------------------------
+@@ -263,16 +262,13 @@ pub fn crawcin(_: &TrapArgs) -> Long {
+ /// terminates the calling process (`Pterm(-32)`). Returns the packed
+ /// console LONG (scancode in bits 16-23, ASCII in bits 0-7).
+ pub fn cnecin(_: &TrapArgs) -> Long {
+-    let Some(word) = host_or_eundev!().console_read_key_restartable() else {
+-        // A `kbdvec` hook has bytes waiting: restart after it ran (KEYS02).
+-        crate::xbios::kbdvecs::request_restart();
+-        return 0; // discarded — the trap handler re-executes the call
+-    };
+-    if (word & 0xFF) as u8 == CTRL_C {
++    // `Bconin(2)` of the CON entry (restart request → 0, discarded).
++    let key = chardev::bconin_handle(DEV_CON);
++    if (key & 0xFF) as u8 == CTRL_C {
+         crate::bdos::process::request_terminate(CTRLC_RC);
+         return 0; // value ignored — handler redirects to Pterm.
+     }
+-    pack_console_key(word)
++    key
+ }
+ 
+ // ---------------------------------------------------------------------------
+@@ -540,7 +536,7 @@ pub fn cconws(args: &TrapArgs) -> Long {
+         if output_break(h) {
+             break; // Ctrl-C: stop writing; SVC handler redirects to Pterm.
+         }
+-        h.console_write_byte(b);
++        chardev::bconout_handle(DEV_CON, b);
+         // SAFETY: same provenance as `p`; bounded by `MAX` above.
+         p = unsafe { p.add(1) };
+         count += 1;
+@@ -555,54 +551,213 @@ pub fn cconws(args: &TrapArgs) -> Long {
+ // "all-bits-set" form which is sign-extended.)
+ // ---------------------------------------------------------------------------
+ 
+-/// `Cconis()` — returns `-1` if a console byte is available, else `0`.
++/// `Cconis()` — `Bconstat(2)` of the CON entry: `-1` if a console byte is
++/// available, else `0` (NewTOS has no BDOS typeahead buffer to check first).
+ pub fn cconis(_: &TrapArgs) -> Long {
+-    let h = match host() {
+-        Some(h) => h,
+-        None => return E_OK,
+-    };
+-    if h.console_has_input() {
+-        -1
+-    } else {
+-        0
+-    }
++    chardev::bconstat_handle(DEV_CON)
+ }
+ 
+ // ---------------------------------------------------------------------------
+ // 0x10 Cconos — console-output status. EmuTOS routes to Bcostat(2).
+-// PL011 with FIFO is virtually always ready; return -1 unconditionally.
+ // ---------------------------------------------------------------------------
+ 
+-/// `Cconos()` — returns `-1` (output device ready).
++/// `Cconos()` — `Bcostat(2)` of the CON entry: `-1` (the console is always
++/// ready to accept a byte).
+ pub fn cconos(_: &TrapArgs) -> Long {
+-    -1
++    chardev::bcostat_handle(DEV_CON)
+ }
+ 
+ // ---------------------------------------------------------------------------
+-// 0x11 Cprnos — printer output status. No printer → not ready → 0.
++// 0x11 Cprnos — printer output status = Bcostat(0).
++// Spec: docs/api/gemdos/console/11-cprnos.md (FS11 note).
+ // ---------------------------------------------------------------------------
+ 
+-/// `Cprnos()` — returns `0` (printer not ready / not present).
++/// `Cprnos()` — `Bcostat(0)` of the PRN entry; `0` (not ready) for the
++/// absent printer, as EmuTOS without `CONF_WITH_PRINTER_PORT`
++/// (`bios/parport.c:139-140`).
+ pub fn cprnos(_: &TrapArgs) -> Long {
+-    0
++    chardev::bcostat_handle(DEV_PRN)
+ }
+ 
+ // ---------------------------------------------------------------------------
+-// 0x12 Cauxis — AUX input status. No AUX in PHASE-02 → 0.
++// 0x12 Cauxis — AUX input status = constat(1) → Bconstat(1).
++// Spec: docs/api/gemdos/console/12-cauxis.md (FS11 note).
+ // ---------------------------------------------------------------------------
+ 
+-/// `Cauxis()` — returns `0` (AUX input not available).
++/// `Cauxis()` — `Bconstat(1)` of the AUX entry (no BDOS typeahead buffer to
++/// check first); `0` for the absent device.
+ pub fn cauxis(_: &TrapArgs) -> Long {
+-    0
++    chardev::bconstat_handle(DEV_AUX)
+ }
+ 
+ // ---------------------------------------------------------------------------
+-// 0x13 Cauxos — AUX output status. No AUX in PHASE-02 → 0.
++// 0x13 Cauxos — AUX output status = Bcostat(1).
++// Spec: docs/api/gemdos/console/13-cauxos.md (FS11 note).
+ // ---------------------------------------------------------------------------
+ 
+-/// `Cauxos()` — returns `0` (AUX output not available).
++/// `Cauxos()` — `Bcostat(1)` of the AUX entry; `0` (not ready) for the
++/// absent device.
+ pub fn cauxos(_: &TrapArgs) -> Long {
+-    0
++    chardev::bcostat_handle(DEV_AUX)
++}
++
++// ---------------------------------------------------------------------------
++// Fread / Fwrite on a character-device handle (FS11).
++// EmuTOS: bdos/bdosmain.c:604-640 (`osif` device block) with `conin`
++// (bdos/console.c:384-390), `cgets` (:540-581) and `tabout` (:292-302).
++// Spec: docs/api/gemdos/file/{3f-fread,40-fwrite}.md "Character-device path"
++// and "NewTOS implementation notes".
++// ---------------------------------------------------------------------------
++
++/// BDOS handle of the console (`H_Console`, `bdos/console.h`).
++const H_CONSOLE: i16 = -1;
++
++/// BDOS character-device handle (`-1` CON, `-2` AUX, `-3` PRN) → BIOS device
++/// number: EmuTOS `HXFORM(h) = 3 + h` (`bdos/console.h:36`).
++fn hxform(numl: i16) -> u16 {
++    (3 + numl) as u16
++}
++
++/// Byte access to the caller's buffer for the device paths: an index into
++/// the buffer, `None` / `false` when that byte cannot be reached (ARCH03 3a).
++trait DevBuf {
++    fn get(&self, i: u64) -> Option<u8>;
++    fn put(&self, i: u64, b: u8) -> bool;
++}
++
++/// [`DevBuf`] over the caller's address space.
++struct SpaceBuf {
++    space: crate::uaccess::Space,
++    base: u64,
++}
++
++impl DevBuf for SpaceBuf {
++    fn get(&self, i: u64) -> Option<u8> {
++        self.space.get_u8(self.base + i).ok()
++    }
++    fn put(&self, i: u64, b: u8) -> bool {
++        self.space.put_u8(self.base + i, b).is_ok()
++    }
++}
++
++/// [`LineEditIo`] over one device-table entry and the caller's buffer — the
++/// `cgets(h, …)` of `Fread`: input from that device's `Bconin` (its low byte,
++/// `char ch`, `console.c:542`), echo to that device's `Bconout`.
++struct DeviceLineIo<'a, B: DevBuf> {
++    dev: &'static dyn CharDevice,
++    buf: &'a B,
++    faulted: core::cell::Cell<bool>,
++}
++
++impl<B: DevBuf> LineEditIo for DeviceLineIo<'_, B> {
++    fn read_byte(&mut self) -> u8 {
++        // Never gives way to a `kbdvec` hook: keys may already be stored
++        // (the same blocking read `Cconrs` uses).
++        self.dev.bconin() as u8
++    }
++    fn echo_byte(&mut self, b: u8) {
++        let _ = self.dev.bconout(b); // `conout` ignores the BIOS result
++    }
++    fn store_byte(&mut self, i: usize, b: u8) {
++        if !self.buf.put(i as u64, b) {
++            self.faulted.set(true);
++        }
++    }
++    fn load_byte(&self, i: usize) -> u8 {
++        self.buf.get(i as u64).unwrap_or_else(|| {
++            self.faulted.set(true);
++            0
++        })
++    }
++    fn faulted(&self) -> bool {
++        self.faulted.get()
++    }
++}
++
++/// `Fread` on a character-device handle `numl` (`-1..-3`): `len` bytes into
++/// `ubuf` in `space` (EmuTOS `osif`, `bdos/bdosmain.c:608-620`).
++pub(crate) fn device_read(numl: i16, space: crate::uaccess::Space, len: i32, ubuf: u64) -> Long {
++    device_read_with(numl, len, &SpaceBuf { space, base: ubuf })
++}
++
++fn device_read_with<B: DevBuf>(numl: i16, len: i32, buf: &B) -> Long {
++    let dev = hxform(numl);
++    let Some(d) = chardev::device(dev) else {
++        return 0;
++    };
++    // "HUGE read": the high word of the LONG is tested (`pw[2]`), which also
++    // catches every negative `len`.
++    if (len as u32) >> 16 != 0 {
++        return 0;
++    }
++    // `pw[3]` is a signed WORD: 32768..65535 are negative here.
++    let lo = len as u16 as i16;
++    if lo == 1 {
++        // `conin(dev)`: one key, echoed, stored as the low byte of the
++        // `Bconin` LONG — CR and Ctrl-C included, no line editing. No side
++        // effect happens before the key arrives, so the read may give way to
++        // a `kbdvec` hook (KEYS02) and be re-executed.
++        let Some(key) = d.bconin_restartable() else {
++            crate::xbios::kbdvecs::request_restart();
++            return 0; // discarded — the trap handler re-executes the call
++        };
++        let ch = key as u8;
++        let _ = d.bconout(ch);
++        if !buf.put(0, ch) {
++            return crate::uaccess::FAULTED;
++        }
++        return 1;
++    }
++    if lo <= 0 {
++        // `cgets` with `maxlen <= 0`: the loop never runs (`console.c:546`).
++        return 0;
++    }
++    // `cgets(dev, len, buf)` = the `Cconrs` line editor over this device.
++    let mut io = DeviceLineIo { dev: d, buf, faulted: core::cell::Cell::new(false) };
++    match edit_line(&mut io, lo as usize) {
++        LineEdit::Done(n) => n as Long,
++        LineEdit::Terminated => {
++            crate::bdos::process::request_terminate(CTRLC_RC);
++            0 // value ignored — handler redirects to Pterm.
++        }
++        LineEdit::Faulted => crate::uaccess::FAULTED,
++    }
++}
++
++/// `Fwrite` on a character-device handle `numl` (`-1..-3`): `count` bytes
++/// from `ubuf` in `space` (EmuTOS `osif`, `bdos/bdosmain.c:622-640`).
++///
++/// `count <= 0` returns `count` itself. Each byte is read from the buffer
++/// first (an unreadable byte → [`crate::uaccess::FAULTED`], the bytes before
++/// it stay written). CON: the Ctrl-C-only [`output_break`], then the raw byte
++/// (`Cconws` behaviour, the approved divergence from `tabout`), result
++/// `count`. Any other device: the raw byte to its `Bconout`, no break check;
++/// a `0` from `Bconout` ends the call with the number of bytes before it.
++pub(crate) fn device_write(numl: i16, space: crate::uaccess::Space, count: i32, ubuf: u64) -> Long {
++    device_write_with(numl, count, &SpaceBuf { space, base: ubuf })
++}
++
++fn device_write_with<B: DevBuf>(numl: i16, count: i32, buf: &B) -> Long {
++    if count <= 0 {
++        return count;
++    }
++    let Some(d) = chardev::device(hxform(numl)) else {
++        return 0;
++    };
++    for n in 0..count as u64 {
++        let Some(b) = buf.get(n) else {
++            return crate::uaccess::FAULTED;
++        };
++        if numl == H_CONSOLE {
++            if host().is_some_and(output_break) {
++                return n as Long; // Ctrl-C: SVC handler redirects to Pterm.
++            }
++            let _ = d.bconout(b); // `tabout` is void
++        } else if d.bconout(b) == 0 {
++            return n as Long;
++        }
++    }
++    count
+ }
+ 
+ #[cfg(test)]
+@@ -655,6 +810,53 @@ mod tests {
+         assert_eq!(io.at, 3);
+     }
+ 
++    /// A device-path buffer whose bytes from `fault_at` on are unreachable.
++    struct FaultBuf {
++        data: [core::cell::Cell<u8>; 8],
++        fault_at: u64,
++    }
++
++    impl FaultBuf {
++        fn new(fault_at: u64) -> FaultBuf {
++            FaultBuf { data: Default::default(), fault_at }
++        }
++    }
++
++    impl DevBuf for FaultBuf {
++        fn get(&self, i: u64) -> Option<u8> {
++            (i < self.fault_at).then(|| self.data[i as usize].get())
++        }
++        fn put(&self, i: u64, b: u8) -> bool {
++            if i >= self.fault_at {
++                return false;
++            }
++            self.data[i as usize].set(b);
++            true
++        }
++    }
++
++    /// WT4 (`40-fwrite.md`): the byte is read from the user buffer before the
++    /// device call — an unreadable byte 0 is `FAULTED`, not the absent
++    /// device's short count 0.
++    #[test]
++    fn wt4_fwrite_reads_the_byte_before_the_device_call() {
++        for numl in [-2, -3] {
++            assert_eq!(device_write_with(numl, 3, &FaultBuf::new(0)), crate::uaccess::FAULTED);
++        }
++        // Readable: the absent device refuses the first byte → short count 0.
++        assert_eq!(device_write_with(-2, 3, &FaultBuf::new(8)), 0);
++    }
++
++    /// The device read stops with `FAULTED` at the first byte it cannot store
++    /// (ARCH03 3a, `3f-fread.md` implementation notes).
++    #[test]
++    fn fread_device_store_fault() {
++        assert_eq!(device_read_with(-2, 1, &FaultBuf::new(0)), crate::uaccess::FAULTED);
++        let b = FaultBuf::new(2);
++        assert_eq!(device_read_with(-3, 4, &b), crate::uaccess::FAULTED);
++        assert_eq!(device_read_with(-3, 2, &FaultBuf::new(2)), 2);
++    }
++
+     #[test]
+     fn edit_line_without_faults_is_unchanged() {
+         let mut io = FaultingIo { script: b"ab\x08c\r", at: 0, buf: [0; 16], fault_at: 16, faulted: false, echoed: 0 };
+diff --git a/tos-api/src/xbios/mod.rs b/tos-api/src/xbios/mod.rs
+index d1983e42..991497d8 100644
+--- a/tos-api/src/xbios/mod.rs
++++ b/tos-api/src/xbios/mod.rs
+@@ -36,7 +36,7 @@ const SETCOLOR: u16 = 0x07;
+ const FLOPRD: u16 = 0x08; // floppy/DMA group → EUNDEV (no controller)
+ const FLOPWR: u16 = 0x09;
+ const FLOPFMT: u16 = 0x0A;
+-const MIDIWS: u16 = 0x0C; // no MIDI ACIA → documented no-op
++const MIDIWS: u16 = 0x0C; // MIDI entry of the BIOS device table (absent: bytes dropped)
+ const RSCONF: u16 = 0x0F; // RS-232 config (PL011 thin adapter)
+ const KEYTBL: u16 = 0x10; // keyboard translation tables
+ const RANDOM: u16 = 0x11; // system group (Phase 11)
+@@ -82,10 +82,11 @@ pub fn dispatch(args: &TrapArgs) -> i64 {
+         // Absent Atari peripherals → the contract's documented value for
+         // "hardware not present", not the generic function-number catch-all.
+         // Scrdmp: no printer / default dump_vec is a no-op (14-scrdmp.md);
+-        // Midiws: no MIDI ACIA, bytes dropped (0c-midiws.md);
++        // Midiws: through the MIDI device-table entry, absent → bytes
++        // dropped (0c-midiws.md);
+         // Bconmap: single serial port → 0x2c "unavailable" (2c-bconmap.md).
+         SCRDMP => system::scrdmp(),
+-        MIDIWS => system::midiws(),
++        MIDIWS => system::midiws(args),
+         BCONMAP => system::bconmap(),
+         // RS-232 config: thin adapter over the PL011 (no MFP). See
+         // `docs/api/xbios/0f-rsconf.md`.
+diff --git a/tos-api/src/xbios/system.rs b/tos-api/src/xbios/system.rs
+index c190c09f..89418789 100644
+--- a/tos-api/src/xbios/system.rs
++++ b/tos-api/src/xbios/system.rs
+@@ -66,15 +66,28 @@ pub fn scrdmp() -> i64 {
+     0
+ }
+ 
+-/// `Midiws` (0x0C) — write `cnt + 1` bytes (unsigned count) to the MIDI
+-/// port. The Pi has no MIDI ACIA, so — exactly as on an EmuTOS build
+-/// without `CONF_WITH_MIDI_ACIA` — the bytes have no transport and are
+-/// dropped; the call transmits nothing and returns without error
+-/// (`void` → 0). Wired for ABI completeness so a caller sees the
+-/// contractual no-op, not the generic `EINVFN` catch-all.
++/// `Midiws(cnt, ptr)` (0x0C) — send `cnt + 1` bytes (`cnt` an unsigned
++/// WORD, so 1..65536 bytes) from `ptr` to the MIDI port: `Bconout(3, byte)`
++/// of the **MIDI entry of the device table** once per byte, results ignored,
++/// `void` → 0 — the shape of EmuTOS `midiws()` (`bios/midi.c:104-110`,
++/// `bconout3(3, *ptr++)` while `cnt--`).
+ ///
+-/// Spec: `docs/api/xbios/0c-midiws.md` ("No-MIDI profile" criterion).
+-pub fn midiws() -> i64 {
++/// The entry is the documented absent device (no MIDI ACIA on the Pi): each
++/// byte is discarded and the call returns at once; a MIDI driver
++/// (`TASK/IO01.md`) replaces only the entry. Each byte is read from `ptr` in
++/// the caller's space before the device call; an unreadable byte ends the
++/// call as a user-pointer fault (ARCH03 3a, [`crate::uaccess::FAULTED`]).
++///
++/// Spec: `docs/api/xbios/0c-midiws.md` (FS11 / IO01 note).
++pub fn midiws(args: &TrapArgs) -> i64 {
++    let count = args.arg_u16(0) as u64 + 1;
++    let ptr = args.arg_u64(1);
++    for i in 0..count {
++        let Ok(b) = args.space.get_u8(ptr + i) else {
++            return crate::uaccess::FAULTED as i64;
++        };
++        let _ = crate::bios::chardev::bconout_handle(crate::bios::chardev::DEV_MIDI, b);
++    }
+     0
+ }
+ 
+diff --git a/tos-api/tests/fatvol/mod.rs b/tos-api/tests/fatvol/mod.rs
+index 4127facc..3e34d492 100644
+--- a/tos-api/tests/fatvol/mod.rs
++++ b/tos-api/tests/fatvol/mod.rs
+@@ -7,6 +7,7 @@
+ 
+ #![allow(dead_code)] // each test binary uses a different part of this
+ 
++use std::collections::VecDeque;
+ use std::sync::atomic::{AtomicI32, AtomicU32, AtomicU64, Ordering};
+ use std::sync::{Mutex, MutexGuard, OnceLock};
+ 
+@@ -213,6 +214,45 @@ impl tos_api::bios::block::BlockDev for RamDisk {
+ 
+ pub struct DiskHost {
+     pub disk: RamDisk,
++    /// Console input queue (IKBD key words `scancode << 8 | ascii`), the
++    /// stand-in for the keyboard ring (FS11). A blocking read of an empty
++    /// queue panics instead of hanging the test.
++    pub con_in: Mutex<VecDeque<u16>>,
++    /// Every byte written to the console (FS11).
++    pub con_out: Mutex<Vec<u8>>,
++}
++
++impl DiskHost {
++    /// Queue `keys` (ASCII, scancode 0) as console input.
++    pub fn type_keys(&self, keys: &[u8]) {
++        self.con_in.lock().unwrap_or_else(|e| e.into_inner()).extend(keys.iter().map(|&k| k as u16));
++    }
++
++    /// Queue one whole key word.
++    pub fn type_word(&self, word: u16) {
++        self.con_in.lock().unwrap_or_else(|e| e.into_inner()).push_back(word);
++    }
++
++    /// Empty the console input queue and the captured output.
++    pub fn reset_console(&self) {
++        self.con_in.lock().unwrap_or_else(|e| e.into_inner()).clear();
++        self.con_out.lock().unwrap_or_else(|e| e.into_inner()).clear();
++    }
++
++    /// Take the captured console output.
++    pub fn take_output(&self) -> Vec<u8> {
++        core::mem::take(&mut *self.con_out.lock().unwrap_or_else(|e| e.into_inner()))
++    }
++
++    /// The key words still queued.
++    pub fn pending_keys(&self) -> Vec<u16> {
++        self.con_in.lock().unwrap_or_else(|e| e.into_inner()).iter().copied().collect()
++    }
++
++    fn pop_blocking(&self) -> u16 {
++        let w = self.con_in.lock().unwrap_or_else(|e| e.into_inner()).pop_front();
++        w.expect("blocking console read on an empty input queue")
++    }
+ }
+ 
+ // ── raw image access ──────────────────────────────────────────────────────
+@@ -265,7 +305,36 @@ impl DiskHost {
+ }
+ 
+ impl Host for DiskHost {
+-    fn console_write_byte(&self, _byte: u8) {}
++    fn console_write_byte(&self, byte: u8) {
++        self.con_out.lock().unwrap_or_else(|e| e.into_inner()).push(byte);
++    }
++    fn console_try_read(&self) -> Option<u8> {
++        self.con_in.lock().unwrap_or_else(|e| e.into_inner()).pop_front().map(|w| w as u8)
++    }
++    fn console_try_read_key(&self) -> Option<u16> {
++        self.con_in.lock().unwrap_or_else(|e| e.into_inner()).pop_front()
++    }
++    fn console_peek_key(&self) -> Option<u16> {
++        self.con_in.lock().unwrap_or_else(|e| e.into_inner()).front().copied()
++    }
++    fn console_has_input(&self) -> bool {
++        !self.con_in.lock().unwrap_or_else(|e| e.into_inner()).is_empty()
++    }
++    fn console_read_byte_blocking(&self) -> u8 {
++        // Skips scancode-only keys like the kernel host (`console::rx_pop`).
++        loop {
++            let w = self.pop_blocking();
++            if w & 0xFF != 0 {
++                return w as u8;
++            }
++        }
++    }
++    fn console_read_key_blocking(&self) -> u16 {
++        self.pop_blocking()
++    }
++    fn console_read_key_restartable(&self) -> Option<u16> {
++        Some(self.pop_blocking())
++    }
+     fn block(&self) -> Option<&dyn tos_api::bios::block::BlockDev> {
+         Some(&self.disk)
+     }
+@@ -291,6 +360,8 @@ pub fn fs<'a>() -> (MutexGuard<'a, ()>, &'static DiskHost) {
+                 fail_code: AtomicI32::new(0),
+                 refused_writes: AtomicU32::new(0),
+             },
++            con_in: Mutex::new(VecDeque::new()),
++            con_out: Mutex::new(Vec::new()),
+         }));
+         let slot: &'static &'static dyn Host = Box::leak(Box::new(host as &'static dyn Host));
+         tos_api::host::install_host(slot);
+diff --git a/tos-api/tests/fs10_fseek_device_handles.rs b/tos-api/tests/fs10_fseek_device_handles.rs
+index dc240a19..c0d693de 100644
+--- a/tos-api/tests/fs10_fseek_device_handles.rs
++++ b/tos-api/tests/fs10_fseek_device_handles.rs
+@@ -209,16 +209,18 @@ fn t13_fdatime_on_a_console_handle_is_invalid() {
+ }
+ 
+ /// `Fread` / `Fwrite` read the handle as a signed WORD too: `-1..-3` resolve
+-/// to a character device (all three to the console for now), `<= -4` is
+-/// `EIHNDL` (`bdosmain.c:589,601-602`).
++/// to a character device, `<= -4` is `EIHNDL` (`bdosmain.c:589,601-602`).
++/// Since FS11 each device is its BIOS device-table entry: CON writes and
++/// returns the count, the absent AUX/PRN refuse the first byte (short count
++/// 0, `40-fwrite.md` W15/W18).
+ #[test]
+ fn fread_fwrite_take_negative_handles_as_devices() {
+     let (_g, _host) = fs();
+     let _p = Pd::new();
+-    for h in [-1, -2, -3] {
+-        assert_eq!(fwrite(h, b"fs10"), 4, "Fwrite({h})");
++    for (h, want4, want2) in [(-1, 4, 2), (-2, 0, 0), (-3, 0, 0)] {
++        assert_eq!(fwrite(h, b"fs10"), want4, "Fwrite({h})");
+         let zx = call(FWRITE, [h as u16 as u64, 2, b"ok".as_ptr() as u64, 0, 0, 0, 0, 0]);
+-        assert_eq!(zx, 2, "Fwrite({h} as u16)");
++        assert_eq!(zx, want2, "Fwrite({h} as u16)");
+     }
+     assert_eq!(fwrite(-4, b"x"), EIHNDL);
+     assert_eq!(fwrite(-32768, b"x"), EIHNDL);
+diff --git a/tos-api/tests/fs11_device_rw.rs b/tos-api/tests/fs11_device_rw.rs
+new file mode 100644
+index 00000000..d9bd34ff
+--- /dev/null
++++ b/tos-api/tests/fs11_device_rw.rs
+@@ -0,0 +1,965 @@
++//! TASK/FS11 — `Fread` / `Fwrite` on character-device handles through the one
++//! per-BIOS-device dispatch point.
++//!
++//! Spec: `docs/api/gemdos/file/3f-fread.md` and `40-fwrite.md`, sections
++//! "Character-device path" and the tables "NewTOS host tests" (R1..R32,
++//! RT1..RT3, W1..W27, WT1..WT3; WT4 is the in-crate unit test
++//! `gemdos::console::tests::wt4_*`, the host cannot fault a user pointer).
++//! The device table and the absent-device profile: `3f-fread.md` "NewTOS
++//! implementation notes"; the BIOS/GEMDOS/XBIOS notes in
++//! `docs/api/bios/{01,02,03,08}-*.md`, `docs/api/gemdos/console/*.md`,
++//! `docs/api/xbios/0c-midiws.md`.
++//!
++//! EmuTOS `osif` (`bdos/bdosmain.c:604-640`): `Fread` on a device = HUGE guard,
++//! `conin` for one byte, else `cgets`; `Fwrite` = `tabout` on CON, `Bconout`
++//! (short count on 0) elsewhere.
++//!
++//! Basepages are host buffers; on the host a PD's user address is its kernel
++//! address.
++
++mod fatvol;
++
++use std::collections::VecDeque;
++use std::sync::Mutex;
++
++use fatvol::*;
++use tos_api::bdos::process;
++use tos_api::bios::chardev::{install_device, CharDevice};
++use tos_api::trap::{TrapArgs, TrapClass};
++use tos_types::BasePage;
++
++const FDUP: u16 = 0x45;
++const FFORCE: u16 = 0x46;
++const FSEEK: u16 = 0x42;
++const CAUXIN: u16 = 0x03;
++const CAUXOUT: u16 = 0x04;
++const CPRNOUT: u16 = 0x05;
++const CPRNOS: u16 = 0x11;
++const CAUXIS: u16 = 0x12;
++const CAUXOS: u16 = 0x13;
++const CCONOUT: u16 = 0x02;
++const CCONWS: u16 = 0x09;
++
++const BCONSTAT: u16 = 0x01;
++const BCONIN: u16 = 0x02;
++const BCONOUT: u16 = 0x03;
++const BCOSTAT: u16 = 0x08;
++const MIDIWS: u16 = 0x0C;
++
++const EIHNDL: i32 = -37;
++
++const CR: u8 = 0x0D;
++const LF: u8 = 0x0A;
++const BS: u8 = 0x08;
++const DEL: u8 = 0x7F;
++const TAB: u8 = 0x09;
++const ESC: u8 = 0x1B;
++const CTRL_C: u8 = 0x03;
++const CTRL_S: u8 = 0x13;
++const CTRL_U: u8 = 0x15;
++const CTRL_X: u8 = 0x18;
++
++/// EmuTOS `default_handle` (`bdos/console.c:60-68`).
++const DEFAULT: [i8; 6] = [-1, -1, -2, -3, -1, -1];
++
++// ── process ───────────────────────────────────────────────────────────────
++
++/// A process basepage in host memory with the default standard handles, made
++/// the running process while it lives (`run`).
++struct Pd(*mut BasePage);
++impl Pd {
++    fn new() -> Pd {
++        let bp = Box::into_raw(Box::new([0u8; 256])) as *mut BasePage;
++        // SAFETY: fresh box.
++        unsafe { (*bp).p_uft = DEFAULT };
++        process::set_current(bp);
++        Pd(bp)
++    }
++    fn uft(&self) -> [i8; 6] {
++        // SAFETY: the box is alive.
++        unsafe { (*self.0).p_uft }
++    }
++}
++impl Drop for Pd {
++    fn drop(&mut self) {
++        if process::current() == self.0 {
++            process::set_current(core::ptr::null_mut());
++        }
++        // SAFETY: nothing names the box any more.
++        drop(unsafe { Box::from_raw(self.0 as *mut [u8; 256]) });
++    }
++}
++
++/// The per-test setup: the file-system lock, the host with an empty console,
++/// a running process with the default standard handles, and no stale
++/// terminate request.
++fn setup() -> (std::sync::MutexGuard<'static, ()>, &'static DiskHost, Pd) {
++    let (g, host) = fs();
++    host.reset_console();
++    let _ = process::take_pending_terminate();
++    let pd = Pd::new();
++    (g, host, pd)
++}
++
++// ── calls ─────────────────────────────────────────────────────────────────
++
++/// `Fread(h, len, buf)` with the handle WORD sign-extended and the LONG `len`
++/// as given (its low 32 bits are the LONG).
++fn fread_raw(h: i32, len: i64, buf: *mut u8) -> i32 {
++    call(FREAD, [h as i64 as u64, len as u64, buf as u64, 0, 0, 0, 0, 0])
++}
++
++fn fread(h: i32, buf: &mut [u8]) -> i32 {
++    fread_raw(h, buf.len() as i64, buf.as_mut_ptr())
++}
++
++fn fwrite_raw(h: i32, len: i64, buf: *const u8) -> i32 {
++    call(FWRITE, [h as i64 as u64, len as u64, buf as u64, 0, 0, 0, 0, 0])
++}
++
++fn fwrite(h: i32, data: &[u8]) -> i32 {
++    fwrite_raw(h, data.len() as i64, data.as_ptr())
++}
++
++fn fclose(h: i32) -> i32 {
++    gemdos1(FCLOSE, h as u16 as u64)
++}
++
++fn fdup(h: i32) -> i32 {
++    gemdos1(FDUP, h as u64)
++}
++
++fn fforce(std: i32, h: i32) -> i32 {
++    gemdos2(FFORCE, std as u16 as u64, h as u16 as u64)
++}
++
++fn gemdos0(func: u16) -> i32 {
++    call(func, [0; 8])
++}
++
++fn bios(func: u16, a0: u64, a1: u64) -> i64 {
++    let args = TrapArgs {
++        regs: [a0, a1, 0, 0, 0, 0, 0, 0],
++        func: func as u64,
++        svc_imm: TrapClass::Bios as u16,
++        space: tos_api::uaccess::Space::Kernel,
++    };
++    tos_api::bios::dispatch(&args)
++}
++
++fn xbios(func: u16, a0: u64, a1: u64) -> i64 {
++    let args = TrapArgs {
++        regs: [a0, a1, 0, 0, 0, 0, 0, 0],
++        func: func as u64,
++        svc_imm: TrapClass::Xbios as u16,
++        space: tos_api::uaccess::Space::Kernel,
++    };
++    tos_api::xbios::dispatch(&args)
++}
++
++fn fcreate(name: &str) -> i32 {
++    let p = cpath(name);
++    let h = gemdos2(FCREATE, p.as_ptr() as u64, 0);
++    assert!(h >= 6, "Fcreate {name} -> {h}");
++    h
++}
++
++fn fopen(name: &str) -> i32 {
++    let p = cpath(name);
++    let h = gemdos2(FOPEN, p.as_ptr() as u64, 0);
++    assert!(h >= 6, "Fopen {name} -> {h}");
++    h
++}
++
++// ── a replaceable device entry (RT*, WT*, W19-W21) ───────────────────────
++
++/// A test character device: `Bconin` pops its input queue (0 when empty, never
++/// blocks), `Bconout` captures and accepts up to `accept` bytes (then 0),
++/// `Bconstat` = -1 while input is queued, `Bcostat` = -1 (so a status read of
++/// this entry is distinguishable from the absent entry's 0).
++struct TestDev {
++    input: Mutex<VecDeque<u8>>,
++    out: Mutex<Vec<u8>>,
++    accept: Mutex<usize>,
++    instat: Mutex<u32>,
++    outstat: Mutex<u32>,
++}
++
++impl TestDev {
++    const fn new() -> TestDev {
++        TestDev {
++            input: Mutex::new(VecDeque::new()),
++            out: Mutex::new(Vec::new()),
++            accept: Mutex::new(usize::MAX),
++            instat: Mutex::new(0),
++            outstat: Mutex::new(0),
++        }
++    }
++    fn reset(&self, input: &[u8], accept: usize) {
++        *self.input.lock().unwrap() = input.iter().copied().collect();
++        self.out.lock().unwrap().clear();
++        *self.accept.lock().unwrap() = accept;
++        *self.instat.lock().unwrap() = 0;
++        *self.outstat.lock().unwrap() = 0;
++    }
++    fn feed(&self, input: &[u8]) {
++        self.input.lock().unwrap().extend(input.iter().copied());
++    }
++    fn out(&self) -> Vec<u8> {
++        core::mem::take(&mut *self.out.lock().unwrap())
++    }
++    fn untouched(&self) -> bool {
++        self.out.lock().unwrap().is_empty()
++            && *self.instat.lock().unwrap() == 0
++            && *self.outstat.lock().unwrap() == 0
++    }
++}
++
++impl CharDevice for TestDev {
++    fn bconstat(&self) -> i32 {
++        *self.instat.lock().unwrap() += 1;
++        if self.input.lock().unwrap().is_empty() { 0 } else { -1 }
++    }
++    fn bconin(&self) -> i32 {
++        self.input.lock().unwrap().pop_front().map_or(0, |b| b as i32)
++    }
++    fn bconout(&self, byte: u8) -> i32 {
++        let mut a = self.accept.lock().unwrap();
++        if *a == 0 {
++            return 0;
++        }
++        *a -= 1;
++        self.out.lock().unwrap().push(byte);
++        1
++    }
++    fn bcostat(&self) -> i32 {
++        *self.outstat.lock().unwrap() += 1;
++        -1
++    }
++}
++
++static DEV_A: TestDev = TestDev::new();
++static DEV_A_REF: &dyn CharDevice = &DEV_A;
++static DEV_B: TestDev = TestDev::new();
++static DEV_B_REF: &dyn CharDevice = &DEV_B;
++
++/// Install `entry` as BIOS device `dev` for the life of the guard; the entry
++/// that was there comes back on drop.
++struct Installed {
++    dev: u16,
++    prev: &'static &'static dyn CharDevice,
++}
++impl Installed {
++    fn new(dev: u16, entry: &'static &'static dyn CharDevice) -> Installed {
++        let prev = install_device(dev, entry).expect("device number in range");
++        Installed { dev, prev }
++    }
++}
++impl Drop for Installed {
++    fn drop(&mut self) {
++        install_device(self.dev, self.prev);
++    }
++}
++
++// ═══ Fread, CON ══════════════════════════════════════════════════════════
++
++/// R1, R2: one byte = `conin`: blocking key, echoed, stored; CR stored raw.
++#[test]
++fn r01_r02_one_byte_is_conin() {
++    let (_g, host, _p) = setup();
++    let mut b = [0u8; 1];
++    host.type_keys(b"A");
++    assert_eq!(fread(-1, &mut b), 1, "R1");
++    assert_eq!(b[0], b'A');
++    assert_eq!(host.take_output(), b"A", "R1 echo");
++
++    host.type_keys(&[CR]);
++    assert_eq!(fread(-1, &mut b), 1, "R2");
++    assert_eq!(b[0], CR, "R2 CR stored");
++    assert_eq!(host.take_output(), [CR], "R2 echo CR only");
++}
++
++/// R1 detail: the stored byte is the low byte of the `Bconin` LONG — a
++/// scancode-only key (arrow) is stored as 0x00 and echoed raw
++/// (`conin` = `conout(h, (unsigned char)getch(h))`, `bdos/console.c:384-390`).
++#[test]
++fn r01_scancode_only_key_is_stored_as_its_low_byte() {
++    let (_g, host, _p) = setup();
++    let mut b = [0xFFu8; 1];
++    host.type_word(0x4800); // up arrow: scancode 0x48, ASCII 0
++    assert_eq!(fread(-1, &mut b), 1);
++    assert_eq!(b[0], 0);
++}
++
++/// R3, R4, R5: `len >= 2` is a line read; the terminator is echoed as CR and
++/// not stored.
++#[test]
++fn r03_r04_r05_line_read_ends_at_cr_or_lf() {
++    let (_g, host, _p) = setup();
++    let mut b = [0u8; 80];
++    host.type_keys(&[b'h', b'i', CR]);
++    assert_eq!(fread(-1, &mut b), 2, "R3");
++    assert_eq!(&b[..3], &[b'h', b'i', 0], "R3 no CR/LF/NUL stored");
++    assert_eq!(host.take_output(), b"hi\r", "R3 echo");
++
++    let mut b = [0u8; 80];
++    host.type_keys(&[b'h', b'i', LF]);
++    assert_eq!(fread(-1, &mut b), 2, "R4");
++    assert_eq!(&b[..2], b"hi");
++    assert_eq!(host.take_output(), b"hi\r", "R4 echo");
++
++    host.type_keys(&[CR]);
++    assert_eq!(fread(-1, &mut b), 0, "R5 empty line");
++    assert_eq!(host.take_output(), b"\r", "R5 echo");
++}
++
++/// R6: the line read ends at `len` without consuming the next key.
++#[test]
++fn r06_line_read_ends_at_len() {
++    let (_g, host, _p) = setup();
++    let mut b = [0u8; 3];
++    host.type_keys(b"abcd");
++    assert_eq!(fread(-1, &mut b), 3, "R6");
++    assert_eq!(&b, b"abc");
++    assert_eq!(host.pending_keys(), vec![b'd' as u16], "R6 'd' still queued");
++    assert!(!host.take_output().contains(&CR), "R6 no CR echoed");
++}
++
++/// R7, R8: BS / DEL erase the last character; on an empty buffer nothing.
++#[test]
++fn r07_r08_backspace_and_delete() {
++    let (_g, host, _p) = setup();
++    let mut b = [0u8; 80];
++    host.type_keys(&[b'a', b'b', BS, b'c', CR]);
++    assert_eq!(fread(-1, &mut b), 2, "R7");
++    assert_eq!(&b[..2], b"ac");
++    let out = host.take_output();
++    assert!(out.windows(3).any(|w| w == [BS, b' ', BS]), "R7 erase echo: {out:02x?}");
++
++    let mut b = [0u8; 80];
++    host.type_keys(&[b'a', DEL, DEL, b'b', CR]);
++    assert_eq!(fread(-1, &mut b), 1, "R8");
++    assert_eq!(b[0], b'b');
++}
++
++/// R9, R10: Ctrl-X / Ctrl-U discard the line (buffer/return only — the echo
++/// is the approved `edit_line` divergence).
++#[test]
++fn r09_r10_ctrl_x_and_ctrl_u_discard_the_line() {
++    let (_g, host, _p) = setup();
++    let mut b = [0u8; 80];
++    host.type_keys(&[b'a', b'b', CTRL_X, b'c', CR]);
++    assert_eq!(fread(-1, &mut b), 1, "R9");
++    assert_eq!(b[0], b'c');
++
++    let mut b = [0u8; 80];
++    host.type_keys(&[b'a', b'b', CTRL_U, b'c', CR]);
++    assert_eq!(fread(-1, &mut b), 1, "R10");
++    assert_eq!(b[0], b'c');
++}
++
++/// R11, R12: TAB and ESC are stored and echoed raw (no tab expansion, no
++/// `^[`).
++#[test]
++fn r11_r12_tab_and_esc_are_stored_and_echoed_raw() {
++    let (_g, host, _p) = setup();
++    let mut b = [0u8; 80];
++    host.type_keys(&[b'a', TAB, b'b', CR]);
++    assert_eq!(fread(-1, &mut b), 3, "R11");
++    assert_eq!(&b[..3], &[b'a', TAB, b'b']);
++    assert_eq!(host.take_output(), [0x61, 0x09, 0x62, 0x0D], "R11 echo");
++
++    let mut b = [0u8; 80];
++    host.type_keys(&[ESC, CR]);
++    assert_eq!(fread(-1, &mut b), 1, "R12");
++    assert_eq!(b[0], ESC);
++    assert_eq!(host.take_output(), [0x1B, 0x0D], "R12 echo");
++}
++
++/// R13, R14, R15: `len == 0`, HUGE (high word set, incl. negative) and a
++/// negative low word return 0 without touching the console.
++#[test]
++fn r13_r14_r15_zero_huge_and_negative_low_word() {
++    let (_g, host, _p) = setup();
++    host.type_keys(b"x\r");
++    let mut b = [0u8; 4];
++    for len in [0i64, 0x10000, -1, 0x7FFF_FFFF, 0x8000, 0xFFFF] {
++        assert_eq!(fread_raw(-1, len, b.as_mut_ptr()), 0, "Fread(-1, {len:#x})");
++    }
++    assert_eq!(b, [0; 4], "nothing stored");
++    assert_eq!(host.pending_keys(), vec![b'x' as u16, CR as u16], "nothing consumed");
++    assert!(host.take_output().is_empty(), "nothing echoed");
++}
++
++/// R16: the console standard handles 0, 1, 4, 5 read the keyboard.
++#[test]
++fn r16_console_standard_handles() {
++    let (_g, host, _p) = setup();
++    for h in [0, 1, 4, 5] {
++        let mut b = [0u8; 80];
++        host.type_keys(&[b'x', CR]);
++        assert_eq!(fread(h, &mut b), 1, "R16 Fread({h})");
++        assert_eq!(b[0], b'x');
++    }
++}
++
++/// R27: Ctrl-C in a line read terminates the process (exit -32).
++#[test]
++fn r27_ctrl_c_in_a_line_read_terminates() {
++    let (_g, host, _p) = setup();
++    let mut b = [0u8; 80];
++    host.type_keys(&[CTRL_C]);
++    let _ = fread(-1, &mut b);
++    assert_eq!(process::take_pending_terminate(), Some(-32), "R27");
++}
++
++/// `conin` (len 1) stores Ctrl-C as data — no terminate (spec item 3).
++#[test]
++fn r27b_ctrl_c_in_a_one_byte_read_is_data() {
++    let (_g, host, _p) = setup();
++    let mut b = [0u8; 1];
++    host.type_keys(&[CTRL_C]);
++    assert_eq!(fread(-1, &mut b), 1);
++    assert_eq!(b[0], CTRL_C);
++    assert_eq!(process::take_pending_terminate(), None);
++}
++
++/// R28: keys stay queued between calls.
++#[test]
++fn r28_typeahead_survives_between_calls() {
++    let (_g, host, _p) = setup();
++    host.type_keys(&[b'a', b'b', CR]);
++    let mut b = [0u8; 1];
++    assert_eq!(fread(-1, &mut b), 1, "R28 first");
++    assert_eq!(b[0], b'a');
++    let mut b = [0u8; 80];
++    assert_eq!(fread(-1, &mut b), 1, "R28 second");
++    assert_eq!(b[0], b'b');
++}
++
++// ═══ Fread, AUX / PRN (absent devices) ═══════════════════════════════════
++
++/// R17, R18, R29: AUX is absent — every `Bconin` is 0 without blocking, so a
++/// line read fills the buffer with NULs; nothing reaches the console.
++#[test]
++fn r17_r18_r29_absent_aux() {
++    let (_g, host, _p) = setup();
++    host.type_keys(b"k"); // must not be read
++    for h in [-2, 2] {
++        let mut b = [0xAAu8; 80];
++        assert_eq!(fread(h, &mut b), 80, "R17 Fread({h}, 80)");
++        assert_eq!(b, [0; 80]);
++        let mut b = [0xAAu8; 2];
++        assert_eq!(fread(h, &mut b), 2, "R29 Fread({h}, 2)");
++        assert_eq!(b, [0; 2]);
++    }
++    let mut b = [0xAAu8; 1];
++    assert_eq!(fread(-2, &mut b), 1, "R18");
++    assert_eq!(b[0], 0);
++    assert_eq!(host.pending_keys(), vec![b'k' as u16], "CON input untouched");
++    assert!(host.take_output().is_empty(), "nothing echoed to CON");
++}
++
++/// R19, R20: PRN is absent: `Fread(-3|3, 1)` = one NUL; `Fread(-3, 4)` = four
++/// NULs (inferred by tracing `cgets` over a `Bconin` = 0 device,
++/// `console.c:548,577-579`).
++#[test]
++fn r19_r20_absent_prn() {
++    let (_g, host, _p) = setup();
++    for h in [-3, 3] {
++        let mut b = [0xAAu8; 1];
++        assert_eq!(fread(h, &mut b), 1, "R19 Fread({h}, 1)");
++        assert_eq!(b[0], 0);
++    }
++    let mut b = [0xAAu8; 4];
++    assert_eq!(fread(-3, &mut b), 4, "R20 (inferred)");
++    assert_eq!(b, [0; 4]);
++    assert!(host.take_output().is_empty());
++}
++
++/// R30: the largest line read on an absent device returns at once.
++#[test]
++fn r30_largest_line_read_on_absent_devices() {
++    let (_g, _host, _p) = setup();
++    for h in [-2, -3] {
++        let mut b = vec![0xAAu8; 0x7FFF];
++        assert_eq!(fread(h, &mut b), 0x7FFF, "R30 Fread({h}, 0x7FFF)");
++        assert!(b.iter().all(|&c| c == 0));
++    }
++}
++
++/// R31, R32: the guards apply on every device; the device is not touched.
++#[test]
++fn r31_r32_guards_on_absent_devices() {
++    let (_g, _host, _p) = setup();
++    DEV_A.reset(b"zz", usize::MAX);
++    let _aux = Installed::new(1, &DEV_A_REF);
++    let mut b = [0xAAu8; 4];
++    assert_eq!(fread_raw(-3, 0x8000, b.as_mut_ptr()), 0, "R31 PRN 0x8000");
++    assert_eq!(fread_raw(-2, 0x10000, b.as_mut_ptr()), 0, "R31 AUX 0x10000");
++    assert_eq!(fread_raw(-2, 0, b.as_mut_ptr()), 0, "R31 AUX 0");
++    assert_eq!(fread_raw(-3, -1, b.as_mut_ptr()), 0, "R32 PRN -1");
++    assert_eq!(fread_raw(-2, -1, b.as_mut_ptr()), 0, "R32 AUX -1");
++    assert_eq!(b, [0xAA; 4]);
++    assert_eq!(DEV_A.input.lock().unwrap().len(), 2, "AUX input not consumed");
++    assert!(DEV_A.untouched());
++}
++
++// ═══ Fread, handle resolution ════════════════════════════════════════════
++
++/// R21, R22: `<= -4` and a free sft slot are `EIHNDL`.
++#[test]
++fn r21_r22_invalid_handles() {
++    let (_g, _host, _p) = setup();
++    let mut b = [0u8; 1];
++    assert_eq!(fread(-4, &mut b), EIHNDL, "R21 -4");
++    assert_eq!(fread(-32768, &mut b), EIHNDL, "R21 -32768");
++    assert_eq!(fread(6 + 15, &mut b), EIHNDL, "R22 free slot");
++}
++
++/// R23: an `Fdup` of the console handle reads the console; closed → `EIHNDL`.
++#[test]
++fn r23_fdup_of_console() {
++    let (_g, host, _p) = setup();
++    let d = fdup(0);
++    assert!(d >= 6, "Fdup(0) -> {d}");
++    host.type_keys(b"q");
++    let mut b = [0u8; 1];
++    assert_eq!(fread(d, &mut b), 1, "R23");
++    assert_eq!(b[0], b'q');
++    assert_eq!(fclose(d), E_OK);
++    assert_eq!(fread(d, &mut b), EIHNDL, "R23 after Fclose");
++}
++
++/// R24: `Fforce(0, -2)` makes stdin the (absent) AUX.
++#[test]
++fn r24_fforce_stdin_to_aux() {
++    let (_g, host, p) = setup();
++    assert_eq!(fforce(0, -2), E_OK);
++    host.type_keys(b"k");
++    let mut b = [0xAAu8; 80];
++    assert_eq!(fread(0, &mut b), 80, "R24");
++    assert_eq!(b, [0; 80]);
++    assert_eq!(host.pending_keys(), vec![b'k' as u16]);
++    assert_eq!(fclose(0), E_OK);
++    assert_eq!(p.uft(), DEFAULT);
++}
++
++/// R25, R26: stdin forced to a file reads the file without echo; `Fclose(0)`
++/// reverts it to the console.
++#[test]
++fn r25_r26_fforce_stdin_to_a_file_and_back() {
++    let (_g, host, p) = setup();
++    let w = fcreate("C:\\FS11R25.TXT");
++    assert_eq!(fwrite(w, b"AB"), 2);
++    assert_eq!(fclose(w), E_OK);
++    let fh = fopen("C:\\FS11R25.TXT");
++    assert_eq!(fforce(0, fh), E_OK);
++    let mut b = [0u8; 10];
++    assert_eq!(fread(0, &mut b), 2, "R25");
++    assert_eq!(&b[..2], b"AB");
++    assert!(host.take_output().is_empty(), "R25 no echo");
++    let _ = fclose(0);
++    assert_eq!(p.uft(), DEFAULT);
++    host.type_keys(b"z");
++    let mut b = [0u8; 1];
++    assert_eq!(fread(0, &mut b), 1, "R26");
++    assert_eq!(b[0], b'z');
++    let _ = fclose(fh);
++}
++
++// ═══ Fread, single dispatch point ════════════════════════════════════════
++
++/// RT1, RT2: a device installed in the AUX slot is what `Fread(-2|2)`,
++/// `Cauxin`, `Cauxis`, `Bconin(1)` and `Bconstat(1)` reach; CON stays
++/// untouched.
++#[test]
++fn rt1_rt2_aux_entry_is_the_one_dispatch_point() {
++    let (_g, host, _p) = setup();
++    DEV_A.reset(&[b'o', b'k', CR], usize::MAX);
++    let _aux = Installed::new(1, &DEV_A_REF);
++    let mut b = [0u8; 80];
++    assert_eq!(fread(-2, &mut b), 2, "RT1 Fread(-2)");
++    assert_eq!(&b[..2], b"ok");
++    assert_eq!(DEV_A.out(), b"ok\r", "RT1 echo on AUX");
++
++    DEV_A.feed(&[b'o', b'k', CR]);
++    let mut b = [0u8; 80];
++    assert_eq!(fread(2, &mut b), 2, "RT1 Fread(2)");
++    assert_eq!(&b[..2], b"ok");
++    assert_eq!(DEV_A.out(), b"ok\r");
++
++    DEV_A.feed(b"z");
++    let mut b = [0u8; 1];
++    assert_eq!(fread(-2, &mut b), 1, "RT2");
++    assert_eq!(b[0], b'z');
++    assert_eq!(DEV_A.out(), b"z", "RT2 echo");
++
++    DEV_A.feed(b"c");
++    assert_eq!(gemdos0(CAUXIS), -1, "Cauxis reads the entry's status");
++    assert_eq!(gemdos0(CAUXIN), b'c' as i32, "Cauxin");
++    assert_eq!(gemdos0(CAUXIS), 0);
++    DEV_A.feed(b"d");
++    assert_eq!(bios(BCONSTAT, 1, 0), -1, "Bconstat(1)");
++    assert_eq!(bios(BCONIN, 1, 0), b'd' as i64, "Bconin(1)");
++    assert!(host.take_output().is_empty(), "CON untouched");
++}
++
++/// RT3: the PRN entry (index 0) is reached by `Fread(-3|3)` and `Bconin(0)`,
++/// never the AUX entry.
++#[test]
++fn rt3_prn_entry_is_index_0() {
++    let (_g, _host, _p) = setup();
++    DEV_A.reset(b"", usize::MAX);
++    DEV_B.reset(b"pq", usize::MAX);
++    let _aux = Installed::new(1, &DEV_A_REF);
++    let _prn = Installed::new(0, &DEV_B_REF);
++    let mut b = [0u8; 1];
++    assert_eq!(fread(-3, &mut b), 1);
++    assert_eq!(b[0], b'p', "RT3 Fread(-3)");
++    assert_eq!(fread(3, &mut b), 1);
++    assert_eq!(b[0], b'q', "RT3 Fread(3)");
++    DEV_B.feed(b"r");
++    assert_eq!(bios(BCONIN, 0, 0), b'r' as i64, "RT3 Bconin(0)");
++    assert_eq!(DEV_B.out(), b"pq", "echo on PRN");
++    assert!(DEV_A.untouched(), "AUX entry not hit");
++}
++
++// ═══ Fwrite, CON ═════════════════════════════════════════════════════════
++
++/// W1, W2: CON and the console standard handles write raw to the console.
++#[test]
++fn w01_w02_console_writes() {
++    let (_g, host, _p) = setup();
++    assert_eq!(fwrite(-1, b"hello"), 5, "W1");
++    assert_eq!(host.take_output(), b"hello");
++    for h in [1, 0, 4, 5] {
++        assert_eq!(fwrite(h, b"abc"), 3, "W2 Fwrite({h})");
++        assert_eq!(host.take_output(), b"abc");
++    }
++}
++
++/// W3-W8: no tab expansion, no column state, no CR inserted.
++#[test]
++fn w03_to_w08_bytes_go_out_raw() {
++    let (_g, host, _p) = setup();
++    assert_eq!(fwrite(-1, b"\tX"), 2, "W3");
++    assert_eq!(host.take_output(), [0x09, 0x58]);
++    assert_eq!(fwrite(-1, b"ab\tX"), 4, "W4");
++    assert_eq!(host.take_output(), [0x61, 0x62, 0x09, 0x58]);
++    assert_eq!(fwrite(-1, b"12345"), 5);
++    assert_eq!(fwrite(-1, b"\tX"), 2, "W5");
++    assert_eq!(&host.take_output()[5..], [0x09, 0x58]);
++    assert_eq!(fwrite(-1, b"\t"), 1, "W6");
++    assert_eq!(host.take_output(), [0x09]);
++    assert_eq!(fwrite(-1, b"a\nb"), 3, "W7");
++    assert_eq!(host.take_output(), [0x61, 0x0A, 0x62]);
++    assert_eq!(fwrite(-1, b"a\rb"), 3, "W8");
++    assert_eq!(fwrite(-1, b"\t"), 1, "W8 tab");
++    assert_eq!(host.take_output(), [0x61, 0x0D, 0x62, 0x09]);
++}
++
++/// W9, W10, W11: `count <= 0` returns `count` itself; NULs are written.
++#[test]
++fn w09_w10_w11_counts_and_nuls() {
++    let (_g, host, _p) = setup();
++    let b = [0x41u8; 8];
++    assert_eq!(fwrite_raw(-1, 0, b.as_ptr()), 0, "W9");
++    assert_eq!(fwrite_raw(-1, -5, b.as_ptr()), -5, "W10");
++    assert!(host.take_output().is_empty());
++    assert_eq!(fwrite(-1, b"a\0b"), 3, "W11");
++    assert_eq!(host.take_output(), [0x61, 0x00, 0x62]);
++}
++
++/// W12: a pending key is not consumed by a console write.
++#[test]
++fn w12_pending_key_is_not_consumed() {
++    let (_g, host, _p) = setup();
++    host.type_keys(b"k");
++    assert_eq!(fwrite(-1, b"x"), 1, "W12");
++    assert_eq!(host.pending_keys(), vec![b'k' as u16]);
++    let mut b = [0u8; 1];
++    assert_eq!(fread(-1, &mut b), 1);
++    assert_eq!(b[0], b'k');
++}
++
++/// W13: a Ctrl-C at the front of the queue is consumed, terminate is
++/// requested, nothing is written.
++#[test]
++fn w13_ctrl_c_terminates_before_the_first_byte() {
++    let (_g, host, _p) = setup();
++    host.type_keys(&[CTRL_C]);
++    let _ = fwrite(-1, b"abc");
++    assert_eq!(process::take_pending_terminate(), Some(-32), "W13");
++    assert!(host.take_output().is_empty(), "W13 nothing written");
++    assert!(host.pending_keys().is_empty(), "W13 key consumed");
++}
++
++/// W14: no Ctrl-S pause; the key stays queued.
++#[test]
++fn w14_no_ctrl_s_pause() {
++    let (_g, host, _p) = setup();
++    host.type_keys(&[CTRL_S]);
++    assert_eq!(fwrite(-1, b"abc"), 3, "W14");
++    assert_eq!(host.take_output(), b"abc");
++    assert_eq!(host.pending_keys(), vec![CTRL_S as u16]);
++}
++
++// ═══ Fwrite, AUX / PRN ═══════════════════════════════════════════════════
++
++/// W15-W18: AUX and PRN are absent — the first `Bconout` returns 0, the call
++/// returns the short count 0; no break check on non-CON.
++#[test]
++fn w15_to_w18_absent_aux_and_prn() {
++    let (_g, host, _p) = setup();
++    host.type_keys(&[CTRL_C]);
++    for h in [-2, 2] {
++        assert_eq!(fwrite(h, b"ATZ\r"), 0, "W15 Fwrite({h})");
++    }
++    assert_eq!(fwrite(-2, b"\tX"), 0, "W16");
++    assert_eq!(fwrite(-2, b"ab"), 0, "W17");
++    for h in [-3, 3] {
++        assert_eq!(fwrite(h, b"abc"), 0, "W18 Fwrite({h})");
++    }
++    assert!(host.take_output().is_empty(), "nothing on CON");
++    assert_eq!(host.pending_keys(), vec![CTRL_C as u16], "W17 Ctrl-C not consumed");
++    assert_eq!(process::take_pending_terminate(), None, "W17 no terminate");
++}
++
++/// W19, W20, W21: short counts when the device refuses a byte.
++#[test]
++fn w19_w20_w21_short_counts() {
++    let (_g, _host, _p) = setup();
++    DEV_B.reset(b"", 2);
++    let _prn = Installed::new(0, &DEV_B_REF);
++    assert_eq!(fwrite(-3, b"abcde"), 2, "W19");
++    assert_eq!(DEV_B.out(), b"ab");
++    DEV_B.reset(b"", 0);
++    assert_eq!(fwrite(-3, b"abcde"), 0, "W20");
++    assert!(DEV_B.out().is_empty());
++
++    DEV_A.reset(b"", 1);
++    let _aux = Installed::new(1, &DEV_A_REF);
++    assert_eq!(fwrite(-2, b"xyz"), 1, "W21");
++    assert_eq!(DEV_A.out(), b"x");
++}
++
++/// W22: `count <= 0` returns `count` on every device.
++#[test]
++fn w22_counts_on_absent_devices() {
++    let (_g, _host, _p) = setup();
++    let b = [0u8; 4];
++    assert_eq!(fwrite_raw(-2, 0, b.as_ptr()), 0, "W22 AUX 0");
++    assert_eq!(fwrite_raw(-3, -1, b.as_ptr()), -1, "W22 PRN -1");
++}
++
++/// W23, W24: invalid handles.
++#[test]
++fn w23_w24_invalid_handles() {
++    let (_g, _host, _p) = setup();
++    assert_eq!(fwrite(-4, b"x"), EIHNDL, "W23 -4");
++    assert_eq!(fwrite(-32768, b"x"), EIHNDL, "W23 -32768");
++    assert_eq!(fwrite(6 + 15, b"x"), EIHNDL, "W24 free slot");
++}
++
++/// W25: `Fdup(2)` is AUX (absent: 0); closed → `EIHNDL`.
++#[test]
++fn w25_fdup_of_aux() {
++    let (_g, _host, _p) = setup();
++    let d = fdup(2);
++    assert!(d >= 6, "Fdup(2) -> {d}");
++    assert_eq!(fwrite(d, b"ok"), 0, "W25");
++    assert_eq!(fclose(d), E_OK);
++    assert_eq!(fwrite(d, b"ok"), EIHNDL, "W25 after Fclose");
++}
++
++/// W26: `Fforce(1, -3)` sends stdout to the (absent) printer.
++#[test]
++fn w26_fforce_stdout_to_prn() {
++    let (_g, host, p) = setup();
++    assert_eq!(fforce(1, -3), E_OK);
++    assert_eq!(fwrite(1, b"ok"), 0, "W26");
++    assert!(host.take_output().is_empty());
++    assert_eq!(fclose(1), E_OK);
++    assert_eq!(p.uft(), DEFAULT);
++}
++
++/// W27: stdout forced to a file writes the file; `Fclose(1)` reverts to CON.
++#[test]
++fn w27_fforce_stdout_to_a_file_and_back() {
++    let (_g, host, p) = setup();
++    let fh = fcreate("C:\\FS11W27.TXT");
++    assert_eq!(fforce(1, fh), E_OK);
++    assert_eq!(fwrite(1, b"ok"), 2, "W27 into the file");
++    assert!(host.take_output().is_empty());
++    let _ = fclose(1);
++    assert_eq!(p.uft(), DEFAULT);
++    assert_eq!(fwrite(1, b"x"), 1, "W27 CON again");
++    assert_eq!(host.take_output(), b"x");
++    let _ = fclose(fh);
++    let r = fopen("C:\\FS11W27.TXT");
++    let mut b = [0u8; 8];
++    assert_eq!(fread(r, &mut b), 2);
++    assert_eq!(&b[..2], b"ok");
++    assert_eq!(fclose(r), E_OK);
++}
++
++// ═══ Fwrite, single dispatch point ═══════════════════════════════════════
++
++/// WT1, WT2: the AUX entry is reached by `Fwrite(-2|2)`, an `Fdup(2)` handle,
++/// `Cauxout`, `Bconout(1)`; `Bcostat(1)` / `Cauxos` read its status. Bytes go
++/// out raw (no tab expansion).
++#[test]
++fn wt1_wt2_aux_entry_is_the_one_dispatch_point() {
++    let (_g, host, _p) = setup();
++    DEV_A.reset(b"", usize::MAX);
++    let _aux = Installed::new(1, &DEV_A_REF);
++    assert_eq!(fwrite(-2, b"ATZ\r"), 4, "WT1 Fwrite(-2)");
++    assert_eq!(DEV_A.out(), [0x41, 0x54, 0x5A, 0x0D]);
++    assert_eq!(fwrite(2, b"AT"), 2, "WT1 Fwrite(2)");
++    assert_eq!(DEV_A.out(), b"AT");
++    let d = fdup(2);
++    assert_eq!(fwrite(d, b"dd"), 2, "WT1 Fdup(2) handle");
++    assert_eq!(fclose(d), E_OK);
++    assert_eq!(DEV_A.out(), b"dd");
++    assert_eq!(call(CAUXOUT, [b'x' as u64, 0, 0, 0, 0, 0, 0, 0]), 1, "WT1 Cauxout");
++    assert_eq!(bios(BCONOUT, 1, b'y' as u64), 1, "WT1 Bconout(1)");
++    assert_eq!(DEV_A.out(), b"xy");
++    assert_eq!(bios(BCOSTAT, 1, 0), -1, "WT1 Bcostat(1)");
++    assert_eq!(gemdos0(CAUXOS), -1, "WT1 Cauxos");
++
++    assert_eq!(fwrite(-2, b"\tX"), 2, "WT2");
++    assert_eq!(DEV_A.out(), [0x09, 0x58]);
++    assert!(host.take_output().is_empty(), "CON untouched");
++}
++
++/// WT3: the PRN entry (index 0) is reached by `Fwrite(-3|3)`, `Cprnout`,
++/// `Bconout(0)`, and `Cprnos` reads its status; never the AUX entry.
++#[test]
++fn wt3_prn_entry_is_index_0() {
++    let (_g, host, _p) = setup();
++    DEV_A.reset(b"", usize::MAX);
++    DEV_B.reset(b"", usize::MAX);
++    let _aux = Installed::new(1, &DEV_A_REF);
++    let _prn = Installed::new(0, &DEV_B_REF);
++    assert_eq!(fwrite(-3, b"abc"), 3, "WT3 Fwrite(-3)");
++    assert_eq!(fwrite(3, b"de"), 2, "WT3 Fwrite(3)");
++    assert_eq!(call(CPRNOUT, [b'f' as u64, 0, 0, 0, 0, 0, 0, 0]), 1, "WT3 Cprnout");
++    assert_eq!(bios(BCONOUT, 0, b'g' as u64), 1, "WT3 Bconout(0)");
++    assert_eq!(DEV_B.out(), b"abcdefg");
++    assert_eq!(gemdos0(CPRNOS), -1, "WT3 Cprnos reads entry 0");
++    assert!(DEV_A.untouched(), "AUX entry not hit");
++    assert!(host.take_output().is_empty());
++}
++
++// ═══ BIOS / GEMDOS / XBIOS on the absent profile ═════════════════════════
++
++/// The absent profile per BIOS device (`docs/api/bios/{01,02,03,08}`): PRN,
++/// AUX, MIDI, IKBD and 6/7 answer 0 everywhere; CON is the console; raw-CON
++/// writes; handles past the table are 0.
++#[test]
++fn bios_absent_profile() {
++    let (_g, host, _p) = setup();
++    for dev in [0u64, 1, 3, 4, 6, 7, 8, 0xFFFF] {
++        assert_eq!(bios(BCONSTAT, dev, 0), 0, "Bconstat({dev})");
++        assert_eq!(bios(BCONIN, dev, 0), 0, "Bconin({dev})");
++        assert_eq!(bios(BCONOUT, dev, b'x' as u64), 0, "Bconout({dev})");
++        assert_eq!(bios(BCOSTAT, dev, 0), 0, "Bcostat({dev})");
++    }
++    assert!(host.take_output().is_empty(), "absent output discarded");
++    assert_eq!(bios(BCOSTAT, 2, 0), -1, "Bcostat(2)");
++    assert_eq!(bios(BCOSTAT, 5, 0), 0, "Bcostat(5) char_dummy");
++    assert_eq!(bios(BCONOUT, 2, b'c' as u64), 1);
++    assert_eq!(bios(BCONOUT, 5, b'r' as u64), 1);
++    assert_eq!(host.take_output(), b"cr");
++    assert_eq!(bios(BCONSTAT, 2, 0), 0);
++    host.type_keys(b"m");
++    assert_eq!(bios(BCONSTAT, 2, 0), -1, "Bconstat(2)");
++    assert_eq!(bios(BCONIN, 2, 0), b'm' as i64, "Bconin(2)");
++    assert_eq!(bios(BCONSTAT, 5, 0), 0, "Bconstat(5)");
++}
++
++/// The GEMDOS AUX/PRN calls on the absent profile
++/// (`docs/api/gemdos/console/{03,04,05,11,12,13}`).
++#[test]
++fn gemdos_aux_prn_absent_profile() {
++    let (_g, host, _p) = setup();
++    assert_eq!(gemdos0(CAUXIN), 0, "Cauxin");
++    assert_eq!(call(CAUXOUT, [b'x' as u64, 0, 0, 0, 0, 0, 0, 0]), 0, "Cauxout");
++    assert_eq!(call(CPRNOUT, [b'x' as u64, 0, 0, 0, 0, 0, 0, 0]), 0, "Cprnout");
++    assert_eq!(gemdos0(CPRNOS), 0, "Cprnos");
++    assert_eq!(gemdos0(CAUXIS), 0, "Cauxis");
++    assert_eq!(gemdos0(CAUXOS), 0, "Cauxos");
++    assert!(host.take_output().is_empty());
++}
++
++/// `Cconout` / `Cconws` reach the console through the CON entry; a device in
++/// the CON slot sees them (`docs/api/gemdos/console/{02,09}`).
++#[test]
++fn cconout_cconws_go_through_the_con_entry() {
++    let (_g, host, _p) = setup();
++    assert_eq!(call(CCONOUT, [b'a' as u64, 0, 0, 0, 0, 0, 0, 0]), 1);
++    let s = cpath("bc");
++    assert_eq!(call(CCONWS, [s.as_ptr() as u64, 0, 0, 0, 0, 0, 0, 0]), 2);
++    assert_eq!(host.take_output(), b"abc");
++    DEV_A.reset(b"", usize::MAX);
++    {
++        let _con = Installed::new(2, &DEV_A_REF);
++        assert_eq!(call(CCONOUT, [b'z' as u64, 0, 0, 0, 0, 0, 0, 0]), 1);
++        assert_eq!(fwrite(-1, b"yy"), 2);
++    }
++    assert_eq!(DEV_A.out(), b"zyy");
++    assert!(host.take_output().is_empty());
++}
++
++/// The `Bcostat` IKBD/MIDI slot swap (`bios/chardev.c:38-42`): `Bcostat(3)`
++/// reads the IKBD entry (4), `Bcostat(4)` the MIDI entry (3).
++#[test]
++fn bcostat_keeps_the_ikbd_midi_swap() {
++    let (_g, _host, _p) = setup();
++    DEV_A.reset(b"", usize::MAX);
++    {
++        let _ikbd = Installed::new(4, &DEV_A_REF);
++        assert_eq!(bios(BCOSTAT, 3, 0), -1, "Bcostat(3) -> IKBD entry");
++        assert_eq!(bios(BCOSTAT, 4, 0), 0, "Bcostat(4) -> MIDI entry");
++    }
++    {
++        let _midi = Installed::new(3, &DEV_A_REF);
++        assert_eq!(bios(BCOSTAT, 4, 0), -1, "Bcostat(4) -> MIDI entry");
++        assert_eq!(bios(BCOSTAT, 3, 0), 0, "Bcostat(3) -> IKBD entry");
++        // Bconout is not swapped.
++        assert_eq!(bios(BCONOUT, 3, b'm' as u64), 1, "Bconout(3) -> MIDI entry");
++    }
++    assert_eq!(DEV_A.out(), b"m");
++}
++
++/// `Midiws(cnt, ptr)` sends `cnt + 1` bytes (unsigned) from `ptr` through the
++/// MIDI entry (`docs/api/xbios/0c-midiws.md`, FS11 note).
++#[test]
++fn midiws_sends_cnt_plus_one_bytes_through_the_midi_entry() {
++    let (_g, host, _p) = setup();
++    let data = b"abcdef";
++    assert_eq!(xbios(MIDIWS, 2, data.as_ptr() as u64), 0, "absent MIDI: void");
++    DEV_A.reset(b"", usize::MAX);
++    {
++        let _midi = Installed::new(3, &DEV_A_REF);
++        assert_eq!(xbios(MIDIWS, 2, data.as_ptr() as u64), 0);
++        assert_eq!(DEV_A.out(), b"abc", "cnt 2 -> 3 bytes");
++        assert_eq!(xbios(MIDIWS, 0, data.as_ptr() as u64), 0);
++        assert_eq!(DEV_A.out(), b"a", "cnt 0 -> 1 byte");
++        let big = vec![0x5Au8; 0x10000];
++        assert_eq!(xbios(MIDIWS, 0xFFFF, big.as_ptr() as u64), 0);
++        assert_eq!(DEV_A.out().len(), 0x10000, "cnt 0xFFFF -> 65536 bytes");
++    }
++    assert!(host.take_output().is_empty());
++}
++
++/// `Fseek` on device handles still answers 0 (FS10, unchanged by the device
++/// table).
++#[test]
++fn fseek_on_devices_unchanged() {
++    let (_g, _host, _p) = setup();
++    for h in [-1i64, -2, -3, 0, 1, 2, 3] {
++        assert_eq!(call(FSEEK, [0, h as u64, 1, 0, 0, 0, 0, 0]), 0, "Fseek(0, {h}, 1)");
++    }
++}

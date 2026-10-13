@@ -1,0 +1,105 @@
+=== on Di. 13 Okt. 2026 11:24:48 CEST
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n11/a31.vYfe6C/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n11/a31.vYfe6C/ser.sock,server=on
+t=  15.4s end marker seen
+t=  17.5s f11-on-rpi4-fs11a-end.png {"return": {}}
+prompts seen: 0
+run f11-on-rpi4-fs11a: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n11/a31.gFTU8I/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n11/a31.gFTU8I/ser.sock,server=on
+t=  17.2s end marker seen
+t=  19.2s f11-on-rpi4-fs11dev-end.png {"return": {}}
+prompts seen: 0
+run f11-on-rpi4-fs11dev: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n11/a31.zwzvXp/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n11/a31.zwzvXp/ser.sock,server=on
+t=  15.1s end marker seen
+t=  17.1s f11-on-rpi4-fseekcon-end.png {"return": {}}
+prompts seen: 0
+run f11-on-rpi4-fseekcon: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n11/a31.jhzY39/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n11/a31.jhzY39/ser.sock,server=on
+t=  15.1s end marker seen
+t=  17.2s f11-on-rpi4-stdoutdb-end.png {"return": {}}
+prompts seen: 0
+run f11-on-rpi4-stdoutdb: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n11/a31.piga2O/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n11/a31.piga2O/ser.sock,server=on
+t=  15.2s end marker seen
+t=  17.2s f11-on-rpi4-atexit-end.png {"return": {}}
+prompts seen: 0
+run f11-on-rpi4-atexit: rc=0
+t=25.0s -> f11-on-rpi4-apitest-t25.png {"return": {}}
+t=40.0s -> f11-on-rpi4-apitest-t40.png {"return": {}}
+run f11-on-rpi4-apitest: rc=0
+=== off Di. 13 Okt. 2026 11:27:37 CEST
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n11/a31.Ymwd35/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n11/a31.Ymwd35/ser.sock,server=on
+t=  15.2s end marker seen
+t=  17.2s f11-off-rpi4-fs11a-end.png {"return": {}}
+prompts seen: 0
+run f11-off-rpi4-fs11a: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n11/a31.5M6SpC/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n11/a31.5M6SpC/ser.sock,server=on
+t=  17.1s end marker seen
+t=  19.2s f11-off-rpi4-fs11dev-end.png {"return": {}}
+prompts seen: 0
+run f11-off-rpi4-fs11dev: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n11/a31.HfjL9U/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n11/a31.HfjL9U/ser.sock,server=on
+t=  15.1s end marker seen
+t=  17.1s f11-off-rpi4-fseekcon-end.png {"return": {}}
+prompts seen: 0
+run f11-off-rpi4-fseekcon: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n11/a31.Scg0rd/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n11/a31.Scg0rd/ser.sock,server=on
+t=  15.1s end marker seen
+t=  17.1s f11-off-rpi4-stdoutdb-end.png {"return": {}}
+prompts seen: 0
+run f11-off-rpi4-stdoutdb: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n11/a31.W9osSV/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n11/a31.W9osSV/ser.sock,server=on
+t=  15.1s end marker seen
+t=  17.1s f11-off-rpi4-atexit-end.png {"return": {}}
+prompts seen: 0
+run f11-off-rpi4-atexit: rc=0
+t=25.0s -> f11-off-rpi4-apitest-t25.png {"return": {}}
+t=40.0s -> f11-off-rpi4-apitest-t40.png {"return": {}}
+run f11-off-rpi4-apitest: rc=0
+=== strict Di. 13 Okt. 2026 11:30:32 CEST
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n11/a31.w5Gp3c/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n11/a31.w5Gp3c/ser.sock,server=on
+t=  15.2s end marker seen
+t=  17.3s f11-strict-rpi4-fs11a-end.png {"return": {}}
+prompts seen: 0
+run f11-strict-rpi4-fs11a: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n11/a31.EWxJaF/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n11/a31.EWxJaF/ser.sock,server=on
+t=  17.2s end marker seen
+t=  19.2s f11-strict-rpi4-fs11dev-end.png {"return": {}}
+prompts seen: 0
+run f11-strict-rpi4-fs11dev: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n11/a31.Ao71nD/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n11/a31.Ao71nD/ser.sock,server=on
+t=  15.1s end marker seen
+t=  17.1s f11-strict-rpi4-fseekcon-end.png {"return": {}}
+prompts seen: 0
+run f11-strict-rpi4-fseekcon: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n11/a31.YGeIpa/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n11/a31.YGeIpa/ser.sock,server=on
+t=  15.1s end marker seen
+t=  17.1s f11-strict-rpi4-stdoutdb-end.png {"return": {}}
+prompts seen: 0
+run f11-strict-rpi4-stdoutdb: rc=0
+qemu-system-aarch64: -serial unix:/private/tmp/claude-501/n11/a31.I9RkZF/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/private/tmp/claude-501/n11/a31.I9RkZF/ser.sock,server=on
+t=  15.2s end marker seen
+t=  17.2s f11-strict-rpi4-atexit-end.png {"return": {}}
+prompts seen: 0
+run f11-strict-rpi4-atexit: rc=0
+t=25.0s -> f11-strict-rpi4-apitest-t25.png {"return": {}}
+t=40.0s -> f11-strict-rpi4-apitest-t40.png {"return": {}}
+run f11-strict-rpi4-apitest: rc=0
+=== done Di. 13 Okt. 2026 11:33:24 CEST

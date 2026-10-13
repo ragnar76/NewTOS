@@ -1,0 +1,146 @@
+measurement-2026-10-13-fs11 -- TASK/FS11: Fread/Fwrite on the character-device
+handles through ONE per-BIOS-device dispatch point (device table PRN 0, AUX 1,
+CON 2, MIDI 3, IKBD 4, raw-CON 5; PRN/AUX/MIDI = the documented absent device).
+Spec: docs/api/gemdos/file/3f-fread.md, 40-fwrite.md ("Character-device path",
+"NewTOS implementation notes", "NewTOS host tests" R1-R32, RT1-RT3, W1-W27,
+WT1-WT4) and the FS11 notes in docs/api/gemdos/console/{02,03,04,05,09,11,12,13},
+docs/api/bios/{01,02,03,08}, docs/api/xbios/0c-midiws.md (spec commit 7bb9579a).
+
+Date 2026-10-13, host macOS, QEMU 11.1.2, raspi4b (-append serial=on
+[memprot=off|strict]). Base HEAD 7bb9579a, tree clean at start; the change is
+uncommitted in the shared tree (method/fs11-change.diff). No SD card, Pi or TT
+touched. Cards: method/seed-card.sh (private 64 MiB images in the session
+scratchpad). Kernel images gitignored, sha256 in bin/KERNELS.SHA256; programs in
+bin/ with sha256 in bin/SHA256SUMS: FS11DEV.NAP / FS11A.NAP built here
+(method/build-fs11.sh, tests/fs11dev.c); FSEEKCON, STDOUTDB, ATEXITP/K,
+DTACHILD.NCP, P10KID.NCP, CMDLINE.NTP are byte copies of
+measurement-2026-10-13-crt0-main/bin (checks/copied-from-crt0-main.sha256; no
+SDK change since); APITEST.NCP from sdk/apps (repo-binaries.sha256, same hash as
+the crt0-main run).
+
+WHAT CHANGED (tos-api)
+  bios/chardev.rs   trait CharDevice (bconstat/bconin/bconin_restartable/bconout/
+                    bcostat), entries Absent / Console / RawConsole, table
+                    DEVICES[8] (AtomicPtr cells), install_device(dev, entry),
+                    device(dev); bconstat_/bconin_/bconout_/bcostat_handle; Bcostat
+                    keeps the EmuTOS IKBD/MIDI slot swap (chardev.c:38-42). The
+                    BIOS traps 1/2/3/8 go through the table.
+  gemdos/console.rs Cconin/Cnecin/Crawcin/Cconout/Cconws/Cconis/Cconos via the CON
+                    entry; Cauxin/Cauxout/Cauxis/Cauxos via AUX; Cprnout/Cprnos via
+                    PRN (Cprnout was a hardcoded 0, now Bconout(0)). New
+                    device_read (HUGE guard, len 1 = conin with echo, len 2..32767
+                    = edit_line over the device = cgets, 32768..65535/0 -> 0) and
+                    device_write (count <= 0 -> count; CON: output_break + raw byte;
+                    others: Bconout, short count on 0). Unchanged: Crawio, Cconrs.
+  bdos/fs/file.rs   Target::Console -> Target::Device(numl); Fread/Fwrite call the
+                    device paths; console_read/console_write removed.
+  xbios/system.rs   Midiws(cnt, ptr): cnt+1 bytes from ptr to Bconout(3) of the
+                    MIDI entry (was: no arguments read).
+  tests             tests/fs11_device_rw.rs (43 tests), fatvol DiskHost console
+                    fixture (input queue + output capture), fs10 test: Fwrite(-2/-3)
+                    expectation 4 -> 0 (spec W15/W18), 2 unit tests in console.rs
+                    (WT4 fault before the device call, store fault on read).
+
+HOST TESTS RED -> GREEN (tests/fs11_device_rw.rs)
+  red   after the device table, before the Fread/Fwrite/console changes:
+        15 passed, 28 failed (checks/f11-fs11-hosttest-red.txt)
+  green 43 passed, 0 failed (checks/f11-fs11-hosttest-green.txt)
+  WT4 (unreadable byte -> FAULTED) is an in-crate unit test: the host cannot
+  fault a user pointer (uaccess: plain loads off-target).
+
+STATIC BASELINES (docs/STATUS.md; method/checks.sh f11)   expected   measured
+  host tests (cargo test -p tos-api -p tos-types -p xtask)  1277/0/1   1322 / 0 / 1
+                                                (+43 fs11_device_rw, +2 unit tests)
+  release warnings tos-api / kernel, fresh after
+    cargo clean -p kernel -p tos-api --target aarch64-unknown-none-softfloat --release
+    rpi4                                             64 / 94    64 / 94, 0 errors
+    qemu-virt                                        64 / 94    64 / 94, 0 errors
+  clippy tos-api / kernel, rpi4 and qemu-virt        76 / 125   76 / 125 both
+    (no build or clippy warning in any touched file)
+  sh tools/desk-drift-probe.sh                       31         31
+  sdk/run-host-tests.sh                              19/0/0     19 / 0 / 0
+
+KEY INJECTION (raspi4b has no USB keyboard in QEMU)
+  method/fs11-kernels.sh: scratch copy of the tree (make-scratch.sh) + the KEYS02
+  IKBD injector (inj-keys02-apply-instrumentation.py, unchanged copy) + the FS11
+  schedule (fs11-schedule.py: a / h i CR / o BS k CR / a b CR / c o p CR, make+break,
+  20 ticks apart from +100 after arming) -> bin/kernel8-keys-f11.img. The same
+  from `git archive HEAD` (7bb9579a, pre-FS11 code) -> bin/kernel8-keys-head.img.
+  Never applied to the shared tree. Socket dir: symlink
+  /private/tmp/claude-501/n11 -> session scratchpad (unix socket path < 104 B).
+
+THE PROBE (method/tests/fs11dev.c)
+  start   Fforce(2,-2): mintlib _main did Fforce(2,-1) (argv[0] empty, logged
+          "yes"), so handle 2 is put back to its default AUX first.
+  part A  no input: Fwrite -2/2/-3/3 -> 0, count 0/-1/-5 -> itself, CON/stdout
+          -> count, -4 -> EIHNDL; Fread -2/2/-3/3 len 1 -> 1 NUL, len 80 -> 80
+          NULs; HUGE/0x8000/0/-1/0xFFFF -> 0; Cauxin/Cauxout/Cauxis/Cauxos/
+          Cprnout/Cprnos/Bconin(1)/Bconstat(1)/Bconout(0)/Bcostat(0,3,4)/
+          Bconout(3) -> 0, Bcostat(2)/Cconos -> -1, Midiws(2,"abc") returns.
+  part B  keys: Fread(-1,1) = 1 'a' (echoed); Fread(-1,80) = 2 "hi" (echo "hi\r");
+          Fread(0,80) with o BS k CR = 1 "k" (echo o, BS SP BS, k, CR).
+  part C  mintlib: getchar() = 'a', fgets = "b\n", fgets = "cop\n" -- with the
+          tty flags upstream mintlib's __isatty sets (CRMOD|ECHO), see FINDING.
+  FS11A.NAP = part A only (product kernel).
+
+QEMU raspi4b RESULTS (checks/summary-f11.txt)
+                         ON          OFF         STRICT
+  FS11A (product kernel) PASS        PASS        PASS
+  FS11DEV (keys kernel)  A/B/C PASS  A/B/C PASS  A/B/C PASS
+  FSEEKCON               PASS        PASS        PASS
+  STDOUTDB               green       green       green   (fputs rc=0, printf rc=0x1a,
+                                                          errno 0 -- as crt0-main)
+  ATEXIT (ATEXITP+K)     PASS        PASS        PASS    (exit code 7, file
+                                                          "main-body;atexit-handler;")
+  APITEST TOTAL          106/0/5     106/0/5     106/0/5 (method/fs11-apitest.sh)
+    serial vs measurement-2026-10-13-crt0-main cm-<mode>: identical except T12
+    free clusters and the T14 directory listing (other card content: 18 entries
+    here, 30 there).
+    First series (serial/ + screendumps/apitest-without-dtachild/): 105/0/6 -- the
+    card lacked C:\DTACHILD.NCP (T29.2 Pexec rc=-33, T29.3 SKIP); setup error,
+    rerun with the file.
+  [EXC]/[PANIC] lines: none in any f11-* log.
+
+RED (pre-FS11 code, keys kernel from HEAD, on): serial/red-headkernel-on-rpi4-fs11dev
+  Fwrite(-2/2,4) = 4 and Fwrite(-3/3,3) = 3 with "ATZ"/"abc" on the screen,
+  Fwrite(-3,-1) = 0, Fwrite(-1,-5) = 0; Fread(-3,1) waits for and takes the
+  injected 'a' from the keyboard (old console_read, byte not NUL), Fread(-3,80)
+  then waits for 80 keys -> the probe never finishes, timeout at 120 s.
+
+SMOKE RUNS (before the series; same kernels)
+  serial/smoke-on-rpi4-fs11dev   first probe version: parts A and B PASS; mintlib
+          getchar() returned 'b' after BOTH 'a' and 'b' were popped from the key
+          ring with no echo and no Fread -> the FINDING below; then fgets blocks
+          (timeout 200 s).
+  serial/smoke2-on-rpi4-fs11dev  final probe version, PASS (= the series run).
+
+FINDING (out of scope, SDK; not changed): mintlib stdin does NOT reach Fread on
+  NewTOS. sdk/libc/newtos-arch/isatty.c replaces mintlib/isatty.c and never sets
+  __open_stat[].flags (stays 0), so __read (mintlib unix/read.c:72-74) takes the
+  RAW path: _console_read_byte -> Fgetchar (EINVFN) -> Crawcin, no echo, no
+  CRMOD; that path reads TWO keys per byte (unix/read.c:176 and :183, the first
+  discarded -- upstream mintlib-0.60.1 code) and fgets never sees '\n'. With the
+  flags upstream __isatty sets (CRMOD|ECHO, mintlib/isatty.c:55-57) the cooked
+  TOS path runs over the new Fread line read and getchar/fgets work (part C).
+  The spec note in 3f-fread.md ("getchar()/fgets() ... reaches Fread(0, ...)")
+  therefore does not hold for the current SDK.
+
+OBSERVABLE BEHAVIOUR CHANGES (all per spec)
+  * Fwrite to AUX/PRN (-2/-3, std handles 2/3 by default, Fdup/Fforce to them)
+    returns 0 and writes nothing (was: count, bytes on the console). A program
+    writing to handle 2 without mintlib's Fforce(2,-1) loses that output, as on
+    TOS/EmuTOS where handle 2 is the serial port.
+  * Fread on AUX/PRN returns len NULs at once (was: blocking console read).
+  * Fread on CON: len 1 echoes and stores the key (CR raw); len >= 2 is a line
+    read ending at CR/LF (terminator not stored, echo CR) with BS/DEL/^X/^U/^R
+    editing and ^C = Pterm(-32); HUGE / 32768..65535 -> 0 (was: blocking raw read
+    of exactly len bytes, no echo).
+  * Fwrite on CON: count <= 0 returns count (was 0); a pending ^C at the queue
+    front ends the write with Pterm(-32) (was: no break check).
+  * Midiws reads its buffer (an unreadable ptr is now a user-pointer fault).
+
+NOT DRIVEN: real Pi 4; qemu-virt runs (kernel only built); asid=on modes; the
+regression sample of earlier runs (desktop/TeraDesk/QED/Doom/S2ALL/KBDVEC+EmuCON
+screendumps) -- left to the Tester; a QEMU check of WT4 / Midiws with a bad
+pointer (host unit test only); Ctrl-C during a Fread line read on QEMU (host
+test R27 only).

@@ -36,7 +36,7 @@ const SETCOLOR: u16 = 0x07;
 const FLOPRD: u16 = 0x08; // floppy/DMA group → EUNDEV (no controller)
 const FLOPWR: u16 = 0x09;
 const FLOPFMT: u16 = 0x0A;
-const MIDIWS: u16 = 0x0C; // no MIDI ACIA → documented no-op
+const MIDIWS: u16 = 0x0C; // MIDI entry of the BIOS device table (absent: bytes dropped)
 const RSCONF: u16 = 0x0F; // RS-232 config (PL011 thin adapter)
 const KEYTBL: u16 = 0x10; // keyboard translation tables
 const RANDOM: u16 = 0x11; // system group (Phase 11)
@@ -82,10 +82,11 @@ pub fn dispatch(args: &TrapArgs) -> i64 {
         // Absent Atari peripherals → the contract's documented value for
         // "hardware not present", not the generic function-number catch-all.
         // Scrdmp: no printer / default dump_vec is a no-op (14-scrdmp.md);
-        // Midiws: no MIDI ACIA, bytes dropped (0c-midiws.md);
+        // Midiws: through the MIDI device-table entry, absent → bytes
+        // dropped (0c-midiws.md);
         // Bconmap: single serial port → 0x2c "unavailable" (2c-bconmap.md).
         SCRDMP => system::scrdmp(),
-        MIDIWS => system::midiws(),
+        MIDIWS => system::midiws(args),
         BCONMAP => system::bconmap(),
         // RS-232 config: thin adapter over the PL011 (no MFP). See
         // `docs/api/xbios/0f-rsconf.md`.

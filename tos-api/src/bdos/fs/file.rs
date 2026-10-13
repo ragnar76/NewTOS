@@ -207,9 +207,10 @@ fn getofd(h: i16) -> FOfd {
 
 /// The final I/O target a handle resolves to.
 enum Target {
-    /// A BIOS character device (`-1` CON, `-2` AUX, `-3` PRN) — NewTOS maps
-    /// every one to the console.
-    Console,
+    /// A BDOS character-device handle (`-1` CON, `-2` AUX, `-3` PRN); its BIOS
+    /// device (`HXFORM`) is served by the device table
+    /// ([`crate::bios::chardev`], FS11).
+    Device(i16),
     /// The OFD (index into `Tables::ofds`) the handle's entry points at.
     File(usize),
     /// An invalid handle.
@@ -239,7 +240,7 @@ fn resolve(handle: i16) -> Target {
     match numl {
         FOfd::Null => Target::None,
         FOfd::Bios(n) if n < H_PRINT => Target::None,
-        FOfd::Bios(_) => Target::Console,
+        FOfd::Bios(n) => Target::Device(n),
         FOfd::File(j) => Target::File(j),
     }
 }
@@ -395,10 +396,13 @@ pub fn fread(args: &TrapArgs) -> Long {
     let len = args.arg_i32(1);
     let ubuf = args.arg_u64(2);
 
-    // Route standard handles / redirects: a console-mapped handle reads
-    // from the keyboard, a file handle reads the file (below).
+    // Route standard handles / redirects: a handle that ends on a character
+    // device reads that device (`osif`, `bdos/bdosmain.c:608-620`: HUGE guard,
+    // `conin`, `cgets`), a file handle reads the file (below).
     match resolve(handle) {
-        Target::Console => return console_read(args.space, len, ubuf),
+        Target::Device(numl) => {
+            return crate::gemdos::console::device_read(numl, args.space, len, ubuf)
+        }
         Target::None => return EIHNDL,
         Target::File(_) => {}
     }
@@ -439,10 +443,14 @@ pub fn fwrite(args: &TrapArgs) -> Long {
     let len = args.arg_i32(1);
     let ubuf = args.arg_u64(2);
 
-    // Route standard handles / redirects: a console-mapped handle writes
-    // to the console, a file handle writes the file (below).
+    // Route standard handles / redirects: a handle that ends on a character
+    // device writes that device (`osif`, `bdos/bdosmain.c:622-640`: CON like
+    // `Cconws`, others through `Bconout` with a short count on 0), a file
+    // handle writes the file (below).
     match resolve(handle) {
-        Target::Console => return console_write(args.space, len, ubuf),
+        Target::Device(numl) => {
+            return crate::gemdos::console::device_write(numl, args.space, len, ubuf)
+        }
         Target::None => return EIHNDL,
         Target::File(_) => {}
     }
@@ -909,7 +917,7 @@ pub fn fseek(args: &TrapArgs) -> Long {
     let flg = args.arg_u16(2);
 
     let ofd = match resolve(handle) {
-        Target::Console => return 0,
+        Target::Device(_) => return 0,
         Target::None => return EIHNDL,
         Target::File(j) => match ofds().get_mut(j).and_then(Option::as_mut) {
             Some(o) => o,
@@ -1043,46 +1051,6 @@ pub unsafe fn close_process_files(r: *mut tos_types::BasePage) {
             let _ = xclose((i + NUMSTD as usize) as i16);
         }
     }
-}
-
-/// Read `len` bytes from the console (keyboard) into `ubuf` (in `space`, the
-/// caller's) — the target of a console-mapped `Fread`. Blocks until `len`
-/// bytes arrive. Each byte is stored as it arrives, so a buffer the program
-/// cannot write stops the read at the first such byte (ARCH03 3a).
-fn console_read(space: crate::uaccess::Space, len: i32, ubuf: u64) -> Long {
-    if len <= 0 {
-        return 0;
-    }
-    let Some(h) = crate::host::host() else {
-        return 0;
-    };
-    for i in 0..len as u64 {
-        let b = h.console_read_byte_blocking();
-        if space.put_u8(ubuf + i, b).is_err() {
-            return crate::uaccess::FAULTED;
-        }
-    }
-    len as Long
-}
-
-/// Write `len` bytes from `ubuf` (in `space`, the caller's) to the console —
-/// the target of a console-mapped `Fwrite`. The bytes before one the program
-/// cannot read are written, then the call stops (ARCH03 3a; EmuTOS takes the
-/// bus error at that byte).
-fn console_write(space: crate::uaccess::Space, len: i32, ubuf: u64) -> Long {
-    if len <= 0 {
-        return 0;
-    }
-    let Some(h) = crate::host::host() else {
-        return 0;
-    };
-    for i in 0..len as u64 {
-        let Ok(b) = space.get_u8(ubuf + i) else {
-            return crate::uaccess::FAULTED;
-        };
-        h.console_write_byte(b);
-    }
-    len as Long
 }
 
 /// `Fdup` (0x45) — duplicate standard handle `h` (0..NUMSTD) into a fresh

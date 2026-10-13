@@ -1,0 +1,12 @@
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+t=25.0s -> f11-on-rpi4-apitest-t25.png {"return": {}}
+t=40.0s -> f11-on-rpi4-apitest-t40.png {"return": {}}
+run f11-on-rpi4-apitest: rc=0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+t=25.0s -> f11-off-rpi4-apitest-t25.png {"return": {}}
+t=40.0s -> f11-off-rpi4-apitest-t40.png {"return": {}}
+run f11-off-rpi4-apitest: rc=0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+t=25.0s -> f11-strict-rpi4-apitest-t25.png {"return": {}}
+t=40.0s -> f11-strict-rpi4-apitest-t40.png {"return": {}}
+run f11-strict-rpi4-apitest: rc=0

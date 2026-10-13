@@ -66,15 +66,28 @@ pub fn scrdmp() -> i64 {
     0
 }
 
-/// `Midiws` (0x0C) — write `cnt + 1` bytes (unsigned count) to the MIDI
-/// port. The Pi has no MIDI ACIA, so — exactly as on an EmuTOS build
-/// without `CONF_WITH_MIDI_ACIA` — the bytes have no transport and are
-/// dropped; the call transmits nothing and returns without error
-/// (`void` → 0). Wired for ABI completeness so a caller sees the
-/// contractual no-op, not the generic `EINVFN` catch-all.
+/// `Midiws(cnt, ptr)` (0x0C) — send `cnt + 1` bytes (`cnt` an unsigned
+/// WORD, so 1..65536 bytes) from `ptr` to the MIDI port: `Bconout(3, byte)`
+/// of the **MIDI entry of the device table** once per byte, results ignored,
+/// `void` → 0 — the shape of EmuTOS `midiws()` (`bios/midi.c:104-110`,
+/// `bconout3(3, *ptr++)` while `cnt--`).
 ///
-/// Spec: `docs/api/xbios/0c-midiws.md` ("No-MIDI profile" criterion).
-pub fn midiws() -> i64 {
+/// The entry is the documented absent device (no MIDI ACIA on the Pi): each
+/// byte is discarded and the call returns at once; a MIDI driver
+/// (`TASK/IO01.md`) replaces only the entry. Each byte is read from `ptr` in
+/// the caller's space before the device call; an unreadable byte ends the
+/// call as a user-pointer fault (ARCH03 3a, [`crate::uaccess::FAULTED`]).
+///
+/// Spec: `docs/api/xbios/0c-midiws.md` (FS11 / IO01 note).
+pub fn midiws(args: &TrapArgs) -> i64 {
+    let count = args.arg_u16(0) as u64 + 1;
+    let ptr = args.arg_u64(1);
+    for i in 0..count {
+        let Ok(b) = args.space.get_u8(ptr + i) else {
+            return crate::uaccess::FAULTED as i64;
+        };
+        let _ = crate::bios::chardev::bconout_handle(crate::bios::chardev::DEV_MIDI, b);
+    }
     0
 }
 

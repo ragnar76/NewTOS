@@ -7,6 +7,7 @@
 
 #![allow(dead_code)] // each test binary uses a different part of this
 
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicI32, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard, OnceLock};
 
@@ -213,6 +214,45 @@ impl tos_api::bios::block::BlockDev for RamDisk {
 
 pub struct DiskHost {
     pub disk: RamDisk,
+    /// Console input queue (IKBD key words `scancode << 8 | ascii`), the
+    /// stand-in for the keyboard ring (FS11). A blocking read of an empty
+    /// queue panics instead of hanging the test.
+    pub con_in: Mutex<VecDeque<u16>>,
+    /// Every byte written to the console (FS11).
+    pub con_out: Mutex<Vec<u8>>,
+}
+
+impl DiskHost {
+    /// Queue `keys` (ASCII, scancode 0) as console input.
+    pub fn type_keys(&self, keys: &[u8]) {
+        self.con_in.lock().unwrap_or_else(|e| e.into_inner()).extend(keys.iter().map(|&k| k as u16));
+    }
+
+    /// Queue one whole key word.
+    pub fn type_word(&self, word: u16) {
+        self.con_in.lock().unwrap_or_else(|e| e.into_inner()).push_back(word);
+    }
+
+    /// Empty the console input queue and the captured output.
+    pub fn reset_console(&self) {
+        self.con_in.lock().unwrap_or_else(|e| e.into_inner()).clear();
+        self.con_out.lock().unwrap_or_else(|e| e.into_inner()).clear();
+    }
+
+    /// Take the captured console output.
+    pub fn take_output(&self) -> Vec<u8> {
+        core::mem::take(&mut *self.con_out.lock().unwrap_or_else(|e| e.into_inner()))
+    }
+
+    /// The key words still queued.
+    pub fn pending_keys(&self) -> Vec<u16> {
+        self.con_in.lock().unwrap_or_else(|e| e.into_inner()).iter().copied().collect()
+    }
+
+    fn pop_blocking(&self) -> u16 {
+        let w = self.con_in.lock().unwrap_or_else(|e| e.into_inner()).pop_front();
+        w.expect("blocking console read on an empty input queue")
+    }
 }
 
 // ── raw image access ──────────────────────────────────────────────────────
@@ -265,7 +305,36 @@ impl DiskHost {
 }
 
 impl Host for DiskHost {
-    fn console_write_byte(&self, _byte: u8) {}
+    fn console_write_byte(&self, byte: u8) {
+        self.con_out.lock().unwrap_or_else(|e| e.into_inner()).push(byte);
+    }
+    fn console_try_read(&self) -> Option<u8> {
+        self.con_in.lock().unwrap_or_else(|e| e.into_inner()).pop_front().map(|w| w as u8)
+    }
+    fn console_try_read_key(&self) -> Option<u16> {
+        self.con_in.lock().unwrap_or_else(|e| e.into_inner()).pop_front()
+    }
+    fn console_peek_key(&self) -> Option<u16> {
+        self.con_in.lock().unwrap_or_else(|e| e.into_inner()).front().copied()
+    }
+    fn console_has_input(&self) -> bool {
+        !self.con_in.lock().unwrap_or_else(|e| e.into_inner()).is_empty()
+    }
+    fn console_read_byte_blocking(&self) -> u8 {
+        // Skips scancode-only keys like the kernel host (`console::rx_pop`).
+        loop {
+            let w = self.pop_blocking();
+            if w & 0xFF != 0 {
+                return w as u8;
+            }
+        }
+    }
+    fn console_read_key_blocking(&self) -> u16 {
+        self.pop_blocking()
+    }
+    fn console_read_key_restartable(&self) -> Option<u16> {
+        Some(self.pop_blocking())
+    }
     fn block(&self) -> Option<&dyn tos_api::bios::block::BlockDev> {
         Some(&self.disk)
     }
@@ -291,6 +360,8 @@ pub fn fs<'a>() -> (MutexGuard<'a, ()>, &'static DiskHost) {
                 fail_code: AtomicI32::new(0),
                 refused_writes: AtomicU32::new(0),
             },
+            con_in: Mutex::new(VecDeque::new()),
+            con_out: Mutex::new(Vec::new()),
         }));
         let slot: &'static &'static dyn Host = Box::leak(Box::new(host as &'static dyn Host));
         tos_api::host::install_host(slot);

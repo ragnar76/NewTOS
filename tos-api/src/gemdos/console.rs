@@ -2,15 +2,21 @@
 //!
 //! Specs: `docs/api/gemdos/console/*.md`.
 //!
+//! Every character-device access goes through the BIOS device table
+//! ([`crate::bios::chardev`], FS11): the `Ccon*`/`Caux*`/`Cprn*` calls are the
+//! BIOS calls of CON (2) / AUX (1) / PRN (0), and `Fread`/`Fwrite` on a device
+//! handle use [`device_read`] / [`device_write`] — EmuTOS' `conin`/`cgets`/
+//! `tabout` over `Bconin`/`Bconout` of that device (`bdos/bdosmain.c:604-640`).
+//!
 //! All functions take a borrow of [`TrapArgs`] and return a `Long`
 //! (`i32` in `x0`). The semantics mirror EmuTOS exactly so binary
 //! programs see TOS-bit-compatible behaviour; per-function citations
 //! point to the EmuTOS source location used to derive the code.
 
-use crate::bios::chardev::pack_console_key;
+use crate::bios::chardev::{self, pack_console_key, CharDevice, DEV_AUX, DEV_CON, DEV_PRN};
 use crate::host::host;
 use crate::trap::TrapArgs;
-use tos_types::error::{EUNDEV, E_OK};
+use tos_types::error::EUNDEV;
 use tos_types::Long;
 
 // Helper: fetch the host or fall through with `EUNDEV`. In normal
@@ -51,7 +57,7 @@ macro_rules! host_or_eundev {
 /// as data later). A Ctrl-C queued strictly behind unread normal keys is
 /// deferred until those keys are read (the peek only sees the front). See
 /// `docs/api/gemdos/console/{02-cconout,09-cconws}.md`.
-fn output_break(h: &dyn crate::host::Host) -> bool {
+pub(crate) fn output_break(h: &dyn crate::host::Host) -> bool {
     match h.console_peek_key() {
         Some(word) if (word & 0xFF) as u8 == CTRL_C => {
             // Consume exactly the peeked front key, then defer terminate.
@@ -77,14 +83,15 @@ fn output_break(h: &dyn crate::host::Host) -> bool {
 ///
 /// EmuTOS' `xconout` runs `conbrk` before writing; NewTOS mirrors that
 /// with the Ctrl-C-only [`output_break`] — a pending Ctrl-C aborts the
-/// write and defers `Pterm(-32)`.
+/// write and defers `Pterm(-32)`. The byte goes out through the CON entry of
+/// the device table (`Bconout(2, ch)`, return ignored as in `conout`).
 pub fn cconout(args: &TrapArgs) -> Long {
     let ch = args.arg_u16(0) as u8;
     let h = host_or_eundev!();
     if output_break(h) {
         return 1; // Ctrl-C: aborted; SVC handler redirects to Pterm.
     }
-    h.console_write_byte(ch);
+    chardev::bconout_handle(DEV_CON, ch);
     1
 }
 
@@ -92,9 +99,9 @@ pub fn cconout(args: &TrapArgs) -> Long {
 // AUX BIOS handle. EmuTOS' `xauxin`/`xauxout` resolve stdaux from
 // `run->p_uft[2]` (default `H_Aux = -2`) and call `Bconin(HXFORM(-2))` /
 // `Bconout(HXFORM(-2), ch)` where `HXFORM(h) = 3 + h`, i.e. BIOS handle 1
-// (`docs/api/gemdos/console/{03-cauxin,04-cauxout}.md`).
+// (`docs/api/gemdos/console/{03-cauxin,04-cauxout}.md`) — `DEV_AUX` of the
+// device table.
 // ---------------------------------------------------------------------------
-const AUX_BIOS_HANDLE: u16 = 1;
 
 // ---------------------------------------------------------------------------
 // 0x03 Cauxin — read a single byte from AUX.
@@ -102,14 +109,13 @@ const AUX_BIOS_HANDLE: u16 = 1;
 // (docs/api/gemdos/console/03-cauxin.md).
 // ---------------------------------------------------------------------------
 
-/// `Cauxin()` — pass-through to `Bconin(1)`, exactly as EmuTOS' `xauxin`.
-/// The NewTOS profile has no separate AUX device: BIOS handle 1 is an
-/// absent (`char_dummy`) slot, so the pass-through returns `0` (no AUX
-/// byte) instead of blocking on serial hardware that does not exist. Not
-/// a stub — it routes through the same BIOS input path a real AUX device
-/// would use; the value falls out of the absent-device contract.
+/// `Cauxin()` — pass-through to `Bconin(1)`, exactly as EmuTOS' `xauxin`:
+/// the AUX entry of the device table. That entry is the documented absent
+/// device (`docs/api/gemdos/console/03-cauxin.md`, FS11 note), so the
+/// pass-through returns `0` at once instead of blocking on serial hardware
+/// that does not exist; a UART driver (`TASK/IO01.md`) replaces the entry.
 pub fn cauxin(_: &TrapArgs) -> Long {
-    crate::bios::chardev::bconin_handle(AUX_BIOS_HANDLE)
+    chardev::bconin_handle(DEV_AUX)
 }
 
 // ---------------------------------------------------------------------------
@@ -119,30 +125,29 @@ pub fn cauxin(_: &TrapArgs) -> Long {
 // ---------------------------------------------------------------------------
 
 /// `Cauxout(ch)` — pass-through to `Bconout(1, ch)`, exactly as EmuTOS'
-/// `xauxout`. BIOS handle 1 (AUX) is an absent (`char_dummy`) slot in the
-/// NewTOS profile, so the byte is discarded and the call returns `0`. Not
-/// a stub — it routes through the same BIOS output path a real AUX device
-/// would use.
+/// `xauxout`: the AUX entry of the device table. With the absent-device
+/// entry the byte is discarded and the call returns `0`
+/// (`docs/api/gemdos/console/04-cauxout.md`, FS11 note).
 pub fn cauxout(args: &TrapArgs) -> Long {
     let ch = args.arg_u16(0) as u8;
-    crate::bios::chardev::bconout_handle(AUX_BIOS_HANDLE, ch)
+    chardev::bconout_handle(DEV_AUX, ch)
 }
 
 // ---------------------------------------------------------------------------
 // 0x05 Cprnout — write a single byte to the printer.
 // EmuTOS: bdos/console.c:340 `xprtout(WORD ch)` = `Bconout(0, ch)`.
-// NewTOS profile: no printer, so the parport `bconout0` equivalent times
-// out / is absent and returns `0` — which is exactly what the spec
-// requires (docs/api/gemdos/console/05-cprnout.md:87-89: `0` = printer
-// busy/absent, a non-negative ready/busy signal, *not* a TOS error code).
+// Spec: docs/api/gemdos/console/05-cprnout.md (`0` = printer busy/absent, a
+// non-negative ready/busy signal, *not* a TOS error code).
 // ---------------------------------------------------------------------------
 
-/// `Cprnout(ch)` — printer output. NewTOS has no printer port, so the byte
-/// is never accepted and the call returns `0` (the printer-busy/absent
-/// ready signal, per `docs/api/gemdos/console/05-cprnout.md`), the same
-/// value EmuTOS' `bconout0` returns on timeout / with the port disabled.
-pub fn cprnout(_: &TrapArgs) -> Long {
-    0
+/// `Cprnout(ch)` — pass-through to `Bconout(0, ch)`: the PRN entry of the
+/// device table. With the absent-device entry (no printer port) the byte is
+/// never accepted and the call returns `0` at once — the value EmuTOS'
+/// `bconout0` returns without `CONF_WITH_PRINTER_PORT`
+/// (`bios/parport.c:144-172`; FS11 note in the spec).
+pub fn cprnout(args: &TrapArgs) -> Long {
+    let ch = args.arg_u16(0) as u8;
+    chardev::bconout_handle(DEV_PRN, ch)
 }
 
 // ---------------------------------------------------------------------------
@@ -218,21 +223,19 @@ const CTRL_X: u8 = 0x18;
 /// console LONG (scancode in bits 16-23, ASCII in bits 0-7); non-ASCII
 /// keys echo nothing (their ASCII byte is 0).
 pub fn cconin(_: &TrapArgs) -> Long {
-    let h = host_or_eundev!();
-    let Some(word) = h.console_read_key_restartable() else {
-        // A `kbdvec` hook has bytes waiting: restart after it ran (KEYS02).
-        crate::xbios::kbdvecs::request_restart();
-        return 0; // discarded — the trap handler re-executes the call
-    };
-    let ascii = (word & 0xFF) as u8;
+    // `Bconin(2)` of the CON entry: the packed key LONG, or `0` after a
+    // `kbdvec` restart request (KEYS02) — ASCII 0, so nothing below happens
+    // and the trap handler re-executes the call.
+    let key = chardev::bconin_handle(DEV_CON);
+    let ascii = (key & 0xFF) as u8;
     if ascii == CTRL_C {
         crate::bdos::process::request_terminate(CTRLC_RC);
         return 0; // value ignored — handler redirects to Pterm.
     }
     if ascii != 0 {
-        h.console_write_byte(ascii); // echo (conin → conout)
+        chardev::bconout_handle(DEV_CON, ascii); // echo (conin → conout)
     }
-    pack_console_key(word)
+    key
 }
 
 // ---------------------------------------------------------------------------
@@ -245,12 +248,8 @@ pub fn cconin(_: &TrapArgs) -> Long {
 /// Ctrl-C handling (a Ctrl-C byte is returned as `0x03`). Returns the
 /// packed console LONG (scancode in bits 16-23, ASCII in bits 0-7).
 pub fn crawcin(_: &TrapArgs) -> Long {
-    let Some(word) = host_or_eundev!().console_read_key_restartable() else {
-        // A `kbdvec` hook has bytes waiting: restart after it ran (KEYS02).
-        crate::xbios::kbdvecs::request_restart();
-        return 0; // discarded — the trap handler re-executes the call
-    };
-    pack_console_key(word)
+    // `Bconin(2)` of the CON entry (restart request → 0, discarded).
+    chardev::bconin_handle(DEV_CON)
 }
 
 // ---------------------------------------------------------------------------
@@ -263,16 +262,13 @@ pub fn crawcin(_: &TrapArgs) -> Long {
 /// terminates the calling process (`Pterm(-32)`). Returns the packed
 /// console LONG (scancode in bits 16-23, ASCII in bits 0-7).
 pub fn cnecin(_: &TrapArgs) -> Long {
-    let Some(word) = host_or_eundev!().console_read_key_restartable() else {
-        // A `kbdvec` hook has bytes waiting: restart after it ran (KEYS02).
-        crate::xbios::kbdvecs::request_restart();
-        return 0; // discarded — the trap handler re-executes the call
-    };
-    if (word & 0xFF) as u8 == CTRL_C {
+    // `Bconin(2)` of the CON entry (restart request → 0, discarded).
+    let key = chardev::bconin_handle(DEV_CON);
+    if (key & 0xFF) as u8 == CTRL_C {
         crate::bdos::process::request_terminate(CTRLC_RC);
         return 0; // value ignored — handler redirects to Pterm.
     }
-    pack_console_key(word)
+    key
 }
 
 // ---------------------------------------------------------------------------
@@ -540,7 +536,7 @@ pub fn cconws(args: &TrapArgs) -> Long {
         if output_break(h) {
             break; // Ctrl-C: stop writing; SVC handler redirects to Pterm.
         }
-        h.console_write_byte(b);
+        chardev::bconout_handle(DEV_CON, b);
         // SAFETY: same provenance as `p`; bounded by `MAX` above.
         p = unsafe { p.add(1) };
         count += 1;
@@ -555,54 +551,213 @@ pub fn cconws(args: &TrapArgs) -> Long {
 // "all-bits-set" form which is sign-extended.)
 // ---------------------------------------------------------------------------
 
-/// `Cconis()` — returns `-1` if a console byte is available, else `0`.
+/// `Cconis()` — `Bconstat(2)` of the CON entry: `-1` if a console byte is
+/// available, else `0` (NewTOS has no BDOS typeahead buffer to check first).
 pub fn cconis(_: &TrapArgs) -> Long {
-    let h = match host() {
-        Some(h) => h,
-        None => return E_OK,
-    };
-    if h.console_has_input() {
-        -1
-    } else {
-        0
-    }
+    chardev::bconstat_handle(DEV_CON)
 }
 
 // ---------------------------------------------------------------------------
 // 0x10 Cconos — console-output status. EmuTOS routes to Bcostat(2).
-// PL011 with FIFO is virtually always ready; return -1 unconditionally.
 // ---------------------------------------------------------------------------
 
-/// `Cconos()` — returns `-1` (output device ready).
+/// `Cconos()` — `Bcostat(2)` of the CON entry: `-1` (the console is always
+/// ready to accept a byte).
 pub fn cconos(_: &TrapArgs) -> Long {
-    -1
+    chardev::bcostat_handle(DEV_CON)
 }
 
 // ---------------------------------------------------------------------------
-// 0x11 Cprnos — printer output status. No printer → not ready → 0.
+// 0x11 Cprnos — printer output status = Bcostat(0).
+// Spec: docs/api/gemdos/console/11-cprnos.md (FS11 note).
 // ---------------------------------------------------------------------------
 
-/// `Cprnos()` — returns `0` (printer not ready / not present).
+/// `Cprnos()` — `Bcostat(0)` of the PRN entry; `0` (not ready) for the
+/// absent printer, as EmuTOS without `CONF_WITH_PRINTER_PORT`
+/// (`bios/parport.c:139-140`).
 pub fn cprnos(_: &TrapArgs) -> Long {
-    0
+    chardev::bcostat_handle(DEV_PRN)
 }
 
 // ---------------------------------------------------------------------------
-// 0x12 Cauxis — AUX input status. No AUX in PHASE-02 → 0.
+// 0x12 Cauxis — AUX input status = constat(1) → Bconstat(1).
+// Spec: docs/api/gemdos/console/12-cauxis.md (FS11 note).
 // ---------------------------------------------------------------------------
 
-/// `Cauxis()` — returns `0` (AUX input not available).
+/// `Cauxis()` — `Bconstat(1)` of the AUX entry (no BDOS typeahead buffer to
+/// check first); `0` for the absent device.
 pub fn cauxis(_: &TrapArgs) -> Long {
-    0
+    chardev::bconstat_handle(DEV_AUX)
 }
 
 // ---------------------------------------------------------------------------
-// 0x13 Cauxos — AUX output status. No AUX in PHASE-02 → 0.
+// 0x13 Cauxos — AUX output status = Bcostat(1).
+// Spec: docs/api/gemdos/console/13-cauxos.md (FS11 note).
 // ---------------------------------------------------------------------------
 
-/// `Cauxos()` — returns `0` (AUX output not available).
+/// `Cauxos()` — `Bcostat(1)` of the AUX entry; `0` (not ready) for the
+/// absent device.
 pub fn cauxos(_: &TrapArgs) -> Long {
-    0
+    chardev::bcostat_handle(DEV_AUX)
+}
+
+// ---------------------------------------------------------------------------
+// Fread / Fwrite on a character-device handle (FS11).
+// EmuTOS: bdos/bdosmain.c:604-640 (`osif` device block) with `conin`
+// (bdos/console.c:384-390), `cgets` (:540-581) and `tabout` (:292-302).
+// Spec: docs/api/gemdos/file/{3f-fread,40-fwrite}.md "Character-device path"
+// and "NewTOS implementation notes".
+// ---------------------------------------------------------------------------
+
+/// BDOS handle of the console (`H_Console`, `bdos/console.h`).
+const H_CONSOLE: i16 = -1;
+
+/// BDOS character-device handle (`-1` CON, `-2` AUX, `-3` PRN) → BIOS device
+/// number: EmuTOS `HXFORM(h) = 3 + h` (`bdos/console.h:36`).
+fn hxform(numl: i16) -> u16 {
+    (3 + numl) as u16
+}
+
+/// Byte access to the caller's buffer for the device paths: an index into
+/// the buffer, `None` / `false` when that byte cannot be reached (ARCH03 3a).
+trait DevBuf {
+    fn get(&self, i: u64) -> Option<u8>;
+    fn put(&self, i: u64, b: u8) -> bool;
+}
+
+/// [`DevBuf`] over the caller's address space.
+struct SpaceBuf {
+    space: crate::uaccess::Space,
+    base: u64,
+}
+
+impl DevBuf for SpaceBuf {
+    fn get(&self, i: u64) -> Option<u8> {
+        self.space.get_u8(self.base + i).ok()
+    }
+    fn put(&self, i: u64, b: u8) -> bool {
+        self.space.put_u8(self.base + i, b).is_ok()
+    }
+}
+
+/// [`LineEditIo`] over one device-table entry and the caller's buffer — the
+/// `cgets(h, …)` of `Fread`: input from that device's `Bconin` (its low byte,
+/// `char ch`, `console.c:542`), echo to that device's `Bconout`.
+struct DeviceLineIo<'a, B: DevBuf> {
+    dev: &'static dyn CharDevice,
+    buf: &'a B,
+    faulted: core::cell::Cell<bool>,
+}
+
+impl<B: DevBuf> LineEditIo for DeviceLineIo<'_, B> {
+    fn read_byte(&mut self) -> u8 {
+        // Never gives way to a `kbdvec` hook: keys may already be stored
+        // (the same blocking read `Cconrs` uses).
+        self.dev.bconin() as u8
+    }
+    fn echo_byte(&mut self, b: u8) {
+        let _ = self.dev.bconout(b); // `conout` ignores the BIOS result
+    }
+    fn store_byte(&mut self, i: usize, b: u8) {
+        if !self.buf.put(i as u64, b) {
+            self.faulted.set(true);
+        }
+    }
+    fn load_byte(&self, i: usize) -> u8 {
+        self.buf.get(i as u64).unwrap_or_else(|| {
+            self.faulted.set(true);
+            0
+        })
+    }
+    fn faulted(&self) -> bool {
+        self.faulted.get()
+    }
+}
+
+/// `Fread` on a character-device handle `numl` (`-1..-3`): `len` bytes into
+/// `ubuf` in `space` (EmuTOS `osif`, `bdos/bdosmain.c:608-620`).
+pub(crate) fn device_read(numl: i16, space: crate::uaccess::Space, len: i32, ubuf: u64) -> Long {
+    device_read_with(numl, len, &SpaceBuf { space, base: ubuf })
+}
+
+fn device_read_with<B: DevBuf>(numl: i16, len: i32, buf: &B) -> Long {
+    let dev = hxform(numl);
+    let Some(d) = chardev::device(dev) else {
+        return 0;
+    };
+    // "HUGE read": the high word of the LONG is tested (`pw[2]`), which also
+    // catches every negative `len`.
+    if (len as u32) >> 16 != 0 {
+        return 0;
+    }
+    // `pw[3]` is a signed WORD: 32768..65535 are negative here.
+    let lo = len as u16 as i16;
+    if lo == 1 {
+        // `conin(dev)`: one key, echoed, stored as the low byte of the
+        // `Bconin` LONG — CR and Ctrl-C included, no line editing. No side
+        // effect happens before the key arrives, so the read may give way to
+        // a `kbdvec` hook (KEYS02) and be re-executed.
+        let Some(key) = d.bconin_restartable() else {
+            crate::xbios::kbdvecs::request_restart();
+            return 0; // discarded — the trap handler re-executes the call
+        };
+        let ch = key as u8;
+        let _ = d.bconout(ch);
+        if !buf.put(0, ch) {
+            return crate::uaccess::FAULTED;
+        }
+        return 1;
+    }
+    if lo <= 0 {
+        // `cgets` with `maxlen <= 0`: the loop never runs (`console.c:546`).
+        return 0;
+    }
+    // `cgets(dev, len, buf)` = the `Cconrs` line editor over this device.
+    let mut io = DeviceLineIo { dev: d, buf, faulted: core::cell::Cell::new(false) };
+    match edit_line(&mut io, lo as usize) {
+        LineEdit::Done(n) => n as Long,
+        LineEdit::Terminated => {
+            crate::bdos::process::request_terminate(CTRLC_RC);
+            0 // value ignored — handler redirects to Pterm.
+        }
+        LineEdit::Faulted => crate::uaccess::FAULTED,
+    }
+}
+
+/// `Fwrite` on a character-device handle `numl` (`-1..-3`): `count` bytes
+/// from `ubuf` in `space` (EmuTOS `osif`, `bdos/bdosmain.c:622-640`).
+///
+/// `count <= 0` returns `count` itself. Each byte is read from the buffer
+/// first (an unreadable byte → [`crate::uaccess::FAULTED`], the bytes before
+/// it stay written). CON: the Ctrl-C-only [`output_break`], then the raw byte
+/// (`Cconws` behaviour, the approved divergence from `tabout`), result
+/// `count`. Any other device: the raw byte to its `Bconout`, no break check;
+/// a `0` from `Bconout` ends the call with the number of bytes before it.
+pub(crate) fn device_write(numl: i16, space: crate::uaccess::Space, count: i32, ubuf: u64) -> Long {
+    device_write_with(numl, count, &SpaceBuf { space, base: ubuf })
+}
+
+fn device_write_with<B: DevBuf>(numl: i16, count: i32, buf: &B) -> Long {
+    if count <= 0 {
+        return count;
+    }
+    let Some(d) = chardev::device(hxform(numl)) else {
+        return 0;
+    };
+    for n in 0..count as u64 {
+        let Some(b) = buf.get(n) else {
+            return crate::uaccess::FAULTED;
+        };
+        if numl == H_CONSOLE {
+            if host().is_some_and(output_break) {
+                return n as Long; // Ctrl-C: SVC handler redirects to Pterm.
+            }
+            let _ = d.bconout(b); // `tabout` is void
+        } else if d.bconout(b) == 0 {
+            return n as Long;
+        }
+    }
+    count
 }
 
 #[cfg(test)]
@@ -653,6 +808,53 @@ mod tests {
         assert_eq!(&io.buf[..2], b"ab");
         assert_eq!(io.echoed, 2);
         assert_eq!(io.at, 3);
+    }
+
+    /// A device-path buffer whose bytes from `fault_at` on are unreachable.
+    struct FaultBuf {
+        data: [core::cell::Cell<u8>; 8],
+        fault_at: u64,
+    }
+
+    impl FaultBuf {
+        fn new(fault_at: u64) -> FaultBuf {
+            FaultBuf { data: Default::default(), fault_at }
+        }
+    }
+
+    impl DevBuf for FaultBuf {
+        fn get(&self, i: u64) -> Option<u8> {
+            (i < self.fault_at).then(|| self.data[i as usize].get())
+        }
+        fn put(&self, i: u64, b: u8) -> bool {
+            if i >= self.fault_at {
+                return false;
+            }
+            self.data[i as usize].set(b);
+            true
+        }
+    }
+
+    /// WT4 (`40-fwrite.md`): the byte is read from the user buffer before the
+    /// device call — an unreadable byte 0 is `FAULTED`, not the absent
+    /// device's short count 0.
+    #[test]
+    fn wt4_fwrite_reads_the_byte_before_the_device_call() {
+        for numl in [-2, -3] {
+            assert_eq!(device_write_with(numl, 3, &FaultBuf::new(0)), crate::uaccess::FAULTED);
+        }
+        // Readable: the absent device refuses the first byte → short count 0.
+        assert_eq!(device_write_with(-2, 3, &FaultBuf::new(8)), 0);
+    }
+
+    /// The device read stops with `FAULTED` at the first byte it cannot store
+    /// (ARCH03 3a, `3f-fread.md` implementation notes).
+    #[test]
+    fn fread_device_store_fault() {
+        assert_eq!(device_read_with(-2, 1, &FaultBuf::new(0)), crate::uaccess::FAULTED);
+        let b = FaultBuf::new(2);
+        assert_eq!(device_read_with(-3, 4, &b), crate::uaccess::FAULTED);
+        assert_eq!(device_read_with(-3, 2, &FaultBuf::new(2)), 2);
     }
 
     #[test]
