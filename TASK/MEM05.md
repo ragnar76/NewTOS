@@ -1,6 +1,6 @@
 # MEM05 — viele kleine `malloc` erschoepfen die 254 Speicherdeskriptoren systemweit
 
-Status: **OFFEN** · Prioritaet: **P2** · Typ: Grenzwert — Nebenfund der E9-Nacharbeit ([ARCH03](ARCH03.md))
+Status: **ERLEDIGT** 2026-10-14 (Quittungen [A](MEM05-A-STATUS-DONE.MD), [B](MEM05-B-STATUS-DONE.MD); Pi offen) · Prioritaet: **P2** · Typ: Grenzwert — Nebenfund der E9-Nacharbeit ([ARCH03](ARCH03.md))
 
 ## Sachverhalt
 
