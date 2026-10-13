@@ -1,0 +1,74 @@
+measurement-2026-10-13-fs11-aux -- FS11 follow-up (TASK/FS11.md "Nachtrag 2026-10-13"): the AUX
+(BIOS 1) entry of the char-device table becomes "port present, no cable" (option A,
+docs/api/gemdos/file/3f-fread.md "NewTOS implementation notes" item 1a): Bconout(1) accepts +
+discards -> 1, Bcostat(1) -> -1, Bconstat(1) -> 0, Bconin(1) -> 0 without blocking. PRN and MIDI
+stay absent. Fixes the stderr hang found by measurement-2026-10-13-libc-main-fs11-acceptance
+(RUNINFO.TXT section 5b).
+
+Developer run, 2026-10-13, host macOS, QEMU raspi4b (-append serial=on [memprot=off|strict]).
+Base HEAD 73e9f898 + UNCOMMITTED working-tree change (method/aux-change.diff = the product/test diff
+at the time of the run). No SD card, no Pi touched. Kernels gitignored, sha256 in bin/KERNELS.SHA256;
+programs in bin/SHA256SUMS; repo binaries in repo-binaries.sha256. Card images in the session
+scratchpad (not kept). Socket dir: symlink /private/tmp/claude-501/n12 -> session scratchpad.
+
+KERNELS (bin/)
+  kernel8-aux.img        product kernel, rpi4 release, from method/checks.sh aux (shared tree)
+  kernel-virt-aux.img    qemu-virt product kernel from the same checks run (built, not booted here)
+  kernel8-keys-aux.img   + KEYS02 injector + FS11 key schedule (method/fs11-kernels.sh, scratch copy)
+  kernel8-pre.img        byte copy of measurement-2026-10-13-libc-main-fs11-acceptance/bin/kernel8-lm.img
+                         (fb84e64a, AUX absent; sha256 identical) -- red controls only
+
+PROGRAMS (bin/)
+  FS11A.NAP / FS11DEV.NAP  rebuilt from method/tests/fs11dev.c = the acceptance probe with the AUX
+                           expectations revised for option A (Fwrite(-2|2,4)=4, W28 Fwrite(2,5/1/0x1000)
+                           = count, Cauxout 1, Cauxos -1, Bconout(1) 1, Bcostat(1) -1); PRN unchanged.
+  STDERRA.NAP              NEW, method/tests/stderra.c: new crt0 (mintlib _main); parent (#Z, argv[0]
+                           empty) does Fforce(2,-2) and writes stderr itself, then spawnl()s itself --
+                           mintlib spawn passes ARGV=, so the kid has argv[0]="STDERRA" (argv0len 7),
+                           _main does NOT Fforce, handle 2 inherited = AUX. EmuCON cannot produce this
+                           case: it starts programs with Pexec(0,path,cmdline,NULL), no ARGV
+                           (references/emutos/cli/cmdexec.c:52).
+  STDERRP.NAP, oldcrt0/STDERRP.NAP, STDOUTDB.NAP, FSEEKCON.NAP, DTACHILD.NCP, P10KID.NCP:
+                           byte copies from the acceptance run's bin/.
+  APITEST.NCP (repo, sdk/apps/apitest) rebuilt with BC14 (Bconout(1) ->1) and BC22 (Bcostat(1) ->-1);
+                           libc.a rebuilt by build-libc.sh byte-identical (sha256 unchanged).
+
+1. HOST TESTS, RED -> GREEN (checks/host-red.txt, checks/host-green.txt)
+   Tests changed first, chardev.rs untouched: 7 FAIL -- lib wt4_fwrite_reads_the_byte_before_the_device_call,
+   fs10 fread_fwrite_take_negative_handles_as_devices, fs11 bios_absent_profile,
+   gemdos_aux_prn_absent_profile, w15_to_w18_aux_no_cable_and_absent_prn, w25_fdup_of_aux,
+   w28_fwrite_2_without_fforce_returns_count (new). After the AuxNoCable entry: all green.
+
+2. STATIC BASELINES (method/checks.sh aux; checks/aux-*.txt, checks/checks-aux.log)  expected  measured
+   host tests (tos-api tos-types xtask)                                   1322/0/1 +1  1323 / 0 / 1
+   release warnings tos-api / kernel, fresh, rpi4 and qemu-virt           64 / 94      64 / 94, 0 errors both
+   clippy tos-api / kernel, rpi4 and qemu-virt                            76 / 125     76 / 125 both
+   sh tools/desk-drift-probe.sh                                           31           31
+   sdk/run-host-tests.sh                                                  19/0/0       19 / 0 / 0
+
+3. QEMU raspi4b on / off / strict (method/aux-series.sh aux <cards> <mode>, PRE=1;
+   checks/series-<mode>.log; serial/, screendumps/). All aux-* runs ended on their end marker
+   (no timeout), no [EXC]/[PANIC] in any log.
+   FS11A (product kernel)      PASS, 0 FAIL lines, all three modes (incl. W28 + AUX values)
+   FS11DEV (keys kernel)       FS11A/B/C/DEV PASS, all three modes
+   STDOUTDB                    fputs rc 0, printf rc 0x1a, errno 0; [DBG] lines identical to
+                               the acceptance run's f11-<mode> logs
+   APITEST                     TOTAL 106 / 0 / 5 all modes; BC14 got=1 [OK], BC22 got=-1 [OK]; other
+                               lines equal to f11-<mode> except card listing / free clusters (card content)
+   stderr-oldcrt0 (the hang    COMPLETES: PAR and KID DONE, spawn rc 0; fputs(stderr) rc 0,
+     reproduction, old crt0,   fprintf rc 0x1f, write(2) 0x14, Fwrite(2) 0x15 -- same rc's as the
+     no Fforce, handle 2=AUX)  acceptance run's old-kernel/old-crt0 case. The STDERRP-MARK stderr texts
+                               no longer appear on the console (AUX discards; on the pre-FS11 kernel
+                               they went to the screen) -- intended by option A.
+   stderr-newcrt0              STDERRP lines identical to acceptance lm-<mode>-...-newkernel-newcrt0
+   stderra (ARGV kid, new crt0, COMPLETES: PAR and KID DONE; KID argc 2, argv0len 7; every stderr write
+     handle 2 = AUX)           returns its count (fputs 0, fprintf 0x1f, write 0x14, Fwrite 0x15,
+                               Fwrite 0x1000); no MARK text on the console (discarded on AUX).
+   RED CONTROLS on kernel8-pre.img (AUX absent), all three modes, --timeout 90:
+     pre-*-stderra             HANGS: last line "STDERRA[PAR] Fforce(2,-2) rc=0" (the parent's first
+                               stdio stderr write loops); the kid is never reached on this kernel.
+     pre-*-stderr-oldcrt0      HANGS after "STDERRP[PAR] argc=..." (reproduces acceptance finding 1).
+
+NOT DRIVEN: qemu-virt runs (kernel built and warning/clippy-checked only); asid=on modes; EmuCON
+runs (EmuCON passes no ARGV, see above); real Pi 4 / real serial port (bytes on AUX are discarded, not
+sent to the PL011 -- nothing to observe on the wire by design).

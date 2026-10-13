@@ -248,9 +248,9 @@ fn serial_rx_byte(b: u8) {
 /// into `iorec1`, the **RS-232 device** (BIOS handle 1,
 /// `bios/serport.c:331-343` `push_serial_iorec`), and *never* into the IKBD
 /// queue; `push_ascii_ikbdiorec` is not even compiled (`bios/ikbd.c:175,231`).
-/// NewTOS' device profile declares handle 1 (AUX) absent with EmuTOS'
-/// `char_dummy` semantics — status 0, input 0 (`tos_api::bios::chardev`) — so
-/// the byte has no destination and is dropped here.
+/// NewTOS' device profile declares handle 1 (AUX) a port with no cable —
+/// status 0, input 0 (`tos_api::bios::chardev::AuxNoCable`) — so the byte has
+/// no destination and is dropped here.
 ///
 /// This is not cosmetic. UART0 is the debug console; on this board CON is the
 /// USB-HID keyboard alone (STATUS 2026-07-03 K1, `c6e4bfb`), and that commit

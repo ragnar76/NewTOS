@@ -3,7 +3,7 @@
 //!
 //! Spec: `docs/api/gemdos/file/3f-fread.md` and `40-fwrite.md`, sections
 //! "Character-device path" and the tables "NewTOS host tests" (R1..R32,
-//! RT1..RT3, W1..W27, WT1..WT3; WT4 is the in-crate unit test
+//! RT1..RT3, W1..W28, WT1..WT3; WT4 is the in-crate unit test
 //! `gemdos::console::tests::wt4_*`, the host cannot fault a user pointer).
 //! The device table and the absent-device profile: `3f-fread.md` "NewTOS
 //! implementation notes"; the BIOS/GEMDOS/XBIOS notes in
@@ -437,9 +437,10 @@ fn r28_typeahead_survives_between_calls() {
     assert_eq!(b[0], b'b');
 }
 
-// ═══ Fread, AUX / PRN (absent devices) ═══════════════════════════════════
+// ═══ Fread, AUX (no cable) / PRN (absent) ═══════════════════════════════
 
-/// R17, R18, R29: AUX is absent — every `Bconin` is 0 without blocking, so a
+/// R17, R18, R29: AUX has no input ("no cable", item 1a) — every `Bconin` is
+/// 0 without blocking, so a
 /// line read fills the buffer with NULs; nothing reaches the console.
 #[test]
 fn r17_r18_r29_absent_aux() {
@@ -531,7 +532,7 @@ fn r23_fdup_of_console() {
     assert_eq!(fread(d, &mut b), EIHNDL, "R23 after Fclose");
 }
 
-/// R24: `Fforce(0, -2)` makes stdin the (absent) AUX.
+/// R24: `Fforce(0, -2)` makes stdin AUX (no cable: no input).
 #[test]
 fn r24_fforce_stdin_to_aux() {
     let (_g, host, p) = setup();
@@ -707,17 +708,20 @@ fn w14_no_ctrl_s_pause() {
 
 // ═══ Fwrite, AUX / PRN ═══════════════════════════════════════════════════
 
-/// W15-W18: AUX and PRN are absent — the first `Bconout` returns 0, the call
-/// returns the short count 0; no break check on non-CON.
+/// W15-W17: AUX (1) is "port present, no cable" (`3f-fread.md` item 1a,
+/// option A): every `Bconout(1)` accepts and discards, so `Fwrite(-2|2, n)`
+/// returns `n`; no tab expansion and no break check on non-CON (the queued
+/// Ctrl-C stays). W18: PRN stays absent — the first `Bconout` returns 0, the
+/// call returns the short count 0.
 #[test]
-fn w15_to_w18_absent_aux_and_prn() {
+fn w15_to_w18_aux_no_cable_and_absent_prn() {
     let (_g, host, _p) = setup();
     host.type_keys(&[CTRL_C]);
     for h in [-2, 2] {
-        assert_eq!(fwrite(h, b"ATZ\r"), 0, "W15 Fwrite({h})");
+        assert_eq!(fwrite(h, b"ATZ\r"), 4, "W15 Fwrite({h})");
     }
-    assert_eq!(fwrite(-2, b"\tX"), 0, "W16");
-    assert_eq!(fwrite(-2, b"ab"), 0, "W17");
+    assert_eq!(fwrite(-2, b"\tX"), 2, "W16");
+    assert_eq!(fwrite(-2, b"ab"), 2, "W17");
     for h in [-3, 3] {
         assert_eq!(fwrite(h, b"abc"), 0, "W18 Fwrite({h})");
     }
@@ -762,15 +766,16 @@ fn w23_w24_invalid_handles() {
     assert_eq!(fwrite(6 + 15, b"x"), EIHNDL, "W24 free slot");
 }
 
-/// W25: `Fdup(2)` is AUX (absent: 0); closed → `EIHNDL`.
+/// W25: `Fdup(2)` is AUX (no-cable entry accepts: 2); closed → `EIHNDL`.
 #[test]
 fn w25_fdup_of_aux() {
-    let (_g, _host, _p) = setup();
+    let (_g, host, _p) = setup();
     let d = fdup(2);
     assert!(d >= 6, "Fdup(2) -> {d}");
-    assert_eq!(fwrite(d, b"ok"), 0, "W25");
+    assert_eq!(fwrite(d, b"ok"), 2, "W25");
     assert_eq!(fclose(d), E_OK);
     assert_eq!(fwrite(d, b"ok"), EIHNDL, "W25 after Fclose");
+    assert!(host.take_output().is_empty(), "nothing on CON");
 }
 
 /// W26: `Fforce(1, -3)` sends stdout to the (absent) printer.
@@ -802,6 +807,21 @@ fn w27_fforce_stdout_to_a_file_and_back() {
     assert_eq!(fread(r, &mut b), 2);
     assert_eq!(&b[..2], b"ok");
     assert_eq!(fclose(r), E_OK);
+}
+
+/// W28 (regression guard, FS11 acceptance finding 1): a default process with
+/// **no** `Fforce` writes to handle 2 (stderr = AUX). Every write returns its
+/// full count — a 0 made mintlib's write loop retry forever (the pre-
+/// LIBC-MAIN stderr hang). Nothing reaches CON.
+#[test]
+fn w28_fwrite_2_without_fforce_returns_count() {
+    let (_g, host, p) = setup();
+    assert_eq!(p.uft(), DEFAULT, "no Fforce");
+    assert_eq!(fwrite(2, b"hello"), 5, "W28 5");
+    assert_eq!(fwrite(2, b"x"), 1, "W28 1");
+    let buf = vec![0x5Au8; 0x1000];
+    assert_eq!(fwrite(2, &buf), 0x1000, "W28 0x1000");
+    assert!(host.take_output().is_empty(), "nothing on CON");
 }
 
 // ═══ Fwrite, single dispatch point ═══════════════════════════════════════
@@ -854,19 +874,25 @@ fn wt3_prn_entry_is_index_0() {
 
 // ═══ BIOS / GEMDOS / XBIOS on the absent profile ═════════════════════════
 
-/// The absent profile per BIOS device (`docs/api/bios/{01,02,03,08}`): PRN,
-/// AUX, MIDI, IKBD and 6/7 answer 0 everywhere; CON is the console; raw-CON
-/// writes; handles past the table are 0.
+/// The device profile per BIOS device (`docs/api/bios/{01,02,03,08}`): PRN,
+/// MIDI, IKBD and 6/7 are absent and answer 0 everywhere; AUX is "port
+/// present, no cable" (`Bconout` 1, `Bcostat` -1, `Bconstat`/`Bconin` 0
+/// without blocking); CON is the console; raw-CON writes; handles past the
+/// table are 0.
 #[test]
 fn bios_absent_profile() {
     let (_g, host, _p) = setup();
-    for dev in [0u64, 1, 3, 4, 6, 7, 8, 0xFFFF] {
+    for dev in [0u64, 3, 4, 6, 7, 8, 0xFFFF] {
         assert_eq!(bios(BCONSTAT, dev, 0), 0, "Bconstat({dev})");
         assert_eq!(bios(BCONIN, dev, 0), 0, "Bconin({dev})");
         assert_eq!(bios(BCONOUT, dev, b'x' as u64), 0, "Bconout({dev})");
         assert_eq!(bios(BCOSTAT, dev, 0), 0, "Bcostat({dev})");
     }
-    assert!(host.take_output().is_empty(), "absent output discarded");
+    assert_eq!(bios(BCONSTAT, 1, 0), 0, "Bconstat(1) AUX no cable");
+    assert_eq!(bios(BCONIN, 1, 0), 0, "Bconin(1) AUX non-blocking");
+    assert_eq!(bios(BCONOUT, 1, b'x' as u64), 1, "Bconout(1) AUX accepts");
+    assert_eq!(bios(BCOSTAT, 1, 0), -1, "Bcostat(1) AUX ready");
+    assert!(host.take_output().is_empty(), "absent/AUX output discarded");
     assert_eq!(bios(BCOSTAT, 2, 0), -1, "Bcostat(2)");
     assert_eq!(bios(BCOSTAT, 5, 0), 0, "Bcostat(5) char_dummy");
     assert_eq!(bios(BCONOUT, 2, b'c' as u64), 1);
@@ -879,17 +905,18 @@ fn bios_absent_profile() {
     assert_eq!(bios(BCONSTAT, 5, 0), 0, "Bconstat(5)");
 }
 
-/// The GEMDOS AUX/PRN calls on the absent profile
-/// (`docs/api/gemdos/console/{03,04,05,11,12,13}`).
+/// The GEMDOS AUX/PRN calls (`docs/api/gemdos/console/{03,04,05,11,12,13}`):
+/// AUX is the no-cable entry (`Cauxout` 1, `Cauxos` -1, `Cauxin`/`Cauxis` 0),
+/// PRN is absent (all 0).
 #[test]
 fn gemdos_aux_prn_absent_profile() {
     let (_g, host, _p) = setup();
     assert_eq!(gemdos0(CAUXIN), 0, "Cauxin");
-    assert_eq!(call(CAUXOUT, [b'x' as u64, 0, 0, 0, 0, 0, 0, 0]), 0, "Cauxout");
+    assert_eq!(call(CAUXOUT, [b'x' as u64, 0, 0, 0, 0, 0, 0, 0]), 1, "Cauxout");
     assert_eq!(call(CPRNOUT, [b'x' as u64, 0, 0, 0, 0, 0, 0, 0]), 0, "Cprnout");
     assert_eq!(gemdos0(CPRNOS), 0, "Cprnos");
     assert_eq!(gemdos0(CAUXIS), 0, "Cauxis");
-    assert_eq!(gemdos0(CAUXOS), 0, "Cauxos");
+    assert_eq!(gemdos0(CAUXOS), -1, "Cauxos");
     assert!(host.take_output().is_empty());
 }
 

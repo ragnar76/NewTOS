@@ -210,14 +210,14 @@ fn t13_fdatime_on_a_console_handle_is_invalid() {
 
 /// `Fread` / `Fwrite` read the handle as a signed WORD too: `-1..-3` resolve
 /// to a character device, `<= -4` is `EIHNDL` (`bdosmain.c:589,601-602`).
-/// Since FS11 each device is its BIOS device-table entry: CON writes and
-/// returns the count, the absent AUX/PRN refuse the first byte (short count
-/// 0, `40-fwrite.md` W15/W18).
+/// Since FS11 each device is its BIOS device-table entry: CON and the
+/// no-cable AUX accept and return the count (`40-fwrite.md` W15, option A),
+/// the absent PRN refuses the first byte (short count 0, W18).
 #[test]
 fn fread_fwrite_take_negative_handles_as_devices() {
     let (_g, _host) = fs();
     let _p = Pd::new();
-    for (h, want4, want2) in [(-1, 4, 2), (-2, 0, 0), (-3, 0, 0)] {
+    for (h, want4, want2) in [(-1, 4, 2), (-2, 4, 2), (-3, 0, 0)] {
         assert_eq!(fwrite(h, b"fs10"), want4, "Fwrite({h})");
         let zx = call(FWRITE, [h as u16 as u64, 2, b"ok".as_ptr() as u64, 0, 0, 0, 0, 0]);
         assert_eq!(zx, want2, "Fwrite({h} as u16)");

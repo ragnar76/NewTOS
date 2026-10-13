@@ -61,8 +61,8 @@ pub mod xbiosbind;
 //    `fbcon::write_byte` → `vdi::alpha_conout`), so a diagnostic would paint
 //    characters onto the live desktop. EmuTOS's `kprintf` goes to the *debug*
 //    device, `bconout1(1, c)` (`bios/kprint.c:91-99`), never to `bconout2(2)`
-//    — and our `Bconout(1)` is an absent device that discards the byte
-//    (`tos-api/src/bios/chardev.rs:176-186`).
+//    — and our `Bconout(1)` is the no-cable AUX entry that discards the byte
+//    (`tos_api::bios::chardev::AuxNoCable`).
 //
 // So the replacement has to be built before the removal (plan §6.3's ordering
 // rule), and building a debug-output device is not this unit's business.

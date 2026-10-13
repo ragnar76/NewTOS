@@ -1836,8 +1836,11 @@ int main(void)
 	 *
 	 * Handle map per docs/api/bios/{01,02,03,08}-*.md "Pi / BCM2711
 	 * binding": CON (2) is the only input device; CON (2) and raw-CON (5)
-	 * are the output devices; PRT (0), AUX (1), MIDI (3), IKBD-TX (4) and
-	 * 6/7 are absent and follow EmuTOS' char_dummy / charout_dummy slots.
+	 * are the output devices; PRT (0), MIDI (3), IKBD-TX (4) and 6/7 are
+	 * absent and follow EmuTOS' char_dummy / charout_dummy slots. AUX (1)
+	 * is "port present, no cable" (docs/api/gemdos/file/3f-fread.md item
+	 * 1a): Bconout(1) accepts+discards -> 1, Bcostat(1) -> -1 (EmuTOS
+	 * bconout1/bcostat1 with an MFP port), Bconstat(1) -> 0.
 	 * Bcostat is deliberately NOT symmetric with Bconout: bcostat_init[5]
 	 * is char_dummy (references/emutos/bios/chardev.c:38-41), so handle 5
 	 * writes (returns 1) but reports busy (returns 0).
@@ -1872,8 +1875,9 @@ int main(void)
 
 		/* The console-output handles really put their character on the
 		 * screen. All eight calls run back to back, so the marker line
-		 * ends up showing exactly the bytes the BIOS accepted: "CR" from
-		 * handles 2 and 5, nothing from the six absent devices. */
+		 * ends up showing exactly the bytes that reach the screen: "CR" from
+		 * handles 2 and 5, nothing from the five absent devices and nothing
+		 * from AUX (accepts and discards). */
 		b_reset();
 		b_str("B1    Bconout(0..7) write here -> ");
 		b_emit();
@@ -1890,7 +1894,7 @@ int main(void)
 			ck_eq(G_BCHR, "BC11 Bconout(2,'C') CON ->1",   o2, 1);
 			ck_eq(G_BCHR, "BC12 Bconout(5,'R') raw ->1",   o5, 1);
 			ck_eq(G_BCHR, "BC13 Bconout(0,'*') PRT ->0",   o0, 0);
-			ck_eq(G_BCHR, "BC14 Bconout(1,'*') AUX ->0",   o1, 0);
+			ck_eq(G_BCHR, "BC14 Bconout(1,'*') AUX ->1",   o1, 1);
 			ck_eq(G_BCHR, "BC15 Bconout(3,'*') MIDI ->0",  o3, 0);
 			ck_eq(G_BCHR, "BC16 Bconout(4,'*') IKBD ->0",  o4, 0);
 			ck_eq(G_BCHR, "BC17 Bconout(6,'*') dummy ->0", o6, 0);
@@ -1900,7 +1904,7 @@ int main(void)
 		ck_eq(G_BCHR, "BC19 Bcostat(2) CON ->-1",      Bcostat(2), -1);
 		ck_eq(G_BCHR, "BC20 Bcostat(5) dummy ->0",     Bcostat(5), 0);
 		ck_eq(G_BCHR, "BC21 Bcostat(0) PRT ->0",       Bcostat(0), 0);
-		ck_eq(G_BCHR, "BC22 Bcostat(1) AUX ->0",       Bcostat(1), 0);
+		ck_eq(G_BCHR, "BC22 Bcostat(1) AUX ->-1",      Bcostat(1), -1);
 		ck_eq(G_BCHR, "BC23 Bcostat(3) IKBD-TX ->0",   Bcostat(3), 0);
 		ck_eq(G_BCHR, "BC24 Bcostat(4) MIDI-TX ->0",   Bcostat(4), 0);
 		ck_eq(G_BCHR, "BC25 Bcostat(9) invalid ->0",   Bcostat(9), 0);

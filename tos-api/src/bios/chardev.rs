@@ -16,7 +16,9 @@
 //!
 //! The NewTOS profile has one real character device — the console (PL011 +
 //! framebuffer): keyboard **input** on CON (2) only, screen **output** on
-//! CON (2) and raw-CON (5). PRN, AUX, MIDI, IKBD and 6/7 are the documented
+//! CON (2) and raw-CON (5). AUX (1) is a serial port with **no cable**
+//! ([`AuxNoCable`], `3f-fread.md` item 1a): output accepted and discarded,
+//! always ready, no input. PRN, MIDI, IKBD and 6/7 are the documented
 //! **absent device** ([`Absent`], EmuTOS' `char_dummy` / `charout_dummy`,
 //! `bios/chardev.c:49-58`): status 0, input 0 without blocking, output
 //! discarded with 0 — rather than blocking on hardware that does not exist.
@@ -97,6 +99,36 @@ impl CharDevice for Absent {
     }
 }
 
+/// AUX (device 1) as "port present, no cable" (deliberate profile, not a
+/// stub; `docs/api/gemdos/file/3f-fread.md` "NewTOS implementation notes"
+/// item 1a, option A). On a real ST the RS-232 port always exists:
+/// EmuTOS' `bconout1` with an MFP port queues the byte and returns `1`
+/// (`bios/serport.c:289-330`, no CTS wait — `flowctrl` is never read) and
+/// `bcostat1` is `-1` while the out-ring has room (`serport.c:271-283`);
+/// NewTOS discards at once, so the "ring" never fills. With no cable no byte
+/// ever arrives: `bconstat1` on an empty iorec is `0` (`serport.c:255-258`).
+/// `Bconin` returns `0` **without blocking** — a documented divergence from
+/// `bconin1`, which would wait forever (`serport.c:260-263`). An absent AUX
+/// (`Bconout` 0) made `Fwrite(2, …)` return 0 and mintlib's stderr write
+/// loop retry forever (FS11 acceptance finding 1). A UART driver
+/// (`TASK/IO01.md`) replaces the whole entry.
+pub struct AuxNoCable;
+
+impl CharDevice for AuxNoCable {
+    fn bconstat(&self) -> Long {
+        0
+    }
+    fn bconin(&self) -> Long {
+        0
+    }
+    fn bconout(&self, _byte: u8) -> Long {
+        1
+    }
+    fn bcostat(&self) -> Long {
+        -1
+    }
+}
+
 /// CON (device 2): keyboard input from the console key ring (`bconin2` /
 /// `bconstat2`, the IKBD queue), screen output (`bconout2`), output always
 /// ready (`bcostat2`, `bios/chardev.c:112-118`: the PL011 TX drains by
@@ -164,6 +196,7 @@ impl CharDevice for RawConsole {
 }
 
 static ABSENT: &dyn CharDevice = &Absent;
+static AUX_NO_CABLE: &dyn CharDevice = &AuxNoCable;
 static CONSOLE: &dyn CharDevice = &Console;
 static RAW_CONSOLE: &dyn CharDevice = &RawConsole;
 
@@ -180,14 +213,14 @@ const fn slot(entry: &'static &'static dyn CharDevice) -> Slot {
 /// all-zero entry: EmuTOS' `bconin_init[4]`/`bconstat_init[4]` are
 /// `char_dummy` (`bios/chardev.c:30-36`) and NewTOS has no IKBD transmitter.
 static DEVICES: [Slot; NDEV] = [
-    slot(&ABSENT),      // 0 PRN
-    slot(&ABSENT),      // 1 AUX
-    slot(&CONSOLE),     // 2 CON
-    slot(&ABSENT),      // 3 MIDI
-    slot(&ABSENT),      // 4 IKBD
-    slot(&RAW_CONSOLE), // 5 raw CON
-    slot(&ABSENT),      // 6
-    slot(&ABSENT),      // 7
+    slot(&ABSENT),       // 0 PRN
+    slot(&AUX_NO_CABLE), // 1 AUX
+    slot(&CONSOLE),      // 2 CON
+    slot(&ABSENT),       // 3 MIDI
+    slot(&ABSENT),       // 4 IKBD
+    slot(&RAW_CONSOLE),  // 5 raw CON
+    slot(&ABSENT),       // 6
+    slot(&ABSENT),       // 7
 ];
 
 /// Replace the table entry of BIOS device `dev` with `entry` — the one place a
@@ -368,15 +401,16 @@ pub fn bconin(args: &TrapArgs) -> Long {
 
 /// `Bconout` (0x03) — write a byte to an output device through its table
 /// entry. Console handles write to the screen and return `1` (byte accepted,
-/// `bconout2`/`bconout5`); absent devices discard and return `0`
+/// `bconout2`/`bconout5`); the no-cable AUX discards and returns `1`
+/// ([`AuxNoCable`]); absent devices discard and return `0`
 /// (`charout_dummy`).
 pub fn bconout(args: &TrapArgs) -> Long {
     bconout_handle(args.arg_u16(0), args.arg_u16(1) as u8)
 }
 
 /// `Bcostat` (0x08) — output-device status through the table, with the
-/// IKBD/MIDI slot swap ([`bcostat_handle`]). Ready (`-1`) only for CON
-/// (`bcostat2`); raw-CON's slot is `char_dummy` (`bcostat_init[5]`), so it
+/// IKBD/MIDI slot swap ([`bcostat_handle`]). Ready (`-1`) for CON
+/// (`bcostat2`) and the no-cable AUX ([`AuxNoCable`]); raw-CON's slot is `char_dummy` (`bcostat_init[5]`), so it
 /// reports busy (`0`) although `Bconout(5)` writes — deliberately **not** the
 /// same handle set as `Bconout`. Absent devices and the boot guard: `0`.
 pub fn bcostat(args: &TrapArgs) -> Long {

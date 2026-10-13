@@ -3,9 +3,10 @@
 //! (Cconout / Cconws output-side Ctrl-C break, the conbrk subset).
 //!
 //! * **F2** is driven through the real `svc #1` (GEMDOS) trap path:
-//!   `Cauxin` (0x03) and `Cauxout` (0x04) must return `0` (the NewTOS
-//!   profile has no AUX device; both route through the BIOS handle-1
-//!   pass-through, an absent `char_dummy` slot). See
+//!   both route through the BIOS handle-1 pass-through, the AUX entry
+//!   "port present, no cable" (`docs/api/gemdos/file/3f-fread.md` item 1a):
+//!   `Cauxin` (0x03) returns `0` without blocking (no input), `Cauxout`
+//!   (0x04) accepts and discards the byte and returns `1`. See
 //!   `docs/api/gemdos/console/{03-cauxin,04-cauxout}.md`.
 //!
 //! * **F1** exercises the factored [`tos_api::gemdos::console::edit_line`]
@@ -145,9 +146,9 @@ pub fn run() {
         }
     };
 
-    // ── F2: Cauxin / Cauxout pass through to the absent AUX device ────
-    check(gemdos(0x03, 0) == 0, "Cauxin() == 0 (no AUX, F2)");
-    check(gemdos(0x04, b'Z' as u64) == 0, "Cauxout('Z') == 0 (no AUX, F2)");
+    // ── F2: Cauxin / Cauxout pass through to the no-cable AUX entry ───
+    check(gemdos(0x03, 0) == 0, "Cauxin() == 0 (AUX no input, F2)");
+    check(gemdos(0x04, b'Z' as u64) == 1, "Cauxout('Z') == 1 (AUX no cable, F2)");
 
     // ── F1: Ctrl-U kills the line → subsequent input starts at len 0 ──
     {

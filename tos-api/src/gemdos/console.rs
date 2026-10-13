@@ -110,10 +110,11 @@ pub fn cconout(args: &TrapArgs) -> Long {
 // ---------------------------------------------------------------------------
 
 /// `Cauxin()` — pass-through to `Bconin(1)`, exactly as EmuTOS' `xauxin`:
-/// the AUX entry of the device table. That entry is the documented absent
-/// device (`docs/api/gemdos/console/03-cauxin.md`, FS11 note), so the
-/// pass-through returns `0` at once instead of blocking on serial hardware
-/// that does not exist; a UART driver (`TASK/IO01.md`) replaces the entry.
+/// the AUX entry of the device table. That entry is "port present, no
+/// cable" (`docs/api/gemdos/console/03-cauxin.md`, FS11 note; `3f-fread.md`
+/// item 1a), so the pass-through returns `0` at once instead of waiting for
+/// a byte that never arrives; a UART driver (`TASK/IO01.md`) replaces the
+/// entry.
 pub fn cauxin(_: &TrapArgs) -> Long {
     chardev::bconin_handle(DEV_AUX)
 }
@@ -125,9 +126,9 @@ pub fn cauxin(_: &TrapArgs) -> Long {
 // ---------------------------------------------------------------------------
 
 /// `Cauxout(ch)` — pass-through to `Bconout(1, ch)`, exactly as EmuTOS'
-/// `xauxout`: the AUX entry of the device table. With the absent-device
-/// entry the byte is discarded and the call returns `0`
-/// (`docs/api/gemdos/console/04-cauxout.md`, FS11 note).
+/// `xauxout`: the AUX entry of the device table. The no-cable entry
+/// discards the byte and returns `1`
+/// (`docs/api/gemdos/console/04-cauxout.md`, option A).
 pub fn cauxout(args: &TrapArgs) -> Long {
     let ch = args.arg_u16(0) as u8;
     chardev::bconout_handle(DEV_AUX, ch)
@@ -585,7 +586,7 @@ pub fn cprnos(_: &TrapArgs) -> Long {
 // ---------------------------------------------------------------------------
 
 /// `Cauxis()` — `Bconstat(1)` of the AUX entry (no BDOS typeahead buffer to
-/// check first); `0` for the absent device.
+/// check first); `0` — the no-cable AUX entry never has input.
 pub fn cauxis(_: &TrapArgs) -> Long {
     chardev::bconstat_handle(DEV_AUX)
 }
@@ -595,8 +596,8 @@ pub fn cauxis(_: &TrapArgs) -> Long {
 // Spec: docs/api/gemdos/console/13-cauxos.md (FS11 note).
 // ---------------------------------------------------------------------------
 
-/// `Cauxos()` — `Bcostat(1)` of the AUX entry; `0` (not ready) for the
-/// absent device.
+/// `Cauxos()` — `Bcostat(1)` of the AUX entry; `-1` (ready) for the
+/// no-cable entry (`docs/api/gemdos/console/13-cauxos.md`, option A).
 pub fn cauxos(_: &TrapArgs) -> Long {
     chardev::bcostat_handle(DEV_AUX)
 }
@@ -836,15 +837,17 @@ mod tests {
     }
 
     /// WT4 (`40-fwrite.md`): the byte is read from the user buffer before the
-    /// device call — an unreadable byte 0 is `FAULTED`, not the absent
-    /// device's short count 0.
+    /// device call — an unreadable byte 0 is `FAULTED`, not the device's
+    /// result (the absent PRN's short count 0, the no-cable AUX's count).
     #[test]
     fn wt4_fwrite_reads_the_byte_before_the_device_call() {
         for numl in [-2, -3] {
             assert_eq!(device_write_with(numl, 3, &FaultBuf::new(0)), crate::uaccess::FAULTED);
         }
-        // Readable: the absent device refuses the first byte → short count 0.
-        assert_eq!(device_write_with(-2, 3, &FaultBuf::new(8)), 0);
+        // Readable: the absent PRN refuses the first byte → short count 0;
+        // the no-cable AUX accepts every byte → 3 (`3f-fread.md` item 1a).
+        assert_eq!(device_write_with(-3, 3, &FaultBuf::new(8)), 0);
+        assert_eq!(device_write_with(-2, 3, &FaultBuf::new(8)), 3);
     }
 
     /// The device read stops with `FAULTED` at the first byte it cannot store
