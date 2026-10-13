@@ -36,3 +36,15 @@ interne Grenzen duerfen sich daran anpassen.
 
 Naechster Schritt: Researcher-Entwurf (Tabellenwachstum, Prozessgrenze und
 wo sie eingestellt wird, SDK-Anpassung, Tests) zur Freigabe, dann Developer.
+
+## Freigabe Entwurf (Anwender 2026-10-13)
+
+Entwurf `docs/analysis/mem05-design-2026-10-13.md` freigegeben mit allen
+Empfehlungen: E1 Seiten aus dem Kernel-Heap; E2 Heap 2 → 8 MiB plus
+Seitenbudget 512 Seiten fuer den MD-Vorrat; E3 Grenze 8192 Bloecke je
+Prozess; E4 Boot-Argument `mdlimit=<n>` (`0` = aus); E5 `Malloc(-1)`
+unveraendert; E6 Overlay `overlay/mintlib/malloc.c`, `MAXHUNK` 16 MiB,
+Aufruf in `__libc_crtinit`; E7/E8 in v1 nein (Schritt 8 entfaellt).
+Umsetzung in zwei Developer-Auftraegen: A = Schritte 1–6 + Doku (Kernel),
+B = Schritt 7 (SDK). Nebenbefunde: [MEM07](MEM07.md), [MEM08](MEM08.md),
+[MEM09](MEM09.md).
