@@ -1,0 +1,17 @@
+=== acc-on-asid asid Mi. 14 Okt. 2026 00:26:57 CEST APPEND=serial=on asid=on
+qemu-system-aarch64: -serial unix:s/a31.SeKOx6/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.SeKOx6/ser.sock,server=on
+t=  62.2s end marker seen
+t=  65.3s acc-on-asid-rpi4-mdstep-end.png {"return": {}}
+prompts seen: 0
+run acc-on-asid-rpi4-mdstep: rc=0
+qemu-system-aarch64: -serial unix:s/a31.tsYJjW/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.tsYJjW/ser.sock,server=on
+t=  15.2s end marker seen
+t=  18.2s acc-on-asid-rpi4-mdpar-end.png {"return": {}}
+prompts seen: 0
+run acc-on-asid-rpi4-mdpar: rc=0
+t=25.0s -> acc-on-asid-rpi4-apitest-t25.png {"return": {}}
+t=40.0s -> acc-on-asid-rpi4-apitest-t40.png {"return": {}}
+run acc-on-asid-rpi4-apitest: rc=0
+t=25.0s -> acc-on-asid-rpi4-desktop-t25.png {"return": {}}
+run acc-on-asid-rpi4-desktop: rc=0
+=== acc-on-asid asid done Mi. 14 Okt. 2026 00:29:27 CEST

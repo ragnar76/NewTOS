@@ -1,0 +1,24 @@
+=== acc-on zv Mi. 14 Okt. 2026 00:30:00 CEST APPEND=serial=on
+qemu-system-aarch64: -serial unix:s/a31.8Ww2ps/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.8Ww2ps/ser.sock,server=on
+t=  15.9s end marker seen
+t=  17.9s acc-on-rpi4-ldgauto-end.png {"return": {}}
+prompts seen: 0
+run acc-on-rpi4-ldgauto: rc=0
+t=30.0s -> acc-on-rpi4-ldgdemo-t30.png {"return": {}}
+t=50.0s -> acc-on-rpi4-ldgdemo-t50.png {"return": {}}
+run acc-on-rpi4-ldgdemo: rc=0
+t=40.0s -> acc-on-rpi4-zview-jpg-t40.png {"return": {}}
+t=80.0s -> acc-on-rpi4-zview-jpg-t80.png {"return": {}}
+run acc-on-rpi4-zview-jpg: rc=0
+t=40.0s -> acc-on-rpi4-zview-png-t40.png {"return": {}}
+t=80.0s -> acc-on-rpi4-zview-png-t80.png {"return": {}}
+run acc-on-rpi4-zview-png: rc=0
+t=80.0s -> acc-on-rpi4-zview-bmp-t80.png {"return": {}}
+run acc-on-rpi4-zview-bmp: rc=0
+t=40.0s -> acc-on-rpi4-zview-browser-t40.png {"return": {}}
+t=80.0s -> acc-on-rpi4-zview-browser-t80.png {"return": {}}
+run acc-on-rpi4-zview-browser: rc=0
+t=30.0s -> acc-on-rpi4-present-t30.png {"return": {}}
+t=45.0s -> acc-on-rpi4-present-t45.png {"return": {}}
+run acc-on-rpi4-present: rc=0
+=== acc-on zv done Mi. 14 Okt. 2026 00:37:14 CEST

@@ -1,0 +1,99 @@
+=== acc-on main Di. 13 Okt. 2026 23:31:21 CEST APPEND=serial=on
+qemu-system-aarch64: -serial unix:s/a31.G6Ds3j/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.G6Ds3j/ser.sock,server=on
+t=  15.3s end marker seen
+t=  18.3s acc-on-rpi4-mdpar-end.png {"return": {}}
+prompts seen: 0
+run acc-on-rpi4-mdpar: rc=0
+qemu-system-aarch64: -serial unix:s/a31.dU0scf/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.dU0scf/ser.sock,server=on
+t= 295.8s end marker seen
+t= 303.9s acc-on-rpi4-mdbud-end.png {"return": {}}
+prompts seen: 0
+run acc-on-rpi4-mdbud: rc=0
+qemu-system-aarch64: -serial unix:s/a31.Qaust8/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.Qaust8/ser.sock,server=on
+t= 263.9s end marker seen
+t= 272.0s acc-on-rpi4-mdbud-rerun-end.png {"return": {}}
+prompts seen: 0
+run acc-on-rpi4-mdbud-rerun: rc=0
+t=25.0s -> acc-on-rpi4-apitest-t25.png {"return": {}}
+t=40.0s -> acc-on-rpi4-apitest-t40.png {"return": {}}
+run acc-on-rpi4-apitest: rc=0
+t=25.0s -> acc-on-rpi4-desktop-t25.png {"return": {}}
+run acc-on-rpi4-desktop: rc=0
+t=25.0s -> acc-on-rpi4-acc-t25.png {"return": {}}
+run acc-on-rpi4-acc: rc=0
+t=35.0s -> acc-on-rpi4-teradesk-t35.png {"return": {}}
+run acc-on-rpi4-teradesk: rc=0
+t=30.0s -> acc-on-rpi4-qed-t30.png {"return": {}}
+run acc-on-rpi4-qed: rc=0
+t=30.0s -> acc-on-rpi4-doom-t30.png {"return": {}}
+t=45.0s -> acc-on-rpi4-doom-t45.png {"return": {}}
+run acc-on-rpi4-doom: rc=0
+t=30.0s -> acc-on-rpi4-tdqed-t30.png {"return": {}}
+t=50.0s -> acc-on-rpi4-tdqed-t50.png {"return": {}}
+run acc-on-rpi4-tdqed: rc=0
+t=20.0s -> acc-on-rpi4-kbdvec-emucon-t20.png {"return": {}}
+t=35.0s -> acc-on-rpi4-kbdvec-emucon-t35.png {"return": {}}
+t=60.0s -> acc-on-rpi4-kbdvec-emucon-t60.png {"return": {}}
+run acc-on-rpi4-kbdvec-emucon: rc=0
+qemu-system-aarch64: -serial unix:s/a31.UilTGh/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.UilTGh/ser.sock,server=on
+t=  17.6s end marker seen
+t=  19.6s acc-on-rpi4-s2allm-end.png {"return": {}}
+prompts seen: 0
+run acc-on-rpi4-s2allm: rc=0
+qemu-system-aarch64: -serial unix:s/a31.ZS0dmF/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.ZS0dmF/ser.sock,server=on
+t=  15.3s end marker seen
+t=  17.3s acc-on-rpi4-e9mem-end.png {"return": {}}
+prompts seen: 0
+run acc-on-rpi4-e9mem: rc=0
+qemu-system-aarch64: -serial unix:s/a31.ZvzH4D/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.ZvzH4D/ser.sock,server=on
+t=  29.8s end marker seen
+t=  31.8s acc-on-rpi4-accfree-end.png {"return": {}}
+prompts seen: 0
+run acc-on-rpi4-accfree: rc=0
+qemu-system-aarch64: -serial unix:s/a31.MztNtB/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.MztNtB/ser.sock,server=on
+timeout
+t= 481.5s acc-on-rpi4-pflags1-timeout.png {"return": {}}
+prompts seen: 0
+run acc-on-rpi4-pflags1: rc=0
+qemu-system-aarch64: -serial unix:s/a31.wducCm/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.wducCm/ser.sock,server=on
+timeout
+t= 973.1s acc-on-rpi4-pflags2-timeout.png {"return": {}}
+prompts seen: 0
+run acc-on-rpi4-pflags2: rc=0
+qemu-system-aarch64: -serial unix:s/a31.3rCNDO/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.3rCNDO/ser.sock,server=on
+t=  15.2s end marker seen
+t=  18.3s acc-on-rpi4-tsrpar-end.png {"return": {}}
+prompts seen: 0
+run acc-on-rpi4-tsrpar: rc=0
+qemu-system-aarch64: -serial unix:s/a31.rXNdOl/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.rXNdOl/ser.sock,server=on
+t=  16.0s end marker seen
+t=  19.1s acc-on-rpi4-pparent-end.png {"return": {}}
+prompts seen: 0
+run acc-on-rpi4-pparent: rc=0
+qemu-system-aarch64: -serial unix:s/a31.OMYDIe/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.OMYDIe/ser.sock,server=on
+t=  15.2s end marker seen
+t=  17.2s acc-on-rpi4-stdoutdb-end.png {"return": {}}
+prompts seen: 0
+run acc-on-rpi4-stdoutdb: rc=0
+qemu-system-aarch64: -serial unix:s/a31.JN3GBj/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.JN3GBj/ser.sock,server=on
+t=  15.2s end marker seen
+t=  18.3s acc-on-rpi4-stderr-newcrt0-end.png {"return": {}}
+prompts seen: 0
+run acc-on-rpi4-stderr-newcrt0: rc=0
+qemu-system-aarch64: -serial unix:s/a31.kudcQA/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.kudcQA/ser.sock,server=on
+t=  15.2s end marker seen
+t=  18.3s acc-on-rpi4-stderr-oldcrt0-end.png {"return": {}}
+prompts seen: 0
+run acc-on-rpi4-stderr-oldcrt0: rc=0
+qemu-system-aarch64: -serial unix:s/a31.IygUXz/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.IygUXz/ser.sock,server=on
+t=  15.3s end marker seen
+t=  18.3s acc-on-rpi4-stderra-end.png {"return": {}}
+prompts seen: 0
+run acc-on-rpi4-stderra: rc=0
+qemu-system-aarch64: -serial unix:s/a31.9RVWaG/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.9RVWaG/ser.sock,server=on
+t=  15.3s end marker seen
+t=  17.4s acc-on-rpi4-ttya-end.png {"return": {}}
+prompts seen: 0
+run acc-on-rpi4-ttya: rc=0
+bash: /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/method/rerun-port10.sh: No such file or directory
+=== acc-on main done Mi. 14 Okt. 2026 00:14:00 CEST

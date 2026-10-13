@@ -1,0 +1,34 @@
+=== acc-on main Mi. 14 Okt. 2026 00:27:30 CEST APPEND=serial=on
+qemu-system-aarch64: -serial unix:s/a31.RLDJnj/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.RLDJnj/ser.sock,server=on
+t=  15.4s end marker seen
+t=  17.4s acc-on-rpi4-accfree-end.png {"return": {}}
+prompts seen: 0
+run acc-on-rpi4-accfree: rc=0
+qemu-system-aarch64: -serial unix:s/a31.w35uX4/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.w35uX4/ser.sock,server=on
+t=  15.1s end marker seen
+t=  17.1s acc-on-rpi4-pflags1-end.png {"return": {}}
+prompts seen: 0
+run acc-on-rpi4-pflags1: rc=0
+qemu-system-aarch64: -serial unix:s/a31.c10wyK/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.c10wyK/ser.sock,server=on
+t=  15.1s end marker seen
+t=  17.1s acc-on-rpi4-pflags2-end.png {"return": {}}
+prompts seen: 0
+run acc-on-rpi4-pflags2: rc=0
+=== acc-on main done Mi. 14 Okt. 2026 00:28:22 CEST
+=== acc-strict main Mi. 14 Okt. 2026 00:28:22 CEST APPEND=serial=on memprot=strict
+qemu-system-aarch64: -serial unix:s/a31.PtQfpi/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.PtQfpi/ser.sock,server=on
+t=  15.3s end marker seen
+t=  17.3s acc-strict-rpi4-accfree-end.png {"return": {}}
+prompts seen: 0
+run acc-strict-rpi4-accfree: rc=0
+qemu-system-aarch64: -serial unix:s/a31.qpfpev/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.qpfpev/ser.sock,server=on
+t=  15.1s end marker seen
+t=  17.1s acc-strict-rpi4-pflags1-end.png {"return": {}}
+prompts seen: 0
+run acc-strict-rpi4-pflags1: rc=0
+qemu-system-aarch64: -serial unix:s/a31.z954lu/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.z954lu/ser.sock,server=on
+t=  15.1s end marker seen
+t=  17.2s acc-strict-rpi4-pflags2-end.png {"return": {}}
+prompts seen: 0
+run acc-strict-rpi4-pflags2: rc=0
+=== acc-strict main done Mi. 14 Okt. 2026 00:29:14 CEST

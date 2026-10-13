@@ -1,0 +1,20 @@
+  overlay: demo/client/client.c (from sdk/ldg/overlay/)
+  warnings in popup.c:
+      /Volumes/Daten/Development/PiRusTOS/sdk/ldg/ldg-r133/demo/libs/popup.c:37:40: warning: illegal character encoding in string literal [-Winvalid-source-encoding]
+         37 | char Info[] = "A GEM Popup. Dominique B<82>r<82>ziat 1997/1998";
+            |                                        ^~~~ ~~~~
+      1 warning generated.
+LINK OK -> /Volumes/Daten/Development/PiRusTOS/sdk/ldg/build/client/LDGDEMO.NAP (303672 bytes)
+  Type: SharedObject (0x3)
+  undefined symbols (goal 0): 0
+LINK OK -> /Volumes/Daten/Development/PiRusTOS/sdk/ldg/build/client/POPUP.NLD (60488 bytes)
+  Type: SharedObject (0x3)
+  undefined symbols (goal 0): 0
+  allocator: libshare only (malloc.o realloc.o sbrk.o ); none of libc.a's mintlib__malloc.o mintlib__calloc.o mintlib__realloc.o mintlib__posix_memalign.o unix__sbrk.o
+converted /Volumes/Daten/Development/PiRusTOS/sdk/ldg/ldg-r133/demo/client/client.rsc -> /Volumes/Daten/Development/PiRusTOS/sdk/ldg/build/client/dist/LDGDEMO/CLIENT/CLIENT.RSC: 3 trees, 14 objects, 3 tedinfo, 0 bitblk, 0 iconblk, 0 ciconblk, 0 cicon, 0 frstr, 0 frimg (967 bytes, RSHDR vrsn 0) [LP64/32B-OBJECT, NRSC v13]
+dist -> /Volumes/Daten/Development/PiRusTOS/sdk/ldg/build/client/dist/LDGDEMO
+    LDGDEMO/CLIENT/CLIENT.RSC
+    LDGDEMO/CLIENT/LDGDEMO.NAP
+    LDGDEMO/LIBS/EX_LIB.NLD
+    LDGDEMO/LIBS/POPUP.NLD
+bash sdk/$s  0,59s user 0,58s system 91% cpu 1,286 total

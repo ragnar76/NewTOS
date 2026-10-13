@@ -1,0 +1,6 @@
+LINK OK -> /Volumes/Daten/Development/PiRusTOS/sdk/apps/present/build/PRESENT.NAP (421712 bytes)
+  Type: SharedObject (0x3)
+  undefined symbols (goal 0): 0
+  relocation types:  349 R_AARCH64_RELATIVE 
+/Volumes/Daten/Development/PiRusTOS/sdk/apps/present/build/TEST.PNG 83863 bytes
+bash sdk/$s  0,66s user 0,22s system 94% cpu 0,936 total

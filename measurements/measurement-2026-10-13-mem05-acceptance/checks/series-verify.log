@@ -1,0 +1,22 @@
+=== acc-verify verify Mi. 14 Okt. 2026 00:25:16 CEST APPEND=serial=on memprot=verify
+qemu-system-aarch64: -serial unix:s/a31.p4a0qa/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.p4a0qa/ser.sock,server=on
+t=  55.0s end marker seen
+t=  58.0s acc-verify-rpi4-mdpar-end.png {"return": {}}
+prompts seen: 0
+run acc-verify-rpi4-mdpar: rc=0
+t=25.0s -> acc-verify-rpi4-apitest-t25.png {"return": {}}
+t=40.0s -> acc-verify-rpi4-apitest-t40.png {"return": {}}
+run acc-verify-rpi4-apitest: rc=0
+t=25.0s -> acc-verify-rpi4-desktop-t25.png {"return": {}}
+run acc-verify-rpi4-desktop: rc=0
+qemu-system-aarch64: -serial unix:s/a31.cqOvvs/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.cqOvvs/ser.sock,server=on
+t=  19.4s end marker seen
+t=  21.4s acc-verify-rpi4-s2allm-end.png {"return": {}}
+prompts seen: 0
+run acc-verify-rpi4-s2allm: rc=0
+qemu-system-aarch64: -serial unix:s/a31.JFOmcL/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.JFOmcL/ser.sock,server=on
+t=  15.4s end marker seen
+t=  17.5s acc-verify-rpi4-e9mem-end.png {"return": {}}
+prompts seen: 0
+run acc-verify-rpi4-e9mem: rc=0
+=== acc-verify verify done Mi. 14 Okt. 2026 00:27:59 CEST

@@ -1,0 +1,8 @@
+LINK OK -> /Volumes/Daten/Development/PiRusTOS/sdk/ldg/build/EX_LIB.NLD (61864 bytes)
+  Type: SharedObject (0x3)
+  undefined symbols (goal 0): 0
+  allocator: libshare only (malloc.o realloc.o sbrk.o ); none of libc.a's mintlib__malloc.o mintlib__calloc.o mintlib__realloc.o mintlib__posix_memalign.o unix__sbrk.o
+LINK OK -> /Volumes/Daten/Development/PiRusTOS/sdk/ldg/build/LDGTEST.NCP (122840 bytes)
+  Type: SharedObject (0x3)
+  undefined symbols (goal 0): 0
+bash sdk/$s  0,27s user 0,28s system 80% cpu 0,680 total

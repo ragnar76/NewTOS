@@ -1,0 +1,21 @@
+qemu-system-aarch64: -serial unix:s/a31.olaHia/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.olaHia/ser.sock,server=on
+t=  91.2s end marker seen
+t=  94.3s acc-verify-rpi4-mdstep-end.png {"return": {}}
+prompts seen: 0
+run acc-verify-rpi4-mdstep: rc=0
+qemu-system-aarch64: -serial unix:s/a31.lRcy1I/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.lRcy1I/ser.sock,server=on
+t=  57.9s end marker seen
+t=  66.0s acc-verify-rpi4-mdacc-end.png {"return": {}}
+prompts seen: 0
+run acc-verify-rpi4-mdacc: rc=0
+qemu-system-aarch64: -serial unix:s/a31.8gNpxV/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.8gNpxV/ser.sock,server=on
+t=  15.6s end marker seen
+t=  17.7s acc-verify-rpi4-accfree-end.png {"return": {}}
+prompts seen: 0
+run acc-verify-rpi4-accfree: rc=0
+qemu-system-aarch64: -serial unix:s/a31.gL488n/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.gL488n/ser.sock,server=on
+t=3174.5s end marker seen
+t=3177.5s acc-verify-rpi4-mdprobe-end.png {"return": {}}
+prompts seen: 0
+run acc-verify-rpi4-mdprobe: rc=0
+=== verify-extra done Mi. 14 Okt. 2026 01:41:18 CEST

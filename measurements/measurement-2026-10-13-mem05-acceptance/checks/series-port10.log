@@ -1,0 +1,27 @@
+=== acc-on main Mi. 14 Okt. 2026 01:00:19 CEST APPEND=serial=on
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+card on ok (check 1)
+qemu-system-aarch64: -serial unix:s/a31.K8W6QK/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.K8W6QK/ser.sock,server=on
+t=  16.6s end marker seen
+t=  18.7s acc-on-rpi4-port10-rerun-end.png {"return": {}}
+prompts seen: 0
+run acc-on-rpi4-port10-rerun: rc=0
+=== acc-on main done Mi. 14 Okt. 2026 01:00:58 CEST
+=== acc-off main Mi. 14 Okt. 2026 01:00:58 CEST APPEND=serial=on memprot=off
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+card off ok (check 1)
+qemu-system-aarch64: -serial unix:s/a31.rnU6Q3/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.rnU6Q3/ser.sock,server=on
+t=  16.2s end marker seen
+t=  18.3s acc-off-rpi4-port10-rerun-end.png {"return": {}}
+prompts seen: 0
+run acc-off-rpi4-port10-rerun: rc=0
+=== acc-off main done Mi. 14 Okt. 2026 01:01:32 CEST
+=== acc-strict main Mi. 14 Okt. 2026 01:01:32 CEST APPEND=serial=on memprot=strict
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+card strict ok (check 1)
+qemu-system-aarch64: -serial unix:s/a31.u3T8uK/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.u3T8uK/ser.sock,server=on
+t=  16.6s end marker seen
+t=  18.7s acc-strict-rpi4-port10-rerun-end.png {"return": {}}
+prompts seen: 0
+run acc-strict-rpi4-port10-rerun: rc=0
+=== acc-strict main done Mi. 14 Okt. 2026 01:02:06 CEST

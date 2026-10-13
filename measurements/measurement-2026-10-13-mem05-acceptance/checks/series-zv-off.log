@@ -1,0 +1,24 @@
+=== acc-off zv Mi. 14 Okt. 2026 00:37:25 CEST APPEND=serial=on memprot=off
+qemu-system-aarch64: -serial unix:s/a31.FryzXa/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.FryzXa/ser.sock,server=on
+t=  15.7s end marker seen
+t=  17.8s acc-off-rpi4-ldgauto-end.png {"return": {}}
+prompts seen: 0
+run acc-off-rpi4-ldgauto: rc=0
+t=30.0s -> acc-off-rpi4-ldgdemo-t30.png {"return": {}}
+t=50.0s -> acc-off-rpi4-ldgdemo-t50.png {"return": {}}
+run acc-off-rpi4-ldgdemo: rc=0
+t=40.0s -> acc-off-rpi4-zview-jpg-t40.png {"return": {}}
+t=80.0s -> acc-off-rpi4-zview-jpg-t80.png {"return": {}}
+run acc-off-rpi4-zview-jpg: rc=0
+t=40.0s -> acc-off-rpi4-zview-png-t40.png {"return": {}}
+t=80.0s -> acc-off-rpi4-zview-png-t80.png {"return": {}}
+run acc-off-rpi4-zview-png: rc=0
+t=80.0s -> acc-off-rpi4-zview-bmp-t80.png {"return": {}}
+run acc-off-rpi4-zview-bmp: rc=0
+t=40.0s -> acc-off-rpi4-zview-browser-t40.png {"return": {}}
+t=80.0s -> acc-off-rpi4-zview-browser-t80.png {"return": {}}
+run acc-off-rpi4-zview-browser: rc=0
+t=30.0s -> acc-off-rpi4-present-t30.png {"return": {}}
+t=45.0s -> acc-off-rpi4-present-t45.png {"return": {}}
+run acc-off-rpi4-present: rc=0
+=== acc-off zv done Mi. 14 Okt. 2026 00:44:39 CEST

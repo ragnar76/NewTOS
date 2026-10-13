@@ -1,0 +1,377 @@
+acc-off-rpi4-acc |  1 desktop up; | exc/panic=0
+acc-off-rpi4-accfree |  1 ACCFREE: PASS; 1 desktop up; | exc/panic=0
+acc-off-rpi4-apitest |  1 TOTAL 106 0 5 ; | exc/panic=0
+acc-off-rpi4-crashtst |  1 CRASHTST: PASS; 1 desktop up; | exc/panic=6
+acc-off-rpi4-desktop |  1 desktop up; | exc/panic=0
+acc-off-rpi4-doom |  1 VERIFIED via EdDI+scale+v; | exc/panic=0
+acc-off-rpi4-e10 |  1 E10USR: PASS; | exc/panic=0
+acc-off-rpi4-e9mem |  1 desktop up; 2 E9MEM: PASS; | exc/panic=0
+acc-off-rpi4-hellold |  1 desktop up; 1 HELLOMEM: DONE; | exc/panic=0
+acc-off-rpi4-hellomem |  1 desktop up; 1 HELLOMEM: DONE; | exc/panic=0
+acc-off-rpi4-kbdvec-emucon |  2 desktop up; | exc/panic=0
+acc-off-rpi4-ldgauto |  1 desktop up; 1 ldgtest: ALL PASS ; 1 ldgtest: LDG M; 69 ldgtest: PASS ; | exc/panic=0
+acc-off-rpi4-ldgdemo |  | exc/panic=0
+acc-off-rpi4-mdacc |  1 desktop up; 1 MDACC: PASS; | exc/panic=0
+acc-off-rpi4-mdbud-rerun |  1 desktop up; 1 MDBUD: PASS; | exc/panic=0
+acc-off-rpi4-mdbud |  1 desktop up; 1 MDBUD: PASS; | exc/panic=0
+acc-off-rpi4-mdpar |  1 desktop up; 1 MDPAR: PASS; | exc/panic=0
+acc-off-rpi4-mdprobe |  1 desktop up; 1 MDPROBE: DONE; | exc/panic=0
+acc-off-rpi4-mdstep |  1 desktop up; 1 MDSTEP: DONE; | exc/panic=0
+acc-off-rpi4-mdtime |  1 desktop up; 1 MDSTEP: DONE; | exc/panic=0
+acc-off-rpi4-mprot |  1 desktop up; 1 MPROT3B: PASS; | exc/panic=0
+acc-off-rpi4-pflags1 |  1 desktop up; 1 PFLAGS: PASS; | exc/panic=0
+acc-off-rpi4-pflags2 |  1 desktop up; 1 PFLAGS: PASS; | exc/panic=0
+acc-off-rpi4-port10-rerun |  1 desktop up; 1 port10: ALL PASS; | exc/panic=0
+acc-off-rpi4-pparent |  1 desktop up; 1 PPARENT ACC: PASS; 1 PPARENT AUTO: PASS; 1 PPARENT Z: FAIL; | exc/panic=0
+acc-off-rpi4-present |  | exc/panic=0
+acc-off-rpi4-qed |  | exc/panic=0
+acc-off-rpi4-s2allm |  1 desktop up; 1 MEM03: PASS; 2 PFLAGS: PASS; 1 S2ALL: PASS; 1 TSR: PASS; | exc/panic=0
+acc-off-rpi4-stderr-newcrt0 |  1 desktop up; 1 STDERRP[PAR]: DONE; | exc/panic=0
+acc-off-rpi4-stderr-oldcrt0 |  1 desktop up; 1 STDERRP[PAR]: DONE; | exc/panic=0
+acc-off-rpi4-stderra |  1 desktop up; 1 STDERRA[PAR]: DONE; | exc/panic=0
+acc-off-rpi4-stdoutdb |  1 DBG: DONE; 1 desktop up; | exc/panic=0
+acc-off-rpi4-tdqed |  | exc/panic=0
+acc-off-rpi4-teradesk |  | exc/panic=0
+acc-off-rpi4-tsrpar |  1 desktop up; 1 TSR: PASS; | exc/panic=0
+acc-off-rpi4-ttya |  1 desktop up; 1 TTYPROBE: PASS; | exc/panic=0
+acc-off-rpi4-uacc3a |  1 desktop up; 1 UACC3A: PASS; | exc/panic=26
+acc-off-rpi4-zview-bmp |  | exc/panic=0
+acc-off-rpi4-zview-browser |  | exc/panic=0
+acc-off-rpi4-zview-jpg |  | exc/panic=0
+acc-off-rpi4-zview-png |  | exc/panic=0
+acc-off-virt-bootarg-mdl0 |  1 desktop up; | exc/panic=0
+acc-off-virt-bootarg-mdl64 |  1 desktop up; | exc/panic=0
+acc-off-virt-bootarg-mdlbad |  1 desktop up; | exc/panic=0
+acc-off-virt-crash-rerun |  1 CRASHTST: PASS; 1 E10USR: PASS; 1 MPROT3B: PASS; 1 UACC3A: PASS; | exc/panic=27
+acc-off-virt-crash |  1 CRASHTST: PASS; | exc/panic=26
+acc-off-virt-desktop |  1 desktop up; | exc/panic=0
+acc-off-virt-hellomem |  1 desktop up; 1 HELLOMEM: DONE; | exc/panic=0
+acc-off-virt-mdbud |  1 desktop up; 1 MDBUD: PASS; | exc/panic=0
+acc-off-virt-mdpar |  1 desktop up; 1 MDPAR: PASS; | exc/panic=0
+acc-off-virt-mdprobe |  1 desktop up; 1 MDPROBE: DONE; | exc/panic=0
+acc-off-virt-mdstep |  1 desktop up; 1 MDSTEP: DONE; 1 returned NULL after 4194132 blocks; | exc/panic=0
+acc-off-virt-selftests |  1 desktop up; | exc/panic=0
+acc-on-asid-rpi4-apitest |  1 TOTAL 106 0 5 ; | exc/panic=0
+acc-on-asid-rpi4-desktop |  1 desktop up; | exc/panic=0
+acc-on-asid-rpi4-mdpar |  1 desktop up; 1 MDPAR: PASS; | exc/panic=0
+acc-on-asid-rpi4-mdstep |  1 desktop up; 1 MDSTEP: DONE; | exc/panic=0
+acc-on-asid-virt-bootarg-mdl0 |  1 desktop up; | exc/panic=0
+acc-on-asid-virt-bootarg-mdl64 |  1 desktop up; | exc/panic=0
+acc-on-asid-virt-bootarg-mdlbad |  1 desktop up; | exc/panic=0
+acc-on-asid-virt-crash |  1 CRASHTST: PASS; 1 E10USR: PASS; 1 MPROT3B: PASS; 1 UACC3A: PASS; | exc/panic=28
+acc-on-asid-virt-desktop |  1 desktop up; | exc/panic=0
+acc-on-asid-virt-hellomem |  1 desktop up; 1 HELLOMEM: DONE; | exc/panic=0
+acc-on-asid-virt-mdbud |  1 desktop up; 1 MDBUD: PASS; | exc/panic=0
+acc-on-asid-virt-mdpar |  1 desktop up; 1 MDPAR: PASS; | exc/panic=0
+acc-on-asid-virt-mdprobe |  1 desktop up; 1 MDPROBE: DONE; | exc/panic=0
+acc-on-asid-virt-mdstep |  1 desktop up; 1 MDSTEP: DONE; 1 returned NULL after 4194132 blocks; | exc/panic=0
+acc-on-asid-virt-selftests |  1 desktop up; | exc/panic=0
+acc-on-rpi4-acc |  1 desktop up; | exc/panic=0
+acc-on-rpi4-accfree |  1 ACCFREE: PASS; 1 desktop up; | exc/panic=0
+acc-on-rpi4-apitest |  1 TOTAL 106 0 5 ; | exc/panic=0
+acc-on-rpi4-crashtst |  1 CRASHTST: PASS; 1 desktop up; | exc/panic=6
+acc-on-rpi4-desktop |  1 desktop up; | exc/panic=0
+acc-on-rpi4-doom |  1 VERIFIED via EdDI+scale+v; | exc/panic=0
+acc-on-rpi4-e10 |  1 E10USR: PASS; | exc/panic=0
+acc-on-rpi4-e9mem |  1 desktop up; 2 E9MEM: PASS; | exc/panic=0
+acc-on-rpi4-hellold |  1 desktop up; 1 HELLOMEM: DONE; | exc/panic=0
+acc-on-rpi4-hellomem |  1 desktop up; 1 HELLOMEM: DONE; | exc/panic=0
+acc-on-rpi4-kbdvec-emucon |  2 desktop up; | exc/panic=0
+acc-on-rpi4-ldgauto |  1 desktop up; 1 ldgtest: ALL PASS ; 1 ldgtest: LDG M; 69 ldgtest: PASS ; | exc/panic=0
+acc-on-rpi4-ldgdemo |  | exc/panic=0
+acc-on-rpi4-mdacc |  1 desktop up; 1 MDACC: PASS; | exc/panic=0
+acc-on-rpi4-mdbud-rerun |  1 desktop up; 1 MDBUD: PASS; | exc/panic=0
+acc-on-rpi4-mdbud |  1 desktop up; 1 MDBUD: PASS; | exc/panic=0
+acc-on-rpi4-mdpar |  1 desktop up; 1 MDPAR: PASS; | exc/panic=0
+acc-on-rpi4-mdprobe |  1 desktop up; 1 MDPROBE: DONE; | exc/panic=0
+acc-on-rpi4-mdstep |  1 desktop up; 1 MDSTEP: DONE; | exc/panic=0
+acc-on-rpi4-mdtime |  1 desktop up; 1 MDSTEP: DONE; | exc/panic=0
+acc-on-rpi4-mprot |  1 desktop up; 1 MPROT3B: PASS; | exc/panic=1
+acc-on-rpi4-pflags1 |  1 desktop up; 1 PFLAGS: PASS; | exc/panic=0
+acc-on-rpi4-pflags2 |  1 desktop up; 1 PFLAGS: PASS; | exc/panic=0
+acc-on-rpi4-port10-rerun |  1 desktop up; 1 port10: ALL PASS; | exc/panic=0
+acc-on-rpi4-pparent |  1 desktop up; 1 PPARENT ACC: PASS; 1 PPARENT AUTO: PASS; 1 PPARENT Z: FAIL; | exc/panic=0
+acc-on-rpi4-present |  | exc/panic=0
+acc-on-rpi4-qed |  | exc/panic=0
+acc-on-rpi4-s2allm |  1 desktop up; 1 MEM03: PASS; 2 PFLAGS: PASS; 1 S2ALL: PASS; 1 TSR: PASS; | exc/panic=0
+acc-on-rpi4-stderr-newcrt0 |  1 desktop up; 1 STDERRP[PAR]: DONE; | exc/panic=0
+acc-on-rpi4-stderr-oldcrt0 |  1 desktop up; 1 STDERRP[PAR]: DONE; | exc/panic=0
+acc-on-rpi4-stderra |  1 desktop up; 1 STDERRA[PAR]: DONE; | exc/panic=0
+acc-on-rpi4-stdoutdb |  1 DBG: DONE; 1 desktop up; | exc/panic=0
+acc-on-rpi4-tdqed |  | exc/panic=0
+acc-on-rpi4-teradesk |  | exc/panic=0
+acc-on-rpi4-tsrpar |  1 desktop up; 1 TSR: PASS; | exc/panic=0
+acc-on-rpi4-ttya |  1 desktop up; 1 TTYPROBE: PASS; | exc/panic=0
+acc-on-rpi4-uacc3a |  1 desktop up; 1 UACC3A: PASS; | exc/panic=26
+acc-on-rpi4-zview-bmp |  | exc/panic=0
+acc-on-rpi4-zview-browser |  | exc/panic=0
+acc-on-rpi4-zview-jpg |  | exc/panic=0
+acc-on-rpi4-zview-png |  | exc/panic=0
+acc-on-virt-bootarg-mdl0 |  1 desktop up; | exc/panic=0
+acc-on-virt-bootarg-mdl64 |  1 desktop up; | exc/panic=0
+acc-on-virt-bootarg-mdlbad |  1 desktop up; | exc/panic=0
+acc-on-virt-crash |  1 CRASHTST: PASS; 1 E10USR: PASS; 1 MPROT3B: PASS; 1 UACC3A: PASS; | exc/panic=28
+acc-on-virt-desktop |  1 desktop up; | exc/panic=0
+acc-on-virt-hellomem |  1 desktop up; 1 HELLOMEM: DONE; | exc/panic=0
+acc-on-virt-mdbud |  1 desktop up; 1 MDBUD: PASS; | exc/panic=0
+acc-on-virt-mdpar |  1 desktop up; 1 MDPAR: PASS; | exc/panic=0
+acc-on-virt-mdprobe |  1 desktop up; 1 MDPROBE: DONE; | exc/panic=0
+acc-on-virt-mdstep |  1 desktop up; 1 MDSTEP: DONE; 1 returned NULL after 4194132 blocks; | exc/panic=0
+acc-on-virt-selftests |  1 desktop up; | exc/panic=0
+acc-strict-rpi4-acc |  1 desktop up; | exc/panic=0
+acc-strict-rpi4-accfree |  1 ACCFREE: PASS; 1 desktop up; | exc/panic=0
+acc-strict-rpi4-apitest |  1 TOTAL 106 0 5 ; | exc/panic=0
+acc-strict-rpi4-crashtst |  1 CRASHTST: PASS; 1 desktop up; | exc/panic=6
+acc-strict-rpi4-desktop |  1 desktop up; | exc/panic=0
+acc-strict-rpi4-doom |  1 VERIFIED via EdDI+scale+v; | exc/panic=0
+acc-strict-rpi4-e10 |  1 E10USR: PASS; | exc/panic=1
+acc-strict-rpi4-e9mem |  1 desktop up; 2 E9MEM: PASS; | exc/panic=0
+acc-strict-rpi4-hellold |  1 desktop up; 1 HELLOMEM: DONE; | exc/panic=0
+acc-strict-rpi4-hellomem |  1 desktop up; 1 HELLOMEM: DONE; | exc/panic=0
+acc-strict-rpi4-kbdvec-emucon |  2 desktop up; | exc/panic=0
+acc-strict-rpi4-ldgauto |  1 desktop up; 1 ldgtest: ALL PASS ; 1 ldgtest: LDG M; 69 ldgtest: PASS ; | exc/panic=0
+acc-strict-rpi4-ldgdemo |  | exc/panic=0
+acc-strict-rpi4-mdacc |  1 desktop up; 1 MDACC: PASS; | exc/panic=0
+acc-strict-rpi4-mdbud-rerun |  1 desktop up; 1 MDBUD: PASS; | exc/panic=0
+acc-strict-rpi4-mdbud |  1 desktop up; 1 MDBUD: PASS; | exc/panic=0
+acc-strict-rpi4-mdpar |  1 desktop up; 1 MDPAR: PASS; | exc/panic=0
+acc-strict-rpi4-mdprobe |  1 desktop up; 1 MDPROBE: DONE; | exc/panic=0
+acc-strict-rpi4-mdstep |  1 desktop up; 1 MDSTEP: DONE; | exc/panic=0
+acc-strict-rpi4-mdtime |  1 desktop up; 1 MDSTEP: DONE; | exc/panic=0
+acc-strict-rpi4-mprot |  1 desktop up; 1 MPROT3B: PASS; | exc/panic=4
+acc-strict-rpi4-pflags1 |  1 desktop up; 1 PFLAGS: PASS; | exc/panic=0
+acc-strict-rpi4-pflags2 |  1 desktop up; 1 PFLAGS: PASS; | exc/panic=0
+acc-strict-rpi4-port10-rerun |  1 desktop up; 1 port10: ALL PASS; | exc/panic=0
+acc-strict-rpi4-pparent |  1 desktop up; 1 PPARENT ACC: PASS; 1 PPARENT AUTO: PASS; 1 PPARENT Z: FAIL; | exc/panic=0
+acc-strict-rpi4-present |  | exc/panic=0
+acc-strict-rpi4-qed |  | exc/panic=0
+acc-strict-rpi4-s2allsm |  1 desktop up; 1 MEM03: PASS; 2 PFLAGS: PASS; 1 S2ALL: PASS; 1 TSR: PASS; | exc/panic=2
+acc-strict-rpi4-stderr-newcrt0 |  1 desktop up; 1 STDERRP[PAR]: DONE; | exc/panic=0
+acc-strict-rpi4-stderr-oldcrt0 |  1 desktop up; 1 STDERRP[PAR]: DONE; | exc/panic=0
+acc-strict-rpi4-stderra |  1 desktop up; 1 STDERRA[PAR]: DONE; | exc/panic=0
+acc-strict-rpi4-stdoutdb |  1 DBG: DONE; 1 desktop up; | exc/panic=0
+acc-strict-rpi4-tdqed |  | exc/panic=0
+acc-strict-rpi4-teradesk |  | exc/panic=0
+acc-strict-rpi4-tsrpars |  1 desktop up; 1 TSR: PASS; | exc/panic=1
+acc-strict-rpi4-ttya |  1 desktop up; 1 TTYPROBE: PASS; | exc/panic=0
+acc-strict-rpi4-uacc3a |  1 desktop up; 1 UACC3A: PASS; | exc/panic=26
+acc-strict-rpi4-zview-bmp |  | exc/panic=0
+acc-strict-rpi4-zview-browser |  | exc/panic=0
+acc-strict-rpi4-zview-jpg |  | exc/panic=0
+acc-strict-rpi4-zview-png |  | exc/panic=0
+acc-strict-virt-bootarg-mdl0 |  1 desktop up; | exc/panic=0
+acc-strict-virt-bootarg-mdl64 |  1 desktop up; | exc/panic=0
+acc-strict-virt-bootarg-mdlbad |  1 desktop up; | exc/panic=0
+acc-strict-virt-crash |  1 CRASHTST: PASS; 1 E10USR: PASS; 1 MPROT3B: PASS; 1 UACC3A: PASS; | exc/panic=32
+acc-strict-virt-desktop |  1 desktop up; | exc/panic=0
+acc-strict-virt-hellomem |  1 desktop up; 1 HELLOMEM: DONE; | exc/panic=0
+acc-strict-virt-mdbud |  1 desktop up; 1 MDBUD: PASS; | exc/panic=0
+acc-strict-virt-mdpar |  1 desktop up; 1 MDPAR: PASS; | exc/panic=0
+acc-strict-virt-mdprobe |  1 desktop up; 1 MDPROBE: DONE; | exc/panic=0
+acc-strict-virt-mdstep |  1 desktop up; 1 MDSTEP: DONE; 1 returned NULL after 4194132 blocks; | exc/panic=0
+acc-strict-virt-selftests |  1 desktop up; | exc/panic=0
+acc-verify-rpi4-accfree |  1 ACCFREE: PASS; 1 desktop up; | exc/panic=0
+acc-verify-rpi4-apitest |  1 TOTAL 106 0 5 ; | exc/panic=0
+acc-verify-rpi4-desktop |  1 desktop up; | exc/panic=0
+acc-verify-rpi4-e9mem |  1 desktop up; 2 E9MEM: PASS; | exc/panic=0
+acc-verify-rpi4-mdacc |  1 desktop up; 1 MDACC: PASS; | exc/panic=0
+acc-verify-rpi4-mdpar |  1 desktop up; 1 MDPAR: PASS; | exc/panic=0
+acc-verify-rpi4-mdprobe |  1 desktop up; 1 MDPROBE: DONE; | exc/panic=0
+acc-verify-rpi4-mdstep |  1 desktop up; 1 MDSTEP: DONE; | exc/panic=0
+acc-verify-rpi4-s2allm |  1 desktop up; 1 MEM03: PASS; 2 PFLAGS: PASS; 1 S2ALL: PASS; 1 TSR: PASS; | exc/panic=0
+--- APITEST result lines vs mem05-sdk (modulo hex)
+on: 0 differing lines (126 lines)
+off: 0 differing lines (126 lines)
+strict: 0 differing lines (126 lines)
+on-asid: 0 differing lines (126 lines)
+--- screendumps vs mem05-sdk (part B)
+MISSING b-on-rpi4-accfree-end.png
+MISSING b-on-rpi4-crashtst-t40.png
+MISSING b-on-rpi4-crashtst-t70.png
+DIFF doom-t30.png
+DIFF doom-t45.png
+MISSING b-on-rpi4-e10-end.png
+MISSING b-on-rpi4-ldgauto-end.png
+MISSING b-on-rpi4-ldgdemo-t30.png
+MISSING b-on-rpi4-ldgdemo-t50.png
+MISSING b-on-rpi4-mdbud-end.png
+MISSING b-on-rpi4-mdbud-rerun-end.png
+MISSING b-on-rpi4-mdpar-end.png
+MISSING b-on-rpi4-mprot-crash1.png
+MISSING b-on-rpi4-mprot-end.png
+MISSING b-on-rpi4-pflags1-end.png
+MISSING b-on-rpi4-pflags2-end.png
+MISSING b-on-rpi4-port10-rerun-end.png
+MISSING b-on-rpi4-pparent-end.png
+MISSING b-on-rpi4-present-t30.png
+MISSING b-on-rpi4-present-t45.png
+MISSING b-on-rpi4-stderr-newcrt0-end.png
+MISSING b-on-rpi4-stderr-oldcrt0-end.png
+MISSING b-on-rpi4-stderra-end.png
+MISSING b-on-rpi4-stdoutdb-end.png
+MISSING b-on-rpi4-tsrpar-end.png
+MISSING b-on-rpi4-ttya-end.png
+MISSING b-on-rpi4-uacc3a-crash1.png
+MISSING b-on-rpi4-uacc3a-crash10.png
+MISSING b-on-rpi4-uacc3a-crash11.png
+MISSING b-on-rpi4-uacc3a-crash12.png
+MISSING b-on-rpi4-uacc3a-crash13.png
+MISSING b-on-rpi4-uacc3a-crash14.png
+MISSING b-on-rpi4-uacc3a-crash15.png
+MISSING b-on-rpi4-uacc3a-crash16.png
+MISSING b-on-rpi4-uacc3a-crash17.png
+MISSING b-on-rpi4-uacc3a-crash18.png
+MISSING b-on-rpi4-uacc3a-crash19.png
+MISSING b-on-rpi4-uacc3a-crash2.png
+MISSING b-on-rpi4-uacc3a-crash20.png
+MISSING b-on-rpi4-uacc3a-crash21.png
+MISSING b-on-rpi4-uacc3a-crash22.png
+MISSING b-on-rpi4-uacc3a-crash23.png
+MISSING b-on-rpi4-uacc3a-crash24.png
+MISSING b-on-rpi4-uacc3a-crash25.png
+MISSING b-on-rpi4-uacc3a-crash26.png
+MISSING b-on-rpi4-uacc3a-crash3.png
+MISSING b-on-rpi4-uacc3a-crash4.png
+MISSING b-on-rpi4-uacc3a-crash5.png
+MISSING b-on-rpi4-uacc3a-crash6.png
+MISSING b-on-rpi4-uacc3a-crash7.png
+MISSING b-on-rpi4-uacc3a-crash8.png
+MISSING b-on-rpi4-uacc3a-crash9.png
+MISSING b-on-rpi4-uacc3a-end.png
+MISSING b-on-rpi4-zview-bmp-t80.png
+MISSING b-on-rpi4-zview-browser-t40.png
+MISSING b-on-rpi4-zview-browser-t80.png
+MISSING b-on-rpi4-zview-jpg-t40.png
+MISSING b-on-rpi4-zview-jpg-t80.png
+MISSING b-on-rpi4-zview-png-t40.png
+MISSING b-on-rpi4-zview-png-t80.png
+acc-on-rpi4- vs b-on-rpi4-: same=19 diff=2 missing=58
+MISSING b-off-rpi4-accfree-end.png
+MISSING b-off-rpi4-crashtst-t40.png
+MISSING b-off-rpi4-crashtst-t70.png
+DIFF doom-t30.png
+DIFF doom-t45.png
+MISSING b-off-rpi4-e10-end.png
+MISSING b-off-rpi4-ldgauto-end.png
+MISSING b-off-rpi4-ldgdemo-t30.png
+MISSING b-off-rpi4-ldgdemo-t50.png
+MISSING b-off-rpi4-mdbud-end.png
+MISSING b-off-rpi4-mdbud-rerun-end.png
+MISSING b-off-rpi4-mdpar-end.png
+MISSING b-off-rpi4-mprot-end.png
+MISSING b-off-rpi4-pflags1-end.png
+MISSING b-off-rpi4-pflags2-end.png
+MISSING b-off-rpi4-port10-rerun-end.png
+MISSING b-off-rpi4-pparent-end.png
+MISSING b-off-rpi4-present-t30.png
+MISSING b-off-rpi4-present-t45.png
+MISSING b-off-rpi4-stderr-newcrt0-end.png
+MISSING b-off-rpi4-stderr-oldcrt0-end.png
+MISSING b-off-rpi4-stderra-end.png
+MISSING b-off-rpi4-stdoutdb-end.png
+MISSING b-off-rpi4-tsrpar-end.png
+MISSING b-off-rpi4-ttya-end.png
+MISSING b-off-rpi4-uacc3a-crash1.png
+MISSING b-off-rpi4-uacc3a-crash10.png
+MISSING b-off-rpi4-uacc3a-crash11.png
+MISSING b-off-rpi4-uacc3a-crash12.png
+MISSING b-off-rpi4-uacc3a-crash13.png
+MISSING b-off-rpi4-uacc3a-crash14.png
+MISSING b-off-rpi4-uacc3a-crash15.png
+MISSING b-off-rpi4-uacc3a-crash16.png
+MISSING b-off-rpi4-uacc3a-crash17.png
+MISSING b-off-rpi4-uacc3a-crash18.png
+MISSING b-off-rpi4-uacc3a-crash19.png
+MISSING b-off-rpi4-uacc3a-crash2.png
+MISSING b-off-rpi4-uacc3a-crash20.png
+MISSING b-off-rpi4-uacc3a-crash21.png
+MISSING b-off-rpi4-uacc3a-crash22.png
+MISSING b-off-rpi4-uacc3a-crash23.png
+MISSING b-off-rpi4-uacc3a-crash24.png
+MISSING b-off-rpi4-uacc3a-crash25.png
+MISSING b-off-rpi4-uacc3a-crash26.png
+MISSING b-off-rpi4-uacc3a-crash3.png
+MISSING b-off-rpi4-uacc3a-crash4.png
+MISSING b-off-rpi4-uacc3a-crash5.png
+MISSING b-off-rpi4-uacc3a-crash6.png
+MISSING b-off-rpi4-uacc3a-crash7.png
+MISSING b-off-rpi4-uacc3a-crash8.png
+MISSING b-off-rpi4-uacc3a-crash9.png
+MISSING b-off-rpi4-uacc3a-end.png
+MISSING b-off-rpi4-zview-bmp-t80.png
+MISSING b-off-rpi4-zview-browser-t40.png
+MISSING b-off-rpi4-zview-browser-t80.png
+MISSING b-off-rpi4-zview-jpg-t40.png
+MISSING b-off-rpi4-zview-jpg-t80.png
+MISSING b-off-rpi4-zview-png-t40.png
+MISSING b-off-rpi4-zview-png-t80.png
+acc-off-rpi4- vs b-off-rpi4-: same=19 diff=2 missing=57
+MISSING b-strict-rpi4-accfree-end.png
+MISSING b-strict-rpi4-crashtst-t40.png
+MISSING b-strict-rpi4-crashtst-t70.png
+DIFF doom-t30.png
+DIFF doom-t45.png
+MISSING b-strict-rpi4-e10-crash1.png
+MISSING b-strict-rpi4-e10-end.png
+MISSING b-strict-rpi4-ldgauto-end.png
+MISSING b-strict-rpi4-ldgdemo-t30.png
+MISSING b-strict-rpi4-ldgdemo-t50.png
+MISSING b-strict-rpi4-mdbud-end.png
+MISSING b-strict-rpi4-mdbud-rerun-end.png
+MISSING b-strict-rpi4-mdpar-end.png
+MISSING b-strict-rpi4-mprot-crash1.png
+MISSING b-strict-rpi4-mprot-crash2.png
+MISSING b-strict-rpi4-mprot-crash3.png
+MISSING b-strict-rpi4-mprot-crash4.png
+MISSING b-strict-rpi4-mprot-end.png
+MISSING b-strict-rpi4-pflags1-end.png
+MISSING b-strict-rpi4-pflags2-end.png
+MISSING b-strict-rpi4-port10-rerun-end.png
+MISSING b-strict-rpi4-pparent-end.png
+MISSING b-strict-rpi4-present-t30.png
+MISSING b-strict-rpi4-present-t45.png
+MISSING b-strict-rpi4-stderr-newcrt0-end.png
+MISSING b-strict-rpi4-stderr-oldcrt0-end.png
+MISSING b-strict-rpi4-stderra-end.png
+MISSING b-strict-rpi4-stdoutdb-end.png
+MISSING b-strict-rpi4-tsrpars-crash1.png
+MISSING b-strict-rpi4-tsrpars-end.png
+MISSING b-strict-rpi4-ttya-end.png
+MISSING b-strict-rpi4-uacc3a-crash1.png
+MISSING b-strict-rpi4-uacc3a-crash10.png
+MISSING b-strict-rpi4-uacc3a-crash11.png
+MISSING b-strict-rpi4-uacc3a-crash12.png
+MISSING b-strict-rpi4-uacc3a-crash13.png
+MISSING b-strict-rpi4-uacc3a-crash14.png
+MISSING b-strict-rpi4-uacc3a-crash15.png
+MISSING b-strict-rpi4-uacc3a-crash16.png
+MISSING b-strict-rpi4-uacc3a-crash17.png
+MISSING b-strict-rpi4-uacc3a-crash18.png
+MISSING b-strict-rpi4-uacc3a-crash19.png
+MISSING b-strict-rpi4-uacc3a-crash2.png
+MISSING b-strict-rpi4-uacc3a-crash20.png
+MISSING b-strict-rpi4-uacc3a-crash21.png
+MISSING b-strict-rpi4-uacc3a-crash22.png
+MISSING b-strict-rpi4-uacc3a-crash23.png
+MISSING b-strict-rpi4-uacc3a-crash24.png
+MISSING b-strict-rpi4-uacc3a-crash25.png
+MISSING b-strict-rpi4-uacc3a-crash26.png
+MISSING b-strict-rpi4-uacc3a-crash3.png
+MISSING b-strict-rpi4-uacc3a-crash4.png
+MISSING b-strict-rpi4-uacc3a-crash5.png
+MISSING b-strict-rpi4-uacc3a-crash6.png
+MISSING b-strict-rpi4-uacc3a-crash7.png
+MISSING b-strict-rpi4-uacc3a-crash8.png
+MISSING b-strict-rpi4-uacc3a-crash9.png
+MISSING b-strict-rpi4-uacc3a-end.png
+MISSING b-strict-rpi4-zview-bmp-t80.png
+MISSING b-strict-rpi4-zview-browser-t40.png
+MISSING b-strict-rpi4-zview-browser-t80.png
+MISSING b-strict-rpi4-zview-jpg-t40.png
+MISSING b-strict-rpi4-zview-jpg-t80.png
+MISSING b-strict-rpi4-zview-png-t40.png
+MISSING b-strict-rpi4-zview-png-t80.png
+acc-strict-rpi4- vs b-strict-rpi4-: same=21 diff=2 missing=63
+MISSING b-on-asid-rpi4-desktop-t25.png
+MISSING b-on-asid-rpi4-mdpar-end.png
+acc-on-asid-rpi4- vs b-on-asid-rpi4-: same=3 diff=0 missing=2

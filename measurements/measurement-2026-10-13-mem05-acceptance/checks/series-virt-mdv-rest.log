@@ -1,0 +1,120 @@
+qemu-system-aarch64: -serial unix:s/a31.Ndy4CI/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.Ndy4CI/ser.sock,server=on
+t=   3.2s end marker seen
+t=   6.4s acc-off-virt-hellomem-end.png {"return": {}}
+prompts seen: 0
+run acc-off-virt-hellomem: rc=0
+qemu-system-aarch64: -serial unix:s/a31.tIBTZR/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.tIBTZR/ser.sock,server=on
+t=   9.9s end marker seen
+t=  13.0s acc-off-virt-mdstep-end.png {"return": {}}
+prompts seen: 0
+run acc-off-virt-mdstep: rc=0
+qemu-system-aarch64: -serial unix:s/a31.QW65aC/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.QW65aC/ser.sock,server=on
+t=   6.5s end marker seen
+t=   9.6s acc-off-virt-mdprobe-end.png {"return": {}}
+prompts seen: 0
+run acc-off-virt-mdprobe: rc=0
+qemu-system-aarch64: -serial unix:s/a31.0fuqrK/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.0fuqrK/ser.sock,server=on
+t=   3.2s end marker seen
+t=   6.3s acc-off-virt-mdpar-end.png {"return": {}}
+prompts seen: 0
+run acc-off-virt-mdpar: rc=0
+qemu-system-aarch64: -serial unix:s/a31.EXJl9N/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.EXJl9N/ser.sock,server=on
+t=   3.7s end marker seen
+t=  11.8s acc-off-virt-mdbud-end.png {"return": {}}
+prompts seen: 0
+run acc-off-virt-mdbud: rc=0
+qemu-system-aarch64: -serial unix:s/a31.zsDCF9/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.zsDCF9/ser.sock,server=on
+t=   3.2s end marker seen
+t=   9.3s acc-off-virt-bootarg-mdl64-end.png {"return": {}}
+prompts seen: 0
+run acc-off-virt-bootarg-mdl64: rc=0
+qemu-system-aarch64: -serial unix:s/a31.6fzWrH/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.6fzWrH/ser.sock,server=on
+t=   3.2s end marker seen
+t=   9.3s acc-off-virt-bootarg-mdl0-end.png {"return": {}}
+prompts seen: 0
+run acc-off-virt-bootarg-mdl0: rc=0
+qemu-system-aarch64: -serial unix:s/a31.b7EwR0/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.b7EwR0/ser.sock,server=on
+t=   3.2s end marker seen
+t=   9.3s acc-off-virt-bootarg-mdlbad-end.png {"return": {}}
+prompts seen: 0
+run acc-off-virt-bootarg-mdlbad: rc=0
+qemu-system-aarch64: -serial unix:s/a31.ReTcvV/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.ReTcvV/ser.sock,server=on
+t=  45.9s end marker seen
+t=  49.0s acc-strict-virt-hellomem-end.png {"return": {}}
+prompts seen: 0
+run acc-strict-virt-hellomem: rc=0
+qemu-system-aarch64: -serial unix:s/a31.oGBFCa/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.oGBFCa/ser.sock,server=on
+t=   6.3s end marker seen
+t=   9.4s acc-strict-virt-mdstep-end.png {"return": {}}
+prompts seen: 0
+run acc-strict-virt-mdstep: rc=0
+qemu-system-aarch64: -serial unix:s/a31.nFteMS/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.nFteMS/ser.sock,server=on
+t=  49.5s end marker seen
+t=  52.7s acc-strict-virt-mdprobe-end.png {"return": {}}
+prompts seen: 0
+run acc-strict-virt-mdprobe: rc=0
+qemu-system-aarch64: -serial unix:s/a31.ma0sAv/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.ma0sAv/ser.sock,server=on
+t=   3.2s end marker seen
+t=   6.4s acc-strict-virt-mdpar-end.png {"return": {}}
+prompts seen: 0
+run acc-strict-virt-mdpar: rc=0
+qemu-system-aarch64: -serial unix:s/a31.Xpkl5t/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.Xpkl5t/ser.sock,server=on
+t= 198.7s end marker seen
+t= 206.9s acc-strict-virt-mdbud-end.png {"return": {}}
+prompts seen: 0
+run acc-strict-virt-mdbud: rc=0
+qemu-system-aarch64: -serial unix:s/a31.j0H6Zu/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.j0H6Zu/ser.sock,server=on
+t=   3.2s end marker seen
+t=   9.3s acc-strict-virt-bootarg-mdl64-end.png {"return": {}}
+prompts seen: 0
+run acc-strict-virt-bootarg-mdl64: rc=0
+qemu-system-aarch64: -serial unix:s/a31.r8HQav/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.r8HQav/ser.sock,server=on
+t=   3.2s end marker seen
+t=   9.3s acc-strict-virt-bootarg-mdl0-end.png {"return": {}}
+prompts seen: 0
+run acc-strict-virt-bootarg-mdl0: rc=0
+qemu-system-aarch64: -serial unix:s/a31.kPSdBU/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.kPSdBU/ser.sock,server=on
+t=   3.2s end marker seen
+t=   9.3s acc-strict-virt-bootarg-mdlbad-end.png {"return": {}}
+prompts seen: 0
+run acc-strict-virt-bootarg-mdlbad: rc=0
+qemu-system-aarch64: -serial unix:s/a31.jj7Lt5/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.jj7Lt5/ser.sock,server=on
+t=  44.3s end marker seen
+t=  47.4s acc-on-asid-virt-hellomem-end.png {"return": {}}
+prompts seen: 0
+run acc-on-asid-virt-hellomem: rc=0
+qemu-system-aarch64: -serial unix:s/a31.5d4Iar/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.5d4Iar/ser.sock,server=on
+t=  12.7s end marker seen
+t=  15.8s acc-on-asid-virt-mdstep-end.png {"return": {}}
+prompts seen: 0
+run acc-on-asid-virt-mdstep: rc=0
+qemu-system-aarch64: -serial unix:s/a31.vCoOQb/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.vCoOQb/ser.sock,server=on
+t=  51.4s end marker seen
+t=  54.5s acc-on-asid-virt-mdprobe-end.png {"return": {}}
+prompts seen: 0
+run acc-on-asid-virt-mdprobe: rc=0
+qemu-system-aarch64: -serial unix:s/a31.GriJb2/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.GriJb2/ser.sock,server=on
+t=   3.2s end marker seen
+t=   6.3s acc-on-asid-virt-mdpar-end.png {"return": {}}
+prompts seen: 0
+run acc-on-asid-virt-mdpar: rc=0
+qemu-system-aarch64: -serial unix:s/a31.InMrL4/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.InMrL4/ser.sock,server=on
+t= 192.6s end marker seen
+t= 200.7s acc-on-asid-virt-mdbud-end.png {"return": {}}
+prompts seen: 0
+run acc-on-asid-virt-mdbud: rc=0
+qemu-system-aarch64: -serial unix:s/a31.HVjLTo/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.HVjLTo/ser.sock,server=on
+t=   3.2s end marker seen
+t=   9.3s acc-on-asid-virt-bootarg-mdl64-end.png {"return": {}}
+prompts seen: 0
+run acc-on-asid-virt-bootarg-mdl64: rc=0
+qemu-system-aarch64: -serial unix:s/a31.s6cNrK/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.s6cNrK/ser.sock,server=on
+t=   3.2s end marker seen
+t=   9.3s acc-on-asid-virt-bootarg-mdl0-end.png {"return": {}}
+prompts seen: 0
+run acc-on-asid-virt-bootarg-mdl0: rc=0
+qemu-system-aarch64: -serial unix:s/a31.evbKs5/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.evbKs5/ser.sock,server=on
+t=   3.2s end marker seen
+t=   9.3s acc-on-asid-virt-bootarg-mdlbad-end.png {"return": {}}
+prompts seen: 0
+run acc-on-asid-virt-bootarg-mdlbad: rc=0

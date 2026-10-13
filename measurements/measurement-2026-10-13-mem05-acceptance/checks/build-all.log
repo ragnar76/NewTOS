@@ -1,0 +1,98 @@
+built A107PAR.NAP
+built A79COLOR.NAP
+built A96ZOMB.NAP
+built BIG.NCP
+built CMDLINE.NCP
+built CRASHTST.NAP
+built CRCHILD.NAP
+built CURDIR.NCP
+built DTACHILD.NCP
+built HELLO2.NCP
+built KBDVEC.NAP
+built PHYSBASE.NCP
+built SCRFLIP.NCP
+built SYSACC.NAC
+built SYSINFO.NCP
+built WFSCREEN.NAP
+built HELLO.NCP
+built OLDEXEC.NCP
+built P10KID.NCP
+built P10TEST.NCP
+gemlib.a out of date [gemlib.a missing] -- running build-gemlib.sh…
+  compiled OK=578  skipped=0  (of 578)
+  failures match gemlib/expected-failures.txt: 0 today, 0 recorded, 0 new
+  archived -> /Volumes/Daten/Development/PiRusTOS/sdk/gemlib/gemlib.a (743386 bytes)
+  (full log: gemlib/build/build-gemlib.log)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/ENVPAR.NAP (48760 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/ENVKID.NAP (48776 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/P34PAR.NAP (50008 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/P34KID.NAP (48968 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/PFLAGS1.NCP (49520 bytes) PRGFLAGS=0x10000004
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/PFLAGS2.NCP (49520 bytes) PRGFLAGS=0x10000004
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/PFLAGS2.NCP: PRGFLAGS 0x10000004 -> 0x00000007 (PF_FASTLOAD | PF_TTRAMLOAD | PF_TTRAMMEM)
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/PFLAGS2.NCP: PRGFLAGS 0x00000007 (PF_FASTLOAD | PF_TTRAMLOAD | PF_TTRAMMEM)
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/PFLAGS1.NCP: PRGFLAGS 0x10000004 (PF_TTRAMMEM | TPA quantum 2 (x 128 KiB))
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/P567.NAP (52168 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/TSRPAR.NAP (50192 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/TSRRES.NAP (48488 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/TSRUSE.NAP (48120 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/OWNPAR.NAP (49928 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/OWNKID.NAP (48888 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/VFORKT.NAP (118272 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/S2ALL.NAP (48928 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/P567S.NAP (52200 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/TSRPARS.NAP (48720 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/S2ALLS.NAP (48928 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/ATEXITP.NAP (48928 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/ATEXITK.NAP (102840 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/ACCFREE.NAP (50776 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/MDPROBE.NAP (49488 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/ENVRN.NAP (50488 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/E9MEM.NAP (50640 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/FSEEKCON.NAP (48312 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/STDOUTDBG.NAP (102440 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/STDERRP.NAP (107496 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/PPAUTO.NCP (50168 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/PPZ.NAP (53008 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/PPDESK.NAP (53040 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/PPACC.NAC (50696 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/FS11DEV.NAP (54176 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/FS11A.NAP (51384 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/STDERRA.NAP (107680 bytes)
+copied STDOUTDBG.NAP -> STDOUTDB.NAP
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/TTYPROBE.NAP (106648 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/TTYA.NAP (104632 bytes)
+built E9PLAIN.NCP
+built UAKID.NAP + UACC3A.NAP (cases: all)
+built MPKID.NAP + MPROT3B/MPROTS/MPROTO.NAP
+built E10KID.NAP + E10USR/E10USRS/E10USRO.NAP
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/j/ENVKID.NAP (48888 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/j/PPZJ.NAP (53232 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/j/PPDESKJ.NAP (53264 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/m/ENVKID.NAP (49176 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/STDERRQ.NAP (102592 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/oldcrt0/STDERRQ.NAP (98624 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/oldcrt0/STDERRP.NAP (103520 bytes)
+extra-done
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/MDPROBE.NAP (49488 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/MDPAR.NAP (50280 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/MDKID.NAP (48240 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/MDBUD.NAP (49504 bytes)
+313a7bc0a1cc04031bd970ac6d504ae50907d85d42c50524da1678002bdb2327  measurements/measurement-2026-10-13-mem05-acceptance/method/../../../sdk/libc/libc.a
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/MDPROBE.NAP (49488 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/MDSTEP.NAP (49904 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/MDTIME.NAP (49696 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/HELLOMEM.NAP (102696 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/MDACC.NAC (51408 bytes)
+built /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-13-mem05-acceptance/bin/HELLOOLD.NAP (102584 bytes)
+313a7bc0a1cc04031bd970ac6d504ae50907d85d42c50524da1678002bdb2327  sdk/libc/libc.a
+eb9cd4f894bdf73a70b2e381df70971639bf594bb0d865b495642e2017c1e6cb  /tmp/m5j/libc-before.a
+built via apps/apitest/build-apitest.sh
+built via apps/build-qed.sh
+built via apps/build-teradesk.sh
+built via apps/build-doom.sh
+built via apps/gemtest/build-gemtest.sh
+built via apps/chaintest/build-chaintest.sh
+built via apps/build-coremark.sh
+done
+OLD_LIBC=/tmp/m5j/libc-before.a bash method/build-all.sh  65,39s user 32,12s system 90% cpu 1:47,52 total

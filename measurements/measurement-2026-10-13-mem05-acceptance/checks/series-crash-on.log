@@ -1,0 +1,47 @@
+=== acc-on crash Mi. 14 Okt. 2026 00:14:00 CEST APPEND=serial=on
+t=40.0s -> acc-on-rpi4-crashtst-t40.png {"return": {}}
+t=646.6s -> acc-on-rpi4-crashtst-t70.png {"return": {}}
+run acc-on-rpi4-crashtst: rc=0
+qemu-system-aarch64: -serial unix:s/a31.DuEIg6/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.DuEIg6/ser.sock,server=on
+t=  15.9s acc-on-rpi4-uacc3a-crash1.png {"return": {}}
+t=  18.1s acc-on-rpi4-uacc3a-crash2.png {"return": {}}
+t=  20.2s acc-on-rpi4-uacc3a-crash3.png {"return": {}}
+t=  22.4s acc-on-rpi4-uacc3a-crash4.png {"return": {}}
+t=  24.5s acc-on-rpi4-uacc3a-crash5.png {"return": {}}
+t=  26.7s acc-on-rpi4-uacc3a-crash6.png {"return": {}}
+t=  28.8s acc-on-rpi4-uacc3a-crash7.png {"return": {}}
+t=  31.0s acc-on-rpi4-uacc3a-crash8.png {"return": {}}
+t=  33.2s acc-on-rpi4-uacc3a-crash9.png {"return": {}}
+t=  35.4s acc-on-rpi4-uacc3a-crash10.png {"return": {}}
+t=  37.5s acc-on-rpi4-uacc3a-crash11.png {"return": {}}
+t=  39.7s acc-on-rpi4-uacc3a-crash12.png {"return": {}}
+t=  41.8s acc-on-rpi4-uacc3a-crash13.png {"return": {}}
+t=  44.0s acc-on-rpi4-uacc3a-crash14.png {"return": {}}
+t=  46.2s acc-on-rpi4-uacc3a-crash15.png {"return": {}}
+t=  48.3s acc-on-rpi4-uacc3a-crash16.png {"return": {}}
+t=  50.5s acc-on-rpi4-uacc3a-crash17.png {"return": {}}
+t=  52.6s acc-on-rpi4-uacc3a-crash18.png {"return": {}}
+t=  54.8s acc-on-rpi4-uacc3a-crash19.png {"return": {}}
+t=  56.9s acc-on-rpi4-uacc3a-crash20.png {"return": {}}
+t=  59.1s acc-on-rpi4-uacc3a-crash21.png {"return": {}}
+t=  61.2s acc-on-rpi4-uacc3a-crash22.png {"return": {}}
+t=  63.4s acc-on-rpi4-uacc3a-crash23.png {"return": {}}
+t=  65.6s acc-on-rpi4-uacc3a-crash24.png {"return": {}}
+t=  67.7s acc-on-rpi4-uacc3a-crash25.png {"return": {}}
+t=  69.9s acc-on-rpi4-uacc3a-crash26.png {"return": {}}
+t=  71.1s end marker seen
+t=  79.3s acc-on-rpi4-uacc3a-end.png {"return": {}}
+prompts seen: 26
+run acc-on-rpi4-uacc3a: rc=0
+qemu-system-aarch64: -serial unix:s/a31.owD5c9/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.owD5c9/ser.sock,server=on
+t=  16.3s acc-on-rpi4-mprot-crash1.png {"return": {}}
+t=  17.6s end marker seen
+t=  25.8s acc-on-rpi4-mprot-end.png {"return": {}}
+prompts seen: 1
+run acc-on-rpi4-mprot: rc=0
+qemu-system-aarch64: -serial unix:s/a31.cUE5it/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.cUE5it/ser.sock,server=on
+t=  15.4s end marker seen
+t=  18.4s acc-on-rpi4-e10-end.png {"return": {}}
+prompts seen: 0
+run acc-on-rpi4-e10: rc=0
+=== acc-on crash done Mi. 14 Okt. 2026 00:26:50 CEST

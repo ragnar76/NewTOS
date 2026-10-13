@@ -1,0 +1,82 @@
+     0.000	RB1
+     0.001	NewTOS booting on qemu-virt
+     0.001	Phase 02 reached.
+     0.002	[mm] DTB at 0x0000000048000000
+     0.002	[mm] firmware: no VideoCore mailbox on this board — device tree decides
+     0.002	[mm] device tree: /memory first bank: 0x0000000040000000 + 285212672 bytes (272 MiB)
+     0.003	[mm] memory map:
+     0.003	[mm]   DRAM  : 0x0000000040000000..0x0000000051000000 (285212672 bytes) — source: device tree
+     0.003	[mm]   kernel: 0x0000000040080000..0x00000000402e1000 (2494464 bytes)
+     0.003	[mm]   ST-RAM: 0x0000000040400000..0x0000000040e00000 (10485760 bytes)
+     0.003	[mm]   TT-RAM: 0x0000000041000000..0x0000000050017000 (251752448 bytes)
+     0.003	[mm]   OSrsvd: 0x0000000050017000..0x0000000051000000 (16683008 bytes)
+     0.004	[mm]     heap: 0x0000000050017000..0x0000000050817000 (8388608 bytes)
+     0.004	[mm]     fb  : 0x0000000050817000..0x0000000051000000 (8294400 bytes)
+     0.004	[mm]   MMIO 00: 0x0000000008000000..0x0000000008010000
+     0.004	[mm]   MMIO 01: 0x0000000008010000..0x0000000008020000
+     0.004	[mm]   MMIO 02: 0x0000000009000000..0x0000000009001000
+     0.004	[mm]   MMIO 03: 0x0000000010000000..0x000000003eff0000
+     0.004	[mm] MMU reinstalled (high-half via TTBR1, TTBR0 deferred to Phase 06).
+     0.004	[mm] frames ST-RAM: total=2560 used=0 free=2560 (10485760 B free)
+     0.005	[mm] frames TT-RAM: total=61463 used=0 free=61463 (251752448 B free)
+     0.005	[mm] alloc ST-RAM frame -> 0x0000000040400000
+     0.005	[mm] alloc TT-RAM frame -> 0x0000000041000000
+     0.005	[mm] heap after init: total=8388608 used=0 free=8388608 largest=8388608 blocks=1
+     0.006	[mm] heap smoke OK
+     0.006	[mm] heap after smoke: total=8388608 used=0 free=8388608 largest=8388608 blocks=1
+     0.006	[fb] ramfb up: 1920x1080
+     0.006	[mm] MEM05 per-process block limit: 8192 allocated blocks (default)
+     0.006	[mm] MEM05 MD supply: 117 MDs static, grows by 117 MDs per 4096-byte page from the kernel heap; page budget 512 pages (2048 KiB) for MDs + block records + snapshot + F_KEEP flags
+     0.008	[mm] memory protection ON (strict): table arena 0x41000000+1422 tables
+     0.009	[mm] BDOS pools: ST-RAM 0x40400000+10485760 TT-RAM 0x4158e000+245927936
+     0.010	[mm] user address space: pools mapped VA = PA (124 shared L3 tables, 4-KiB pages, rights per process)
+     0.010	[mm] BDOS ST-RAM after init: total=10485760 free=10485760 used=0 largest_free=10485760 (free_mds=1 alloc_mds=0)
+     0.010	[mm] BDOS TT-RAM after init: total=245927936 free=245927936 used=0 largest_free=245927936 (free_mds=1 alloc_mds=0)
+     0.010	[mm] MEM05 after init: MDs in_use=2 capacity=117 (+0 pages); pages held=0/512 (md=0 recs=0 snap=0 kept=0) peak=0 refused budget=0 heap=0; records=0 snapshot_cap=0 snapshot_short=0; heap used=0 free=8388608 largest=8388608
+     0.011	[input] keyboard/mouse pump: AES waits and console reads; pointer motion also from the 200 Hz tick while a program runs (input=aes switches that off)
+     0.011	[bcache] FS09 block read cache: none (no block device on this board)
+     0.012	[usb] PCIe ECAM at 0x4010000000 (size 0x10000000)
+     0.012	[usb] xHCI at PCI 00:02.0 → BAR0 0x10000000 (size 0x4000)
+     0.013	[usb] scratchpad buffers needed: 0
+     0.013	[usb] dma addrs: dcbaap=0x40e47000 crcr=0x40e470c0 erstba=0x40e472c0 dcbaa0=0x0
+     0.013	[usb] reg readback: ac64=1 csz=0 dcbaap_hw=0x40e47000
+     0.013	[usb] xHCI up: 16 slots enabled, 8 root ports
+     0.013	[usb] root ports powered (PPC=false)
+     0.034	[usb] port 1: ccs=0 ped=0 pp=1 speed=0
+     0.034	[usb] port 2: ccs=0 ped=0 pp=1 speed=0
+     0.034	[usb] port 3: ccs=0 ped=0 pp=1 speed=0
+     0.034	[usb] port 4: ccs=0 ped=0 pp=1 speed=0
+     0.034	[usb] port 5: ccs=1 ped=0 pp=1 speed=3
+     0.034	[usb] port 6: ccs=1 ped=0 pp=1 speed=3
+     0.034	[usb] port 7: ccs=0 ped=0 pp=1 speed=0
+     0.034	[usb] port 8: ccs=0 ped=0 pp=1 speed=0
+     0.035	[usb] device slot 1 (root port 5 route 0x0 speed 3)
+     0.085	[usb] device descriptor: bLength=18 type=1 bcdUSB=0200 class=0 maxpkt0=64 VID=0627 PID=0001
+     0.085	[usb] HID iface 0 protocol 1 → int-IN ep 0x81 max 8 interval 7
+     0.085	[usb] HID configured: slot 1 ep 0x81 dci 3 (keyboard)
+     0.086	[usb] device slot 2 (root port 6 route 0x0 speed 3)
+     0.136	[usb] device descriptor: bLength=18 type=1 bcdUSB=0200 class=0 maxpkt0=64 VID=0627 PID=0001
+     0.136	[usb] HID iface 0 protocol 2 → int-IN ep 0x81 max 4 interval 7
+     0.136	[usb] HID configured: slot 2 ep 0x81 dci 3 (mouse)
+     3.156	[proc] stand-in PDs: initial_basepage 0x40257000, AES PD 0x40257100 (read-only to all)
+     3.157	[mdv] launch C:\MDPROBE.NAP
+     3.166	[launch] EL0: slot 0 entry 0x41590000
+    25.125	[MDPROBE] more blocks allowed at start: 8190
+    25.125	[MDPROBE] step blocks=100 payload=3200 Malloc(-1)=0x0ea46000
+    25.126	[MDPROBE] step blocks=1000 payload=32000 Malloc(-1)=0x0ea3a000
+    25.127	[MDPROBE] step blocks=10000 payload=320000 Malloc(-1)=0x0e94a000
+    25.142	[MDPROBE] step blocks=100000 payload=3200000 Malloc(-1)=0x0e24a000
+    25.152	[MDPROBE] step blocks=147605 payload=4723360 Malloc(-1)=0x0e24a000
+    25.152	[MDPROBE] step blocks=147606 payload=4723392 Malloc(-1)=0x0e24a000
+    25.164	[MDPROBE] step blocks=200000 payload=6400000 Malloc(-1)=0x0da4a000
+    25.231	[MDPROBE] step blocks=500000 payload=16000000 Malloc(-1)=0x0ca4a000
+    25.348	[MDPROBE] step blocks=1000000 payload=32000000 Malloc(-1)=0x0aa4a000
+    25.636	[MDPROBE] step blocks=2000000 payload=64000000 Malloc(-1)=0x07a4a000
+    26.046	[MDPROBE] step blocks=3000000 payload=96000000 Malloc(-1)=0x03a4a000
+    49.513	[MDPROBE] end blocks=3000000 payload=96000000 more blocks allowed=8169 taken by malloc=21 Malloc(-1)=0x03a4a000
+    49.513	MDPROBE: DONE
+    49.515	[launch] returned (program Pterm'd)
+    49.516	[mdv] back in the boot path after MDPROBE.NAP, launch rc=0
+    49.517	[aes] gsx_malloc: screen buffer pa=0x4158e000 len=4147200 (kernel-owned, WF_SCREEN)
+    49.526	[shell] sh_ldapp: starting NEWDESK, sh_nextapp=3, sh_isgem=1
+    49.582	[desk] desktop up (0 drives, 0 window(s) from the context)

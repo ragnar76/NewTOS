@@ -1,0 +1,85 @@
+measurement-2026-10-13-mem05-acceptance -- Tester acceptance of MEM05 part A (d2e3c384, kernel: growable MD supply, per-process
+limit 8192 / mdlimit=, page budget 512, kernel heap 8 MiB) and part B (b0bbc2d4, mintlib MAXHUNK 16 MiB). HEAD 9ab10074, working
+tree clean (only this directory is new). Host macOS, QEMU raspi4b + qemu-virt. No SD card, no Pi. Test only: no product code
+changed, nothing committed. Date 2026-10-13/14.
+
+RESULT: PASS for part A and part B in all four modes (on / off / strict / on-asid) on raspi4b and on qemu-virt, plus memprot=verify.
+No regression against the mem05-sdk / mem05-kernel / libc-main-fs11 / libc-tty runs. Open items are host-load stalls (VOID, rerun
+green) and real-Pi-only items (see end).
+
+BUILD (everything fresh from HEAD)
+  libc.a deleted and rebuilt (checks/build-libc.log): sha256 313a7bc0... = the developers' libc.a (reproducible); gemlib.a rebuilt
+  (67fb8b86...). method/build-all.sh (copy of the part-B script, OLD_LIBC=libc-before.a for HELLOOLD): every probe + APITEST, QED,
+  TeraDesk, Doom, gemtest, chaintest, coremark; bin/SHA256SUMS identical to measurement-2026-10-13-mem05-sdk/bin/SHA256SUMS
+  (byte-identical programs), repo-binaries.sha256 identical. ldg / ldg-demo / ldg-client / zview (+10 codecs) / present relinked
+  (checks/relink-*.log, all rc=0, 0 undefined). Kernels: checks.sh (fresh clean release builds both boards) + scratch-kernels.sh
+  (crash, keys, tdkeys, keys9, virt-st) + virt-kernels.sh (own: scratch qemu-virt kernels with MDSTEP / MDPAR+MDKID / MDPROBE /
+  MDBUD / HELLOMEM in the RAM registry, mdv-instrumentation.py, applied to scratch copies only). bin/KERNELS.SHA256.
+  kernel8-acc.img vs the developers' kernel8-m5.img: cmp 16 bytes = the two git-hash stamps; kernel8-crash-acc = kernel8-crash-m5 (0).
+
+BASELINES (checks/acc-summary.txt)   expected      measured
+  host tests tos-api tos-types xtask   1340/0/1       1340/0/1
+  release warnings rpi4 / qemu-virt    64/94          64/94 both, 0 errors
+  clippy rpi4 / qemu-virt              76/125         76/125 both
+  desk drift probe                     31             31
+  SDK host tests                       20/0/0         20 passed 0 failed 0 skipped
+
+RASPI4B RESULTS (serial/acc-<mode>-rpi4-*, screendumps/; checks/summary-acc-final.txt; method/acc-series.sh, zv-series.sh)
+  MDSTEP (mdlimit=128), on/off/strict identical, on-asid identical: hunks 100->1, 1000->3, 10000->7, 100000->10, 147605->10,
+    1M->14, 2M->17, 3M->21, 5M->27, 10M->44 (GEMDOS blocks taken in main = hunks-1 = 0/2/6/9/9/13/16/20/26/43), sizes 8..4096 KiB
+    then 8192, 16384 x 32 KiB; no NULL. 3M: ~1.0 s on/strict, 4.5 s off; 10M: 38 s on/off/strict, 47 s on-asid.
+  MDPROBE (default limit): start 8189 allowed, end 8169, taken by malloc 20 (part A: 5138), no NULL; pages held 250/512 (on/strict),
+    70/512 (off). free_mds() at start 21.0 s on / 21.0 s strict / 0.05 s off (documented per-sync cost, MEM10).
+  MDPAR + MDKID (mdlimit=64), on/off/strict, on-asid: PASS; 61 / 63 / 61 (parent, Pexec-4 child, Pexec-0 child), Malloc(-1)>0.
+  MDBUD (mdlimit=0): PASS on/off/strict. on+strict: 16892 blocks, second round 16892, pages 512/512 (md 144 recs 66 snap 302),
+    heap used 2.10 MB / free 6.29 MB; off: 60015 blocks both rounds. Desktop after it: -end.png of all six runs (incl. rerun
+    boot) is byte-identical to the clean desktop-t25.png (sha 0e6f7704...), viewed on/off. Times on: round 1 59-72 s, round 2
+    125-145 s; off 0.2 s.
+  MDACC (accessory, mdlimit=128) on/off/strict: PASS, 10 hunks 8 KiB..4 MiB. HELLOMEM / HELLOOLD: both 1 hunk 8 KiB, 8189 allowed,
+    taken in main 0, Malloc(-1) unchanged.
+  APITEST TOTAL 106/0/5 in on/off/strict/verify/on-asid; [OK]/[FAIL]/[SKIP] lines identical to the mem05-sdk run (126 lines, 0 diff).
+  Regression sample screendumps vs mem05-sdk (shotcmp): same 19 (on) / 19 (off) / 21 (strict) / 3 (on-asid), DIFF only doom-t30/t45
+    (demo timing, viewed on-t45: Doom running; serial "VERIFIED via EdDI+scale+vro_cpyfm" all modes); strict S2ALLS crash dumps same.
+    Viewed: desktop, acc, TeraDesk, QED(menu bar), TeraDesk->QED, EmuCON (typed "run hello2.ncp" ok, "run oldexec.ncp" -> error 66),
+    APITEST summary, Doom, MDBUD end, crash/E10 reports.
+  Others (serial verdicts, on/off/strict unless noted): ACCFREE PASS (strict rerun), PFLAGS1/PFLAGS2 PASS (on/strict rerun), TSR PASS
+    (TSRPAR on/off; TSRPARS strict on the crash kernel), S2ALLM PASS + MEM03 PASS + PFLAGS + TSR (strict = S2ALLSM, 2 intended
+    EXC), E9MEM PASS, PPARENT AUTO/ACC PASS, PPARENT Z / Z-KID FAIL = known stale probe (identical in libc-tty-acceptance tta-*),
+    STDOUTDB, STDERRP new/old crt0, STDERRA, TTYA(TTYPROBE T1-T3) PASS: serial identical (modulo hex) to libc-tty-acceptance tt-*/tta-*,
+    PORT10 ALL PASS 44 checks. Crash kernel (raspi4b): CRASHTST, UACC3A, MPROT3B (variant of the mode), E10USR PASS in all three
+    modes, EXC counts (6/26/1|0|4/0|0|1) identical to libc-main-fs11-acceptance lm-*. Crash dumps differ from lm only by card
+    listing/timestamps (viewed crashtst-t70 vs lm, mprot strict, e10).
+  memprot=verify: MDPAR (mdlimit=400: 397/399/397) PASS, APITEST 106/0/5, desktop, S2ALLM PASS, E9MEM PASS, MDSTEP, MDACC PASS,
+    ACCFREE PASS, MDPROBE (default limit, full 3 000 000 series) DONE; every "[memprot] verify" line "0 mismatches, 0 tolerated
+    shortfalls" (MDPROBE: 128 lines, last 32742 checks / 8.46e9 pages). MDPROBE under verify took 3175 s (58 s without verify).
+  on-asid: "[mm] ASIDs ON"; APITEST 106/0/5, MDSTEP identical table, MDPAR PASS, desktop dump byte-identical to on.
+  zView started: ZVLAUNCH -> ZVIEW.NAP with T.JPG / TRGB.PNG / T24.BMP argument (decoded 64x48 colour-bar image in the zView window),
+    zView alone (menu bar), LDGTEST autorun ALL PASS (69 checks), LDGDEMO.NAP client window ("LDG Client", libs loaded), PRESENT slide
+    1/4: all screendumps byte-identical across on/off/strict, 0 EXC/PANIC. Not driven: LDGDEMO popup / zView browser clicks (needs
+    key-injector kernels), zView Quit.
+
+QEMU-VIRT RESULTS (serial/acc-<mode>-virt-*, modes on/off/strict/on-asid)
+  selftests kernel: 9 PASS / 1 FAIL ("[sw3b] FAIL: load B: NoTpaMemory", the same line as in mem05-kernel), PASS/FAIL lines identical
+    (0 diff) to the developers' run in all four modes; desktop up; 0 EXC.
+  crash kernel: CRASHTST, UACC3A, MPROT3B, E10USR PASS, EXC 28 / 27 (rerun) / 32 / 28 (dev: 28/27/32/28).
+  RAM-registry probes: MDSTEP (mdlimit=128): hunks 1/3/7/10/10/10/14/17/21 (virt has no start-up hunk, so +1 vs raspi4b), then
+    malloc NULL after 4 194 132 blocks = 134 MB, 272 MB RAM exhausted, not MD-bound; MDPROBE end 8169 allowed, taken 21; MDPAR
+    (mdlimit=64) PASS 62 / 64 / 62; MDBUD (mdlimit=0) PASS 16894 blocks on/strict/asid, 60017 off, desktop afterwards; HELLOMEM.
+    Identical in all four modes.
+  boot argument on the product kernel: mdlimit=64 -> "64 allocated blocks (boot argument)"; mdlimit=0 -> "OFF (mdlimit=0, boot
+    argument)"; mdlimit=12x -> "8192 ... (INVALID boot argument ignored, default)"; desktop up in all four modes.
+
+VOID / HOST STALLS (serial/void/, screendumps/void/)
+  Runs started while 3-4 QEMU instances ran in parallel stalled in the guest boot (log ends at "[proc] stand-in PDs" or right after
+  "starting C:\PFLAGS*.NCP", driver timeout 200 s): acc-on-pflags1/pflags2, acc-strict-pflags1, acc-strict-accfree. Reruns of the
+  same card/kernel/arguments with fewer parallel instances: PASS in ~50 s each. acc-off-virt-crash: a 470 s gap between two crash
+  prompts, then hang in the UACC3A case X report, driver timeout; rerun alone acc-off-virt-crash-rerun: all four PASS, 27 EXC, 48 s.
+  Known host-stall class (cf. libc-tty-acceptance batch3.sh). Not reproducible, but occurred under load only; logged, not hidden.
+  acc-strict-tsrpar: my script ran TSRPAR (non-strict variant) on the strict crash kernel -> TSR FAIL (probe/kernel mismatch);
+  correct variant TSRPARS: PASS (acc-strict-rpi4-tsrpars).
+
+NOT RUN
+  Real Pi 4 (cache-coherence, HDMI, USB-HID), LDGDEMO popup / zView browser via key injector, MDBUD under memprot=verify (would take
+  hours), qemu-virt memprot=verify, MEM10 cost fix (known limit, not part of MEM05).
+Scratch: /tmp/m5j/acc (cards, scratch trees); run cards deleted. No file outside this directory and sdk build outputs (gitignored:
+sdk/libc/libc.a, gemlib.a, sdk/*/build, sdk/apps/*/build) written; /Volumes/Daten/.../kernel8.img (gitignored) overwritten by checks.sh.

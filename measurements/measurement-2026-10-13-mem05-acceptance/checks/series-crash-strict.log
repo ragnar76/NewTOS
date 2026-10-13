@@ -1,0 +1,51 @@
+=== acc-strict crash Mi. 14 Okt. 2026 00:14:19 CEST APPEND=serial=on memprot=strict
+t=616.6s -> acc-strict-rpi4-crashtst-t40.png {"return": {}}
+t=616.6s -> acc-strict-rpi4-crashtst-t70.png {"return": {}}
+run acc-strict-rpi4-crashtst: rc=0
+qemu-system-aarch64: -serial unix:s/a31.Uph4DY/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.Uph4DY/ser.sock,server=on
+t=  16.0s acc-strict-rpi4-uacc3a-crash1.png {"return": {}}
+t=  18.1s acc-strict-rpi4-uacc3a-crash2.png {"return": {}}
+t=  20.2s acc-strict-rpi4-uacc3a-crash3.png {"return": {}}
+t=  22.4s acc-strict-rpi4-uacc3a-crash4.png {"return": {}}
+t=  24.5s acc-strict-rpi4-uacc3a-crash5.png {"return": {}}
+t=  26.7s acc-strict-rpi4-uacc3a-crash6.png {"return": {}}
+t=  28.8s acc-strict-rpi4-uacc3a-crash7.png {"return": {}}
+t=  31.0s acc-strict-rpi4-uacc3a-crash8.png {"return": {}}
+t=  33.1s acc-strict-rpi4-uacc3a-crash9.png {"return": {}}
+t=  35.3s acc-strict-rpi4-uacc3a-crash10.png {"return": {}}
+t=  37.4s acc-strict-rpi4-uacc3a-crash11.png {"return": {}}
+t=  39.5s acc-strict-rpi4-uacc3a-crash12.png {"return": {}}
+t=  41.8s acc-strict-rpi4-uacc3a-crash13.png {"return": {}}
+t=  43.9s acc-strict-rpi4-uacc3a-crash14.png {"return": {}}
+t=  46.1s acc-strict-rpi4-uacc3a-crash15.png {"return": {}}
+t=  48.2s acc-strict-rpi4-uacc3a-crash16.png {"return": {}}
+t=  50.4s acc-strict-rpi4-uacc3a-crash17.png {"return": {}}
+t=  52.5s acc-strict-rpi4-uacc3a-crash18.png {"return": {}}
+t=  54.7s acc-strict-rpi4-uacc3a-crash19.png {"return": {}}
+t=  56.9s acc-strict-rpi4-uacc3a-crash20.png {"return": {}}
+t=  59.0s acc-strict-rpi4-uacc3a-crash21.png {"return": {}}
+t=  61.2s acc-strict-rpi4-uacc3a-crash22.png {"return": {}}
+t=  63.3s acc-strict-rpi4-uacc3a-crash23.png {"return": {}}
+t=  65.5s acc-strict-rpi4-uacc3a-crash24.png {"return": {}}
+t=  67.6s acc-strict-rpi4-uacc3a-crash25.png {"return": {}}
+t=  69.8s acc-strict-rpi4-uacc3a-crash26.png {"return": {}}
+t=  71.0s end marker seen
+t=  79.0s acc-strict-rpi4-uacc3a-end.png {"return": {}}
+prompts seen: 26
+run acc-strict-rpi4-uacc3a: rc=0
+qemu-system-aarch64: -serial unix:s/a31.4gaI0S/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.4gaI0S/ser.sock,server=on
+t=  16.0s acc-strict-rpi4-mprot-crash1.png {"return": {}}
+t=  18.1s acc-strict-rpi4-mprot-crash2.png {"return": {}}
+t=  20.4s acc-strict-rpi4-mprot-crash3.png {"return": {}}
+t=  22.6s acc-strict-rpi4-mprot-crash4.png {"return": {}}
+t=  23.9s end marker seen
+t=  32.1s acc-strict-rpi4-mprot-end.png {"return": {}}
+prompts seen: 4
+run acc-strict-rpi4-mprot: rc=0
+qemu-system-aarch64: -serial unix:s/a31.StzDul/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:s/a31.StzDul/ser.sock,server=on
+t=  16.7s acc-strict-rpi4-e10-crash1.png {"return": {}}
+t=  18.0s end marker seen
+t=  21.0s acc-strict-rpi4-e10-end.png {"return": {}}
+prompts seen: 1
+run acc-strict-rpi4-e10: rc=0
+=== acc-strict crash done Mi. 14 Okt. 2026 00:26:48 CEST
