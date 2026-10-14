@@ -32,16 +32,10 @@ use super::pd;
 use super::Aespb;
 use crate::bdos::process::sched;
 use crate::host::host;
-
-// Event-type flags (`include/aesdefs.h`), selecting which events a wait
-// blocks on. Used by `evnt_multi`.
-const MU_KEYBD: u16 = 0x0001;
-const MU_BUTTON: u16 = 0x0002;
-const MU_M1: u16 = 0x0004;
-const MU_M2: u16 = 0x0008;
-const MU_MESAG: u16 = 0x0010;
-const MU_TIMER: u16 = 0x0020;
-const MU_TOSVALID: u16 = 0x003F;
+use tos_types::aes::{
+    AC_CLOSE, AC_OPEN, MN_SELECTED, MU_BUTTON, MU_KEYBD, MU_M1, MU_M2, MU_MESAG, MU_TIMER,
+    MU_TOSVALID,
+};
 
 /// A mouse rectangle block (`MOBLK`): `flags` selects enter (0) vs leave
 /// (1) of the `{x, y, w, h}` rectangle.
@@ -66,14 +60,6 @@ fn rect_event_at(m: &MoBlk, (mx, my): (i16, i16)) -> bool {
     let inside = mx >= m.x && mx < m.x + m.w && my >= m.y && my < m.y + m.h;
     (m.flags != 0) != inside
 }
-
-/// `MN_SELECTED` message id.
-const MN_SELECTED: i16 = 10;
-
-/// `AC_CLOSE` message id (`include/aesdefs.h`, 41) — the one message type the
-/// Event Manager reacts to itself, by setting `AP_ACCLOSE` on the receiving
-/// descriptor (`gemsuper.c:139-140,160-161`).
-const AC_CLOSE: i16 = 41;
 
 /// AES menu-bar interception (mirroring the EmuTOS Control Manager's
 /// `hctl_rect`, `gemctrl.c:318`): if a menu bar is installed and the cursor is
@@ -152,7 +138,7 @@ fn menu_intercept(idx: usize) -> bool {
                     // asymmetry `AC_CLOSE` mirrors (`docs/api/aes/
                     // accessories.md` §3). `treehi = treelo = parent = 0`
                     // (`gemctrl.c:348`).
-                    (owner, super::menu::AC_OPEN, title, menu_id, [0; 3])
+                    (owner, AC_OPEN, title, menu_id, [0; 3])
                 }
                 // `owner = gl_mnppd; mesag = MN_SELECTED;` plus the
                 // CONF_WITH_MENU_EXTENSION payload `treehi = HIWORD(tree);

@@ -1,0 +1,43 @@
+base-off-rpi4-apitest |  1 TOTAL 106 0 5 ; | exc/panic=0
+base-off-rpi4-desktop |  1 desktop up (1 d; | exc/panic=0
+base-off-rpi4-qed |  | exc/panic=0
+base-off-rpi4-teradesk |  | exc/panic=0
+base-on-rpi4-apitest |  1 TOTAL 106 0 5 ; | exc/panic=0
+base-on-rpi4-desktop |  1 desktop up (1 d; | exc/panic=0
+base-on-rpi4-qed |  | exc/panic=0
+base-on-rpi4-teradesk |  | exc/panic=0
+base-strict-rpi4-apitest |  1 TOTAL 106 0 5 ; | exc/panic=0
+base-strict-rpi4-desktop |  1 desktop up (1 d; | exc/panic=0
+base-strict-rpi4-qed |  | exc/panic=0
+base-strict-rpi4-teradesk |  | exc/panic=0
+u5b-off-rpi4-apitest |  1 TOTAL 106 0 5 ; | exc/panic=0
+u5b-off-rpi4-desktop |  1 desktop up (1 d; | exc/panic=0
+u5b-off-rpi4-qed |  | exc/panic=0
+u5b-off-rpi4-teradesk |  | exc/panic=0
+u5b-on-rpi4-apitest |  1 TOTAL 106 0 5 ; | exc/panic=0
+u5b-on-rpi4-desktop |  1 desktop up (1 d; | exc/panic=0
+u5b-on-rpi4-qed |  | exc/panic=0
+u5b-on-rpi4-teradesk |  | exc/panic=0
+u5b-strict-rpi4-apitest |  1 TOTAL 106 0 5 ; | exc/panic=0
+u5b-strict-rpi4-desktop |  1 desktop up (1 d; | exc/panic=0
+u5b-strict-rpi4-qed |  | exc/panic=0
+u5b-strict-rpi4-teradesk |  | exc/panic=0
+--- APITEST result lines (modulo hex)
+on: u5b vs base 0 differing lines; u5b vs MEM05 0 differing lines (126 lines)
+off: u5b vs base 0 differing lines; u5b vs MEM05 0 differing lines (126 lines)
+strict: u5b vs base 0 differing lines; u5b vs MEM05 0 differing lines (126 lines)
+--- screendumps u5b vs base
+u5b-on-rpi4- vs base-on-rpi4-: same=5 diff=0 missing=0
+u5b-off-rpi4- vs base-off-rpi4-: same=5 diff=0 missing=0
+u5b-strict-rpi4- vs base-strict-rpi4-: same=5 diff=0 missing=0
+--- screendumps u5b vs MEM05 acceptance (acc-<mode>-rpi4-)
+u5b-on-rpi4- vs acc-on-rpi4-: same=5 diff=0 missing=0
+u5b-off-rpi4- vs acc-off-rpi4-: same=5 diff=0 missing=0
+u5b-strict-rpi4- vs acc-strict-rpi4-: same=5 diff=0 missing=0
+--- desktop t25 sha256
+0e6f770497da100b6707ff8ac1a79f24f30272a0e371bc368d9b10f56a2c324b  base-off-rpi4-desktop-t25.png
+0e6f770497da100b6707ff8ac1a79f24f30272a0e371bc368d9b10f56a2c324b  base-on-rpi4-desktop-t25.png
+0e6f770497da100b6707ff8ac1a79f24f30272a0e371bc368d9b10f56a2c324b  base-strict-rpi4-desktop-t25.png
+0e6f770497da100b6707ff8ac1a79f24f30272a0e371bc368d9b10f56a2c324b  u5b-off-rpi4-desktop-t25.png
+0e6f770497da100b6707ff8ac1a79f24f30272a0e371bc368d9b10f56a2c324b  u5b-on-rpi4-desktop-t25.png
+0e6f770497da100b6707ff8ac1a79f24f30272a0e371bc368d9b10f56a2c324b  u5b-strict-rpi4-desktop-t25.png

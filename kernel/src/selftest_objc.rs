@@ -2,24 +2,13 @@
 //! through the real GEM trap (`objc_draw`, opcode 42) so it is visible in
 //! `cargo xtask run --window`.
 
-use tos_api::aes::object::{BitBlk, IconBlk, Object, TedInfo};
+use tos_api::aes::object::BitBlk;
 
 use crate::kprintln;
-
-const G_BOX: u16 = 20;
-const G_TEXT: u16 = 21;
-const G_BOXTEXT: u16 = 22;
-const G_IMAGE: u16 = 23;
-const G_BUTTON: u16 = 26;
-const G_STRING: u16 = 28;
-const G_ICON: u16 = 31;
-
-const SELECTABLE: u16 = 0x0001;
-const DEFAULT: u16 = 0x0002;
-const EXIT: u16 = 0x0004;
-const LASTOB: u16 = 0x0020;
-const FL3DBAK: u16 = 0x0400; // 3D grey panel
-const FL3DACT: u16 = 0x0600; // 3D raised button
+use tos_types::aes::{
+    IconBlk, Object, TedInfo, DEFAULT, EDITABLE, EXIT, FL3DACT, FL3DBAK, G_BOX, G_BOXTEXT,
+    G_BUTTON, G_IBOX, G_ICON, G_IMAGE, G_STRING, G_TEXT, G_TITLE, LASTOB, SELECTABLE, SHADOWED,
+};
 
 /// Issue a GEM trap (selector 200 in `x0`, AESPB in `x1`).
 fn aes(aespb: u64) {
@@ -263,7 +252,6 @@ pub fn run_tedinfo() {
 /// modal loop (click a button, or Enter for the default OK). Prints the
 /// exit object index.
 pub fn run_form_do() {
-    const DEFAULT: u16 = 0x0002;
     static TITLE: &[u8] = b"form_do: click a button (or Enter)\0";
     static OK: &[u8] = b"OK\0";
     static CANCEL: &[u8] = b"Cancel\0";
@@ -312,7 +300,6 @@ pub fn run_form_do() {
 /// Batch-6 demo: an editable `G_BOXTEXT` field. Draw it, then drive
 /// `objc_edit` (EDINIT + EDCHAR) to type "NewTOS!" into it.
 pub fn run_edit() {
-    const EDITABLE: u16 = 0x0008;
     static TITLE: &[u8] = b"objc_edit - editable TEDINFO field\0";
     static EMPTY: &[u8] = b"\0";
 
@@ -373,8 +360,6 @@ pub fn run_edit() {
 /// field + OK), then form_do focuses the field and routes keystrokes to
 /// it; Enter activates the default OK button.
 pub fn run_form_edit() {
-    const EDITABLE: u16 = 0x0008;
-    const DEFAULT: u16 = 0x0002;
     static TITLE: &[u8] = b"form_do + objc_edit: type, then Enter\0";
     static OK: &[u8] = b"OK\0";
     static EMPTY: &[u8] = b"\0";
@@ -446,8 +431,6 @@ pub fn run_form_error() {
 /// D5 Batch-1 demo: a menu bar (Desk/File/Edit) via menu_bar, with the
 /// "File" title highlighted via menu_tnormal.
 pub fn run_menu() {
-    const G_IBOX: u16 = 25;
-    const G_TITLE: u16 = 32;
     static DESK: &[u8] = b"Desk\0";
     static FILE: &[u8] = b"File\0";
     static EDIT: &[u8] = b"Edit\0";
@@ -498,8 +481,6 @@ pub fn run_menu() {
 /// drop-down) drawn via menu_bar, with the File menu opened and "Open"
 /// highlighted — the rendering the interactive `track` shows mid-drag.
 pub fn run_menu_open() {
-    const G_IBOX: u16 = 25;
-    const G_TITLE: u16 = 32;
     const LAST: u16 = 0x0020;
     static DESK: &[u8] = b"Desk\0";
     static FILE: &[u8] = b"File\0";
@@ -1170,7 +1151,6 @@ pub fn run_d9() {
 // dead (same false positive as the rest of this selftest module).
 #[allow(unused_assignments)]
 pub fn run_button_showcase() {
-    const SHADOWED: u16 = 0x0020; // ob_state, unused here
     static LBL: &[u8] = b"Group B: 2D th=-1/-2/-3, 3D outline+bevel, hollow neg-border box\0";
     static PLAIN: &[u8] = b"Plain\0";
     static EXITB: &[u8] = b"Exit\0";
@@ -1238,8 +1218,6 @@ pub fn run_button_showcase() {
 /// 3D / modern-design test: a grey background panel (FL3DBAK) with a raised
 /// 3D OK button (FL3DACT) and a pressed one, to show the bevel look.
 pub fn run_3d() {
-    const FL3DBAK: u16 = 0x0400;
-    const FL3DACT: u16 = 0x0600;
     static TITLE: &[u8] = b"Modern (Falcon) 3D design\0";
     static OK: &[u8] = b"OK\0";
     static CANCEL: &[u8] = b"Cancel\0";

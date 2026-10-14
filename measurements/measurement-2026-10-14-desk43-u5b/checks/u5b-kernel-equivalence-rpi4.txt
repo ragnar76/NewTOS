@@ -1,0 +1,35 @@
+== rpi4: HEAD f6f14885 vs U5b (final tree), both scratch builds (no .git -> rev stamp 'unknown' in both), SOURCE_DATE_EPOCH=1791979200
+functions 992 992 only-before 1 only-after 1
+  - only before: _RNvMs1_NtNtCs_7tos_api3aes6objectNtB5_7TedInfo8read_abi 300
+  + only after : _RNvNtNtCs_7tos_api3aes6object16tedinfo_read_abi 300
+common functions with differing normalized bodies: 6
+  ~ _RNvMNtNtCs_7tos_api3aes6objectNtB2_7ObjTree6sst_th len 371 371 difflines 5
+  ~ _RNvNtNtCs_7tos_api3aes6object12edit_field_t len 1010 1010 difflines 5
+  ~ _RNvNtNtCs_7tos_api3aes6object9draw_tree len 4099 4099 difflines 8
+  ~ _RNvNtNtCs_7tos_api3aes6object9xor_is_ok len 72 72 difflines 5
+  ~ _RNvNtNtCs_7tos_api3aes6window16draw_change_open len 685 674 difflines 1024
+  ~ _RNvNtNtCs_7tos_api3aes6window9wind_open len 185 191 difflines 190
+renamed _RNvMs1_NtNtCs_7tos_api3aes6objectNtB5_7TedInfo8read_abi -> _RNvNtNtCs_7tos_api3aes6object16tedinfo_read_abi : body identical after renaming
+differing common bodies after applying the rename: 2
+  ~ _RNvNtNtCs_7tos_api3aes6window16draw_change_open
+  ~ _RNvNtNtCs_7tos_api3aes6window9wind_open
+.data: size 253080 vs 253080, differing bytes 0
+.rodata: size 83912 vs 83912, differing bytes 294
+  differing u32 words: 274
+    198 panic Location line
+    76 pointer shifted by 0x14
+     15 line kernel/src/desk/act.rs
+     25 line kernel/src/desk/dir.rs
+     7 line kernel/src/desk/global.rs
+     19 line kernel/src/desk/inf.rs
+     11 line kernel/src/desk/ins.rs
+     43 line kernel/src/desk/main.rs
+     2 line kernel/src/desk/redraw.rs
+     26 line kernel/src/desk/win.rs
+     10 line tos-api/src/aes/form.rs
+     14 line tos-api/src/aes/fsel.rs
+     5 line tos-api/src/aes/init.rs
+     3 line tos-api/src/aes/object.rs
+     5 line tos-api/src/aes/pd.rs
+     2 line tos-api/src/aes/resource.rs
+     11 line tos-api/src/aes/window.rs

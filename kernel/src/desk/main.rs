@@ -14,28 +14,20 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use super::dosbind::{dos_gdrv, dos_sdrv};
-use super::global::{self, Grect, Point, DROOT, MAX_DEPTH, NIL, NUM_WNODES, WINDOW_STYLE};
+use super::global::{self, Point, DROOT, MAX_DEPTH, NUM_WNODES, WINDOW_STYLE};
+use tos_types::aes::{
+    Grect, DESKWH, G_ICON, MN_SELECTED, MU_BUTTON, MU_KEYBD, MU_MESAG, MU_TIMER, M_OFF, M_ON, NIL,
+    SELECTED, WA_DNLINE, WA_DNPAGE, WA_LFLINE, WA_RTLINE, WA_UPLINE, WA_UPPAGE, WF_CXYWH, WF_FXYWH,
+    WF_HSLIDE, WF_HSLSIZ, WF_INFO, WF_NAME, WF_PXYWH, WF_TOP, WF_VSLIDE, WF_VSLSIZ, WM_ARROWED,
+    WM_CLOSED, WM_FULLED, WM_HSLID, WM_MOVED, WM_REDRAW, WM_SIZED, WM_TOPPED, WM_VSLID,
+};
 use super::menu::{self, Item, Title};
 use super::model::{AType, View};
-use super::win::{DESKWH, SliderSet, WA_DNLINE, WA_DNPAGE, WA_LFLINE, WA_RTLINE, WA_UPLINE, WA_UPPAGE};
+use super::win::SliderSet;
 use super::{dir, ftype, pro, redraw};
-use super::{
-    wind_get_grect, wind_get_top, wind_get_work, FLATHAND, MU_BUTTON, MU_KEYBD, MU_MESAG, MU_TIMER,
-    M_OFF, M_ON, WF_CXYWH, WF_FXYWH, WF_HSLIDE, WF_HSLSIZ, WF_INFO, WF_NAME, WF_PXYWH, WF_TOP,
-    WF_VSLIDE, WF_VSLSIZ,
-};
+use super::{wind_get_grect, wind_get_top, wind_get_work, FLATHAND};
 
 // AES message ids (`aesdefs.h:227-261`).
-const MN_SELECTED: i16 = 10;
-const WM_REDRAW: i16 = 20;
-const WM_TOPPED: i16 = 21;
-const WM_CLOSED: i16 = 22;
-const WM_FULLED: i16 = 23;
-const WM_ARROWED: i16 = 24;
-const WM_HSLID: i16 = 25;
-const WM_VSLID: i16 = 26;
-const WM_SIZED: i16 = 27;
-const WM_MOVED: i16 = 28;
 
 // `Kbshift()` modifier bits (`include/biosdefs.h:90-94`), as `graf_mkstate`
 // reports them in `intout[4]`.
@@ -312,7 +304,7 @@ fn gr_plns(x: i16, y: i16, xylnpts: &[Point], xyobpts: &[Point]) {
 /// pointer leaves the `w`×`h` rectangle at `(x, y)` or the button comes up.
 /// `true` means "still dragging".
 fn gr_isdown(out: bool, x: i16, y: i16, w: i16, h: i16) -> bool {
-    super::evnt_multi_m1(out, x, y, w, h) & super::MU_BUTTON == 0
+    super::evnt_multi_m1(out, x, y, w, h) & MU_BUTTON == 0
 }
 
 /// `gr_bwait(po, mx, my, …)` (EmuTOS `deskact.c:209-232`) — draw the drag
@@ -1794,7 +1786,7 @@ fn selected_native_program() -> Option<(String, String, ftype::Flavor)> {
         let slot = g.win_slot(handle)?;
         let mut child = g.g_screen[root as usize].ob_head;
         while child != NIL && child != root {
-            if g.g_screen[child as usize].ob_state & super::win::OB_SELECTED != 0 {
+            if g.g_screen[child as usize].ob_state & SELECTED != 0 {
                 let fnode = g.g_screeninfo[child as usize].fnode;
                 if fnode >= 0 {
                     let pn = &g.windows.slots[slot].w_pnode;
@@ -2549,7 +2541,7 @@ fn do_open_selected() -> bool {
         let handle = g.g_cwin;
         let mut child = g.g_screen[root as usize].ob_head;
         while child != NIL && child != root {
-            if g.g_screen[child as usize].ob_state & super::win::OB_SELECTED != 0 {
+            if g.g_screen[child as usize].ob_state & SELECTED != 0 {
                 return Some((handle, child));
             }
             child = g.g_screen[child as usize].ob_next;
@@ -3048,7 +3040,7 @@ fn obj_get_obid(drive: u8) -> i16 {
     global::with(|g| {
         let mut obj = g.g_screen[DROOT as usize].ob_head;
         while obj != NIL && obj != DROOT {
-            if g.g_screen[obj as usize].ob_type == global::G_ICON
+            if g.g_screen[obj as usize].ob_type == G_ICON
                 && (g.g_screeninfo[obj as usize].block.ib_char & 0x00FF) as u8 == drive
             {
                 return obj;

@@ -16,7 +16,7 @@
 //! wide and a full 12-char 8.3 name fills its box without ever spilling into
 //! the neighbouring column.
 
-use tos_api::aes::object::IconBlk;
+use tos_types::aes::IconBlk;
 use tos_api::vdi::font::{SMALL_CELL_H, SMALL_CELL_W};
 
 /// Maximum icon-label length in characters (EmuTOS `MAX_ICONTEXT_WIDTH`,

@@ -30,12 +30,12 @@
 
 use tos_api::vdi::font::{CELL_H, CELL_W};
 
-use super::global::{self, DISABLED, G_BOX, G_IBOX, G_STRING, G_TITLE, LASTOB, MENU_H, NIL};
+use super::global::{self, MENU_H};
 use super::model::{Sort, View};
 
 use core::cell::UnsafeCell;
 
-use tos_api::aes::object::Object;
+use tos_types::aes::{Object, DISABLED, G_BOX, G_IBOX, G_STRING, G_TITLE, LASTOB, NIL};
 
 /// Fixed system-font character width in pixels (NewTOS 8×16 font, EmuTOS
 /// `deskmain.h` `CHAR_WIDTH` assumption).

@@ -28,6 +28,15 @@
 //! whose mismatch has gone (fixed, renamed) is **stale** and fails the check
 //! too, so the list cannot rot.
 //!
+//! # Shared sets
+//!
+//! The AES/object constants the desktop uses (`G_*`, `ob_flags`/`ob_state`,
+//! `WF_*`, `WM_*`, `MU_*`, …) are no longer copied into the desktop: since
+//! DESK43 U5b they have one home, [`SHARED_SETS`] (`tos-types/src/aes.rs`),
+//! which the AES, the desktop and native programs import. The check scans
+//! those files together with the desktop, so moving a constant out of the
+//! desktop into the shared set does not take it out of the comparison.
+//!
 //! # What it does not see
 //!
 //! Constants without a same-named EmuTOS `#define` (renamed, NewTOS-only,
@@ -42,6 +51,9 @@ use std::path::{Path, PathBuf};
 pub const SNAPSHOT: &str = "tools/xtask/emutos-defines.snapshot";
 /// The documented mismatches, relative to the workspace root.
 pub const DEVIATIONS: &str = "tools/xtask/emutos-consts-deviations.txt";
+/// The shared constant sets the desktop imports instead of declaring (DESK43
+/// U5b), relative to the workspace root; scanned together with the desktop.
+pub const SHARED_SETS: &[&str] = &["tos-types/src/aes.rs"];
 /// The EmuTOS files the snapshot covers (directory, file suffix), relative to
 /// `references/emutos/`. Every header the desktop's citations name lives here
 /// (`include/sysconf.h`, `desk/desk_rsc.h`, `aes/*.h`, …) plus the `#define`s
@@ -417,13 +429,21 @@ fn rust_files(dir: &Path, out: &mut Vec<PathBuf>) -> Result<(), String> {
     Ok(())
 }
 
-/// All literal integer constants of the desktop source, `file` relative to `root`.
+/// All literal integer constants of the desktop source plus the
+/// [`SHARED_SETS`] it imports, `file` relative to `root`.
 pub fn desktop_consts(root: &Path) -> Result<Vec<RustConst>, String> {
     let src = desktop_src(root)?;
     let mut files = Vec::new();
     rust_files(&src, &mut files)?;
     if files.is_empty() {
         return Err(format!("{} holds no .rs file", src.display()));
+    }
+    for s in SHARED_SETS {
+        let p = root.join(s);
+        if !p.is_file() {
+            return Err(format!("{}: shared constant set missing", p.display()));
+        }
+        files.push(p);
     }
     let mut out = Vec::new();
     for f in files {

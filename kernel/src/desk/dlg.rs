@@ -18,30 +18,21 @@
 
 use alloc::string::String;
 
-use tos_api::aes::object::{Object, TedInfo};
+use tos_types::aes::{
+    Object, TedInfo, DEFAULT, EDITABLE, EXIT, FL3DACT, FL3DBAK, G_BOXTEXT, G_BUTTON, G_STRING,
+    LASTOB, ROOT, SELECTABLE,
+};
 
 // The dialog-box spec, the TEDINFO colour word and the 3D roles, shared with
 // the other desktop dialogs (see `super::inf`).
-use super::inf::{mk_root, BOX_SPEC, FL3DACT, FL3DBAK, TED_COLOR};
+use super::inf::{mk_root, BOX_SPEC, TED_COLOR};
 
 // OBJECT graphic types (`obdefs.h`).
-const G_BOXTEXT: u16 = 22;
-const G_BUTTON: u16 = 26;
-const G_STRING: u16 = 28;
 
 // ob_flags bits (`obdefs.h`).
-const SELECTABLE: u16 = 0x0001;
-const DEFAULT: u16 = 0x0002;
-const EXIT: u16 = 0x0004;
-const EDITABLE: u16 = 0x0008;
-const LASTOB: u16 = 0x0020;
 
 /// Object index of the OK button (its `form_do` return value).
 const OB_OK: i16 = 3;
-
-/// `ROOT` (`obdefs.h`) — the tree's first object, and `form_do`'s "no editable
-/// field preselected" start value.
-const ROOT: i16 = 0;
 
 /// The maximum edited name length (an 8.3 name is 12 chars; one slack byte).
 const NAME_MAX: usize = 13;

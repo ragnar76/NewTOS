@@ -68,7 +68,11 @@ pub mod xbiosbind;
 // rule), and building a debug-output device is not this unit's business.
 use crate::kprintln;
 
-use global::{Grect, MAX_DEPTH, WINDOW_STYLE};
+use global::{MAX_DEPTH, WINDOW_STYLE};
+use tos_types::aes::{
+    Grect, BEG_UPDATE, DESKWH, END_UPDATE, FMD_FINISH, FMD_START, MU_BUTTON, MU_M1, WC_WORK,
+    WF_NEWDESK, WF_TOP, WF_WXYWH,
+};
 
 // ── AES parameter-block client ("aesbind") ─────────────────────────────────
 //
@@ -119,42 +123,9 @@ const OP_SHEL_GET: i16 = 122;
 const OP_SHEL_PUT: i16 = 123;
 const OP_SHEL_WDEF: i16 = 127;
 
-// wind_get/set `WF_*` fields and wind_calc `WC_*` types.
-pub(super) const WF_NAME: i16 = 2;
-pub(super) const WF_INFO: i16 = 3;
-pub(super) const WF_WXYWH: i16 = 4;
-pub(super) const WF_CXYWH: i16 = 5;
-pub(super) const WF_PXYWH: i16 = 6;
-pub(super) const WF_FXYWH: i16 = 7;
-pub(super) const WF_HSLIDE: i16 = 8;
-pub(super) const WF_VSLIDE: i16 = 9;
-pub(super) const WF_TOP: i16 = 10;
-pub(super) const WF_FIRSTXYWH: i16 = 11;
-pub(super) const WF_NEXTXYWH: i16 = 12;
-const WF_NEWDESK: i16 = 14;
-pub(super) const WF_HSLSIZ: i16 = 15;
-pub(super) const WF_VSLSIZ: i16 = 16;
-const WC_WORK: i16 = 1;
-
-/// `form_dial` type `FMD_START` (`aesdefs.h:339`) — reserve the dialog screen
-/// area before the first `objc_draw`.
-const FMD_START: i16 = 0;
-/// `form_dial` type `FMD_FINISH` (`aesdefs.h:342`) — release the dialog screen
-/// area and restore what was under it.
-const FMD_FINISH: i16 = 3;
-
-/// `wind_update` mode `END_UPDATE` (`aesdefs.h`) — release the window-tree lock.
-const END_UPDATE: i16 = 0;
-/// `wind_update` mode `BEG_UPDATE` (`aesdefs.h`) — take the window-tree lock, so
-/// the AES holds its redraws back while the caller rearranges windows.
-const BEG_UPDATE: i16 = 1;
-
-// graf_mouse cursor-control numbers (`aesdefs.h`): hide / show around a paint.
-pub(super) const M_OFF: i16 = 256;
-pub(super) const M_ON: i16 = 257;
-/// `graf_mouse` shape number (`aesdefs.h`): the plain arrow, which
-/// `desk_busy_off` restores (`desk/desksupp.c:1849-1852`).
-pub(super) const ARROW: i16 = 0;
+// The AES constants (`WF_*`, `WC_*`, `MU_*`, `M_ON`/`M_OFF`, `ARROW`, …) are
+// `tos_types::aes` (one public set, DESK43 U5b). The two `graf_mouse` shapes
+// below keep the desktop's own `deskbind.h` names.
 /// `graf_mouse` shape number `FLATHAND` (`desk/deskbind.h:34`, = `FLAT_HAND`,
 /// `aesdefs.h:428`): the open hand `gr_drgplns` shows for the duration of a
 /// drag (`deskact.c:264`).
@@ -163,15 +134,6 @@ pub(super) const FLATHAND: i16 = 4;
 /// `aesdefs.h:426`): the busy indicator `desk_busy_on` sets
 /// (`desk/desksupp.c:1840-1843`).
 pub(super) const HGLASS: i16 = 2;
-
-// evnt_multi event-class bits (`aesdefs.h`).
-pub(super) const MU_KEYBD: u16 = 0x0001;
-pub(super) const MU_BUTTON: u16 = 0x0002;
-/// `MU_M1` — the first mouse-rectangle event, the one `gr_isdown` waits on
-/// while a drag is in progress (`deskact.c:66-77`).
-pub(super) const MU_M1: u16 = 0x0004;
-pub(super) const MU_MESAG: u16 = 0x0010;
-pub(super) const MU_TIMER: u16 = 0x0020;
 
 /// Issue the GEM trap (`svc #2`): selector 200 in `x0`, AESPB in `x1`.
 fn gem_trap(aespb: u64) {
@@ -299,7 +261,7 @@ pub(super) fn objc_draw_tree(tree: u64, root: i16, clip: Grect) {
 }
 
 /// `objc_find` (43) — deepest object of `tree` under `(mx, my)` within `depth`
-/// levels of `start`; [`global::NIL`] if none. Resolves the icon/text item a
+/// levels of `start`; [`NIL`] if none. Resolves the icon/text item a
 /// click landed on (the `hndl_button` hit-test).
 pub(super) fn objc_find(tree: u64, start: i16, depth: i16, mx: i16, my: i16) -> i16 {
     let mut a = Aes::new();
@@ -325,7 +287,7 @@ pub(super) fn objc_offset(tree: u64, obj: i16) -> (i16, i16) {
 }
 
 /// `wind_find` (106) — handle of the window under screen point `(mx, my)`;
-/// `0` (= [`win::DESKWH`]) for the desktop. The D3 fix: a click is routed to
+/// `0` (= [`DESKWH`]) for the desktop. The D3 fix: a click is routed to
 /// *whichever* window it fell in, not a single hard-coded one.
 pub(super) fn wind_find(mx: i16, my: i16) -> i16 {
     let mut a = Aes::new();
@@ -361,10 +323,10 @@ pub(super) fn wind_get_rect(handle: i16, field: i16) -> Grect {
 }
 
 /// `wind_get(DESKWH, WF_TOP)` — the handle of the top-most open window, or
-/// [`win::DESKWH`] when only the desktop is showing.
+/// [`DESKWH`] when only the desktop is showing.
 pub(super) fn wind_get_top() -> i16 {
     let mut a = Aes::new();
-    a.intin[0] = win::DESKWH;
+    a.intin[0] = DESKWH;
     a.intin[1] = WF_TOP;
     a.call(OP_WIND_GET, 2, 5, 0);
     a.intout[1]
@@ -414,7 +376,7 @@ pub(super) fn wind_set_ptr(handle: i16, field: i16, ptr: u64) {
 pub(super) fn wind_set_newdesk(tree: u64, root: i16) {
     let mut a = Aes::new();
     a.addrin[0] = tree as i64;
-    a.intin[0] = win::DESKWH;
+    a.intin[0] = DESKWH;
     a.intin[1] = WF_NEWDESK;
     a.intin[2] = root;
     a.call(OP_WIND_SET, 3, 1, 1);
@@ -912,7 +874,7 @@ pub(super) fn fsel_exinput(path: &mut [u8], sel: &mut [u8], title: &[u8]) -> (i1
 pub(super) fn g_desk() -> Grect {
     match global::with(|g| g.g_desk) {
         Some(d) => d,
-        None => wind_get_grect(win::DESKWH, WF_WXYWH),
+        None => wind_get_grect(DESKWH, WF_WXYWH),
     }
 }
 
@@ -992,7 +954,7 @@ fn deskmain() -> bool {
     // straight after `appl_init` exactly as EmuTOS orders it
     // (`deskmain.c:1953-1959`). This is where the desktop learns the screen
     // geometry; it does not ask the framebuffer.
-    let desk = wind_get_grect(win::DESKWH, WF_WXYWH);
+    let desk = wind_get_grect(DESKWH, WF_WXYWH);
 
     // One-time setup: DeskState (view/sort defaults, window list, object arena).
     global::init(desk);
@@ -1170,7 +1132,7 @@ fn deskmain() -> bool {
 fn close_desktop_windows() {
     for _ in 0..global::NUM_WNODES {
         let pw = wind_get_top();
-        if pw == win::DESKWH {
+        if pw == DESKWH {
             break;
         }
         wind_close(pw);

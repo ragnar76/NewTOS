@@ -28,35 +28,20 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use tos_api::aes::object::{IconBlk, Object, TedInfo};
+use tos_types::aes::{
+    IconBlk, Object, TedInfo, DEFAULT, DISABLED, EDITABLE, EXIT, FL3DACT, FL3DBAK, FL3DIND, G_BOX,
+    G_BUTTON, G_FBOXTEXT, G_IBOX, G_ICON, G_STRING, LASTOB, NIL, RBUTTON, SELECTABLE, SELECTED,
+    TOUCHEXIT,
+};
 use tos_api::vdi::font::{CELL_H, CELL_W};
 
 use super::dosbind::{dos_gdrv, dos_sdrv};
-use super::global::{self, Anode, AF_ISEXEC, DROOT, NIL};
+use super::global::{self, Anode, AF_ISEXEC, DROOT};
 use super::icons::{build_iconblk, icon_kind, ig_of, IconKind, BUILTIN_ICONS, IG_HARD};
-use super::inf::{
-    disk_label, end_dialog, mk_root, start_dialog, BOX_SPEC, FL3DACT, FL3DBAK, FL3DIND, TED_COLOR,
-};
+use super::inf::{disk_label, end_dialog, mk_root, start_dialog, BOX_SPEC, TED_COLOR};
 use super::model::AType;
 
 // ── OBJECT graphic types / flags (`obdefs.h`), as in the sibling dialogs ────
-
-const G_BOX: u16 = 20;
-const G_IBOX: u16 = 25;
-const G_BUTTON: u16 = 26;
-const G_STRING: u16 = 28;
-const G_FBOXTEXT: u16 = 30;
-const G_ICON: u16 = 31;
-
-const SELECTABLE: u16 = 0x0001;
-const DEFAULT: u16 = 0x0002;
-const EXIT: u16 = 0x0004;
-const EDITABLE: u16 = 0x0008;
-const RBUTTON: u16 = 0x0010;
-const LASTOB: u16 = 0x0020;
-const TOUCHEXIT: u16 = 0x0040;
-
-const OB_SELECTED: u16 = 0x0001;
 
 /// `BLKDEVNUM` (`bios/blkdev.h`) — the number of GEMDOS drive letters.
 const BLKDEVNUM: u32 = 26;
@@ -498,7 +483,7 @@ fn install_desktop_icon(existing: Option<usize>) -> Change {
         AType::Printer => ID_DRIVE + 2,
         _ => ID_DRIVE,
     };
-    tree[type_obj as usize].ob_state |= OB_SELECTED;
+    tree[type_obj as usize].ob_state |= SELECTED;
 
     // ── run it (`deskins.c:903-963`) ────────────────────────────────────
     let tree_ptr = tree.as_mut_ptr() as u64;
@@ -544,7 +529,7 @@ fn install_desktop_icon(existing: Option<usize>) -> Change {
         }
         // `tree[exitobj].ob_state &= ~SELECTED;` (`:943`).
         if let Some(o) = tree.get_mut(exitobj as usize) {
-            o.ob_state &= !OB_SELECTED;
+            o.ob_state &= !SELECTED;
         }
 
         if retry {
@@ -779,10 +764,10 @@ fn install_window_icon(pf: Option<&WinFile>) -> Change {
     ];
 
     // Pre-select (and, with an `FNODE`, disable) the item type (`:1096-1112`).
-    tree[if is_folder { IW_FOLD } else { IW_FILE } as usize].ob_state |= OB_SELECTED;
+    tree[if is_folder { IW_FOLD } else { IW_FILE } as usize].ob_state |= SELECTED;
     if pf.is_some() {
-        tree[IW_FILE as usize].ob_state |= global::DISABLED;
-        tree[IW_FOLD as usize].ob_state |= global::DISABLED;
+        tree[IW_FILE as usize].ob_state |= DISABLED;
+        tree[IW_FOLD as usize].ob_state |= DISABLED;
     }
 
     // ── run it (`deskins.c:1125-1208`) ──────────────────────────────────
@@ -808,7 +793,7 @@ fn install_window_icon(pf: Option<&WinFile>) -> Change {
                     }
                     // "type = (tree[IW_FILE].ob_state & SELECTED) ? AT_ISFILE
                     //  : AT_ISFOLD;" (`:1151`)
-                    let atype = if tree[IW_FILE as usize].ob_state & OB_SELECTED != 0 {
+                    let atype = if tree[IW_FILE as usize].ob_state & SELECTED != 0 {
                         AType::File
                     } else {
                         AType::Folder
@@ -853,7 +838,7 @@ fn install_window_icon(pf: Option<&WinFile>) -> Change {
             break;
         }
         if let Some(o) = tree.get_mut(exitobj as usize) {
-            o.ob_state &= !OB_SELECTED;
+            o.ob_state &= !SELECTED;
         }
 
         if new_icon != curr_icon {
@@ -1086,7 +1071,7 @@ pub(super) fn ins_shortcut(wh: i16, mx: i16, my: i16) {
 /// dialog, and EmuTOS's lives in `util/`, shared by both call sites.
 fn inf_gindex(tree: &[Object], baseobj: usize, numobj: usize) -> i16 {
     for (n, obj) in tree.iter().skip(baseobj).take(numobj).enumerate() {
-        if obj.ob_state & OB_SELECTED != 0 {
+        if obj.ob_state & SELECTED != 0 {
             return n as i16;
         }
     }
@@ -1233,7 +1218,7 @@ pub fn selftest() {
     let first = global::with(|g| g.g_screen[DROOT as usize].ob_head).unwrap_or(NIL);
     if first != NIL {
         let before = global::with(|g| g.g_ahead.len()).unwrap_or(0);
-        global::with(|g| g.g_screen[first as usize].ob_state |= OB_SELECTED);
+        global::with(|g| g.g_screen[first as usize].ob_state |= SELECTED);
         let n = rmv_icon(global::with(|g| g.win_isel(DROOT, 0)).unwrap_or(0));
         check("rmv_icon removed one icon", n == 1);
         check("the list is one shorter", global::with(|g| g.g_ahead.len()).unwrap_or(0) + 1 == before);

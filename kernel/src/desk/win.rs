@@ -13,22 +13,19 @@
 
 use alloc::vec::Vec;
 
-use tos_api::aes::object::IconBlk;
+use tos_types::aes::{
+    Grect, IconBlk, DESKWH, G_BOX, G_ICON, G_STRING, NIL, SELECTED, WA_DNLINE, WA_DNPAGE,
+    WA_LFLINE, WA_LFPAGE, WA_RTLINE, WA_RTPAGE, WA_UPLINE, WA_UPPAGE,
+};
 use tos_api::vdi::font::{CELL_H, CELL_W};
 
-use super::global::{
-    min_wint, DeskState, Grect, DROOT, G_BOX, G_ICON, G_STRING, MIN_HINT, NIL, NUM_WNODES,
-};
+use super::global::{min_wint, DeskState, DROOT, MIN_HINT, NUM_WNODES};
 use super::icons::{build_iconblk, IconKind};
 use super::model::{DateFmt, FNode, PNode, TimeFmt, View, LEN_LABEL};
 
 /// `LEN_FNODE` (`deskwin.h:36`) — the fixed formatted text-line width in
 /// characters; the `V_TEXT` item's own extent is `LEN_FNODE * char_w`.
 pub const LEN_FNODE: i16 = 48;
-
-/// `ob_state` `SELECTED` bit (`obdefs.h`) — a selected/highlighted item; the
-/// AES object renderer inverts a `G_ICON`/`G_STRING` that carries it.
-pub const OB_SELECTED: u16 = 0x0001;
 
 /// The `ob_spec` colour word for a window's item-root box: solid-white
 /// interior, **no** border (border thickness 0 in bits 16-23; colour word
@@ -42,32 +39,11 @@ pub const OB_SELECTED: u16 = 0x0001;
 /// (its background is the pattern fill, not white).
 const WORK_BG_SPEC: u64 = 0x0000_0070;
 
-// `WM_ARROWED` action codes (`aesdefs.h:246-253`) the scroll handlers map to a
-// `w_cvcol`/`w_cvrow` delta.
-/// Scroll up one page.
-pub const WA_UPPAGE: i16 = 0;
-/// Scroll down one page.
-pub const WA_DNPAGE: i16 = 1;
-/// Scroll up one line.
-pub const WA_UPLINE: i16 = 2;
-/// Scroll down one line.
-pub const WA_DNLINE: i16 = 3;
-/// Scroll left one page.
-pub const WA_LFPAGE: i16 = 4;
-/// Scroll right one page.
-pub const WA_RTPAGE: i16 = 5;
-/// Scroll left one line.
-pub const WA_LFLINE: i16 = 6;
-/// Scroll right one line.
-pub const WA_RTLINE: i16 = 7;
-
 /// `w_flags` bit marking `DeskState::windows.desktop` (`WN_DESKTOP`).
 pub const WN_DESKTOP: u16 = 0x0001;
 /// `w_flags` bit "needs rebuilding" (`WN_REBUILD`) — set/tested by later
 /// tasks.
 pub const WN_REBUILD: u16 = 0x8000;
-/// The desktop pseudo-window's AES handle (`DESKWH`).
-pub const DESKWH: i16 = 0;
 
 /// `LEN_ZPATH` (`include/sysconf.h:51`) — the maximum path length including
 /// the drive, which sizes the `WNODE` title buffer and bounds `pn_open`
@@ -504,7 +480,7 @@ impl DeskState {
         // Select-all or Search that marked files off-screen) shows the
         // selection instead of silently dropping it.
         if f.f_selected {
-            self.g_screen[obid as usize].ob_state |= OB_SELECTED;
+            self.g_screen[obid as usize].ob_state |= SELECTED;
         }
         let info = &mut self.g_screeninfo[obid as usize];
         info.label = [0; LEN_LABEL];
@@ -686,7 +662,7 @@ impl DeskState {
     }
 
     /// `desk_clear` (EmuTOS `desksupp.c:122`) — deselect every item in window
-    /// `handle` (or the desktop): clear each object's [`OB_SELECTED`] bit and,
+    /// `handle` (or the desktop): clear each object's [`SELECTED`] bit and,
     /// for a real window, its file's `f_selected`. Returns `true` if anything
     /// was actually deselected (so the caller knows to repaint).
     pub fn desk_clear(&mut self, handle: i16) -> bool {
@@ -706,7 +682,7 @@ impl DeskState {
         changed
     }
 
-    /// Clear [`OB_SELECTED`] on every child of `root`; returns whether any bit
+    /// Clear [`SELECTED`] on every child of `root`; returns whether any bit
     /// was set. The object-side half of [`desk_clear`] (the paired
     /// `FNode.f_selected` is cleared there).
     fn clear_obj_selection(&mut self, root: i16) -> bool {
@@ -714,15 +690,14 @@ impl DeskState {
         let mut child = self.g_screen[root as usize].ob_head;
         while child != NIL && child != root {
             let o = &mut self.g_screen[child as usize];
-            if o.ob_state & OB_SELECTED != 0 {
-                o.ob_state &= !OB_SELECTED;
+            if o.ob_state & SELECTED != 0 {
+                o.ob_state &= !SELECTED;
                 changed = true;
             }
             child = o.ob_next;
         }
         changed
     }
-
 
     /// `win_isel` (`deskwin.c:825-840`) — the next `SELECTED` child of `root`
     /// after `curr` (`curr == 0` starts the walk at `root`'s head), or `0` when
@@ -731,7 +706,7 @@ impl DeskState {
     pub fn win_isel(&self, root: i16, curr: i16) -> i16 {
         let mut curr = if curr == 0 { self.g_screen[root as usize].ob_head } else { self.g_screen[curr as usize].ob_next };
         while curr > root {
-            if self.g_screen[curr as usize].ob_state & OB_SELECTED != 0 {
+            if self.g_screen[curr as usize].ob_state & SELECTED != 0 {
                 return curr;
             }
             curr = self.g_screen[curr as usize].ob_next;
@@ -773,12 +748,12 @@ impl DeskState {
     }
 
     /// Number of currently-selected items under `root` (children carrying
-    /// [`OB_SELECTED`]) — `men_update`'s `nsel`.
+    /// [`SELECTED`]) — `men_update`'s `nsel`.
     pub fn count_selected(&self, root: i16) -> usize {
         let mut n = 0;
         let mut child = self.g_screen[root as usize].ob_head;
         while child != NIL && child != root {
-            if self.g_screen[child as usize].ob_state & OB_SELECTED != 0 {
+            if self.g_screen[child as usize].ob_state & SELECTED != 0 {
                 n += 1;
             }
             child = self.g_screen[child as usize].ob_next;
@@ -800,7 +775,7 @@ impl DeskState {
         let mut n = 0;
         let mut child = self.g_screen[self.g_croot as usize].ob_head;
         while child != NIL && child != self.g_croot {
-            if self.g_screen[child as usize].ob_state & OB_SELECTED != 0 {
+            if self.g_screen[child as usize].ob_state & SELECTED != 0 {
                 let fnode = self.g_screeninfo[child as usize].fnode;
                 if fnode >= 0 {
                     if let Some(f) = self.windows.slots[slot].w_pnode.p_flist.get(fnode as usize) {

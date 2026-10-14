@@ -1,0 +1,32 @@
+NewTOS desktop citation list — kernel/src/desk/ (fns touched since f6f14885)
+
+file                                 fns  cited newtos  uncited
+kernel/src/desk/act.rs                 6      5      0        1
+kernel/src/desk/dir.rs                 6      5      0        1
+kernel/src/desk/global.rs              2      0      0        2
+kernel/src/desk/inf.rs                 9      8      0        1
+kernel/src/desk/ins.rs                 4      3      0        1
+kernel/src/desk/insapp.rs              3      1      0        2
+kernel/src/desk/main.rs                4      3      0        1
+kernel/src/desk/mod.rs                 7      4      0        3
+kernel/src/desk/win.rs                 6      3      0        3
+
+uncited:
+  kernel/src/desk/act.rs:286  is_selected
+  kernel/src/desk/dir.rs:2534  select_all
+  kernel/src/desk/global.rs:289  default
+  kernel/src/desk/global.rs:551  new
+  kernel/src/desk/inf.rs:3700  set_background
+  kernel/src/desk/ins.rs:1115  selftest
+  kernel/src/desk/insapp.rs:182  set_flavor_radio
+  kernel/src/desk/insapp.rs:199  set_param_radio
+  kernel/src/desk/main.rs:1779  selected_native_program
+  kernel/src/desk/mod.rs:266  objc_find
+  kernel/src/desk/mod.rs:292  wind_find
+  kernel/src/desk/mod.rs:327  wind_get_top
+  kernel/src/desk/win.rs:467  build_item
+  kernel/src/desk/win.rs:688  clear_obj_selection
+  kernel/src/desk/win.rs:752  count_selected
+newtos:
+
+DESK-CITE: fns=47 cited=32 newtos=0 uncited=15

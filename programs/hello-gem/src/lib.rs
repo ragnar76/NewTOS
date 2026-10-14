@@ -30,7 +30,7 @@ use newtos_gem::aes::{self, Grect};
 use newtos_gem::{gemdos, heap::HeapStats, vdi, FixedBuf, HEAP};
 
 /// Window parts: a title bar with closer, movable.
-const KIND: i16 = aes::NAME | aes::CLOSER | aes::MOVER;
+const KIND: i16 = (aes::NAME | aes::CLOSER | aes::MOVER) as i16;
 /// The window title (the AES keeps the pointer, so it is static).
 const TITLE: &core::ffi::CStr = c" HELLOGEM (Rust, EL0) ";
 
@@ -186,7 +186,7 @@ impl App {
     fn redraw(&self, area: Grect) {
         aes::wind_update(aes::BEG_UPDATE);
         aes::graf_mouse(aes::M_OFF);
-        let work = aes::wind_get_grect(self.win, aes::WF_WORKXYWH);
+        let work = aes::wind_get_grect(self.win, aes::WF_WXYWH);
         let mut r = aes::wind_get_grect(self.win, aes::WF_FIRSTXYWH);
         while r.w > 0 && r.h > 0 {
             if let Some(c) = r.intersect(&area) {
@@ -269,7 +269,7 @@ pub unsafe extern "C" fn main(basepage: usize) -> i32 {
     lines.push(String::new());
     lines.push(String::from("Press a key or click to quit."));
 
-    let desk = aes::wind_get_grect(0, aes::WF_WORKXYWH);
+    let desk = aes::wind_get_grect(0, aes::WF_WXYWH);
     let cols = lines.iter().map(String::len).max().unwrap_or(0) as i16 + 2;
     let mut work = Grect {
         x: 0,
@@ -312,7 +312,7 @@ pub unsafe extern "C" fn main(basepage: usize) -> i32 {
                     aes::wind_set_top(win);
                 }
                 aes::WM_MOVED => {
-                    aes::wind_set_grect(win, aes::WF_CURRXYWH, r);
+                    aes::wind_set_grect(win, aes::WF_CXYWH, r);
                 }
                 aes::WM_CLOSED => break String::from("closer"),
                 _ => {}

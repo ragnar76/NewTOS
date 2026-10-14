@@ -11,7 +11,8 @@
 //! `desk/desksupp.c:1840-1852`; it lives here because `pro_exec` is its first
 //! caller in NewTOS.
 
-use super::{graf_mouse, shel_write, ARROW, HGLASS};
+use super::{graf_mouse, shel_write, HGLASS};
+use tos_types::aes::ARROW;
 
 /// `SHW_EXEC` (`include/aesdefs.h:619`) — `shel_write`'s "run `pcmd` after the
 /// current program terminates" mode.

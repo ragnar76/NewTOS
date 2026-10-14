@@ -21,16 +21,10 @@ use super::object::{self, Object, ObjTree};
 use super::Aespb;
 use crate::host::host;
 use crate::vdi::backend::{ClipRect, Pel, RasterBackend, WriteMode};
+use tos_types::aes::{ARROW, M_OFF, M_ON, M_PREVIOUS, M_RESTORE, M_SAVE, OUTLN_CROSS, USER_DEF};
 
 const WHITE: Pel = 0;
 const BLACK: Pel = 1;
-
-// graf_mouse special numbers.
-const M_OFF: i16 = 256;
-const M_ON: i16 = 257;
-const M_SAVE: i16 = 258;
-const M_RESTORE: i16 = 259;
-const M_PREVIOUS: i16 = 260;
 
 /// EmuTOS `gsx_bxpts` (`aes/gemgraf.c:246-258`) — the five polyline points of
 /// the box `(x, y, w, h)`, clockwise from the top-left and back to it, so the
@@ -644,13 +638,6 @@ pub fn graf_mouse(pb: &Aespb) {
     }
     pb.set_ret(1);
 }
-
-/// The first and last preset form number (`aesdefs.h:424-431`).
-const ARROW: i16 = 0;
-const OUTLN_CROSS: i16 = 7;
-
-/// USER_DEF cursor form number (`aesdefs.h`).
-const USER_DEF: i16 = 255;
 
 /// Install a caller-supplied `MFORM` from `addr_in[0]` (EmuTOS `gsx_mfset`):
 /// 37 native WORDs — hotspot x/y, planes, fg/bg colour, 16 mask rows, 16

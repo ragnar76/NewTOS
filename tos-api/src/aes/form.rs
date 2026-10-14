@@ -19,6 +19,11 @@ use super::object::{self, Object, ObjTree};
 use super::Aespb;
 use crate::host::host;
 use crate::vdi::backend::{ClipRect, RasterBackend};
+use tos_types::aes::{
+    DEFAULT, DISABLED, EDITABLE, ED_CHAR, ED_END, ED_INIT, EXIT, FL3DACT, FL3DBAK, FMD_FINISH,
+    FMD_GROW, FMD_SHRINK, FMD_START, G_BOX, G_BUTTON, G_STRING, HIDETREE, LASTOB, NIL, OUTLINED,
+    RBUTTON, SELECTABLE, SELECTED, SHADOWED, TOUCHEXIT,
+};
 
 /// Alert colours (`vdi` palette indices).
 const BLACK: crate::vdi::backend::Pel = 1;
@@ -97,26 +102,7 @@ fn draw_alert_icon(iconnum: i16, x: i16, y: i16, backend: &dyn RasterBackend) {
     }
 }
 
-const G_BOX: u16 = 20;
-const G_BUTTON: u16 = 26;
-const G_STRING: u16 = 28;
-
-const SELECTABLE: u16 = 0x0001;
-const DEFAULT: u16 = 0x0002;
-const EXIT: u16 = 0x0004;
-const EDITABLE: u16 = 0x0008;
-const FL3DBAK: u16 = 0x0400; // 3D background panel
-const FL3DACT: u16 = 0x0600; // 3D activator (button)
-const LASTOB: u16 = 0x0020;
-const TOUCHEXIT: u16 = 0x0040;
-const HIDETREE: u16 = 0x0080; // ob_flags: subtree hidden
-const SELECTED: u16 = 0x0001;
 const MAX_DEPTH: i16 = 16;
-
-// objc_edit kinds.
-const ED_INIT: i16 = 1;
-const ED_CHAR: i16 = 2;
-const ED_END: i16 = 3;
 
 const CW: i16 = 8; // system font cell width
 const CH: i16 = 16; // system font cell height
@@ -434,7 +420,6 @@ fn h_mouse_buttons() -> u8 {
 }
 
 // ── parsing helpers ─────────────────────────────────────────────────
-
 
 /// Locate the next `[..]` group at/after `from`. Returns
 /// `(content_start, content_end, after_close)`.
@@ -922,15 +907,6 @@ fn write_decimal(n: i16, buf: &mut [u8]) -> usize {
     len
 }
 
-// form_dial types (aesbind.h).
-pub(super) const FMD_START: i16 = 0;
-const FMD_GROW: i16 = 1;
-const FMD_SHRINK: i16 = 2;
-pub(super) const FMD_FINISH: i16 = 3;
-/// ob_state OUTLINED / SHADOWED bits (obdefs.h).
-const OUTLINED: u16 = 0x0010;
-const SHADOWED: u16 = 0x0020;
-
 /// `ob_center` (EmuTOS `gemobed.c:67-106`) — centre `t`'s ROOT on screen and
 /// return the tree's **outer** rectangle: the ROOT box grown by the 3 px
 /// `OUTLINED` ring and by the `SHADOWED` drop shadow, exactly as EmuTOS reports
@@ -1050,10 +1026,6 @@ pub fn form_dial(pb: &Aespb) {
 const DEFLT: i16 = 0;
 const FORWARD: i16 = 1;
 const BACKWARD: i16 = 2;
-// ob_flags RBUTTON (radio button); ob_state DISABLED; NIL sentinel.
-const RBUTTON: u16 = 0x0010;
-const DISABLED: u16 = 0x0008;
-const NIL: i16 = -1;
 // Keys routed by form_keybd (NewTOS ASCII low byte + scancode high byte).
 const K_RETURN: i16 = 0x0D;
 const K_TAB: i16 = 0x09;

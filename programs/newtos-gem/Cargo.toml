@@ -11,3 +11,7 @@ test = false
 bench = false
 
 [dependencies]
+# The shared GEM records and constants (Object/TedInfo/IconBlk/Grect, G_*, WF_*,
+# WM_*, MU_*, ...): one home for kernel, AES and programs (DESK43 U5b).
+# Dependency-free, `no_std`.
+tos-types = { path = "../../tos-types" }

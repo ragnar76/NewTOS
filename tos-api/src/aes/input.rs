@@ -69,6 +69,7 @@
 use core::sync::atomic::{AtomicBool, AtomicI16, AtomicI32, AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 
 use super::pd::{DESKTOP, NUM_PDS};
+use tos_types::aes::{WA_DNLINE, WA_UPLINE, WM_ARROWED};
 
 /// EmuTOS `MB_DOWN` (`aes/geminput.c:46`) — the left button, the only state
 /// that moves mouse ownership.
@@ -901,13 +902,6 @@ pub(super) fn pending_transition() -> Option<(u8, i16)> {
 }
 
 // ── the mouse wheel (CONF_WITH_EXTENDED_MOUSE) ─────────────────────────────
-
-/// `WM_ARROWED` (`include/aesdefs.h:233`).
-const WM_ARROWED: i16 = 24;
-/// `WM_ARROWED` sub-action: scroll one line up (`include/aesdefs.h:248`).
-const WA_UPLINE: i16 = 2;
-/// `WM_ARROWED` sub-action: scroll one line down (`include/aesdefs.h:249`).
-const WA_DNLINE: i16 = 3;
 
 /// EmuTOS `wheel_change(wheel_number, wheel_amount)` (`aes/geminput.c:394-
 /// 420`) — the AES's end of the wheel chain, reached through the VDI's

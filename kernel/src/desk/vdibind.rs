@@ -29,7 +29,8 @@
 
 use core::sync::atomic::{AtomicI16, Ordering};
 
-use super::global::{Grect, Point};
+use super::global::Point;
+use tos_types::aes::Grect;
 
 // VDI opcodes (`tos-api/src/vdi/mod.rs` dispatch table).
 const OP_V_PLINE: i16 = 6;

@@ -13,7 +13,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU8, Ordering};
 
-use tos_api::aes::object::Object;
+use tos_types::aes::{Grect, Object, DESKWH, G_BOX, G_IBOX, LASTOB, NIL};
 
 use crate::sync::SpinMutex;
 
@@ -23,8 +23,6 @@ use super::win::WindowList;
 // ── Object-tree layout constants (`deskconf.h`, our own choice of indices
 //    per `_data-model.md`: "which index the desktop uses is internal"). ──────
 
-/// The "no object / end of list" sentinel (`OBJECT` `ob_*` = -1).
-pub const NIL: i16 = -1;
 /// `g_screen[]` index of the desktop pseudo-window's item root (`DROOT`).
 pub const DROOT: i16 = 1;
 /// Number of real window slots (`NUM_WNODES`, `deskconf.h`).
@@ -81,18 +79,6 @@ pub const INITIAL_ITEM_SLOTS: usize = (NUM_WNODES + 1) * MAX_WIN_ITEMS;
 // ── `OBJECT` graphic types + flag bits (`obdefs.h`) needed here and by the
 //    menu builder in `mod.rs`. ────────────────────────────────────────────
 
-/// `G_BOX` graphic type.
-pub const G_BOX: u16 = 20;
-/// `G_IBOX` (invisible box) graphic type — used for the arena's structural
-/// container objects and the menu tree.
-pub const G_IBOX: u16 = 25;
-/// `G_STRING` graphic type — a menu item / label / text-view line.
-pub const G_STRING: u16 = 28;
-/// `G_ICON` graphic type — an `ICONBLK` object (desktop + window icon items).
-pub const G_ICON: u16 = 31;
-/// `G_TITLE` graphic type — a menu-bar title.
-pub const G_TITLE: u16 = 32;
-
 /// EmuTOS `BORDER_TEXT_COLOURS` (`deskapp.c:80`): `(BLACK << 12) | (BLACK << 8)`
 /// = `0x1100`. OR'd with the persisted background pattern/colour byte to form
 /// `DROOT`'s box colour word (`ob_spec`) — black border/text nibbles above the
@@ -119,23 +105,6 @@ pub fn min_wint(screen_h: i16) -> i16 {
 /// `WINDOW_STYLE`, `deskwin.c:48-49`): NAME|CLOSER|MOVER|FULLER|INFO|SIZER|
 /// UPARROW|DNARROW|VSLIDE|LFARROW|RTARROW|HSLIDE = `0x0FFF`.
 pub const WINDOW_STYLE: u16 = 0x0FFF;
-/// `ob_flags` `LASTOB` — marks the final object of a tree.
-pub const LASTOB: u16 = 0x0020;
-/// `ob_flags` `DISABLED` — a greyed / non-selectable object (menu separators).
-pub const DISABLED: u16 = 0x0008;
-
-/// A rectangle in absolute device pixels (EmuTOS `GRECT`, x/y/w/h).
-#[derive(Clone, Copy, Default)]
-pub struct Grect {
-    /// Left edge.
-    pub x: i16,
-    /// Top edge.
-    pub y: i16,
-    /// Width in pixels.
-    pub w: i16,
-    /// Height in pixels.
-    pub h: i16,
-}
 
 /// An x/y pair in device pixels (EmuTOS `Point`, `include/gemdos.h`-adjacent
 /// `obdefs.h:34-38`). Used for the drag-outline polylines and for the list of
@@ -529,7 +498,7 @@ pub struct DeskState {
     /// the desktop, else the window's `w_root`. Set by `desk_verify`; read by
     /// `men_update`/`hndl_button` to walk the current selection.
     pub g_croot: i16,
-    /// The current window's AES handle (`g_cwin`); [`super::win::DESKWH`] for
+    /// The current window's AES handle (`g_cwin`); [`DESKWH`] for
     /// the desktop. Set by `desk_verify`.
     pub g_cwin: i16,
     /// The window whose selection state a subsequent menu action applies to
@@ -614,8 +583,8 @@ impl DeskState {
             g_xytext: [Point::default(); NUM_TEXT_POINTS],
             g_desk,
             g_croot: DROOT,
-            g_cwin: super::win::DESKWH,
-            g_wlastsel: super::win::DESKWH,
+            g_cwin: DESKWH,
+            g_wlastsel: DESKWH,
             g_screen: Vec::new(),
             g_screeninfo: Vec::new(),
             g_screenfree: NIL,

@@ -29,26 +29,20 @@
 
 use alloc::string::String;
 
-use tos_api::aes::object::{Object, TedInfo};
+use tos_types::aes::{
+    Object, TedInfo, DEFAULT, DISABLED, EDITABLE, EXIT, FL3DACT, FL3DBAK, FL3DIND, G_BOXTEXT,
+    G_BUTTON, G_STRING, LASTOB, SELECTABLE, SELECTED,
+};
 
 // `AppFlavor` plus the dialog-box spec, the TEDINFO colour word and the 3D
 // roles, shared with the other desktop dialogs.
-use super::inf::{mk_root, AppFlavor, BOX_SPEC, FL3DACT, FL3DBAK, FL3DIND, TED_COLOR};
+use super::inf::{mk_root, AppFlavor, BOX_SPEC, TED_COLOR};
 
 // OBJECT graphic types (`obdefs.h`).
-const G_BOXTEXT: u16 = 22;
-const G_BUTTON: u16 = 26;
-const G_STRING: u16 = 28;
 
 // ob_flags bits (`obdefs.h`).
-const SELECTABLE: u16 = 0x0001;
-const DEFAULT: u16 = 0x0002;
-const EXIT: u16 = 0x0004;
-const EDITABLE: u16 = 0x0008;
-const LASTOB: u16 = 0x0020;
 
 // ob_state bit (`obdefs.h`).
-const OB_SELECTED: u16 = 0x0001;
 
 /// The maximum edited extension length (a TOS 8.3 extension is 3 chars; a few
 /// slack bytes allow a `*` all-files entry too).
@@ -194,9 +188,9 @@ fn set_flavor_radio(tree: &mut [Object], flavor: AppFlavor) {
     };
     for obj in [O_GEM, O_TOS, O_GTP, O_TTP] {
         if obj == sel {
-            tree[obj as usize].ob_state |= OB_SELECTED;
+            tree[obj as usize].ob_state |= SELECTED;
         } else {
-            tree[obj as usize].ob_state &= !OB_SELECTED;
+            tree[obj as usize].ob_state &= !SELECTED;
         }
     }
 }
@@ -204,8 +198,8 @@ fn set_flavor_radio(tree: &mut [Object], flavor: AppFlavor) {
 /// Set the two parameter radio buttons so only the chosen one is `SELECTED`.
 fn set_param_radio(tree: &mut [Object], full_path: bool) {
     let (on, off) = if full_path { (O_FULL, O_FILE) } else { (O_FILE, O_FULL) };
-    tree[on as usize].ob_state |= OB_SELECTED;
-    tree[off as usize].ob_state &= !OB_SELECTED;
+    tree[on as usize].ob_state |= SELECTED;
+    tree[off as usize].ob_state &= !SELECTED;
 }
 
 /// Run the Install-Application dialog for the program `app_name` (its bare file
@@ -361,7 +355,7 @@ pub(super) fn ins_app_dialog(
 
     // A not-installed application cannot be removed (EmuTOS `deskins.c:585-586`).
     if !installed {
-        tree[O_REMOVE as usize].ob_state |= super::global::DISABLED;
+        tree[O_REMOVE as usize].ob_state |= DISABLED;
     }
 
     // Pre-select the flavour + parameter radios.
@@ -391,7 +385,7 @@ pub(super) fn ins_app_dialog(
                 // (`deskins.c:520-530`) — the *only* retry the dialog has.
                 let Some(key) = get_funkey(&fkeybuf, app_path, initial_funkey, installed) else {
                     fkeybuf.fill(0);
-                    tree[O_INSTALL as usize].ob_state &= !OB_SELECTED;
+                    tree[O_INSTALL as usize].ob_state &= !SELECTED;
                     super::dir::draw_dial(tree_ptr);
                     continue;
                 };

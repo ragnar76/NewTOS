@@ -30,22 +30,15 @@
 use core::cell::UnsafeCell;
 
 use super::object::{ObjTree, Object, TedInfo};
+use tos_types::aes::{G_BOX, G_TEXT, LASTOB, ROOT, TE_CNTR};
 
-/// `ROOT` — object 0 of any tree (`include/obdefs.h:20`).
-const ROOT: usize = 0;
 /// `DTNAME` — object 2 of the built-in `DESKTOP` tree, the `G_TEXT` that
 /// `sh_draw` fills with the name of the program being launched
 /// (`gem_rsc.h:49`, `gemshlib.c:284-286`).
 const DTNAME: usize = 2;
 
-/// `G_BOX` / `G_TEXT` graphic types (`obdefs.h:67-68`).
-const G_BOX: u16 = 20;
-const G_TEXT: u16 = 21;
-/// `LASTOB` object flag (`obdefs.h:88`).
-const LASTOB: u16 = 0x0020;
 /// `IBM` font id / `TE_CNTR` justification (`obdefs.h:62,255`).
 const IBM: i16 = 3;
-const TE_CNTR: i16 = 2;
 
 /// Number of bytes of the `.INF` file `process_inf1` looks at — EmuTOS
 /// `INF_SIZE` (`geminit.c:99`, used at `:769`). Anything past it is invisible
@@ -208,7 +201,7 @@ pub(crate) fn set_dtname_text(p: u64) {
 pub(crate) fn desktop_root_obspec() -> u64 {
     // SAFETY: the static tree is always initialised and three objects long;
     // single-CPU cooperative access (see [`DesktopTree`]).
-    unsafe { (*desktop_tree().add(ROOT)).ob_spec }
+    unsafe { (*desktop_tree().add(ROOT as usize)).ob_spec }
 }
 
 /// `set_aes_background` (`geminit.c:635-641`) — replace the low byte of the
@@ -218,7 +211,7 @@ pub(crate) fn desktop_root_obspec() -> u64 {
 pub(crate) fn set_aes_background(patcol: u8) {
     // SAFETY: as [`desktop_root_obspec`].
     unsafe {
-        let root = &mut *desktop_tree().add(ROOT);
+        let root = &mut *desktop_tree().add(ROOT as usize);
         root.ob_spec &= 0xffff_ff00;
         root.ob_spec |= patcol as u64;
     }
@@ -346,7 +339,7 @@ fn gem_rsc() {
         // `tree[ROOT].ob_height = gl_rscreen.g_h` (`geminit.c:716-717`) — the
         // full screen height, overriding the resource's 25 character rows.
         if let Some(h) = crate::host::host().and_then(|h| h.raster()).map(|r| r.height() as i16) {
-            (*tree.add(ROOT)).ob_height = h;
+            (*tree.add(ROOT as usize)).ob_height = h;
         }
     }
 

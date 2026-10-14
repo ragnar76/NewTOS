@@ -1,0 +1,100 @@
+measurement-2026-10-14-desk43-u5b -- DESK43 unit U5b "Typen + Konstanten nach tos-types" (docs/analysis/desk43-u5-u10-review-
+2026-10-14.md §3.2 row U5b, §2.1, §4 G3; open question 3 of TASK/DESK43-U6a-STATUS-DONE.MD). Developer run, base HEAD f6f14885
+(clean tree) + the uncommitted U5b change. Host macOS, QEMU raspi4b. No SD card, no Pi, nothing committed. Date 2026-10-14.
+
+WHAT CHANGED (pure refactor): tos-types/src/aes.rs (new, module tos_types::aes) holds Object/TedInfo/IconBlk (moved from
+tos-api/src/aes/object.rs, re-exported there), Grect (one type instead of three: tos-api aes/window.rs, kernel desk/global.rs,
+programs/newtos-gem) and ONE public set of 134 AES/object constants (G_*, ob_flags, ob_state, WF_*, WM_*, WA_*, WC_*, MU_*, FMD_*,
+graf_mouse, window parts, TE_*, ED_*, objc_sysvar/3D, IP_*, ROOT/NIL/DESKWH, MN_SELECTED/AC_*), each with its EmuTOS file:line.
+377 private copies deleted in 25 files (tos-api/src/aes 206, kernel/src/desk 120, selftest_objc 24, dbg_qedtrace 3, newtos-gem 24).
+programs/newtos-gem depends on tos-types by path. tools/xtask emutos-consts also scans tos-types/src/aes.rs (SHARED_SETS).
+Details: TASK/DESK43-U5b-STATUS-DONE.MD.
+
+RESULT: no behaviour change -- proved at three levels (machine code, screen, call sequence); baselines held or improved as
+expected (drift probe 31 -> 19).
+
+1. BASELINES (method/checks.sh u5b -> checks/u5b-*; SOURCE_DATE_EPOCH=1791979200)   expected        measured
+   host tests tos-api tos-types xtask                                                1345/0/1 + new  1347/0/1 (+2: tos-types
+                                                                                                     aes::tests::native_record_layout,
+                                                                                                     aes::tests::grect_intersect)
+   release warnings rpi4 / qemu-virt (tos-api/kernel)                                64/94           64/94 both, 0 errors
+   clippy rpi4 / qemu-virt (tos-api/kernel)                                          76/125          76/125 both (tos-types: 0)
+   desk drift probe v2 TOTAL / UNSAFE                                                19 / <=24       19 (A 8, B 7, C 4, D 0) / 24
+   cargo xtask emutos-consts                                                         green           total=445 matched=281 mismatched=2
+                                                                                                     documented=2 undocumented=0 stale=0
+                                                                                                     no-counterpart=162 (deviations file
+                                                                                                     unchanged: DEOK, BLKDEVNUM)
+   SDK host tests                                                                    20/0/0          20 passed 0 failed 0 skipped
+   programs/: build.sh hello-gem, clippy (default + panic-test)                      builds          builds, 0 warnings, 0 clippy findings
+   clippy tos-types --all-targets / xtask (checks/u5b-clippy-{tos-types,xtask}.txt)  no new          0 / 1 (pre-existing, xtask main.rs:285;
+                                                                                                     0 in emutos_consts.rs)
+   Layout: const assertions in tos-types/src/aes.rs (Object 32 B, ob_spec @16, ob_x @24; TedInfo 40 B, te_font @24; IconBlk 48 B,
+   ib_char @24; Grect 8 B; every field offset) -- compile-time, all boards and hosts.
+
+2. NO BEHAVIOUR CHANGE
+2a Machine code (checks/u5b-kernel-equivalence-{rpi4,qemu-virt}.txt; method/kfn.py, method/rodata-diff.py). HEAD f6f14885 and the
+   final U5b tree built in scratch copies (/tmp/m5j/u5b/headtree, newtree; no .git, so both carry rev "unknown"), release, same
+   SOURCE_DATE_EPOCH, llvm-objdump per function with crate-hash disambiguators normalized, branch targets as symbol+offset, adrp page
+   and :lo12: immediates normalized:
+     rpi4: 992 / 992 functions; 985 identical; TedInfo::read_abi -> tedinfo_read_abi (inherent impl on a now-foreign type became
+       a free fn) identical after renaming, its 4 callers differ only in the callee name; 2 functions differ in code, both in
+       tos-api/src/aes/window.rs: wind_open (185 -> 191 instructions) and draw_change_open (685 -> 674). Their source is
+       unchanged; what changed is the window manager's Grect, now the tos-types type instead of a module-private struct of the
+       same layout and derives (a scratch build with the old derive set on the tos-types Grect gave the same two functions, so
+       it is not the added Debug/Eq). The optimizer lowers the Grect moves differently there (e.g. wind_open: four halfword
+       loads/stores where it had one 64-bit ldr/stp). Same source, same semantics; .text 20 bytes smaller. Behaviour of both is
+       exercised by the window host tests (1347 pass) and by every run in 4 and 5 (desktop drive window, TeraDesk, QED, APITEST).
+     .data identical (0 bytes). .rodata same size, 274 differing u32 words: 198 panic-Location line numbers, every one resolved to
+       a file this change edited (kernel/src/desk/*, tos-api/src/aes/*), and 76 code pointers shifted by exactly 0x14 (the 20
+       bytes above).
+     qemu-virt: 956 / 956 functions, the same 1 rename + 2 functions, .data identical, .rodata the same 198 + 76 words.
+   bin/kernel8-u5b.img vs bin/kernel8-base.img: same size (1 193 056), differs by layout (code placement after the two functions).
+2b HELLOGEM.NAP (checks/u5b-hellogem-equivalence.txt; method/hellogem-equiv.py): sha256 84cc2a08... (U6a, = HEAD, rebuilt here
+   byte-identical) -> 3110e2e3... All 72 functions / 5 423 instructions identical (as multiset per name after normalizing
+   crate-hash disambiguators and LLVM .N clone suffixes); every loaded section the same size; the file is 8 bytes smaller
+   (.strtab 6194 -> 6192 + alignment: mangled names carry newtos-gem's new crate hash, it now depends on tos-types). Function
+   placement differs (link order follows the mangled names), so the bytes differ. Not loaded: .strtab/.symtab.
+2c Screen + APITEST, QEMU raspi4b, -append "serial=on [memprot=off|memprot=strict]" (method/series.sh, run-rpi4.sh, qmp_timed.py,
+   mode.sh copied from measurement-2026-10-13-mem05-acceptance): kernel8-base.img (HEAD) and kernel8-u5b.img, cards = private
+   copies of the MEM05 acceptance cards (plain f30f360a...0740, apitest 4c903c52..., teradesk 43a75ede..., qed b4ad4d58...).
+   RESULTS: see section 4 (final kernel) and prelim/ (earlier U5b kernel).
+2d Call-sequence oracle (guard G2, optional for U5b): see section 5.
+
+3. GUARDS (docs/api/desktop/_rebuild-plan.md §12): see TASK/DESK43-U5b-STATUS-DONE.MD §4; raw outputs checks/u5b-drift.txt,
+   u5b-drift-unsafe.txt, u5b-emutos-consts.txt, u5b-cite-list.txt, u5b-cite-since-base.txt.
+
+4. QEMU RASPI4B, FINAL KERNEL (bin/kernel8-u5b.img; checks/u5b-series-summary.txt, method/summarize.sh)
+   Runs (series.sh): base (bin/kernel8-base.img) and u5b, each memprot on / off / strict: desktop (dump 25 s), APITEST (25 / 40 s),
+   TeraDesk (35 s), QED (30 s) = 24 runs, 0 [EXC]/PANIC, "[desk] desktop up" in every desktop run.
+     screendumps u5b vs base: on 5/5, off 5/5, strict 5/5 BYTE-IDENTICAL.
+     screendumps u5b vs MEM05 acceptance (acc-<mode>-rpi4-*): on 5/5, off 5/5, strict 5/5 BYTE-IDENTICAL; the desktop t25 dumps
+       of all six runs are sha256 0e6f7704...324b = U5a / U6a / MEM05 desktop.
+     APITEST TOTAL 106/0/5 in all six runs; [OK]/[FAIL]/[SKIP] lines (126, modulo hex) u5b vs base 0 diff, u5b vs MEM05 0 diff,
+       each mode.
+   Viewed: u5b-strict desktop (icons, menu bar), u5b-on TeraDesk (TeraDesk menu bar + drive icons), u5b-off QED (QED menu bar),
+   u5b-strict APITEST summary (106/0/5, the 5 skips = BC26-30 "no key pressed"), seq-u5b t45 (drive C:\ window open).
+   Runs base+u5b of one mode ran two at a time (no host stall seen; dumps identical to the single-run MEM05 references).
+
+5. ORACLE (guard G2, method/seq-run.sh adapted from the U5a run; checks/u5b-oracle-diff.txt)
+   For each of /tmp/m5j/u5b/headtree (HEAD) and newtree (U5b final): rsync to seq/tree-<label>, the U5a key injector applied to
+   that copy only (method/inj-desk-seq.py, unchanged: Alt-C 1 s after "[desk] desktop up"), release rpi4 --features
+   svc-seq-trace (96 warnings = 94 + the injector's 2 missing-doc, as in U5a), private copy of the plain card (no SVCSEQ.LOG
+   before), QEMU raspi4b serial=on, screendumps 20/45 s, C:\SVCSEQ.LOG pulled read-only, tools/svc-seq.py.
+     bin/kernel8-seq-base.img sha256 99c58ec2... = the U5a oracle kernel (measurement-2026-10-14-desk43-u5a/bin/kernel8-seq.img).
+     Injector timing identical (armed hz_200 3011, feeds +200/+210/+238/+238) in both.
+     trace/SVCSEQ-base.LOG vs trace/SVCSEQ-u5b.LOG: BYTE-IDENTICAL (684 lines; 551 calls, results included). sequence-all,
+     sequence-desktop-K-noresults, sequence-desktop-K-novdi-shape (246): 0 differing lines. SVCSEQ-base.LOG is also byte-
+     identical to the U5a run's trace/SVCSEQ.LOG. Screendumps seq-{base,u5b}-rpi4-t{20,45}.png: one image (sha256 de782244...),
+     drive C:\ window open, = U5a seq-rpi4-t45.png. 0 [EXC]/PANIC.
+
+PRELIM: prelim/ holds the same series run on an earlier U5b kernel (prelim/bin/kernel8-u5b-prelim.img), built before the final
+tidy-up (afterwards only: tos_types use statements merged per file in 13 desk files, one long use line wrapped in aes/window.rs,
+two doc lines in programs/newtos-gem). It gave the same result (prelim/checks/summary-prelim.txt); kept, not hidden.
+
+NOT DONE: real Pi (not asked), qemu-virt QEMU runs (the desktop board in QEMU is raspi4b; qemu-virt was built, clippy'd and
+compared at machine-code level), memprot=verify / asid=on (not asked), TeraDesk->QED key-driven chain (needs the tdkeys injector
+kernel; TeraDesk and QED were each started from the card's NEWDESK.INF).
+
+Scratch: /tmp/m5j/u5b (-> /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/u5b): base/ (baseline builds), headtree/ newtree/
+(scratch trees), cards/, seq/ (oracle trees), s/ (QMP sockets). Repo-root kernel8.img (gitignored) overwritten by checks.sh.
+Binaries in bin/ and prelim/bin/: *.img gitignored (sha256 in bin/SHA256SUMS); bin/HELLOGEM.NAP as in the U6a run.

@@ -20,12 +20,12 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use tos_api::aes::object::IconBlk;
+use tos_types::aes::{IconBlk, NIL};
 use tos_types::error::{E_OK, EFILNF, ENMFIL};
 use tos_types::Long;
 
 use super::dosbind::{dos_sdta, dos_sfirst, dos_snext};
-use super::global::NIL;
+
 use super::win::LEN_ZPATH;
 
 /// FAT attribute bit marking a sub-directory (`bdosdefs.h` `FA_SUBDIR`).

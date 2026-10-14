@@ -95,6 +95,7 @@ use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use tos_api::bdos::process::{current_abi, Abi};
 use tos_api::trap::{TrapArgs, TrapClass};
+use tos_types::aes::{MU_KEYBD, MU_MESAG, WF_WXYWH};
 
 /// Gate of the tracer's QED-hunt mode (module doc). Set to `true` by hand for
 /// such a hunt; `false` compiles that mode out completely.
@@ -509,14 +510,13 @@ fn aes_opcode(block: u64) -> i16 {
 /// True for `wind_get(handle, WF_WORKXYWH)` — the other half of the pixel
 /// comparison QED's `free_for_draw` makes.
 fn is_work_query(block: u64, op: i16) -> bool {
-    const WF_WORKXYWH: i16 = 4;
     if op != 104 || block == 0 {
         return false;
     }
     let abi = current_abi();
     // SAFETY: same `int_in` pointer the AES dispatcher reads.
     let intin = unsafe { abi.read_ptr(block, 2) } as *const i16;
-    wrd(intin, 1) == WF_WORKXYWH
+    wrd(intin, 1) == WF_WXYWH
 }
 
 fn record_aes(block: u64) {
@@ -589,12 +589,10 @@ fn record_aes(block: u64) {
                 "    evnt_multi: fired=0x{:04x} mx={} my={} btn=0x{:x} ks=0x{:x} key=0x{:04x} clicks={}\n",
                 fired, io(1), io(2), io(3) as u16, io(4) as u16, io(5) as u16, io(6)
             );
-            const MU_KEYBD: u16 = 0x0001;
             if !SEQ_MODE && fired & MU_KEYBD != 0 {
                 KEY_SEEN.store(true, Ordering::Release);
                 trace!("    *** keystroke -- this cycle is the one being hunted ***\n");
             }
-            const MU_MESAG: u16 = 0x0010;
             if fired & MU_MESAG != 0 {
                 // Message buffer pointer is addr_in[0] (caller-width).
                 // SAFETY: addrin_base points at the caller's addr_in array.

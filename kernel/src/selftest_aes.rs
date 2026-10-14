@@ -70,7 +70,7 @@ pub fn run_phase13_aes_test() {
     // registered tree's root `ob_spec`. One G_BOX at index 0 whose `ob_spec`
     // is a distinctive desktop-background word (IP_4PATT|green | border/text).
     const TEST_BG_OBSPEC: u64 = 0x1143;
-    let bg_tree = [tos_api::aes::object::Object {
+    let bg_tree = [tos_types::aes::Object {
         ob_next: -1,
         ob_head: -1,
         ob_tail: -1,

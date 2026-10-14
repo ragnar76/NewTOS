@@ -12,3 +12,10 @@ dependencies = [
 [[package]]
 name = "newtos-gem"
 version = "0.1.0"
+dependencies = [
+ "tos-types",
+]
+
+[[package]]
+name = "tos-types"
+version = "0.5.0"

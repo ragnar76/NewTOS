@@ -532,9 +532,7 @@ mod imp {
     unsafe impl Sync for Eval {}
     static EVAL: Eval = Eval(UnsafeCell::new(EvalData::RESET));
 
-    /// `MU_MESAG` — the `evnt_multi` bit that says a message was delivered
-    /// (`include/aesdefs.h`).
-    const MU_MESAG: u16 = 0x0010;
+    use tos_types::aes::MU_MESAG;
 
     /// Convert a microsecond budget into generic-timer ticks.
     #[inline]

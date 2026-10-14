@@ -50,7 +50,10 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use tos_api::aes::object::{Object, TedInfo};
+use tos_types::aes::{
+    Grect, Object, TedInfo, DEFAULT, DESKWH, EDITABLE, EXIT, FL3DACT, FL3DBAK, G_BUTTON,
+    G_FBOXTEXT, G_STRING, LASTOB, NIL, SELECTABLE, SELECTED, TE_RIGHT, WF_WXYWH,
+};
 use tos_api::vdi::font::{CELL_H, CELL_W};
 use tos_types::error::E_OK;
 
@@ -58,28 +61,11 @@ use super::dosbind::{
     dos_close, dos_create, dos_delete, dos_gdrv, dos_mkdir, dos_open, dos_read, dos_rename,
     dos_rmdir, dos_sdta, dos_setdt, dos_sfirst, dos_snext, dos_write,
 };
-use super::global::{self, DeskState, DROOT, NIL};
-use super::inf::{
-    end_dialog, inf_gindex, mk, mk_root, start_dialog, BOX_SPEC, FL3DACT, FL3DBAK, TED_COLOR,
-};
+use super::global::{self, DeskState, DROOT};
+use super::inf::{end_dialog, inf_gindex, mk, mk_root, start_dialog, BOX_SPEC, TED_COLOR};
 use super::model::{AType, FNode, FA_SUBDIR};
-use super::win::{DESKWH, OB_SELECTED};
 
 // ── `OBJECT` graphic types / flags (`obdefs.h`), as in the sibling dialogs ──
-
-const G_BUTTON: u16 = 26;
-const G_STRING: u16 = 28;
-const G_FBOXTEXT: u16 = 30;
-
-const SELECTABLE: u16 = 0x0001;
-const DEFAULT: u16 = 0x0002;
-const EXIT: u16 = 0x0004;
-const EDITABLE: u16 = 0x0008;
-const LASTOB: u16 = 0x0020;
-
-/// `TE_RIGHT` (`obdefs.h`) — the `te_just` of both count fields
-/// (`desk_rs_tedinfo[20,21]`, `desk_rsc.c:135-143`).
-const TE_RIGHT: i16 = 1;
 
 /// `LEN_ZFNAME` (`include/sysconf.h:52`) — the longest file name including its
 /// separator; the width of every `ml_f*` buffer in `deskdir.c`.
@@ -1270,7 +1256,7 @@ pub fn dir_op(
         if confirm {
             super::form_do(ctx.tree, 0);
             // `more = (tree[CDOK].ob_state & SELECTED) ? TRUE : FALSE;` (`:963`)
-            ctx.stop = b.tree[CDOK as usize].ob_state & OB_SELECTED == 0;
+            ctx.stop = b.tree[CDOK as usize].ob_state & SELECTED == 0;
         }
     }
 
@@ -1620,8 +1606,8 @@ pub(super) fn draw_fld(tree: u64, obj: i16) {
     let (x, y) = super::objc_offset(tree, obj);
     // SAFETY: the caller owns `tree` for the duration of the dialog and `obj` is
     // one of its objects (a compile-time constant at every call site).
-    let o = unsafe { &*(tree as *const tos_api::aes::object::Object).add(obj as usize) };
-    let t = global::Grect { x, y, w: o.ob_width, h: o.ob_height };
+    let o = unsafe { &*(tree as *const Object).add(obj as usize) };
+    let t = Grect { x, y, w: o.ob_width, h: o.ob_height };
     super::objc_draw_tree(tree, obj, t);
 }
 
@@ -1789,7 +1775,7 @@ pub(super) fn i_find_win(dst_wh: i16, dobj: i16) -> Option<(String, super::inf::
 ///
 /// [`None`] is EmuTOS's `pa == NULL`: no `ANODE` governs this object.
 pub(super) fn i_find_atype(wh: i16, obj: i16) -> Option<(AType, bool)> {
-    if wh == super::win::DESKWH {
+    if wh == DESKWH {
         let (atype, aicon) = global::with(|g| g.app_afind_id_type(obj)).flatten()?;
         let isapp = atype == AType::File && aicon >= 0;
         return Some((atype, isapp));
@@ -2315,7 +2301,7 @@ pub fn rebuild_window(handle: i16) {
     // repaint is **this window's rectangle**, synchronously, and nothing else.
     // Re-read the rectangle here rather than reusing the one taken before the
     // re-scan, so the order matches EmuTOS's exactly.
-    let gr = super::wind_get_grect(handle, super::WF_WXYWH);
+    let gr = super::wind_get_grect(handle, WF_WXYWH);
     super::redraw::do_wredraw(handle, gr);
 }
 
@@ -2473,7 +2459,7 @@ fn desktop_selected_sources() -> Vec<DeskSource> {
         let mut v = Vec::new();
         let mut child = g.g_screen[DROOT as usize].ob_head;
         while child != NIL && child != DROOT {
-            if g.g_screen[child as usize].ob_state & OB_SELECTED != 0 {
+            if g.g_screen[child as usize].ob_state & SELECTED != 0 {
                 if let Some(i) = g.app_afind_by_id(child) {
                     let pa = &g.g_ahead[i];
                     v.push((child, pa.a_type, pa.a_letter, pa.a_pappl.clone()));
@@ -2552,7 +2538,7 @@ impl DeskState {
         let root = self.windows.slots[slot].w_root;
         let mut child = self.g_screen[root as usize].ob_head;
         while child != NIL && child != root {
-            self.g_screen[child as usize].ob_state |= OB_SELECTED;
+            self.g_screen[child as usize].ob_state |= SELECTED;
             child = self.g_screen[child as usize].ob_next;
         }
         for f in &mut self.windows.slots[slot].w_pnode.p_flist {

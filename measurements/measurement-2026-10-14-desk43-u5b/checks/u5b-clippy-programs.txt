@@ -1,0 +1,6 @@
+    Checking newtos-gem v0.1.0 (/Volumes/Daten/Development/PiRusTOS/programs/newtos-gem)
+    Checking hello-gem v0.1.0 (/Volumes/Daten/Development/PiRusTOS/programs/hello-gem)
+    Finished `release` profile [optimized] target(s) in 0.17s
+--- with --features hello-gem/panic-test
+    Checking hello-gem v0.1.0 (/Volumes/Daten/Development/PiRusTOS/programs/hello-gem)
+    Finished `release` profile [optimized] target(s) in 0.04s

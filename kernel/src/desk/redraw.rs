@@ -40,12 +40,10 @@
 //! (`tos_api::aes::window::compute_rlist`); this module builds no list of its own.
 
 use super::dosbind::dos_getcookie;
-use super::global::{self, Grect, DROOT};
-use super::win::DESKWH;
-use super::{
-    graf_mouse, objc_draw_tree, wind_get_rect, wind_get_work, M_OFF, M_ON,
-    WF_FIRSTXYWH, WF_NEXTXYWH,
-};
+use super::global::{self, DROOT};
+use tos_types::aes::{Grect, DESKWH, M_OFF, M_ON, WF_FIRSTXYWH, WF_NEXTXYWH};
+
+use super::{graf_mouse, objc_draw_tree, wind_get_rect, wind_get_work};
 
 /// Resolve the object-tree root for the redraw and apply the stale-handle guard.
 /// Returns `None` — "nothing to paint" — when the handle no longer maps to a

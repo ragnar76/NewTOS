@@ -32,6 +32,7 @@
 //! IRQ-off GEM-trap path (the same discipline as the VDI/`Vwk` table).
 
 use core::cell::UnsafeCell;
+use tos_types::aes::{WM_ARROWED, WM_HSLID, WM_REDRAW, WM_VSLID};
 
 /// `p_flags` bit: the application is between `appl_init` and `appl_exit`.
 pub const AP_OPEN: u16 = 0x0001;
@@ -81,12 +82,9 @@ pub const MAX_MSG_WORDS: usize = QUEUE_SIZE / 2;
 /// 128-byte budget — a memory-for-simplicity trade of the slot model.
 pub const QUEUE_MSGS: usize = QUEUE_SIZE / (MSG_WORDS * 2);
 
-// GEM message types that `doq` coalesces when enqueued (`include/aesdefs.h`,
-// used by the queue-union rule in `aes/gemqueue.c:45-67`).
-const WM_REDRAW: i16 = 20;
-const WM_ARROWED: i16 = 24;
-const WM_HSLID: i16 = 25;
-const WM_VSLID: i16 = 26;
+// GEM message types that `doq` coalesces when enqueued — `WM_REDRAW`,
+// `WM_ARROWED`, `WM_HSLID`, `WM_VSLID` (`tos_types::aes`), used by the
+// queue-union rule in `aes/gemqueue.c:45-67`.
 
 /// Per-application GEM message FIFO — the reimplementation of EmuTOS's
 /// `p_queue`/`p_qindex` byte queue. Holds up to [`QUEUE_MSGS`] messages, each

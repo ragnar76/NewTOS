@@ -31,7 +31,7 @@
 //! custom dialog title (`FS_TITLE = addr_in[2]`), else the default
 //! "ITEM SELECTOR", centred in the FSTITLE caption (`gemfslib.c:691-693`).
 
-use super::form::{fm_dial, gl_rcenter, FMD_FINISH, FMD_START};
+use super::form::{fm_dial, gl_rcenter};
 use super::object::{self, Object, ObjTree, TedInfo};
 use super::graf::gl_hbox;
 use super::{resource, Aespb};
@@ -39,10 +39,13 @@ use crate::host::host;
 use crate::uaccess::{Space, UserFault};
 use crate::vdi::backend::RasterBackend;
 use core::cell::UnsafeCell;
+use tos_types::aes::{
+    ADJ3DSTD, DISABLED, ED_CHAR, ED_END, ED_INIT, FL3DACT, FL3DBAK, FL3DIND, FMD_FINISH, FMD_START,
+    G_FBOXTEXT, IP_4PATT, ROOT, SELECTED,
+};
 
 // FSELECTR object indices (EmuTOS gem.rsc, verified against the converted
 // resource).
-const ROOT: i16 = 0; // the dialog's root G_BOX (EmuTOS `ROOT`, obdefs.h)
 const FSTITLE: i16 = 1; // dialog title caption (G_STRING); default "ITEM SELECTOR"
 const FSDIRECT: i16 = 3;
 const FSDRVTXT: i16 = 4; // "Drive:" caption (G_STRING) above the drive grid
@@ -71,22 +74,7 @@ const DRIVE_ROWS: i16 = 9;
 /// free-string 14 = "ITEM SELECTOR".
 const ITEMSLCT: usize = 14;
 
-const SELECTED: u16 = 0x0001;
-const DISABLED: u16 = 0x0008;
-const FL3DIND: u16 = 0x0200; // indicator (drive letters)
-const FL3DBAK: u16 = 0x0400; // background panel (text fields)
-const FL3DACT: u16 = 0x0600; // activator (buttons / arrows)
 const MAX_DEPTH: i16 = 16;
-/// Standard pixel adjustment for a 3D object — EmuTOS `ADJ3DSTD`
-/// (`include/obdefs.h:136`). A 3D object is *drawn* two pixels larger on
-/// every side than it measures (`just_draw`, `gemoblib.c:504-509`), so the
-/// resource geometry has to make room for the bevel: that is the whole job
-/// of [`fs_start`]'s adjustment pass. Same constant, same value, as
-/// `aes/menu.rs` and `aes/window.rs` already carry for their own layouts.
-const ADJ3DSTD: i16 = 2;
-/// The 50 % dither — EmuTOS `IP_4PATT` (`include/obdefs.h:36`), the inside
-/// pattern TOS4 gives the file box's title bar and slider track.
-const IP_4PATT: u64 = 4;
 
 const GEM_CAP: usize = 8 * 1024;
 
@@ -156,10 +144,6 @@ static SYS: Sys = Sys {
 
 /// FAT/TOS directory attribute bit (a sub-directory entry).
 const FA_SUBDIR: u8 = 0x10;
-/// `objc_edit` kinds (EmuTOS `EDINIT`/`EDCHAR`/`EDEND`).
-const ED_INIT: i16 = 1;
-const ED_CHAR: i16 = 2;
-const ED_END: i16 = 3;
 
 /// Relocate the NRSC blob already sitting in `SYS.buf`, tag its 3D flags, cache
 /// and return the FSELECTR tree — or null if the header does not validate
@@ -269,7 +253,7 @@ fn fs_start(tree: *mut Object) {
         let spec = o.ob_spec;
         if spec != 0 {
             let ted = &mut *(spec as *mut TedInfo);
-            ted.te_color = ((ted.te_color as u16 & 0xff8f) | (IP_4PATT as u16) << 4) as i16;
+            ted.te_color = ((ted.te_color as u16 & 0xff8f) | IP_4PATT << 4) as i16;
         }
 
         let o = ob(FILEBOX);
@@ -292,7 +276,7 @@ fn fs_start(tree: *mut Object) {
         // The slider track takes pattern 4 as well (`:98`) — here the colour
         // word is the low half of the box `ob_spec`, so the mask keeps the
         // thickness byte above it.
-        o.ob_spec = (o.ob_spec & 0xffff_ff8f) | (IP_4PATT << 4);
+        o.ob_spec = (o.ob_spec & 0xffff_ff8f) | (u64::from(IP_4PATT) << 4);
 
         // Only x/w for the elevator: y/h are set per list in `fs_format`
         // (`:99-101`).
@@ -374,10 +358,6 @@ fn set_drive_states(tree: *mut Object, cur: u8) {
         }
     }
 }
-
-/// Object type (`obdefs.h`): a formatted, boxed text field — what
-/// `fs_format` (re)asserts on every filename slot (EmuTOS `gemfslib.c:380`).
-const G_FBOXTEXT: u16 = 30;
 
 /// Convert a plain filename into the **raw** form an `FFFFFFFF.FFF` TEDINFO
 /// template expects — EmuTOS `fmt_str` (`util/optimize.c:43-69`): at most 8
@@ -1204,11 +1184,7 @@ mod tests {
     //! measured against the real EmuTOS `FSELECTR` resource.
 
     use super::*;
-
-    /// The two 3D-kind bits (EmuTOS `FL3DMASK`, `obdefs.h:93`). Production
-    /// code only ever ORs a kind in, so the mask is needed by the assertions
-    /// alone.
-    const FL3DMASK: u16 = 0x0600;
+    use tos_types::aes::FL3DMASK;
 
     /// A relocated, writable copy of the embedded `FSELECTR` resource.
     /// The `Vec<u64>` backing store gives the 8-byte alignment the native

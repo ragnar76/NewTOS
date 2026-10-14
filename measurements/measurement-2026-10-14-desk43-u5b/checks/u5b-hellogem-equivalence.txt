@@ -1,0 +1,52 @@
+HELLOGEM.NAP: ../measurement-2026-10-14-desk43-u6a/bin/HELLOGEM.NAP (U6a = HEAD f6f14885, rebuilt here byte-identical, sha256 84cc2a08...) vs bin/HELLOGEM.NAP (U5b, sha256 3110e2e3...)
+functions 72 vs 72; distinct normalized names 70 vs 70; same name set: True
+instructions 5423 vs 5423
+names whose bodies differ: []
+../measurement-2026-10-14-desk43-u6a/bin/HELLOGEM.NAP  :
+section             size    addr
+.text              21692    4096
+.dynsym               24   25792
+.gnu.hash             28   25816
+.hash                 16   25844
+.dynstr                1   25860
+.rela.dyn            672   25864
+.note.newtos          24   26536
+.rodata             1920   26560
+.dynamic             272   28480
+.got                   8   28752
+.data                616   28760
+.bss                  48   29376
+.debug_abbrev       1630       0
+.debug_info        14542       0
+.debug_aranges       832       0
+.debug_ranges       5168       0
+.debug_str         25980       0
+.debug_line         9164       0
+Total              82637
+
+
+
+bin/HELLOGEM.NAP  :
+section             size    addr
+.text              21692    4096
+.dynsym               24   25792
+.gnu.hash             28   25816
+.hash                 16   25844
+.dynstr                1   25860
+.rela.dyn            672   25864
+.note.newtos          24   26536
+.rodata             1920   26560
+.dynamic             272   28480
+.got                   8   28752
+.data                616   28760
+.bss                  48   29376
+.debug_abbrev       1630       0
+.debug_info        14542       0
+.debug_aranges       832       0
+.debug_ranges       5168       0
+.debug_str         25980       0
+.debug_line         9164       0
+Total              82637
+
+
+

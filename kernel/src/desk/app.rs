@@ -15,10 +15,10 @@
 //!   symmetric (distinct from the window pitch in [`super::win::win_view`],
 //!   which uses a plain fixed gap).
 
-use tos_api::aes::object::IconBlk;
+use tos_types::aes::{IconBlk, G_ICON, NIL};
 use tos_api::vdi::font::{CELL_H, CELL_W, SMALL_CELL_H, SMALL_CELL_W};
 
-use super::global::{min_wint, DeskState, Point, AF_ISEXEC, DROOT, G_ICON, MIN_HINT, NIL};
+use super::global::{min_wint, DeskState, Point, AF_ISEXEC, DROOT, MIN_HINT};
 use super::icons::{
     build_iconblk, icon_kind, IconKind, IB_HICON, IB_WICON, IB_WTEXT, ICON_LABEL_SLACK,
     MAX_ICONTEXT_WIDTH,

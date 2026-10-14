@@ -10,6 +10,7 @@
 #![deny(unsafe_op_in_unsafe_fn)]
 #![warn(missing_docs)]
 
+pub mod aes;
 pub mod basepage;
 pub mod error;
 pub mod memory;

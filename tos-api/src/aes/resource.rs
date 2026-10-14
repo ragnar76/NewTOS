@@ -201,23 +201,16 @@ use core::cell::UnsafeCell;
 use core::mem::size_of;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use tos_types::{BasePage, Long, MX_PREFTTRAM};
+use tos_types::aes::{
+    G_BOX, G_BOXCHAR, G_BOXTEXT, G_CICON, G_FBOXTEXT, G_FTEXT, G_IBOX, G_ICON, G_IMAGE, G_TEXT,
+};
 
 // Object base types, classified for `ob_spec` relocation exactly like EmuTOS
 // `fix_objects` (gemrslib.c:620-635): the BOX types carry a literal colour
 // word (never relocated), G_CICON a CICONBLK-table index (special case), the
 // TEDINFO/BITBLK/ICONBLK types a sub-struct pointer (relocated together with
 // their internal pointers), and every other type a plain blob-offset `ob_spec`
-// (the relocation `default:`).
-const G_BOX: u16 = 20;
-const G_TEXT: u16 = 21;
-const G_BOXTEXT: u16 = 22;
-const G_IMAGE: u16 = 23;
-const G_IBOX: u16 = 25;
-const G_BOXCHAR: u16 = 27;
-const G_FTEXT: u16 = 29;
-const G_FBOXTEXT: u16 = 30;
-const G_ICON: u16 = 31;
-const G_CICON: u16 = 33;
+// (the relocation `default:`). The `G_*` values are `tos_types::aes`'.
 
 // rsrc_gaddr / rsrc_saddr R_* selectors (aesdefs.h:578-594; spec
 // resource-fileselector.md §0). `get_addr` (gemrslib.c:112-176) maps each to a

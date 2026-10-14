@@ -1,0 +1,24 @@
+G2 oracle, before (HEAD f6f14885) vs after (U5b), same injector (Alt-C 1 s after desktop up), same card copy, QEMU raspi4b serial=on
+SVCSEQ:      684 vs      684 lines, 0 differing lines
+sequence-all:      551 vs      551 lines, 0 differing lines
+sequence-desktop-K-noresults:      551 vs      551 lines, 0 differing lines
+sequence-desktop-K-novdi-shape:      246 vs      246 lines, 0 differing lines
+SVCSEQ.LOG byte-identical (incl. results)
+base log byte-identical to the U5a oracle run (401b1bc0)
+de782244482268f8cb7ce71c06f9b9236c9d03cabf98837baabac3fd8987a035  screendumps/seq-base-rpi4-t20.png
+de782244482268f8cb7ce71c06f9b9236c9d03cabf98837baabac3fd8987a035  screendumps/seq-base-rpi4-t45.png
+de782244482268f8cb7ce71c06f9b9236c9d03cabf98837baabac3fd8987a035  screendumps/seq-u5b-rpi4-t20.png
+de782244482268f8cb7ce71c06f9b9236c9d03cabf98837baabac3fd8987a035  screendumps/seq-u5b-rpi4-t45.png
+serial/seq-u5b-rpi4-serial.log:[desk] desktop up (1 drives, 0 window(s) from the context)
+serial/seq-u5b-rpi4-serial.log:[u5a] injector armed at hz_200 3011
+serial/seq-u5b-rpi4-serial.log:[u5a] feed 0x38 at hz_200 3211 (+200)
+serial/seq-u5b-rpi4-serial.log:[u5a] feed 0x2e at hz_200 3221 (+210)
+serial/seq-u5b-rpi4-serial.log:[u5a] feed 0xae at hz_200 3249 (+238)
+serial/seq-u5b-rpi4-serial.log:[u5a] feed 0xb8 at hz_200 3249 (+238)
+serial/seq-base-rpi4-serial.log:[desk] desktop up (1 drives, 0 window(s) from the context)
+serial/seq-base-rpi4-serial.log:[u5a] injector armed at hz_200 3011
+serial/seq-base-rpi4-serial.log:[u5a] feed 0x38 at hz_200 3211 (+200)
+serial/seq-base-rpi4-serial.log:[u5a] feed 0x2e at hz_200 3221 (+210)
+serial/seq-base-rpi4-serial.log:[u5a] feed 0xae at hz_200 3249 (+238)
+serial/seq-base-rpi4-serial.log:[u5a] feed 0xb8 at hz_200 3249 (+238)
+EXC/PANIC: 0

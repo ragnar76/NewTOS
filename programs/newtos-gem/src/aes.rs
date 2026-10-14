@@ -35,64 +35,17 @@ const WIND_SET: i16 = 105;
 const WIND_UPDATE: i16 = 107;
 const WIND_CALC: i16 = 108;
 
-// ── event bits `MU_*` (`aesdefs.h:256-263`, docs/api/aes/event.md) ────────
-pub const MU_KEYBD: u16 = 0x0001;
-pub const MU_BUTTON: u16 = 0x0002;
-pub const MU_MESAG: u16 = 0x0010;
-pub const MU_TIMER: u16 = 0x0020;
-
-// ── messages (`aesdefs.h`) ─────────────────────────────────────────────────
-pub const WM_REDRAW: i16 = 20;
-pub const WM_TOPPED: i16 = 21;
-pub const WM_CLOSED: i16 = 22;
-pub const WM_MOVED: i16 = 28;
-
-// ── window parts (`aesdefs.h`) ─────────────────────────────────────────────
-pub const NAME: i16 = 0x0001;
-pub const CLOSER: i16 = 0x0002;
-pub const MOVER: i16 = 0x0008;
-
-// ── wind_get/wind_set fields, wind_calc types, wind_update modes ─────────
-pub const WF_NAME: i16 = 2;
-pub const WF_WORKXYWH: i16 = 4;
-pub const WF_CURRXYWH: i16 = 5;
-pub const WF_TOP: i16 = 10;
-pub const WF_FIRSTXYWH: i16 = 11;
-pub const WF_NEXTXYWH: i16 = 12;
-pub const WC_BORDER: i16 = 0;
-pub const WC_WORK: i16 = 1;
-pub const END_UPDATE: i16 = 0;
-pub const BEG_UPDATE: i16 = 1;
-
-// ── graf_mouse numbers (`aesdefs.h`) ───────────────────────────────────────
-pub const ARROW: i16 = 0;
-pub const M_OFF: i16 = 256;
-pub const M_ON: i16 = 257;
-
-/// A GEM rectangle (`GRECT`).
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct Grect {
-    pub x: i16,
-    pub y: i16,
-    pub w: i16,
-    pub h: i16,
-}
-
-impl Grect {
-    /// The intersection of `self` and `o`, or `None` when they do not
-    /// overlap (EmuTOS `rc_intersect`, `aes/gemrslib.c`/`optimize.c`).
-    pub fn intersect(&self, o: &Grect) -> Option<Grect> {
-        let x0 = self.x.max(o.x);
-        let y0 = self.y.max(o.y);
-        let x1 = (self.x + self.w).min(o.x + o.w);
-        let y1 = (self.y + self.h).min(o.y + o.h);
-        if x1 > x0 && y1 > y0 {
-            Some(Grect { x: x0, y: y0, w: x1 - x0, h: y1 - y0 })
-        } else {
-            None
-        }
-    }
-}
+// ── constants and `GRECT` ──────────────────────────────────────────────────
+//
+// The one public set lives in `tos-types` (`tos_types::aes`, DESK43 U5b),
+// shared with the AES server and the desktop; re-exported here so a program
+// keeps writing `aes::WM_REDRAW`. Widths are the fields': the `MU_*` mask and
+// the window `kind` bits are `u16`, messages and `wind_get` fields `i16`.
+pub use tos_types::aes::{
+    Grect, ARROW, BEG_UPDATE, CLOSER, END_UPDATE, MOVER, MU_BUTTON, MU_KEYBD, MU_MESAG, MU_TIMER, M_OFF, M_ON,
+    NAME, WC_BORDER, WC_WORK, WF_CXYWH, WF_FIRSTXYWH, WF_NAME, WF_NEXTXYWH, WF_TOP, WF_WXYWH, WM_CLOSED, WM_MOVED,
+    WM_REDRAW, WM_TOPPED,
+};
 
 /// The application's `global[]` array (`AESGLOBAL`, 15 WORDs used).
 struct Global(UnsafeCell<[i16; 16]>);
@@ -290,7 +243,7 @@ pub fn wind_delete(handle: i16) -> i16 {
 }
 
 /// `wind_get(handle, field)` (104) for a rectangle field
-/// (`WF_WORKXYWH`, `WF_CURRXYWH`, `WF_FIRSTXYWH`, `WF_NEXTXYWH`).
+/// (`WF_WXYWH`, `WF_CXYWH`, `WF_FIRSTXYWH`, `WF_NEXTXYWH`).
 pub fn wind_get_grect(handle: i16, field: i16) -> Grect {
     let mut a = Aes::new();
     a.intin[0] = handle;
@@ -300,7 +253,7 @@ pub fn wind_get_grect(handle: i16, field: i16) -> Grect {
 }
 
 /// `wind_set(handle, field, r)` (105) for a rectangle field
-/// (`WF_CURRXYWH`).
+/// (`WF_CXYWH`).
 pub fn wind_set_grect(handle: i16, field: i16, r: Grect) -> i16 {
     let mut a = Aes::new();
     a.intin[0] = handle;

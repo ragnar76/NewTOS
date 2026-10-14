@@ -34,6 +34,9 @@ use crate::host::host;
 use crate::vdi::backend::{ClipRect, Pel, RasterBackend};
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicBool, AtomicI16, AtomicU64, AtomicUsize, Ordering};
+use tos_types::aes::{
+    AC_CLOSE, ADJ3DSTD, CHECKED, DISABLED, G_STRING, G_TITLE, NIL, SELECTED, SUBMENU,
+};
 
 /// `THESCREEN` — the menu tree root; its `ob_tail` is the box that holds
 /// all drop-down menus.
@@ -42,7 +45,6 @@ const THESCREEN: i16 = 0;
 const THEBAR: i16 = 1;
 /// `THEACTIVE` — the box holding the title objects (children of the bar).
 const THEACTIVE: i16 = 2;
-const NIL: i16 = -1;
 const MAX_DEPTH: i16 = 16;
 
 /// The active menu tree (`gl_mntree`), set by `menu_bar(show=1)` and
@@ -295,19 +297,6 @@ pub(super) fn desk_top() -> i16 {
     gl_hbox()
 }
 
-// ob_state bits.
-const SELECTED: u16 = 0x0001;
-const CHECKED: u16 = 0x0004;
-const DISABLED: u16 = 0x0008;
-
-/// `G_STRING` object type (`obdefs.h`) — the low byte of `ob_type`. A submenu
-/// can only be attached to a `G_STRING` menu item (`menu_attach` guard,
-/// `gemmnext.c:539-541`).
-const G_STRING: u16 = 28;
-
-/// `G_TITLE` object type (`obdefs.h`) — a menu-bar title.
-const G_TITLE: u16 = 32;
-
 const WHITE: Pel = 0;
 const BLACK: Pel = 1;
 
@@ -316,11 +305,6 @@ const BLACK: Pel = 1;
 /// (`gemmnlib.c:215-217`). It exists precisely to cover a box's 1-px outward
 /// border and overscan.
 const MENU_THICKNESS: i16 = 1;
-
-/// EmuTOS `ADJ3DSTD` (`obdefs.h:136`): the extra pixel adjustment for a 3D
-/// object. The decoration-aware save path adds it to the right/bottom of the
-/// grown save rectangle for a box's 3D drop shadow (`gemmnext.c:148-149`).
-const ADJ3DSTD: i16 = 2;
 
 /// `menu_bar` (30) — install (`int_in[0]`=1) or remove (0) the menu bar
 /// `addr_in[0]` at the top of the screen.
@@ -1627,11 +1611,6 @@ pub(super) fn mn_cleanup() -> usize {
     sent
 }
 
-/// `AC_CLOSE` message id (`include/aesdefs.h`, 41).
-const AC_CLOSE: i16 = 41;
-/// `AC_OPEN` message id (`include/aesdefs.h`, 40).
-pub(super) const AC_OPEN: i16 = 40;
-
 /// `menu_register` (35) — register a desk accessory. `int_in[0]` = the
 /// application id, `addr_in[0]` = its menu-title string. Returns the
 /// accessory's menu id (`0..NUM_ACCS-1`) or `-1` when the id is negative or
@@ -2217,9 +2196,6 @@ const ME_INQUIRE: i16 = 0;
 const ME_ATTACH: i16 = 1;
 const ME_REMOVE: i16 = 2;
 
-/// `SUBMENU` — `ob_flags` bit marking a menu item as having a submenu
-/// (`obdefs.h`; D-087). `menu_attach` sets it, `detach` clears it.
-const SUBMENU: u16 = 0x0800;
 /// The right-arrow marker char written into an attached item's text
 /// (`gemmnext.c:62`).
 const SUBMENU_MARKER: u8 = 0x03;
@@ -2544,8 +2520,7 @@ pub fn menu_istart(pb: &Aespb) {
 /// the plain background — is what a screendump captures. **Not wired to boot**;
 /// a temporary kernel hook drives it during verification.
 pub fn selftest_menu_sr_residue(backend: &dyn RasterBackend) -> (u32, u32) {
-    const G_BOX_T: u16 = 20; // object::G_BOX
-    const G_IBOX_T: u16 = 25; // object::G_IBOX
+    use tos_types::aes::{G_BOX, G_IBOX};
     /// A distinctive, non-white/non-black background index, so a black
     /// outward-border residue (1) and a white-erased interior (0) both differ
     /// from it.
@@ -2588,20 +2563,20 @@ pub fn selftest_menu_sr_residue(backend: &dyn RasterBackend) -> (u32, u32) {
     // Box B: 170×130, overlapping A in X, much shorter — the box we slide *to*.
     // Box C: 280 wide (> the old 256 cap), isolated — the cap/white-erase case.
     let tree = [
-        /* 0 THESCREEN */ mk(G_IBOX_T, 0, 0, 0, sw, sh, -1, 1, 6),
-        /* 1 THEBAR    */ mk(G_BOX_T, 0, 0, 0, sw, bar_h, 6, 2, 2),
-        /* 2 THEACTIVE */ mk(G_IBOX_T, 0, 0, 0, sw, bar_h, 1, 3, 5),
+        /* 0 THESCREEN */ mk(G_IBOX, 0, 0, 0, sw, sh, -1, 1, 6),
+        /* 1 THEBAR    */ mk(G_BOX, 0, 0, 0, sw, bar_h, 6, 2, 2),
+        /* 2 THEACTIVE */ mk(G_IBOX, 0, 0, 0, sw, bar_h, 1, 3, 5),
         /* 3 titleA    */ title(NA, 100, 4),
         /* 4 titleB    */ title(NB, 40, 5),
         /* 5 titleC    */ title(NC, 320, 2), // last title → next = THEACTIVE
-        /* 6 themenus  */ mk(G_IBOX_T, 0, 0, 0, sw, sh, 0, 7, 13),
-        /* 7 boxA      */ mk(G_BOX_T, SPEC_TH_NEG1, 100, 40, 200, 340, 10, 8, 9),
+        /* 6 themenus  */ mk(G_IBOX, 0, 0, 0, sw, sh, 0, 7, 13),
+        /* 7 boxA      */ mk(G_BOX, SPEC_TH_NEG1, 100, 40, 200, 340, 10, 8, 9),
         /* 8  A0       */ item(A0, 0, 200, 9),
         /* 9  A1       */ item(A1, bar_h, 200, 7), // last child → next = boxA
-        /*10 boxB      */ mk(G_BOX_T, SPEC_TH_NEG1, 40, 40, 170, 130, 13, 11, 12),
+        /*10 boxB      */ mk(G_BOX, SPEC_TH_NEG1, 40, 40, 170, 130, 13, 11, 12),
         /*11  B0       */ item(B0, 0, 170, 12),
         /*12  B1       */ item(B1, bar_h, 170, 10), // last child → next = boxB
-        /*13 boxC      */ mk(G_BOX_T, SPEC_TH_NEG1, 320, 250, 280, 180, 6, 14, 15),
+        /*13 boxC      */ mk(G_BOX, SPEC_TH_NEG1, 320, 250, 280, 180, 6, 14, 15),
         /*14  C0       */ item(C0, 0, 280, 15),
         /*15  C1       */ item(C1, bar_h, 280, 13), // last child → next = boxC
     ];
@@ -2871,9 +2846,7 @@ mod popup_wait_tests {
         assert_eq!(crate::vdi::mouse_position(), (tx, ty), "park_at did not reach its target");
     }
 
-    const G_BOX: u16 = 20;
-    const G_STRING: u16 = 28;
-    const LASTOB: u16 = 0x0020;
+    use tos_types::aes::{G_BOX, G_STRING, LASTOB};
     const ITEM_H: i16 = 19;
 
     /// A three-item pop-up (`G_BOX` 112×57, `G_STRING` rows at y 0/19/38)

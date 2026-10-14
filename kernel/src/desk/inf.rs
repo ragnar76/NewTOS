@@ -26,7 +26,11 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use tos_api::aes::object::{Object, TedInfo};
+use tos_types::aes::{
+    Grect, Object, TedInfo, ADJ3DSTD, DEFAULT, DESKWH, DISABLED, EDITABLE, EXIT, FL3DACT, FL3DBAK,
+    FL3DIND, G_BOX, G_BUTTON, G_FBOXTEXT, G_FTEXT, G_IBOX, G_STRING, LASTOB, MU_MESAG, MU_TIMER,
+    NIL, OUTLINED, RBUTTON, ROOT, SELECTABLE, SELECTED, TE_LEFT, TE_RIGHT, TOUCHEXIT,
+};
 use tos_api::vdi::font::{CELL_H, CELL_W};
 use tos_types::error::EFILNF;
 use tos_types::Long;
@@ -34,7 +38,7 @@ use tos_types::Long;
 use crate::sync::SpinMutex;
 
 use super::dosbind::{dos_close, dos_create, dos_gdrv, dos_open, dos_read, dos_sdrv, dos_write};
-use super::global::{self, Anode, Grect, WSave, AF_ISEXEC, NIL, NUM_WNODES};
+use super::global::{self, Anode, WSave, AF_ISEXEC, NUM_WNODES};
 use super::icons;
 use super::model::{AType, DateFmt, DateOrder, Sort, TimeFmt, View};
 
@@ -2222,8 +2226,8 @@ pub(super) fn end_dialog(tree: u64) {
     // immediately once no message is left.
     let mut msg = [0i16; 8];
     loop {
-        let ev = super::evnt_multi(super::MU_TIMER | super::MU_MESAG, &mut msg);
-        if ev.which & super::MU_MESAG == 0 {
+        let ev = super::evnt_multi(MU_TIMER | MU_MESAG, &mut msg);
+        if ev.which & MU_MESAG == 0 {
             break;
         }
         super::main::hndl_msg(&msg);
@@ -2241,45 +2245,9 @@ pub(super) fn inf_show(tree: u64, start: i16) -> i16 {
 
 // ── Dialog-tree primitives, shared by every `desk/` dialog built here ───────
 
-// obdefs.h object graphic types.
-const G_BOX: u16 = 20;
-/// `G_IBOX` (`obdefs.h`) — an invisible box. It draws nothing; its job is to be
-/// the **parent** of a radio-button group, because the AES's `fm_button`
-/// deselects the siblings of the button that was hit by walking the parent's
-/// child chain (`aes/gemfmlib.c` `select_radio`, our `tos-api/src/aes/form.rs`).
-/// EmuTOS wraps every `RBUTTON` group of `ADSETPRE` in one (`desk_rsc.c:1392`
-/// and the five that follow).
-const G_IBOX: u16 = 25;
-const G_BUTTON: u16 = 26;
-const G_STRING: u16 = 28;
-/// `G_FTEXT` (`obdefs.h`) — formatted text: a `TEDINFO` drawn through its
-/// template, **without** a box around it.
-const G_FTEXT: u16 = 29;
-/// `G_FBOXTEXT` (`obdefs.h`) — the same, boxed.
-const G_FBOXTEXT: u16 = 30;
-
-// obdefs.h ob_flags bits.
-const SELECTABLE: u16 = 0x0001;
-const DEFAULT: u16 = 0x0002;
-const EXIT: u16 = 0x0004;
-const EDITABLE: u16 = 0x0008;
-/// `TOUCHEXIT` (`obdefs.h`) — the object ends `form_do` on the button *down*,
-/// without being selected. Every stepper and repeat gadget of `desk_rsc.c` is
-/// one.
-const TOUCHEXIT: u16 = 0x0040;
-/// `RBUTTON` (`obdefs.h`) — radio button: selecting it deselects every other
-/// `RBUTTON` child of the same parent.
-const RBUTTON: u16 = 0x0010;
-const LASTOB: u16 = 0x0020;
-// obdefs.h ob_state bits.
-const OB_SELECTED: u16 = 0x0001;
-/// `OUTLINED` (`obdefs.h:105`) — the ROOT state every `desk_rsc.c` dialog box
-/// carries. On an [`FL3DBAK`] panel the AES draws EmuTOS's `draw_3d_outline`
-/// instead of the flat GEM double frame (`aes/gemoblib.c:869-887`), i.e. the
-/// raised-panel optic. `ob_center` grows the rectangle it reports by 3 px per
-/// side for it (`aes/gemobed.c:81-93`), so `form_dial` reserves and restores
-/// the outline too.
-pub(super) const OUTLINED: u16 = 0x0010;
+// The `obdefs.h` object types, `ob_flags` and `ob_state` bits used below
+// (`G_*`, `EXIT`, `RBUTTON`, `TOUCHEXIT`, `OUTLINED`, `FL3D*`, …) are
+// `tos_types::aes` (DESK43 U5b).
 
 // ── The EmuTOS 3D flag set (`obdefs.h:92-97`) ───────────────────────────────
 //
@@ -2304,19 +2272,6 @@ pub(super) const OUTLINED: u16 = 0x0010;
 // (`desk_rsc.c` spells `FL3DACT` as `FL3DBAK | FL3DIND`, which is the same
 // 0x0600 bit pattern — `obdefs.h:93-97`.)
 
-/// `FL3DIND` (`obdefs.h:95`) — 3D indicator: grown by `ADJ3DSTD`, beveled, and
-/// it changes colour when pressed. Every `RBUTTON` in `desk_rsc.c` has it.
-pub(super) const FL3DIND: u16 = 0x0200;
-/// `FL3DBAK` (`obdefs.h:97`) — 3D background panel: **not** grown and **not**
-/// beveled (it does not carry the `FL3DOBJ` bit), but a hollow-white interior
-/// takes the `objc_sysvar` `backgrcol` face. Every dialog ROOT and every framed
-/// text field in `desk_rsc.c` has it.
-pub(super) const FL3DBAK: u16 = 0x0400;
-/// `FL3DACT` (`obdefs.h:96`) — 3D activator: grown and beveled like an
-/// indicator, but it keeps its colour and nudges its text when pressed. Every
-/// exit button in `desk_rsc.c` has it.
-pub(super) const FL3DACT: u16 = 0x0600;
-
 /// The dialog-box `ob_spec` of `desk_rsc.c`: a 1-pixel **inner** border over the
 /// colour word `0x1100` — black border, black text, `IP_HOLLOW` pattern,
 /// white interior (`gr_crack`). Used by every `desk_rsc.c` dialog ROOT bar
@@ -2340,10 +2295,6 @@ pub(super) const BOX_SPEC: u64 = (1 << 16) | 0x1100;
 /// `1 << 8` painted the frame in pen 0 (WHITE), which under `FL3DBAK` would
 /// have drawn a white ring on the grey field.
 pub(super) const TED_COLOR: i16 = 0x1100;
-
-/// `ROOT` (`obdefs.h`) — the tree's first object; also `form_do`'s "no editable
-/// field preselected" start value (EmuTOS passes `ROOT` for these dialogs).
-const ROOT: i16 = 0;
 
 /// Build one dialog `OBJECT`.
 #[allow(clippy::too_many_arguments)]
@@ -2589,7 +2540,7 @@ pub(super) fn do_aboutdesk() {
     // stay inverted. Ours is rebuilt each time; done anyway, for the same reason
     // `set_background` does it.
     if let Some(o) = tree.get_mut(clicked.max(0) as usize) {
-        o.ob_state &= !OB_SELECTED;
+        o.ob_state &= !SELECTED;
     }
 }
 
@@ -2839,17 +2790,6 @@ pub(super) fn fmt_time(time: u16, timefmt: TimeFmt, idt: u32, sep: &[u8], out: &
 /// FAT attribute bits (`bdosdefs.h`).
 const FA_RO: u8 = 0x01;
 const FA_SUBDIR: u8 = 0x10;
-
-/// `DISABLED` (`obdefs.h:104`) — greyed out and not clickable. `ADFFINFO` puts
-/// it on the two attribute buttons of a folder and on the two counters of a
-/// plain file (`deskinf.c:540-546`, `:557-566`).
-const DISABLED: u16 = 0x0008;
-
-/// `te_just` codes (`obdefs.h:253-255`): the justification a `TEDINFO`'s text is
-/// merged into its template with (`ob_format`) **and** placed in its object
-/// rectangle with (`gr_just`, `aes/gemgraf.c:567-589`).
-const TE_LEFT: i16 = 0;
-const TE_RIGHT: i16 = 1;
 
 /// `LEN_ZFNAME` (`include/sysconf.h:52`) — a NUL-terminated 8.3 name, and the
 /// buffer size both [`fmt_str`] and [`unfmt_str`] write into (`fmt_str` emits
@@ -3365,20 +3305,20 @@ pub(super) fn inf_file_folder(ppath: &str, pf: &mut super::dir::FileInfo) -> i16
         tree[FFRONLY].ob_state = if is_dir {
             DISABLED
         } else if pf.attr & FA_RO != 0 {
-            OB_SELECTED
+            SELECTED
         } else {
             0
         };
         tree[FFRWRITE].ob_state = if is_dir {
             DISABLED
         } else if pf.attr & FA_RO == 0 {
-            OB_SELECTED
+            SELECTED
         } else {
             0
         };
         // `obj = tree + FFOK; obj->ob_state &= ~SELECTED;` (`:574-575`) — the
         // tree is re-shown, so last pass's pressed OK must not stay inverted.
-        tree[FFOK].ob_state &= !OB_SELECTED;
+        tree[FFOK].ob_state &= !SELECTED;
 
         inf_show(tree.as_mut_ptr() as u64, ROOT);
         // `ret = inf_what(tree, FFSKIP); if (ret >= 0) return ret;` — Skip is
@@ -3411,7 +3351,7 @@ pub(super) fn inf_file_folder(ppath: &str, pf: &mut super::dir::FileInfo) -> i16
         // `if (!(pf->f_attr & FA_SUBDIR)) { … dos_chmod … }` (`:585-605`).
         if !is_dir {
             let mut attr = pf.attr;
-            if tree[FFRONLY].ob_state & OB_SELECTED != 0 {
+            if tree[FFRONLY].ob_state & SELECTED != 0 {
                 attr |= FA_RO;
             } else {
                 attr &= !FA_RO;
@@ -3468,7 +3408,7 @@ pub(super) fn inf_file_folder(ppath: &str, pf: &mut super::dir::FileInfo) -> i16
 fn inf_which(tree: &[Object], baseobj: usize, numobj: usize) -> i16 {
     let mut i = numobj as i16 - 1;
     for obj in tree.iter().skip(baseobj).take(numobj) {
-        if obj.ob_state & OB_SELECTED != 0 {
+        if obj.ob_state & SELECTED != 0 {
             break;
         }
         i -= 1;
@@ -3481,7 +3421,7 @@ fn inf_which(tree: &[Object], baseobj: usize, numobj: usize) -> i16 {
 /// or `-1` when none is selected. The reverse of [`inf_which`].
 pub(super) fn inf_gindex(tree: &[Object], baseobj: usize, numobj: usize) -> i16 {
     for (n, obj) in tree.iter().skip(baseobj).take(numobj).enumerate() {
-        if obj.ob_state & OB_SELECTED != 0 {
+        if obj.ob_state & SELECTED != 0 {
             return n as i16;
         }
     }
@@ -3685,10 +3625,10 @@ pub(super) fn inf_pref() -> bool {
 
     // ── pre-select the current state (`deskinf.c:731-777`) ──────────────
     // `deselect_all(tree1)` is implicit: `mk` leaves every `ob_state` at 0.
-    tree[SPCDYES + usize::from(!confdel)].ob_state |= OB_SELECTED;
-    tree[SPCCYES + usize::from(!confcpy)].ob_state |= OB_SELECTED;
-    tree[SPCOWYES + usize::from(!confovwr)].ob_state |= OB_SELECTED;
-    tree[SPDC1 + dclick as usize].ob_state |= OB_SELECTED;
+    tree[SPCDYES + usize::from(!confdel)].ob_state |= SELECTED;
+    tree[SPCCYES + usize::from(!confcpy)].ob_state |= SELECTED;
+    tree[SPCOWYES + usize::from(!confovwr)].ob_state |= SELECTED;
+    tree[SPDC1 + dclick as usize].ob_state |= SELECTED;
     // `switch(G.g_ctimeform)` / `switch(G.g_cdateform)` (`:754-778`), with the
     // `default:` arm — the `Idt` value — landing on the `Default` button.
     tree[match timefmt {
@@ -3696,13 +3636,13 @@ pub(super) fn inf_pref() -> bool {
         TimeFmt::H24 => SPTF_DEF + 2,
         TimeFmt::Idt => SPTF_DEF,
     }]
-    .ob_state |= OB_SELECTED;
+    .ob_state |= SELECTED;
     tree[match datefmt {
         DateFmt::Mdy => SPDF_DEF + 1,
         DateFmt::Dmy => SPDF_DEF + 2,
         DateFmt::Idt => SPDF_DEF,
     }]
-    .ob_state |= OB_SELECTED;
+    .ob_state |= SELECTED;
 
     // ── run it ──────────────────────────────────────────────────────────
     inf_show(tree.as_mut_ptr() as u64, ROOT);
@@ -3829,7 +3769,7 @@ pub(super) fn set_background() -> bool {
         let clicked = super::form_do(tree_ptr, ROOT);
         // Clear the pressed button's SELECTED bit so it does not stay inverted.
         if let Some(o) = tree.get_mut(clicked as usize) {
-            o.ob_state &= !OB_SELECTED;
+            o.ob_state &= !SELECTED;
         }
         match clicked {
             PAT_DN => pat = pat.saturating_sub(1),
@@ -3856,7 +3796,7 @@ pub(super) fn set_background() -> bool {
     // box as the background), then repaint the exposed desktop and persist.
     global::with(|g| g.sync_desk_background());
     let desk = global::with(|g| g.g_desk).unwrap_or_default();
-    super::redraw::do_wredraw(super::win::DESKWH, desk);
+    super::redraw::do_wredraw(DESKWH, desk);
     // NewTOS persists the new background straight away; EmuTOS leaves that to
     // the user's next Save desktop (`inf_backgrounds` ends at
     // `deskinf.c:919`). Keep the invariant every EmuTOS `app_save` call has
@@ -4059,7 +3999,6 @@ pub(super) fn inf_conf() {
     // `adjust_3d_positions` (`deskmain.c:1647-1656`): "avoid button overlap" —
     // the two `PRV` gadgets sit flush against their `NXT` neighbour in the
     // resource, so a 3D build moves them left by `3 * ADJ3DSTD`.
-    const ADJ3DSTD: i16 = 2;
     let x_prv = 30 * CELL_W - 3 * ADJ3DSTD; // 234
     let x_nxt = 34 * CELL_W; // 272
 
@@ -4216,8 +4155,8 @@ pub(super) fn inf_conf() {
     // `if (G.g_appdir) tree[DCDEFAPP] |= SELECTED; else tree[DCDEFWIN] |= …`
     // and the same pair for `G.g_fullpath` (`deskinf.c:1113-1116`).
     let (appdir, fullpath) = global::with(|g| (g.g_appdir, g.g_fullpath)).unwrap_or((true, true));
-    tree[DCDEFAPP + usize::from(!appdir)].ob_state |= OB_SELECTED;
-    tree[DCPMFULL + usize::from(!fullpath)].ob_state |= OB_SELECTED;
+    tree[DCDEFAPP + usize::from(!appdir)].ob_state |= SELECTED;
+    tree[DCPMFULL + usize::from(!fullpath)].ob_state |= SELECTED;
 
     // ── free-RAM line (`deskinf.c:1118-1125`) ───────────────────────────
     // `sprintf("%ld KB", dos_avail_stram()/1024)`, plus `" + %ld KB"` of
@@ -4387,7 +4326,7 @@ pub(super) fn inf_conf() {
         }
         // `tree[exitobj].ob_state &= ~SELECTED;` (`:1232`).
         if let Some(o) = tree.get_mut(exitobj as usize) {
-            o.ob_state &= !OB_SELECTED;
+            o.ob_state &= !SELECTED;
         }
         if done {
             break;

@@ -1,0 +1,8 @@
+Preliminary U5b kernel (prelim/bin/kernel8-u5b-prelim.img), built before the final tidy-up (afterwards only: tos_types use statements merged per file in 13 desk files, one long use line wrapped in aes/window.rs, two doc lines in programs/newtos-gem) vs base, same series.sh
+u5b-on-rpi4- vs base-on-rpi4-: same=5 diff=0 missing=0
+u5b-off-rpi4- vs base-off-rpi4-: same=5 diff=0 missing=0
+u5b-strict-rpi4- vs base-strict-rpi4-: same=5 diff=0 missing=0
+on APITEST u5b-prelim vs base: 0 differing lines; TOTAL 106 0 5 
+off APITEST u5b-prelim vs base: 0 differing lines; TOTAL 106 0 5 
+strict APITEST u5b-prelim vs base: 0 differing lines; TOTAL 106 0 5 
+EXC/PANIC in prelim serial: 0

@@ -19,8 +19,8 @@
 
 use super::graf::{gl_hbox, gl_hchar, gl_wchar};
 use super::object::{
-    add_3d_effect, gr_crack, gr_rect, render_tree_app, render_tree_lp64, xor_color, Object, ACT_BUTCOL,
-    ACT_COLCHANGE, ACT_TXTMOVE, BACKGR_COL, IP_4PATT, IP_HOLLOW, IP_PATTERNS, IP_SOLID,
+    add_3d_effect, gr_crack, gr_rect, render_tree_app, render_tree_lp64, xor_color, Object,
+    ACT_BUTCOL, ACT_COLCHANGE, ACT_TXTMOVE, BACKGR_COL, IP_PATTERNS,
 };
 use super::Aespb;
 use crate::bdos::process::{self, usermem, Abi};
@@ -28,26 +28,17 @@ use crate::host::{host, Host};
 use crate::vdi::backend::{ClipRect, PatternFill, Pel, RasterBackend, WriteMode};
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicBool, AtomicI16, AtomicI32, AtomicU64, AtomicU8, AtomicUsize, Ordering};
+use tos_types::aes::{
+    Grect, ADJ3DSTD, BEG_MCTRL, BEG_UPDATE, CLOSER, DESKWH, DNARROW, END_MCTRL, END_UPDATE, FULLER,
+    HOTCLOSE, HSLIDE, INFO, IP_4PATT, IP_HOLLOW, IP_SOLID, LFARROW, MOVER, NAME, NIL, RTARROW,
+    SIZER, TE_CNTR, TE_LEFT, UPARROW, VSLIDE, WA_DNLINE, WA_DNPAGE, WA_LFLINE, WA_LFPAGE,
+    WA_RTLINE, WA_RTPAGE, WA_UPLINE, WA_UPPAGE, WC_BORDER, WC_WORK, WF_COLOR, WF_CXYWH, WF_DCOLOR,
+    WF_FIRSTXYWH, WF_FXYWH, WF_HSLIDE, WF_HSLSIZ, WF_INFO, WF_NAME, WF_NEWDESK, WF_NEXTXYWH,
+    WF_OWNER, WF_PXYWH, WF_SCREEN, WF_TOP, WF_VSLIDE, WF_VSLSIZ, WF_WXYWH, WM_ARROWED, WM_CLOSED,
+    WM_FULLED, WM_HSLID, WM_MOVED, WM_REDRAW, WM_SIZED, WM_TOPPED, WM_UNTOPPED, WM_VSLID,
+};
 
-// ── kind (border widget) bits, aesdefs.h:519-531 ──
-const NAME: u16 = 0x0001;
-const CLOSER: u16 = 0x0002;
-const FULLER: u16 = 0x0004;
-const MOVER: u16 = 0x0008;
-const INFO: u16 = 0x0010;
-const SIZER: u16 = 0x0020;
-const UPARROW: u16 = 0x0040;
-const DNARROW: u16 = 0x0080;
-const VSLIDE: u16 = 0x0100;
-const LFARROW: u16 = 0x0200;
-const RTARROW: u16 = 0x0400;
-const HSLIDE: u16 = 0x0800;
-/// `HOTCLOSE` (`aesdefs.h:531`, "PC-GEM feature", `CONF_WITH_PCGEM` — 1 in
-/// the 512 profile, `config.h:1320`): the closer fires `WM_CLOSED` on the
-/// **press**, without `gr_watchbox`'s wait for the release
-/// (`gemctrl.c:208-214`). Draws nothing of its own; it needs `CLOSER` for a
-/// closer to exist at all (`w_bldactive` adds `W_CLOSER` only for `CLOSER`).
-const HOTCLOSE: u16 = 0x1000;
+// ── kind (border widget) bits, aesdefs.h:519-531 (`tos_types::aes`) ──
 
 const VGADGETS: u16 = UPARROW | DNARROW | VSLIDE;
 const HGADGETS: u16 = LFARROW | RTARROW | HSLIDE;
@@ -56,34 +47,10 @@ const HGADGETS: u16 = LFARROW | RTARROW | HSLIDE;
 /// (the non-3D branch tests `NAME|CLOSER|FULLER` and gives it none).
 const TGADGETS: u16 = NAME | CLOSER | FULLER | MOVER;
 
-// ── WF_* fields, aesdefs.h:534-552 ──
+// ── WF_* fields, aesdefs.h:534-552 (`tos_types::aes`) ──
 // `WF_KIND` (1) is deliberately absent: `wm_get`/`wm_set` do not handle it in
 // this EmuTOS build (both fall through to `return FALSE`, gemwmlib.c:1591,1745),
 // so there is nothing for the dispatcher to match on.
-const WF_NAME: i16 = 2;
-const WF_INFO: i16 = 3;
-const WF_WXYWH: i16 = 4;
-const WF_CXYWH: i16 = 5;
-const WF_HSLIDE: i16 = 8;
-const WF_VSLIDE: i16 = 9;
-const WF_HSLSIZ: i16 = 15;
-const WF_VSLSIZ: i16 = 16;
-const WF_PXYWH: i16 = 6;
-const WF_FXYWH: i16 = 7;
-const WF_TOP: i16 = 10;
-const WF_FIRSTXYWH: i16 = 11;
-const WF_NEXTXYWH: i16 = 12;
-const WF_NEWDESK: i16 = 14;
-const WF_SCREEN: i16 = 17;
-const WF_COLOR: i16 = 18;
-const WF_DCOLOR: i16 = 19;
-const WF_OWNER: i16 = 20;
-
-// ── wind_update modes, aesdefs.h:559-562 ──
-const END_UPDATE: i16 = 0;
-const BEG_UPDATE: i16 = 1;
-const END_MCTRL: i16 = 2;
-const BEG_MCTRL: i16 = 3;
 
 /// Number of window gadget-colour slots — one per `W_*` gadget object (EmuTOS
 /// `NUM_ELEM`, gemlib.h:58). `WF_COLOR`/`WF_DCOLOR` index the per-window /
@@ -141,10 +108,6 @@ const GL_WBCOLOR_DEFAULT: [i16; NUM_ELEM] = {
 /// desktop tree's `DROOT` box **and** every icon child under it.
 const MAX_DEPTH: i16 = 8;
 
-// ── wind_calc types ──
-const WC_BORDER: i16 = 0;
-const WC_WORK: i16 = 1;
-
 // ── gadget glyphs (ST system font 0x01-0x07) ──
 const G_UP: u16 = 0x01;
 const G_DN: u16 = 0x02;
@@ -167,12 +130,6 @@ const G_FULL: u16 = 0x07;
 /// and what the *glyph cell* of every window gadget measures — the 3D window
 /// layout inflates the surrounding box ([`adj_wbox`]), never this.
 pub(super) const GL_WBOX: i16 = 19;
-
-/// Standard pixel adjustment for 3D objects — EmuTOS `ADJ3DSTD`
-/// (`obdefs.h:136`). Our target profile is Falcon030/TOS4 with
-/// `CONF_WITH_3D_OBJECTS` on (`config.h:1259`), so every window gadget sits in
-/// a box grown by `2 * ADJ3DSTD` and is inset by `ADJ3DSTD` inside it.
-const ADJ3DSTD: i16 = 2;
 
 /// EmuTOS `MAX_COORDINATE` (`include/sysconf.h:63`) — the "no limit" extent the
 /// Control Manager gives `gr_dragbox` for the vertical direction, so a window
@@ -249,27 +206,8 @@ const NUM_WIN: usize = MAX_WINDOWS + 1;
 /// area (234 glyphs) and info line (240 glyphs).
 const LIVE_STR_MAX: usize = 512;
 
-/// The desktop window's AES handle (EmuTOS `DESKWH`) — the bottom of the window
-/// z-order, and **a real window**: `wm_init` runs `w_setup(ppd, DESKWH, NONE)`
-/// on it (`gemwmlib.c:1290`), which sets `VF_INUSE`, so `get_pwin(0)` succeeds
-/// and `wm_get` answers every field for it exactly as for any other window. Its
-/// slot is [`slots`]`[0]`, initialised by [`wm_init`].
-const DESKWH: i16 = 0;
-
-/// `NIL` — "no object / no window" (`include/obdefs.h:21`).
-const NIL: i16 = -1;
-
 /// The desktop window's `kind` — EmuTOS `NONE` (`gemwmlib.c:1290`, no gadgets).
 const NONE: u16 = 0;
-
-/// A rectangle (GEM `GRECT`).
-#[derive(Clone, Copy, Default, PartialEq)]
-struct Grect {
-    x: i16,
-    y: i16,
-    w: i16,
-    h: i16,
-}
 
 // ── the drop shadow ─────────────────────────────────────────────────────
 
@@ -1780,7 +1718,6 @@ fn rc_intersect(p1: Grect, p2: &mut Grect) -> bool {
 /// reimplemented, and dropping the piece would be the silent loss of redraw
 /// area this constant's old value of 16 caused (A21).
 const RCAP: usize = NUM_WIN * 10;
-const WM_REDRAW: i16 = 20;
 
 /// Append `r` to the list under construction — `mkpiece`'s `get_orect()` plus
 /// the link (`aes/gemwrect.c:68-69`). A piece without area is not a piece
@@ -2768,12 +2705,6 @@ fn draw_shadow(b: Grect, backend: &dyn RasterBackend, clip: ClipRect) {
         DROP_SHADOW_COLOR, clip,
     );
 }
-
-/// `TEDINFO.te_just` values (`obdefs.h`): `gl_aname` is centred
-/// (`gl_aname.te_just = TE_CNTR`, `gemwmlib.c:503`), `gl_ainfo` left-aligned
-/// (`gl_asamp`, `:154-157`).
-const TE_LEFT: i16 = 0;
-const TE_CNTR: i16 = 2;
 
 /// Where `gr_gtext(just, IBM, text, &c)` puts an `n`-character system-font
 /// string in the cell `c`, and how many of its characters it draws —
@@ -4779,27 +4710,9 @@ fn desktop_work() -> Grect {
 
 // ── Batch 2: interactive frame + WM_* messages ──────────────────────────
 
-// WM_* message ids (aesdefs.h:229-239).
-const WM_TOPPED: i16 = 21;
-const WM_CLOSED: i16 = 22;
-const WM_FULLED: i16 = 23;
-const WM_ARROWED: i16 = 24;
-const WM_HSLID: i16 = 25;
-const WM_VSLID: i16 = 26;
-const WM_SIZED: i16 = 27;
-const WM_MOVED: i16 = 28;
-const WM_UNTOPPED: i16 = 30;
-
-// WM_ARROWED actions (aesdefs.h:245-253, gemctrl.c:63-74). Line = arrow, page
-// = track click either side of the elevator.
-const WA_UPPAGE: i16 = 0;
-const WA_DNPAGE: i16 = 1;
-const WA_UPLINE: i16 = 2;
-const WA_DNLINE: i16 = 3;
-const WA_LFPAGE: i16 = 4;
-const WA_RTPAGE: i16 = 5;
-const WA_LFLINE: i16 = 6;
-const WA_RTLINE: i16 = 7;
+// WM_* message ids (aesdefs.h:229-239) and the WM_ARROWED actions
+// (aesdefs.h:245-253, gemctrl.c:63-74; line = arrow, page = track click
+// either side of the elevator) are `tos_types::aes`'.
 
 /// Which frame component a point falls in. Beyond the title/sizer/arrow
 /// gadgets, the scroll bars distinguish the elevator **thumb** (drag →
@@ -5839,7 +5752,6 @@ mod newdesk_root_word_tests {
     pub(super) static SERIAL: Mutex<()> = Mutex::new(());
 
     const OP_WIND_SET: i16 = 105;
-    const WF_NEWDESK: i16 = 14;
 
     /// The tree of `TASK/A81.md`'s measured case: an LP64 EL0 address whose
     /// bits 32..47 are `0x0001` — exactly the word a fixed `int_in[4]` read
@@ -6404,8 +6316,7 @@ mod newdesk_owner_tests {
     /// A low user VA, page-aligned, the way the EL0 heap window hands them
     /// out — and unmapped in the host process.
     const VA: u64 = 0x0040_0000;
-    const G_BOX: u16 = 20;
-    const G_ICON: u16 = 31;
+    use tos_types::aes::{G_BOX, G_ICON};
     /// `ob_spec` of a solid box in colour `c` (`gr_crack`: pattern 7 =
     /// IP_SOLID in bits 4..6, interior colour in bits 0..3, thickness 0).
     const fn solid(c: u16) -> u64 {

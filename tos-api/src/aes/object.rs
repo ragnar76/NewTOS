@@ -22,37 +22,21 @@ use super::Aespb;
 use crate::bdos::process::{current_abi, usermem, Abi};
 use crate::host::host;
 use crate::vdi::backend::{ClipRect, MonoBits, MonoSrc, PatternFill, Pel, RasterBackend, Rect, WriteMode};
+use tos_types::aes::{
+    ACTBUTCOL, AD3DVALUE, ADJ3DOUT, ADJ3DSTD, BACKGRCOL, CHECKED, CROSSED, DEFAULT, DISABLED,
+    ED_CHAR, ED_END, ED_INIT, ED_START, EXIT, FL3DACT, FL3DBAK, FL3DIND, FL3DMASK, FL3DOBJ, G_BOX,
+    G_BOXCHAR, G_BOXTEXT, G_BUTTON, G_CICON, G_FBOXTEXT, G_FTEXT, G_IBOX, G_ICON, G_IMAGE,
+    G_STRING, G_TEXT, G_TITLE, G_USERDEF, HIDETREE, INDBUTCOL, INDIRECT, IP_HOLLOW, IP_SOLID,
+    LASTOB, LK3DACT, LK3DIND, NIL, OUTLINED, SELECTED, SHADOWED, TE_CNTR, TE_LEFT, TE_RIGHT,
+    WHITEBAK,
+};
 
 // ── OBJECT model ────────────────────────────────────────────────────
 
-/// A GEM object tree node (native NewTOS layout, 32 bytes).
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct Object {
-    /// next sibling, or `-1` (`NIL`).
-    pub ob_next: i16,
-    /// first child, or `-1`.
-    pub ob_head: i16,
-    /// last child, or `-1`.
-    pub ob_tail: i16,
-    /// `G_*` graphic type.
-    pub ob_type: u16,
-    /// `*` flag bits.
-    pub ob_flags: u16,
-    /// `*` state bits.
-    pub ob_state: u16,
-    /// type-specific payload: a native pointer (string/TEDINFO) or, for
-    /// box types, `(thickness << 16) | colour-word`.
-    pub ob_spec: u64,
-    /// x relative to the parent.
-    pub ob_x: i16,
-    /// y relative to the parent.
-    pub ob_y: i16,
-    /// width in pixels.
-    pub ob_width: i16,
-    /// height in pixels.
-    pub ob_height: i16,
-}
+// The native `OBJECT`/`TEDINFO`/`ICONBLK` records live in `tos-types`
+// (`tos_types::aes`, DESK43 U5b) so the desktop and native Rust programs share
+// them without depending on the AES; re-exported here for the AES' own users.
+pub use tos_types::aes::{IconBlk, Object, TedInfo};
 
 // ── ObjTree: ABI-parametrized in-place OBJECT accessor (ADR-020 stage 4) ──
 //
@@ -409,7 +393,7 @@ impl ObjTree {
     /// gemobjop.c:36-37; `ob_getsp`, gemobed.c:60-62). Normally the raw field:
     /// a user VA or a packed colour word; for a sub-struct type the base VA of
     /// the TEDINFO/ICONBLK/BITBLK/USERBLK read at the tree's ABI width by the
-    /// sub-struct readers ([`TedInfo::read_abi`] etc.).
+    /// sub-struct readers ([`tedinfo_read_abi`] etc.).
     ///
     /// When `ob_flags & INDIRECT` is set the raw `ob_spec` is instead a pointer
     /// to a cell holding the real spec (`*pspec = *(LONG *)ob_spec` in EmuTOS);
@@ -478,7 +462,7 @@ impl ObjTree {
                 } else {
                     // SAFETY: the ob_spec of a *TEXT object is a TEDINFO packed
                     // at the tree's ABI width (INDIRECT already resolved).
-                    unsafe { TedInfo::read_abi(spec, self).te_thickness }
+                    unsafe { tedinfo_read_abi(spec, self).te_thickness }
                 }
             }
             G_BOX | G_BOXCHAR | G_IBOX => ((self.spec(obj) >> 16) as u8 as i8) as i16,
@@ -638,22 +622,6 @@ pub(crate) fn record_stride(abi: Abi) -> u64 {
     }
 }
 
-// Graphic types (`obdefs.h`).
-const G_BOX: u16 = 20;
-const G_TEXT: u16 = 21;
-const G_BOXTEXT: u16 = 22;
-const G_IMAGE: u16 = 23;
-const G_IBOX: u16 = 25;
-const G_FTEXT: u16 = 29;
-const G_FBOXTEXT: u16 = 30;
-const G_BUTTON: u16 = 26;
-const G_BOXCHAR: u16 = 27;
-const G_STRING: u16 = 28;
-const G_ICON: u16 = 31;
-const G_TITLE: u16 = 32;
-const G_CICON: u16 = 33; // colour icon: a CICONBLK that begins with a mono ICONBLK
-const G_USERDEF: u16 = 24; // application-drawn object (USERBLK + ub_code callback)
-
 /// `BITBLK` — a raw monochrome raster for a `G_IMAGE` object
 /// (`obdefs.h`). `bi_pdata` is a native pointer to big-endian 16-bit
 /// raster words.
@@ -671,69 +639,6 @@ pub struct BitBlk {
     pub bi_y: i16,
     /// foreground colour (PEL) of set bits.
     pub bi_color: i16,
-}
-
-/// `TEDINFO` — editable/formatted text for the `G_TEXT`/`G_BOXTEXT`
-/// object types (`obdefs.h`). Pointers are native 64-bit.
-#[repr(C)]
-pub struct TedInfo {
-    /// pointer to the text string.
-    pub te_ptext: u64,
-    /// pointer to the template string.
-    pub te_ptmplt: u64,
-    /// pointer to the validation string.
-    pub te_pvalid: u64,
-    /// font id.
-    pub te_font: i16,
-    /// reserved.
-    pub te_junk1: i16,
-    /// justification (0 = left, 1 = right, 2 = centre).
-    pub te_just: i16,
-    /// colour word (`gr_crack` encoding).
-    pub te_color: i16,
-    /// reserved.
-    pub te_junk2: i16,
-    /// border thickness.
-    pub te_thickness: i16,
-    /// text length.
-    pub te_txtlen: i16,
-    /// template length.
-    pub te_tmplen: i16,
-}
-
-/// `ICONBLK` — a monochrome icon (mask + data + optional char + text)
-/// for a `G_ICON` object (`obdefs.h`). Pointers are native 64-bit.
-#[derive(Clone, Copy)]
-#[repr(C)]
-pub struct IconBlk {
-    /// pointer to the mask raster (16-bit words).
-    pub ib_pmask: u64,
-    /// pointer to the data raster (16-bit words).
-    pub ib_pdata: u64,
-    /// pointer to the icon's text string.
-    pub ib_ptext: u64,
-    /// colour/char word: `[15:12]` fg, `[11:8]` bg, `[7:0]` character.
-    pub ib_char: i16,
-    /// character x/y.
-    pub ib_xchar: i16,
-    /// character y.
-    pub ib_ychar: i16,
-    /// icon image rect x/y/w/h (relative to the object).
-    pub ib_xicon: i16,
-    /// icon y.
-    pub ib_yicon: i16,
-    /// icon width.
-    pub ib_wicon: i16,
-    /// icon height.
-    pub ib_hicon: i16,
-    /// text rect x/y/w/h (relative to the object).
-    pub ib_xtext: i16,
-    /// text y.
-    pub ib_ytext: i16,
-    /// text width.
-    pub ib_wtext: i16,
-    /// text height.
-    pub ib_htext: i16,
 }
 
 // ── ABI-aware sub-struct readers (ADR-020 stage B) ──────────────────
@@ -860,67 +765,63 @@ impl BitBlk {
     }
 }
 
-impl TedInfo {
-    /// Materialise the TEDINFO at `base` at the tree's ABI width. Layout: three
-    /// pointers (`te_ptext`/`te_ptmplt`/`te_pvalid`), then eight WORDs at
-    /// `3 * abi_ptr_size` (@24 LP64 / @12 ILP32). `mt_gem.h:1988-2001`.
-    ///
-    /// # Safety
-    /// `base` is the valid `ob_spec` of a *TEXT object — a TEDINFO packed at
-    /// `abi` width.
-    #[inline]
-    unsafe fn read_abi(base: u64, t: ObjTree) -> TedInfo {
-        let ps = abi_ptr_size(t.abi());
-        let w = 3 * ps; // first WORD offset
-        // SAFETY: `base` is a valid TEDINFO packed at the tree's width (caller's contract).
-        unsafe {
-            TedInfo {
-                te_ptext: read_abi_ptr(t, base, 0),
-                te_ptmplt: read_abi_ptr(t, base, ps),
-                te_pvalid: read_abi_ptr(t, base, 2 * ps),
-                te_font: read_abi_word(t, base, w),
-                te_junk1: read_abi_word(t, base, w + 2),
-                te_just: read_abi_word(t, base, w + 4),
-                te_color: read_abi_word(t, base, w + 6),
-                te_junk2: read_abi_word(t, base, w + 8),
-                te_thickness: read_abi_word(t, base, w + 10),
-                te_txtlen: read_abi_word(t, base, w + 12),
-                te_tmplen: read_abi_word(t, base, w + 14),
-            }
+/// Materialise the TEDINFO at `base` at the tree's ABI width. Layout: three
+/// pointers (`te_ptext`/`te_ptmplt`/`te_pvalid`), then eight WORDs at
+/// `3 * abi_ptr_size` (@24 LP64 / @12 ILP32). `mt_gem.h:1988-2001`.
+///
+/// # Safety
+/// `base` is the valid `ob_spec` of a *TEXT object — a TEDINFO packed at
+/// `abi` width.
+#[inline]
+unsafe fn tedinfo_read_abi(base: u64, t: ObjTree) -> TedInfo {
+    let ps = abi_ptr_size(t.abi());
+    let w = 3 * ps; // first WORD offset
+    // SAFETY: `base` is a valid TEDINFO packed at the tree's width (caller's contract).
+    unsafe {
+        TedInfo {
+            te_ptext: read_abi_ptr(t, base, 0),
+            te_ptmplt: read_abi_ptr(t, base, ps),
+            te_pvalid: read_abi_ptr(t, base, 2 * ps),
+            te_font: read_abi_word(t, base, w),
+            te_junk1: read_abi_word(t, base, w + 2),
+            te_just: read_abi_word(t, base, w + 4),
+            te_color: read_abi_word(t, base, w + 6),
+            te_junk2: read_abi_word(t, base, w + 8),
+            te_thickness: read_abi_word(t, base, w + 10),
+            te_txtlen: read_abi_word(t, base, w + 12),
+            te_tmplen: read_abi_word(t, base, w + 14),
         }
     }
 }
 
-impl IconBlk {
-    /// Materialise the ICONBLK at `base` at the tree's ABI width. Layout: three
-    /// pointers (`ib_pmask`/`ib_pdata`/`ib_ptext`), then eleven WORDs at
-    /// `3 * abi_ptr_size` (@24 LP64 / @12 ILP32). `mt_gem.h:2004-2020`.
-    ///
-    /// # Safety
-    /// `base` is the valid `ob_spec` of a G_ICON object — an ICONBLK packed at
-    /// `abi` width.
-    #[inline]
-    unsafe fn read_abi(base: u64, t: ObjTree) -> IconBlk {
-        let ps = abi_ptr_size(t.abi());
-        let w = 3 * ps; // first WORD offset
-        // SAFETY: `base` is a valid ICONBLK packed at the tree's width (caller's contract).
-        unsafe {
-            IconBlk {
-                ib_pmask: read_abi_ptr(t, base, 0),
-                ib_pdata: read_abi_ptr(t, base, ps),
-                ib_ptext: read_abi_ptr(t, base, 2 * ps),
-                ib_char: read_abi_word(t, base, w),
-                ib_xchar: read_abi_word(t, base, w + 2),
-                ib_ychar: read_abi_word(t, base, w + 4),
-                ib_xicon: read_abi_word(t, base, w + 6),
-                ib_yicon: read_abi_word(t, base, w + 8),
-                ib_wicon: read_abi_word(t, base, w + 10),
-                ib_hicon: read_abi_word(t, base, w + 12),
-                ib_xtext: read_abi_word(t, base, w + 14),
-                ib_ytext: read_abi_word(t, base, w + 16),
-                ib_wtext: read_abi_word(t, base, w + 18),
-                ib_htext: read_abi_word(t, base, w + 20),
-            }
+/// Materialise the ICONBLK at `base` at the tree's ABI width. Layout: three
+/// pointers (`ib_pmask`/`ib_pdata`/`ib_ptext`), then eleven WORDs at
+/// `3 * abi_ptr_size` (@24 LP64 / @12 ILP32). `mt_gem.h:2004-2020`.
+///
+/// # Safety
+/// `base` is the valid `ob_spec` of a G_ICON object — an ICONBLK packed at
+/// `abi` width.
+#[inline]
+unsafe fn iconblk_read_abi(base: u64, t: ObjTree) -> IconBlk {
+    let ps = abi_ptr_size(t.abi());
+    let w = 3 * ps; // first WORD offset
+    // SAFETY: `base` is a valid ICONBLK packed at the tree's width (caller's contract).
+    unsafe {
+        IconBlk {
+            ib_pmask: read_abi_ptr(t, base, 0),
+            ib_pdata: read_abi_ptr(t, base, ps),
+            ib_ptext: read_abi_ptr(t, base, 2 * ps),
+            ib_char: read_abi_word(t, base, w),
+            ib_xchar: read_abi_word(t, base, w + 2),
+            ib_ychar: read_abi_word(t, base, w + 4),
+            ib_xicon: read_abi_word(t, base, w + 6),
+            ib_yicon: read_abi_word(t, base, w + 8),
+            ib_wicon: read_abi_word(t, base, w + 10),
+            ib_hicon: read_abi_word(t, base, w + 12),
+            ib_xtext: read_abi_word(t, base, w + 14),
+            ib_ytext: read_abi_word(t, base, w + 16),
+            ib_wtext: read_abi_word(t, base, w + 18),
+            ib_htext: read_abi_word(t, base, w + 20),
         }
     }
 }
@@ -1097,20 +998,6 @@ impl ParmBlk {
     }
 }
 
-// Flag / state bits.
-const LASTOB: u16 = 0x0020;
-const HIDETREE: u16 = 0x0080;
-const INDIRECT: u16 = 0x0100; // ob_flags: ob_spec points at a cell holding the real spec
-const SELECTED: u16 = 0x0001;
-const DEFAULT: u16 = 0x0002; // ob_flags: default (heavy-frame) object
-const EXIT: u16 = 0x0004; // ob_flags: EXIT button (thickens the border by 1)
-const CROSSED: u16 = 0x0002; // ob_state: draw a diagonal cross over the object
-const CHECKED: u16 = 0x0004;
-const DISABLED: u16 = 0x0008;
-const OUTLINED: u16 = 0x0010;
-const SHADOWED: u16 = 0x0020; // ob_state: solid drop shadow to the lower-right
-const WHITEBAK: u16 = 0x0040; // ob_state: skip a white icon background (`gr_gicon`)
-
 /// `vro_cpyfm` logic op `S_AND_D` (`obdefs.h:53`) — the op `gr_colourblit`
 /// blits a colour icon's device-form image with on the truecolor path
 /// (`gemgraf.c:664-667`): the mask has been painted in the icon's background
@@ -1121,15 +1008,6 @@ const S_AND_D: u8 = 1;
 
 /// 50 % dither used to grey-out DISABLED objects (EmuTOS `IP_4PATT`).
 const STIPPLE_50: [u16; 2] = [0xAAAA, 0x5555];
-
-// 3D-object flags (`ob_flags`, EmuTOS `CONF_WITH_3D_OBJECTS`, obdefs.h:92-97).
-const FL3DOBJ: u16 = 0x0200; // "indicator OR activator" bit: set on IND/ACT, CLEAR on BAK
-const FL3DIND: u16 = 0x0200; // indicator: grown + beveled (colour change on press)
-const FL3DBAK: u16 = 0x0400; // background panel: flat, NOT grown, NOT beveled
-const FL3DACT: u16 = 0x0600; // activator / button: grown + beveled (text move on press)
-const FL3DMASK: u16 = 0x0600;
-
-const NIL: i16 = -1;
 
 // VDI default palette pens.
 const WHITE: Pel = 0;
@@ -1152,11 +1030,6 @@ const LBLUE: Pel = 12;
 const LCYAN: Pel = 13;
 const LYELLOW: Pel = 14;
 const LMAGENTA: Pel = 15;
-
-// Text justification (`te_just`).
-const TE_LEFT: i16 = 0;
-const TE_RIGHT: i16 = 1;
-const TE_CNTR: i16 = 2;
 
 // AES font ids (`TEDINFO.te_font`, EmuTOS `obdefs.h:62-63`).
 const FONT_IBM: i16 = 3;
@@ -1707,16 +1580,6 @@ pub(super) fn init_3d() {
     BACKGR_COL.store(col, Ordering::Relaxed);
 }
 
-// objc_sysvar `which` selectors (obdefs.h).
-const LK3DIND: i16 = 1;
-const LK3DACT: i16 = 2;
-const INDBUTCOL: i16 = 3;
-const ACTBUTCOL: i16 = 4;
-const BACKGRCOL: i16 = 5;
-const AD3DVALUE: i16 = 6;
-const ADJ3DSTD: i16 = 2; // 3D growth per side (EmuTOS ADJ3DSTD, obdefs.h:136)
-const ADJ3DOUT: i16 = 3; // extra extent of an OUTLINED 3D object (EmuTOS ADJ3DOUT)
-
 /// `objc_sysvar` (48) — get (`int_in[0]` = 0) or set (1) a 3-D look variable
 /// `int_in[1]` from values `int_in[2..3]`. GET returns the pair in
 /// `int_out[1..2]`; `int_out[0]` = 1 (ok) / 0 (bad which or out-of-range
@@ -1911,12 +1774,6 @@ fn change_clip_t(t: ObjTree, obj: i16, newstate: u16, redraw: bool, clip_overrid
     }
 }
 
-// objc_edit kinds (`obdefs.h`).
-const ED_START: i16 = 0;
-const ED_INIT: i16 = 1;
-const ED_CHAR: i16 = 2;
-const ED_END: i16 = 3;
-
 /// `objc_edit` (46) — edit the EDITABLE `TEDINFO` text field `obj`.
 /// `int_in[1]` = character, `int_in[2]` = cursor index, `int_in[3]` =
 /// kind (EDSTART/EDINIT/EDCHAR/EDEND). The new cursor index is returned
@@ -1974,7 +1831,7 @@ pub(crate) fn edit_field_t(t: ObjTree, obj: i16, in_char: i16, mut idx: i16, kin
     // width; read/write `te_ptext`/`te_ptmplt`/`te_pvalid` at that width so an
     // ILP32 app's edit fields (cursor/insert/backspace) work like LP64's.
     // SAFETY: `spec` is the valid TEDINFO base of an EDITABLE field (GEM contract).
-    let ted = unsafe { TedInfo::read_abi(spec, t) };
+    let ted = unsafe { tedinfo_read_abi(spec, t) };
     let ted = &ted;
     let txtlen = ted.te_txtlen.max(1);
     // The field's text buffer (`te_txtlen` bytes, the GEM contract), written
@@ -2629,10 +2486,6 @@ pub(crate) const IP_PATTERNS: [[u16; 4]; 8] = [
     [0xEEEE, 0xFFFF, 0xBBBB, 0xFFFF],
     [0xFFFF, 0xFFFF, 0xFFFF, 0xFFFF], // IP_SOLID
 ];
-pub(crate) const IP_HOLLOW: u16 = 0;
-/// The 50 % dither `just_draw` lays over a `DISABLED` object (`gemoblib.c:928-929`).
-pub(crate) const IP_4PATT: u16 = 4;
-pub(crate) const IP_SOLID: u16 = 7;
 
 /// Decode a GEM object colour word (EmuTOS `gr_crack`): returns
 /// `(border, text, pattern, inside, replace_mode)`.
@@ -2714,7 +2567,7 @@ fn xor_is_ok(t: ObjTree, ob_type: u16, ob_flags: u16, ob_spec: u64, backend: &dy
             }
             // SAFETY: the ob_spec of a *TEXT object is a TEDINFO packed at the
             // tree's ABI width (INDIRECT already resolved by `spec`).
-            unsafe { TedInfo::read_abi(ob_spec, t).te_color as u16 }
+            unsafe { tedinfo_read_abi(ob_spec, t).te_color as u16 }
         }
         G_BOX | G_BOXCHAR => ob_spec as u16,
         _ => return true, // G_BUTTON, G_USERDEF, G_ICON, G_CICON
@@ -3241,7 +3094,7 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
             if ob_spec != 0 {
                 // SAFETY: ob_spec of a *TEXT object points at a TEDINFO packed
                 // at the tree's ABI width.
-                let ted = unsafe { TedInfo::read_abi(ob_spec, t) };
+                let ted = unsafe { tedinfo_read_abi(ob_spec, t) };
                 let ted = &ted;
                 // Crack the TEDINFO colour word (EmuTOS `gr_crack`): border,
                 // text, inside pattern, inside colour.
@@ -3402,7 +3255,7 @@ fn just_draw(t: ObjTree, obj: i16, x: i16, y: i16, clip: ClipRect, backend: &dyn
             if ob_spec != 0 {
                 // SAFETY: ob_spec of a G_ICON/G_CICON points at an ICONBLK (the
                 // CICONBLK head for G_CICON) packed at the tree's ABI width.
-                let ib = unsafe { IconBlk::read_abi(ob_spec, t) };
+                let ib = unsafe { iconblk_read_abi(ob_spec, t) };
                 let cicon = if ob_type == G_CICON {
                     // SAFETY: a G_CICON's ob_spec is a whole CICONBLK; its
                     // `mainlist` is 0 or a CICON, both at the tree's ABI width.

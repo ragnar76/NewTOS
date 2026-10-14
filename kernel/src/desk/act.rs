@@ -15,14 +15,12 @@
 
 use alloc::vec::Vec;
 
-use super::global::{DeskState, Grect, Point, DROOT, NIL};
+use super::global::{DeskState, Point, DROOT};
+use tos_types::aes::{Grect, DESKWH, DISABLED, NIL, SELECTED};
 use super::model::{AType, View};
-use super::win::{DESKWH, LEN_FNODE, OB_SELECTED};
+use super::win::LEN_FNODE;
 
 use tos_api::vdi::font::CELL_W;
-
-/// `OB_DISABLED` state bit — `act_chg` refuses to change a disabled object.
-const OB_DISABLED: u16 = 0x0008;
 
 /// The result an [`super::main`] click handler acts on: whether the selection
 /// changed (so it can repaint the affected window/desktop).
@@ -70,21 +68,21 @@ impl DeskState {
         }
     }
 
-    /// `act_chg` — set/clear `obid`'s [`OB_SELECTED`] bit and its backing
+    /// `act_chg` — set/clear `obid`'s [`SELECTED`] bit and its backing
     /// `f_selected` (EmuTOS `deskact.c:419`). Refuses a disabled object.
     /// Returns whether the state actually changed.
     pub fn act_chg(&mut self, handle: i16, obid: i16, set: bool) -> bool {
-        if self.g_screen[obid as usize].ob_flags & OB_DISABLED != 0 {
+        if self.g_screen[obid as usize].ob_flags & DISABLED != 0 {
             return false;
         }
-        let was = self.g_screen[obid as usize].ob_state & OB_SELECTED != 0;
+        let was = self.g_screen[obid as usize].ob_state & SELECTED != 0;
         if was == set {
             return false;
         }
         if set {
-            self.g_screen[obid as usize].ob_state |= OB_SELECTED;
+            self.g_screen[obid as usize].ob_state |= SELECTED;
         } else {
-            self.g_screen[obid as usize].ob_state &= !OB_SELECTED;
+            self.g_screen[obid as usize].ob_state &= !SELECTED;
         }
         // Keep the paired FNode.f_selected in lockstep (window items only).
         if let Some(slot) = self.win_slot(handle) {
@@ -121,11 +119,11 @@ impl DeskState {
         }
         // Rule 4: shift-click on an object → toggle it.
         if shifted {
-            let set = self.g_screen[obid as usize].ob_state & OB_SELECTED == 0;
+            let set = self.g_screen[obid as usize].ob_state & SELECTED == 0;
             return self.act_chg(handle, obid, set);
         }
         // Rule 3: plain click on an object.
-        let already = self.g_screen[obid as usize].ob_state & OB_SELECTED != 0;
+        let already = self.g_screen[obid as usize].ob_state & SELECTED != 0;
         if dclick || !already {
             let cleared = self.desk_clear(handle);
             let selected = self.act_chg(handle, obid, true);
@@ -195,7 +193,7 @@ impl DeskState {
         let mut moved = false;
         let mut child = self.g_screen[DROOT as usize].ob_head;
         while child != NIL && child != DROOT {
-            if self.g_screen[child as usize].ob_state & OB_SELECTED != 0 {
+            if self.g_screen[child as usize].ob_state & SELECTED != 0 {
                 let ox = self.g_screen[child as usize].ob_x + dx;
                 let oy = self.g_screen[child as usize].ob_y + dy;
                 // Snap to the nearest grid cell, clamped to the desktop.
@@ -230,7 +228,7 @@ impl DeskState {
         let mut any = false;
         let mut child = self.g_screen[root as usize].ob_head;
         while child != NIL && child != root {
-            if self.g_screen[child as usize].ob_state & OB_SELECTED != 0 {
+            if self.g_screen[child as usize].ob_state & SELECTED != 0 {
                 let ox = rx + self.g_screen[child as usize].ob_x;
                 let oy = ry + self.g_screen[child as usize].ob_y;
                 let ow = self.g_screen[child as usize].ob_width;
@@ -262,7 +260,7 @@ impl DeskState {
         let mut pts = Vec::new();
         let mut obj = self.g_screen[root as usize].ob_head;
         while obj > root {
-            if self.g_screen[obj as usize].ob_state & OB_SELECTED != 0 {
+            if self.g_screen[obj as usize].ob_state & SELECTED != 0 {
                 pts.push(Point {
                     x: rx + self.g_screen[obj as usize].ob_x,
                     y: ry + self.g_screen[obj as usize].ob_y,
@@ -286,7 +284,7 @@ impl DeskState {
     /// Whether object `obid` (under `root`) is currently selected — used by the
     /// drag path to decide "click-on-selected → drag the group".
     pub fn is_selected(&self, obid: i16) -> bool {
-        obid >= 0 && self.g_screen[obid as usize].ob_state & OB_SELECTED != 0
+        obid >= 0 && self.g_screen[obid as usize].ob_state & SELECTED != 0
     }
 
     /// The [`AType`] of object `obid` (for the drag destination decision).
