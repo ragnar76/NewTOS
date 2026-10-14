@@ -120,7 +120,8 @@ der Schnitt steht und der Anwender ihn gesehen hat.
 | U4 Kernel loest sich | **fertig** 2026-09-26 — Driftprobe **38 → 32**; zwei Stehenbleiber mit Messbegruendung |
 | — Trennlinie — | *alles darueber ohne EL0 und ohne neue Werkzeugkette* |
 | U5a Instrumente | **fertig** 2026-10-14 (`4ae60fae`) — Driftprobe v2, Konstantenabgleich, Zitat-Liste, Sequenz-Orakel |
-| U6a … U10 | Neuschnitt 2026-10-14, siehe unten |
+| U6a Rust-EL0-Spike | **fertig** 2026-10-14 (`1257b7cc`) — HELLOGEM.NAP, Lader unveraendert |
+| U5b … U10 | Neuschnitt 2026-10-14, siehe unten |
 
 ## Hardware-Abnahme U3/U4 (2026-09-28)
 
