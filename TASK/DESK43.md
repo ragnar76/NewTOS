@@ -131,3 +131,30 @@ Hardware belegt, und zwar der Klickweg davor mit.
 
 **Damit sind U1–U4 vollstaendig abgenommen.** Offen bleiben nur U5–U10
 (nach dem Termin) und [X03](X03.md) davor.
+
+## Neuschnitt U5–U10 (Pruefung 2026-10-14, Anwender-Freigabe 2026-10-14)
+
+Pruefung gegen den heutigen Code: `docs/analysis/desk43-u5-u10-review-2026-10-14.md`
+(gegen Plan v2, `docs/analysis/desktop-userspace-plan-v2.md` §5).
+
+**Ueberholt in diesem Ticket:** die „rund 40 Aufrufe am Trap vorbei“ (heute
+keine; Driftprobe 31 = Typ-/Konstanten-/Makro-Importe) und der Absatz zu
+D-R1-5/D-R1-6 (`ap_id = 0` und `ap_private` sind erledigt,
+`tos-api/src/aes/appl.rs:200-224`, `aes/init.rs:61-65,98`;
+`save_windows`/`restore_windows` ohne Produktivaufrufer).
+
+**Freigegeben vom Anwender:**
+- **D1** neuer Schnitt, seriell: U5a → U6a → U5b → U7 → U8a → U6b → U8b → U9 → U10;
+  ein Quelltext, zwei Linkziele (Kernel-Bibliothek und `.NAP`) ab U8b.
+- **D2** Werkzeugkette T1: Rust bleibt (*„ja keep rust“*). Rust-Bibliothek
+  `desktop` + duennes Binaer-Crate, `no_std` + `alloc`, gelinkt mit
+  `sdk/crt0.S` + `sdk/newtos.ld` ueber `rust-lld`; kein C-Neuschrieb, kein
+  `std`-Port. Die Laufzeit-Crate (Trap-Bindungen, `GlobalAlloc` ueber
+  `Malloc`-Hunks, `panic_handler`) steht danach auch anderen Rust-Programmen
+  offen.
+
+**Empfehlungen, Entscheidung faellig vor der jeweiligen Einheit:** D3
+eingebettet im Kernel-Image (U9), D4 Debug-Kanal im Produkt aus + Ersatz fuer
+das Orakel `[desk] desktop up …` (U8a), D5 Rueckfall-Flag nur bis Pi-Abnahme
+U9, D6 Absturzpolitik wie EmuTOS nach Analyse (U9), D7 PROC03 umformulieren,
+D8 Ticket-/Plantexte (dieser Abschnitt).
