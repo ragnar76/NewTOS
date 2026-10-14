@@ -162,3 +162,10 @@ eingebettet im Kernel-Image (U9), D4 Debug-Kanal im Produkt aus + Ersatz fuer
 das Orakel `[desk] desktop up …` (U8a), D5 Rueckfall-Flag nur bis Pi-Abnahme
 U9, D6 Absturzpolitik wie EmuTOS nach Analyse (U9), D7 PROC03 umformulieren,
 D8 Ticket-/Plantexte (dieser Abschnitt).
+
+**D4 entschieden (Anwender 2026-10-14):** Im Produkt keine Debug-Ausgaben des
+Desktops (EmuTOS: `KDEBUG` auskompiliert). Die Orakelzeile
+`[desk] desktop up …` wird durch eine Kernel-Meldung ersetzt, wenn das
+Desktop-Programm sein erstes `evnt_multi` erreicht (gleiches Kriterium, von
+aussen beobachtet). Die vier Desktop-Selbsttests (DESK45) werden ein eigenes
+Testprogramm. Kein neuer EL0-Debug-Kanal.
