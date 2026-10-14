@@ -170,3 +170,9 @@ Desktops (EmuTOS: `KDEBUG` auskompiliert). Die Orakelzeile
 Desktop-Programm sein erstes `evnt_multi` erreicht (gleiches Kriterium, von
 aussen beobachtet). Die vier Desktop-Selbsttests (DESK45) werden ein eigenes
 Testprogramm. Kein neuer EL0-Debug-Kanal.
+
+**D3 entschieden (Anwender 2026-10-14):** Das Desktop-Programm wird ins
+Kernel-Image eingebettet (Registry-Name `NEWDESK`, wie EmuTOS' Desktop im
+ROM); `#Z` kann weiterhin einen anderen Desktop von der Karte starten. Der
+Kernel-Bau haengt vom Desktop-Bau ab und bricht bei fehlendem Blob hart ab;
+je Board ein Blob (X03-Feature durchgereicht).
