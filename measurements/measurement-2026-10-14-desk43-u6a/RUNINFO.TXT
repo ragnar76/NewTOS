@@ -1,0 +1,103 @@
+measurement-2026-10-14-desk43-u6a -- DESK43 unit U6a "EL0-Spike: hello-gem" (docs/analysis/desk43-u5-u10-review-2026-10-14.md
+§3.2 U6a row, §5 toolchain T1, §7.4 points 1/3/7). Developer run, HEAD 36745376 + the uncommitted U6a change (new directory
+programs/ only: workspace, runtime crate newtos-gem, program hello-gem, build.sh, README.md). Host macOS, QEMU raspi4b.
+No kernel/tos-api/tos-types/sdk/xtask file changed. No SD card, no Pi, nothing committed. Date 2026-10-14.
+
+RESULT: a Rust no_std + alloc PIE program, linked with sdk/crt0.S + sdk/newtos.ld via rust-lld exactly like the C programs,
+is accepted by the unchanged loader and runs as a GEM application at EL0 in memprot on / off / strict: appl_init, a virtual VDI
+workstation, a window with a redraw loop, evnt_multi, appl_exit, back to the desktop; started via #Z and from the desktop (F1,
+installed application). Heap: 7726 allocations from 8 GEMDOS blocks. Stack: 2464 of 65536 bytes. Panic build ends the program
+only. 0 [EXC], 0 [PANIC] in all 15 runs.
+
+1. BASELINES (method/checks.sh u6a -> checks/u6a-*, summary checks/u6a-summary.txt)   expected     measured
+   host tests tos-api tos-types xtask                                                1345/0/1     1345/0/1
+   release warnings rpi4 / qemu-virt (tos-api/kernel)                                64/94        64/94 both, 0 errors
+   clippy rpi4 / qemu-virt (tos-api/kernel)                                          76/125       76/125 both
+   desk drift probe / unsafe                                                         31 / 24      31 / 24
+   SDK host tests                                                                    20/0/0       20 passed 0 failed 0 skipped
+   programs/ clippy --release, default and --features hello-gem/panic-test           (new)        0 warnings both
+     (checks/u6a-clippy-programs*.txt); cargo build of the programs: 0 warnings (checks/u6a-build-*.txt)
+   Product kernel bin/kernel8-u6a.img (checks.sh, release rpi4) vs ../measurement-2026-10-14-desk43-u5a/bin/kernel8-u5a.img:
+   cmp 16 bytes = the two git-rev stamps (401b1bc0 -> 36745376). No kernel change.
+
+2. BUILD (method/build-programs.sh; programs/build.sh)
+   programs/build.sh: clang -c sdk/crt0.S (sdk/build.sh flags) ; cargo build -p hello-gem --release in programs/
+   (aarch64-unknown-none-softfloat, -C relocation-model=pic, panic=abort, opt-level s, fat LTO, debug=false) ;
+   rust-lld -flavor gnu -T sdk/newtos.ld -pie --no-dynamic-linker -z text -z max-page-size=0x1000 --build-id=none crt0.o
+   libhello_gem.a = the sdk/build.sh link line (no --gc-sections: tried, saves 608 bytes of text, dropped to keep the line equal).
+   Reproducible: a second build gives the same sha256 (84cc2a08...).
+   Negative control (checks/u6a-negative-static-relocation-model.txt): without relocation-model=pic (target default static)
+   the same link FAILS: 20 x "R_AARCH64_ABS64 cannot be used against local symbol" (.rodata..Lanon.*) -- the flag is required,
+   and -z text catches its absence at link time. No -Z build-std needed: fat LTO recompiles the used core/alloc as PIC;
+   compiler_builtins (never LTO'd) contributed no text relocation.
+
+3. BINARY PROPERTIES (checks/u6a-readobj-*.txt, u6a-reloc-types-*.txt)
+                       HELLOGEM.NAP (Rust)          HELLO2.NCP (C, sdk/build.sh)   QED.NAP (C GEM app, reference)
+   e_type / machine    ET_DYN / EM_AARCH64          ET_DYN / EM_AARCH64            ET_DYN / EM_AARCH64
+   entry               0x1000                       0x1000                         0x1000
+   program headers     LOAD R-X, LOAD RW-, DYNAMIC, NOTE  (same four)              (same four)
+   text / data / bss   24384 / 896 / 48 bytes       --                             --
+   DT_* tags           FLAGS_1 DEBUG RELA RELASZ RELAENT RELACOUNT SYMTAB SYMENT STRTAB STRSZ GNU_HASH HASH INIT_ARRAY(SZ)
+                       FINI_ARRAY(SZ) NULL  -- identical tag set to QED.NAP; all on the loader's positive list
+                       (HELLO2 has no RELA* because it has no relocations)
+   relocations         28 x R_AARCH64_RELATIVE      none                           569 x R_AARCH64_RELATIVE
+   file size           100240 bytes (75 KB of it DWARF from the precompiled core/compiler_builtins, not loaded)
+   HGPANIC.NAP (--features panic-test): 100280 bytes, 29 x RELATIVE, same tag set.
+   Panic path, static evidence: rust_begin_unwind ends in  mov w8,#9; svc #1 (Cconws)  then  mov x0,#-1; mov w8,#0x4c;
+   svc #1 (Pterm(-1)) (llvm-objdump of bin/HGPANIC.NAP at 0x5a44..0x5a5c).
+
+4. QEMU RASPI4B SERIES (method/series-u6a-inj.sh, method/series-u6a-prod.sh; method/run-u6a.sh + method/drive-u6a.py;
+   one QEMU at a time; summary checks/u6a-series-summary.txt, driver logs checks/u6a-series-*-driver.txt)
+   Cards: method/seed-u6a.sh, fresh 64 MiB FAT16 per variant (C:\HELLOGEM.NAP, C:\HGPANIC.NAP, NEWDESK.INF), private copy
+   per run, deleted afterwards. NEWDESK.INF = the MEM05 template with
+     newdesk-z.inf       #Z 01 C:\HELLOGEM.NAP@
+     newdesk-zpanic.inf  #Z 01 C:\HGPANIC.NAP@
+     newdesk-f1.inf      no #Z, plus  #G 03 FF   C:\HELLOGEM.NAP@ @ 001 @  (installed application on F1)
+   Kernels: bin/kernel8-u6a.img = the product kernel; bin/kernel8-inj.img = scratch copy + method/inj-u6a.py (key injector,
+   QEMU raspi4b has no USB keyboard; 96 = 94 + 2 missing-doc warnings of the scratch statics). Injector: F1 1 s after the first
+   "desktop up" if no program ran before; Return 8 s after the first "[launch] EL0".
+
+   run                    memprot  start         result line (serial)                                        exit / desktop
+   inj-{on,off,strict}-z   on/off/strict  #Z      [HELLOGEM] ap_id=0 vwk=2 redraws=1 quit by key 0x1c0d; heap OK   rc=0, desktop up
+                                                  allocs=7726 Malloc=8 Mfree=7 peak_hunks=8 end: hunks=1 live=10;
+                                                  stack used 2464 of 65536 bytes; appl_exit=1
+   inj-{on,off,strict}-f1  on/off/strict  desktop F1  (identical line)                                     rc=0, desktop up
+                                                  serial: "sh_ldapp: starting C:\HELLOGEM.NAP, sh_nextapp=0" after the F1 feed
+   inj-{on,off,strict}-zpanic, prod-{on,off,strict}-zpanic, inj-on-zpanic-rerun:
+                                                  *** Rust panic at hello-gem/src/lib.rs:308: deliberate panic       rc=0*, desktop up
+                                                  (panic-test build) after redraw 1
+   prod-on-z               on      #Z             window drawn (prod-on-z-app.png), no key on the product kernel: the
+                                                  program waits as designed; the driver ended the run at 45 s
+   smoke-on-z              on      #Z             first smoke run, injector kernel, same line as inj-on-z
+   * rc=0 in the shell line is not the program's exit code: kernel/src/launch.rs run_program_with_tail_rc returns E_OK for
+     every program that reached Pterm (documented there). The -1 is evidenced statically (section 3).
+
+   Screendumps (checks/u6a-screendumps-sha256.txt):
+   - every HELLOGEM window dump (z and f1, all three modes, both kernels, +5 s after the start) is ONE image, f7b266f5...:
+     "HELLOGEM (Rust, EL0)" window with ap_id 0, VDI handle 2 on phys 1, 640x480, 8x16, heap test OK 7714 allocations,
+     GEMDOS Malloc 8 / Mfree 1, hunks 7 (peak 8), 832 KiB; after drop: live 0, hunks 1, 128 KiB, Mfree 7.
+   - every end dump (desktop after the program) and every dump of the panic runs is byte-identical to the clean desktop
+     0e6f770497da...324b = measurement-2026-10-14-desk43-u5a/screendumps/u5a-on-rpi4-desktop-t25.png. Viewed: smoke-on-z-app,
+     smoke-on-z-end, inj-on-f1-app, inj-on-zpanic-end (the others by hash).
+   - MEM05 line after the program (all completed runs): "MDs in_use=3 capacity=117 (+0 pages)" -- the MD supply never grew;
+     in_use 3 is also what a C program leaves (measurement-2026-10-13-mem05-acceptance, HELLOMEM).
+
+   VOID / host stall: inj-on-zpanic (the first one) ran while checks.sh compiled the kernels. The program part is complete
+   and correct at 15.1 s (panic line, Pterm'd, desktop up), but the QMP screendump at 20 s returned only at 690 s and the
+   injector's next tick came +135060 hz_200 ticks later -- QEMU starved, the known host-load stall class (MEM05 acceptance
+   VOID section). Rerun idle: inj-on-zpanic-rerun, 21 s, identical. Kept in serial/ and screendumps/, not hidden.
+
+5. NOT DONE / OPEN
+   No double click on the icon (no mouse injector for raspi4b); the desktop launch was driven by F1 on an installed
+   application (do_aopen via process_funkey) instead. No qemu-virt run (no desktop there). No real Pi. Exit code value
+   observed only statically. memprot=verify and asid=on not run (not asked).
+
+Scratch: /tmp/m5j/u6a (-> /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/u6a): tree/ (scratch kernel tree), cards, sockets.
+Repo-root kernel8.img (gitignored) overwritten by checks.sh (= bin/kernel8-u6a.img); target/programs/ (gitignored) holds the
+programs' build. bin/SHA256SUMS:
+  94d2c9114225cffb62c38da20b8ddf85a966af998226b1ed256852ac7e3d2930  HELLO2.NCP
+  84cc2a08b992ad64643069297c59f28137600fd481be660f8f542a4c102fd615  HELLOGEM.NAP
+  b51ecf712821ea371a718b8f77d926c7af7170bee342fc401de864ef24e42e60  HGPANIC.NAP
+  953fc9d900100886cdd48883f7e749424e1b570f94647d64cd7031e3f697b56c  kernel-virt-u6a.img   (gitignored)
+  7ccff07427bb5e7aef55f4342297eb04c4fd68c950428aea7caebc1eb1b764c0  kernel8-inj.img       (gitignored)
+  87e2cc59e2e2dca8431403b86dc0301f5d8debf30b69a58054ff536c322c9164  kernel8-u6a.img       (gitignored)

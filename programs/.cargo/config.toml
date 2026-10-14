@@ -1,0 +1,19 @@
+# Build configuration for the NewTOS Rust user programs (programs/).
+#
+# The target is the kernel's (rust-toolchain.toml pins the toolchain and
+# ships this target's precompiled core/alloc). Programs are linked as a
+# position-independent executable (ELF ET_DYN, sdk/newtos.ld): the code
+# must therefore be compiled PIC -- `aarch64-unknown-none-softfloat`'s
+# default relocation model is `static`, which would place pointer-holding
+# constants in .rodata and make `-z text` refuse the link.
+#
+# These flags are appended to the repository's own
+# [target.aarch64-unknown-none-softfloat] rustflags (../.cargo/config.toml,
+# force-frame-pointers), which Cargo merges from the parent directory.
+[build]
+target = "aarch64-unknown-none-softfloat"
+# Inside the repository's ignored /target, not a new build directory.
+target-dir = "../target/programs"
+
+[target.aarch64-unknown-none-softfloat]
+rustflags = ["-C", "relocation-model=pic"]

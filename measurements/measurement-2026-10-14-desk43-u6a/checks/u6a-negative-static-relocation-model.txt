@@ -1,0 +1,16 @@
+# Negative control: the same crate WITHOUT -C relocation-model=pic (target default 'static'),
+# RUSTFLAGS='-C force-frame-pointers=yes' CARGO_TARGET_DIR=<scratch> cargo build -p hello-gem --release, then the build.sh link line:
+rust-lld: error: relocation R_AARCH64_ABS64 cannot be used against local symbol; recompile with -fPIC
+>>> defined in /tmp/m5j/u6a/nopic/aarch64-unknown-none-softfloat/release/libhello_gem.a(hello_gem-6a6b0bb1a7673f73.hello_gem.9af9fd50e38b5e4e-cgu.0.rcgu.o)
+>>> referenced by hello_gem.9af9fd50e38b5e4e-cgu.0
+>>>               hello_gem-6a6b0bb1a7673f73.hello_gem.9af9fd50e38b5e4e-cgu.0.rcgu.o:(.rodata..Lanon.fad58de7366495db4650cfefac2fcd61.1+0x0) in archive /tmp/m5j/u6a/nopic/aarch64-unknown-none-softfloat/release/libhello_gem.a
+
+rust-lld: error: relocation R_AARCH64_ABS64 cannot be used against local symbol; recompile with -fPIC
+>>> defined in /tmp/m5j/u6a/nopic/aarch64-unknown-none-softfloat/release/libhello_gem.a(hello_gem-6a6b0bb1a7673f73.hello_gem.9af9fd50e38b5e4e-cgu.0.rcgu.o)
+>>> referenced by hello_gem.9af9fd50e38b5e4e-cgu.0
+>>>               hello_gem-6a6b0bb1a7673f73.hello_gem.9af9fd50e38b5e4e-cgu.0.rcgu.o:(.rodata..Lanon.fad58de7366495db4650cfefac2fcd61.2+0x0) in archive /tmp/m5j/u6a/nopic/aarch64-unknown-none-softfloat/release/libhello_gem.a
+
+rust-lld: error: relocation R_AARCH64_ABS64 cannot be used against local symbol; recompile with -fPIC
+>>> defined in /tmp/m5j/u6a/nopic/aarch64-unknown-none-softfloat/release/libhello_gem.a(hello_gem-6a6b0bb1a7673f73.hello_gem.9af9fd50e38b5e4e-cgu.0.rcgu.o)
+# lld fails, no output file: 20 x "R_AARCH64_ABS64 cannot be used against local symbol" (first ones in .rodata..Lanon.*) + "too many errors, stopping now"
+# total error lines: 21

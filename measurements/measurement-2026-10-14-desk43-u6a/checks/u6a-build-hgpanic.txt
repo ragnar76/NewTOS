@@ -1,0 +1,6 @@
++ clang -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 -fno-stack-protector -fPIE -fno-builtin -Wall -Wextra -I/Volumes/Daten/Development/PiRusTOS/sdk/include  -c sdk/crt0.S
++ (cd programs && cargo build -p hello-gem --release --features panic-test)
+   Compiling hello-gem v0.1.0 (/Volumes/Daten/Development/PiRusTOS/programs/hello-gem)
+    Finished `release` profile [optimized] target(s) in 0.46s
++ rust-lld -flavor gnu -T sdk/newtos.ld -pie --no-dynamic-linker -z text -z max-page-size=0x1000 --build-id=none crt0.o libhello_gem.a -o /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-14-desk43-u6a/bin/HGPANIC.NAP
+wrote /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-14-desk43-u6a/bin/HGPANIC.NAP (100280 bytes)

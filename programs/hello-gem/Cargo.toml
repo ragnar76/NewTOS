@@ -1,0 +1,21 @@
+[package]
+name = "hello-gem"
+version = "0.1.0"
+description = "DESK43 U6a spike: a minimal Rust GEM application (HELLOGEM.NAP)"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lib]
+# Linked by programs/build.sh with sdk/crt0.S and sdk/newtos.ld.
+crate-type = ["staticlib"]
+test = false
+bench = false
+
+[features]
+# Deliberate panic after the window is up: the panic path test
+# (the program must end with the runtime's panic exit code, nothing else).
+panic-test = []
+
+[dependencies]
+newtos-gem = { path = "../newtos-gem" }

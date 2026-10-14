@@ -1,0 +1,72 @@
+qemu-system-aarch64: -serial unix:/tmp/m5j/u6a/s.x2qAA7/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/tmp/m5j/u6a/s.x2qAA7/ser.sock,server=on
+t=  15.1s launch seen
+t=  20.2s inj-on-z-app.png {"return": {}}
+t=  23.1s program exited
+t=  23.1s desktop up after the program
+t=  29.2s inj-on-z-end.png {"return": {}}
+prompts seen: 0
+run inj-on-z: rc=0
+qemu-system-aarch64: -serial unix:/tmp/m5j/u6a/s.1z1Ph7/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/tmp/m5j/u6a/s.1z1Ph7/ser.sock,server=on
+t=  16.1s launch seen
+t=  21.2s inj-on-f1-app.png {"return": {}}
+t=  24.1s program exited
+t=  24.1s desktop up after the program
+t=  30.2s inj-on-f1-end.png {"return": {}}
+prompts seen: 0
+run inj-on-f1: rc=0
+qemu-system-aarch64: -serial unix:/tmp/m5j/u6a/s.ZyxVsi/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/tmp/m5j/u6a/s.ZyxVsi/ser.sock,server=on
+t=  15.1s launch seen
+t=  15.1s program exited
+t=  15.1s desktop up after the program
+t= 690.4s inj-on-zpanic-app.png {"return": {}}
+t= 690.4s inj-on-zpanic-end.png {"return": {}}
+prompts seen: 0
+run inj-on-zpanic: rc=0
+qemu-system-aarch64: -serial unix:/tmp/m5j/u6a/s.zBrGn6/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/tmp/m5j/u6a/s.zBrGn6/ser.sock,server=on
+t=  15.1s launch seen
+t=  20.1s inj-off-z-app.png {"return": {}}
+t=  23.1s program exited
+t=  23.1s desktop up after the program
+t=  29.1s inj-off-z-end.png {"return": {}}
+prompts seen: 0
+run inj-off-z: rc=0
+qemu-system-aarch64: -serial unix:/tmp/m5j/u6a/s.JUd7DG/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/tmp/m5j/u6a/s.JUd7DG/ser.sock,server=on
+t=  16.1s launch seen
+t=  21.1s inj-off-f1-app.png {"return": {}}
+t=  24.1s program exited
+t=  24.1s desktop up after the program
+t=  30.2s inj-off-f1-end.png {"return": {}}
+prompts seen: 0
+run inj-off-f1: rc=0
+qemu-system-aarch64: -serial unix:/tmp/m5j/u6a/s.0dBA4b/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/tmp/m5j/u6a/s.0dBA4b/ser.sock,server=on
+t=  15.1s launch seen
+t=  15.1s program exited
+t=  15.1s desktop up after the program
+t=  20.1s inj-off-zpanic-app.png {"return": {}}
+t=  21.2s inj-off-zpanic-end.png {"return": {}}
+prompts seen: 0
+run inj-off-zpanic: rc=0
+qemu-system-aarch64: -serial unix:/tmp/m5j/u6a/s.gZhnEx/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/tmp/m5j/u6a/s.gZhnEx/ser.sock,server=on
+t=  15.1s launch seen
+t=  20.1s inj-strict-z-app.png {"return": {}}
+t=  23.1s program exited
+t=  23.1s desktop up after the program
+t=  29.2s inj-strict-z-end.png {"return": {}}
+prompts seen: 0
+run inj-strict-z: rc=0
+qemu-system-aarch64: -serial unix:/tmp/m5j/u6a/s.2TnlOM/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/tmp/m5j/u6a/s.2TnlOM/ser.sock,server=on
+t=  16.1s launch seen
+t=  21.2s inj-strict-f1-app.png {"return": {}}
+t=  24.1s program exited
+t=  24.1s desktop up after the program
+t=  30.2s inj-strict-f1-end.png {"return": {}}
+prompts seen: 0
+run inj-strict-f1: rc=0
+qemu-system-aarch64: -serial unix:/tmp/m5j/u6a/s.0b1ROp/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/tmp/m5j/u6a/s.0b1ROp/ser.sock,server=on
+t=  15.1s launch seen
+t=  15.1s program exited
+t=  15.1s desktop up after the program
+t=  20.2s inj-strict-zpanic-app.png {"return": {}}
+t=  21.2s inj-strict-zpanic-end.png {"return": {}}
+prompts seen: 0
+run inj-strict-zpanic: rc=0

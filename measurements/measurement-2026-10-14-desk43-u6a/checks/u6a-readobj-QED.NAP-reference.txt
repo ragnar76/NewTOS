@@ -1,0 +1,104 @@
+
+File: /Volumes/Daten/Development/PiRusTOS/sdk/apps/qed/build/QED.NAP
+Format: elf64-littleaarch64
+Arch: aarch64
+AddressSize: 64bit
+LoadName: <Not found>
+ElfHeader {
+  Ident {
+    Magic: (7F 45 4C 46)
+    Class: 64-bit (0x2)
+    DataEncoding: LittleEndian (0x1)
+    FileVersion: 1
+    OS/ABI: SystemV (0x0)
+    ABIVersion: 0
+    Unused: (00 00 00 00 00 00 00)
+  }
+  Type: SharedObject (0x3)
+  Machine: EM_AARCH64 (0xB7)
+  Version: 1
+  Entry: 0x1000
+  ProgramHeaderOffset: 0x40
+  SectionHeaderOffset: 0x807F8
+  Flags [ (0x0)
+  ]
+  HeaderSize: 64
+  ProgramHeaderEntrySize: 56
+  ProgramHeaderCount: 4
+  SectionHeaderEntrySize: 64
+  SectionHeaderCount: 17
+  StringTableSectionIndex: 15
+}
+ProgramHeaders [
+  ProgramHeader {
+    Type: PT_LOAD (0x1)
+    Offset: 0x1000
+    VirtualAddress: 0x1000
+    PhysicalAddress: 0x1000
+    FileSize: 411312
+    MemSize: 411312
+    Flags [ (0x5)
+      PF_R (0x4)
+      PF_X (0x1)
+    ]
+    Alignment: 4096
+  }
+  ProgramHeader {
+    Type: PT_LOAD (0x1)
+    Offset: 0x656B0
+    VirtualAddress: 0x656B0
+    PhysicalAddress: 0x656B0
+    FileSize: 10896
+    MemSize: 78368
+    Flags [ (0x6)
+      PF_R (0x4)
+      PF_W (0x2)
+    ]
+    Alignment: 4096
+  }
+  ProgramHeader {
+    Type: PT_DYNAMIC (0x2)
+    Offset: 0x656B8
+    VirtualAddress: 0x656B8
+    PhysicalAddress: 0x656B8
+    FileSize: 272
+    MemSize: 272
+    Flags [ (0x6)
+      PF_R (0x4)
+      PF_W (0x2)
+    ]
+    Alignment: 8
+  }
+  ProgramHeader {
+    Type: PT_NOTE (0x4)
+    Offset: 0x5DB30
+    VirtualAddress: 0x5DB30
+    PhysicalAddress: 0x5DB30
+    FileSize: 24
+    MemSize: 24
+    Flags [ (0x4)
+      PF_R (0x4)
+    ]
+    Alignment: 4
+  }
+]
+DynamicSection [ (17 entries)
+  Tag                Type         Name/Value
+  0x000000006FFFFFFB FLAGS_1      PIE 
+  0x0000000000000015 DEBUG        0x0
+  0x0000000000000007 RELA         0x5A5D8
+  0x0000000000000008 RELASZ       13656 (bytes)
+  0x0000000000000009 RELAENT      24 (bytes)
+  0x000000006FFFFFF9 RELACOUNT    569
+  0x0000000000000006 SYMTAB       0x5A590
+  0x000000000000000B SYMENT       24 (bytes)
+  0x0000000000000005 STRTAB       0x5A5D4
+  0x000000000000000A STRSZ        1 (bytes)
+  0x000000006FFFFEF5 GNU_HASH     0x5A5A8
+  0x0000000000000004 HASH         0x5A5C4
+  0x0000000000000019 INIT_ARRAY   0x656B0
+  0x000000000000001B INIT_ARRAYSZ 8 (bytes)
+  0x000000000000001A FINI_ARRAY   0x0
+  0x000000000000001C FINI_ARRAYSZ 0 (bytes)
+  0x0000000000000000 NULL         0x0
+]

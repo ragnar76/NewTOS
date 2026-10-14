@@ -1,0 +1,37 @@
+# NewTOS native Rust user programs (DESK43 U6a, toolchain T1 of
+# docs/analysis/desk43-u5-u10-review-2026-10-14.md §5).
+#
+# A workspace of its own, excluded from the kernel workspace (root
+# Cargo.toml `exclude = ["programs"]`), so `cargo build`/`cargo xtask build`
+# of the kernel never sees it. Every program is a `no_std` + `alloc`
+# `staticlib` for `aarch64-unknown-none-softfloat`, compiled
+# position-independent (`.cargo/config.toml`) and linked by `build.sh`
+# with `sdk/crt0.S` + `sdk/newtos.ld` exactly like the C programs
+# (`sdk/build.sh`).
+[workspace]
+resolver = "2"
+members = ["newtos-gem", "hello-gem"]
+
+[workspace.package]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+authors = ["NewTOS / PiRusTOS contributors"]
+
+[profile.dev]
+panic = "abort"
+opt-level = 1
+debug = true
+overflow-checks = true
+
+[profile.release]
+panic = "abort"
+opt-level = "s"
+# No DWARF in the program file (the loader ignores it; it would only grow
+# the file on the card). Panic locations are kept (they are rodata).
+debug = false
+# Fat LTO: one object for the program, its runtime and the parts of
+# core/alloc it uses -- compiled together with this workspace's
+# relocation model (see .cargo/config.toml), not the target default.
+lto = "fat"
+codegen-units = 1
+overflow-checks = false

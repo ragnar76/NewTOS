@@ -1,0 +1,39 @@
+qemu-system-aarch64: -serial unix:/tmp/m5j/u6a/s.4Gafft/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/tmp/m5j/u6a/s.4Gafft/ser.sock,server=on
+t=  15.1s launch seen
+t=  15.1s program exited
+t=  15.1s desktop up after the program
+t=  20.2s inj-on-zpanic-rerun-app.png {"return": {}}
+t=  21.2s inj-on-zpanic-rerun-end.png {"return": {}}
+prompts seen: 0
+run inj-on-zpanic-rerun: rc=0
+qemu-system-aarch64: -serial unix:/tmp/m5j/u6a/s.iQUS13/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/tmp/m5j/u6a/s.iQUS13/ser.sock,server=on
+t=  15.1s launch seen
+t=  15.1s program exited
+t=  15.1s desktop up after the program
+t=  20.2s prod-on-zpanic-app.png {"return": {}}
+t=  21.2s prod-on-zpanic-end.png {"return": {}}
+prompts seen: 0
+run prod-on-zpanic: rc=0
+qemu-system-aarch64: -serial unix:/tmp/m5j/u6a/s.Lb3JYO/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/tmp/m5j/u6a/s.Lb3JYO/ser.sock,server=on
+t=  15.1s launch seen
+t=  15.1s program exited
+t=  15.1s desktop up after the program
+t=  20.1s prod-off-zpanic-app.png {"return": {}}
+t=  21.1s prod-off-zpanic-end.png {"return": {}}
+prompts seen: 0
+run prod-off-zpanic: rc=0
+qemu-system-aarch64: -serial unix:/tmp/m5j/u6a/s.G9o18p/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/tmp/m5j/u6a/s.G9o18p/ser.sock,server=on
+t=  15.1s launch seen
+t=  15.1s program exited
+t=  15.1s desktop up after the program
+t=  20.2s prod-strict-zpanic-app.png {"return": {}}
+t=  21.2s prod-strict-zpanic-end.png {"return": {}}
+prompts seen: 0
+run prod-strict-zpanic: rc=0
+qemu-system-aarch64: -serial unix:/tmp/m5j/u6a/s.WIKawp/ser.sock,server=on,wait=on: info: QEMU waiting for connection on: disconnected:unix:/tmp/m5j/u6a/s.WIKawp/ser.sock,server=on
+t=  15.1s launch seen
+t=  20.1s prod-on-z-app.png {"return": {}}
+timeout
+t=  45.0s prod-on-z-timeout.png {"return": {}}
+prompts seen: 0
+run prod-on-z: rc=0

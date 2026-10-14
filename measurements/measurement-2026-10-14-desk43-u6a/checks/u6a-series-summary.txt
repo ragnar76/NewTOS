@@ -1,0 +1,30 @@
+inj-off-f1 | memory protection OFF (boot argument `memprot=off`) | sh_ldapp: 'C:\HELLOGEM.NAP' exited with rc=0 | desktop-up=2 | [EXC]/[PANIC]=0
+    [HELLOGEM] ap_id=0 vwk=2 redraws=1 quit by key 0x1c0d; heap OK allocs=7726 Malloc=8 Mfree=7 peak_hunks=8 end: hunks=1 live=10; stack used 2464 of 65536 bytes; appl_exit=1
+inj-off-z | memory protection OFF (boot argument `memprot=off`) | sh_ldapp: 'C:\HELLOGEM.NAP' exited with rc=0 | desktop-up=1 | [EXC]/[PANIC]=0
+    [HELLOGEM] ap_id=0 vwk=2 redraws=1 quit by key 0x1c0d; heap OK allocs=7726 Malloc=8 Mfree=7 peak_hunks=8 end: hunks=1 live=10; stack used 2464 of 65536 bytes; appl_exit=1
+inj-off-zpanic | memory protection OFF (boot argument `memprot=off`) | sh_ldapp: 'C:\HGPANIC.NAP' exited with rc=0 | desktop-up=1 | [EXC]/[PANIC]=0
+    *** Rust panic at hello-gem/src/lib.rs:308: deliberate panic (panic-test build) after redraw 1
+inj-on-f1 | memory protection ON | sh_ldapp: 'C:\HELLOGEM.NAP' exited with rc=0 | desktop-up=2 | [EXC]/[PANIC]=0
+    [HELLOGEM] ap_id=0 vwk=2 redraws=1 quit by key 0x1c0d; heap OK allocs=7726 Malloc=8 Mfree=7 peak_hunks=8 end: hunks=1 live=10; stack used 2464 of 65536 bytes; appl_exit=1
+inj-on-z | memory protection ON | sh_ldapp: 'C:\HELLOGEM.NAP' exited with rc=0 | desktop-up=1 | [EXC]/[PANIC]=0
+    [HELLOGEM] ap_id=0 vwk=2 redraws=1 quit by key 0x1c0d; heap OK allocs=7726 Malloc=8 Mfree=7 peak_hunks=8 end: hunks=1 live=10; stack used 2464 of 65536 bytes; appl_exit=1
+inj-on-zpanic-rerun | memory protection ON | sh_ldapp: 'C:\HGPANIC.NAP' exited with rc=0 | desktop-up=1 | [EXC]/[PANIC]=0
+    *** Rust panic at hello-gem/src/lib.rs:308: deliberate panic (panic-test build) after redraw 1
+inj-on-zpanic | memory protection ON | sh_ldapp: 'C:\HGPANIC.NAP' exited with rc=0 | desktop-up=1 | [EXC]/[PANIC]=0
+    *** Rust panic at hello-gem/src/lib.rs:308: deliberate panic (panic-test build) after redraw 1
+inj-strict-f1 | memory protection ON (strict) | sh_ldapp: 'C:\HELLOGEM.NAP' exited with rc=0 | desktop-up=2 | [EXC]/[PANIC]=0
+    [HELLOGEM] ap_id=0 vwk=2 redraws=1 quit by key 0x1c0d; heap OK allocs=7726 Malloc=8 Mfree=7 peak_hunks=8 end: hunks=1 live=10; stack used 2464 of 65536 bytes; appl_exit=1
+inj-strict-z | memory protection ON (strict) | sh_ldapp: 'C:\HELLOGEM.NAP' exited with rc=0 | desktop-up=1 | [EXC]/[PANIC]=0
+    [HELLOGEM] ap_id=0 vwk=2 redraws=1 quit by key 0x1c0d; heap OK allocs=7726 Malloc=8 Mfree=7 peak_hunks=8 end: hunks=1 live=10; stack used 2464 of 65536 bytes; appl_exit=1
+inj-strict-zpanic | memory protection ON (strict) | sh_ldapp: 'C:\HGPANIC.NAP' exited with rc=0 | desktop-up=1 | [EXC]/[PANIC]=0
+    *** Rust panic at hello-gem/src/lib.rs:308: deliberate panic (panic-test build) after redraw 1
+prod-off-zpanic | memory protection OFF (boot argument `memprot=off`) | sh_ldapp: 'C:\HGPANIC.NAP' exited with rc=0 | desktop-up=1 | [EXC]/[PANIC]=0
+    *** Rust panic at hello-gem/src/lib.rs:308: deliberate panic (panic-test build) after redraw 1
+prod-on-z | memory protection ON |  | desktop-up=0 | [EXC]/[PANIC]=0
+    
+prod-on-zpanic | memory protection ON | sh_ldapp: 'C:\HGPANIC.NAP' exited with rc=0 | desktop-up=1 | [EXC]/[PANIC]=0
+    *** Rust panic at hello-gem/src/lib.rs:308: deliberate panic (panic-test build) after redraw 1
+prod-strict-zpanic | memory protection ON (strict) | sh_ldapp: 'C:\HGPANIC.NAP' exited with rc=0 | desktop-up=1 | [EXC]/[PANIC]=0
+    *** Rust panic at hello-gem/src/lib.rs:308: deliberate panic (panic-test build) after redraw 1
+smoke-on-z | memory protection ON | sh_ldapp: 'C:\HELLOGEM.NAP' exited with rc=0 | desktop-up=1 | [EXC]/[PANIC]=0
+    [HELLOGEM] ap_id=0 vwk=2 redraws=1 quit by key 0x1c0d; heap OK allocs=7726 Malloc=8 Mfree=7 peak_hunks=8 end: hunks=1 live=10; stack used 2464 of 65536 bytes; appl_exit=1

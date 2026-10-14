@@ -1,0 +1,136 @@
+
+File: /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-14-desk43-u6a/bin/HELLOGEM.NAP
+Format: elf64-littleaarch64
+Arch: aarch64
+AddressSize: 64bit
+LoadName: <Not found>
+ElfHeader {
+  Ident {
+    Magic: (7F 45 4C 46)
+    Class: 64-bit (0x2)
+    DataEncoding: LittleEndian (0x1)
+    FileVersion: 1
+    OS/ABI: SystemV (0x0)
+    ABIVersion: 0
+    Unused: (00 00 00 00 00 00 00)
+  }
+  Type: SharedObject (0x3)
+  Machine: EM_AARCH64 (0xB7)
+  Version: 1
+  Entry: 0x1000
+  ProgramHeaderOffset: 0x40
+  SectionHeaderOffset: 0x18210
+  Flags [ (0x0)
+  ]
+  HeaderSize: 64
+  ProgramHeaderEntrySize: 56
+  ProgramHeaderCount: 4
+  SectionHeaderEntrySize: 64
+  SectionHeaderCount: 22
+  StringTableSectionIndex: 20
+}
+ProgramHeaders [
+  ProgramHeader {
+    Type: PT_LOAD (0x1)
+    Offset: 0x1000
+    VirtualAddress: 0x1000
+    PhysicalAddress: 0x1000
+    FileSize: 24384
+    MemSize: 24384
+    Flags [ (0x5)
+      PF_R (0x4)
+      PF_X (0x1)
+    ]
+    Alignment: 4096
+  }
+  ProgramHeader {
+    Type: PT_LOAD (0x1)
+    Offset: 0x6F40
+    VirtualAddress: 0x6F40
+    PhysicalAddress: 0x6F40
+    FileSize: 896
+    MemSize: 944
+    Flags [ (0x6)
+      PF_R (0x4)
+      PF_W (0x2)
+    ]
+    Alignment: 4096
+  }
+  ProgramHeader {
+    Type: PT_DYNAMIC (0x2)
+    Offset: 0x6F40
+    VirtualAddress: 0x6F40
+    PhysicalAddress: 0x6F40
+    FileSize: 272
+    MemSize: 272
+    Flags [ (0x6)
+      PF_R (0x4)
+      PF_W (0x2)
+    ]
+    Alignment: 8
+  }
+  ProgramHeader {
+    Type: PT_NOTE (0x4)
+    Offset: 0x67A8
+    VirtualAddress: 0x67A8
+    PhysicalAddress: 0x67A8
+    FileSize: 24
+    MemSize: 24
+    Flags [ (0x4)
+      PF_R (0x4)
+    ]
+    Alignment: 4
+  }
+]
+DynamicSection [ (17 entries)
+  Tag                Type         Name/Value
+  0x000000006FFFFFFB FLAGS_1      PIE 
+  0x0000000000000015 DEBUG        0x0
+  0x0000000000000007 RELA         0x6508
+  0x0000000000000008 RELASZ       672 (bytes)
+  0x0000000000000009 RELAENT      24 (bytes)
+  0x000000006FFFFFF9 RELACOUNT    28
+  0x0000000000000006 SYMTAB       0x64C0
+  0x000000000000000B SYMENT       24 (bytes)
+  0x0000000000000005 STRTAB       0x6504
+  0x000000000000000A STRSZ        1 (bytes)
+  0x000000006FFFFEF5 GNU_HASH     0x64D8
+  0x0000000000000004 HASH         0x64F4
+  0x0000000000000019 INIT_ARRAY   0x0
+  0x000000000000001B INIT_ARRAYSZ 0 (bytes)
+  0x000000000000001A FINI_ARRAY   0x0
+  0x000000000000001C FINI_ARRAYSZ 0 (bytes)
+  0x0000000000000000 NULL         0x0
+]
+Relocations [
+  Section (6) .rela.dyn {
+    0x7050 R_AARCH64_RELATIVE - 0x72F0
+    0x7058 R_AARCH64_RELATIVE - 0x686D
+    0x7070 R_AARCH64_RELATIVE - 0x686D
+    0x7088 R_AARCH64_RELATIVE - 0x6A16
+    0x70A0 R_AARCH64_RELATIVE - 0x686D
+    0x70B8 R_AARCH64_RELATIVE - 0x6A16
+    0x70D0 R_AARCH64_RELATIVE - 0x686D
+    0x70E8 R_AARCH64_RELATIVE - 0x686D
+    0x7118 R_AARCH64_RELATIVE - 0x1448
+    0x7120 R_AARCH64_RELATIVE - 0x16B8
+    0x7128 R_AARCH64_RELATIVE - 0x1768
+    0x7130 R_AARCH64_RELATIVE - 0x10E8
+    0x7148 R_AARCH64_RELATIVE - 0x1620
+    0x7150 R_AARCH64_RELATIVE - 0x1510
+    0x7158 R_AARCH64_RELATIVE - 0x1788
+    0x7160 R_AARCH64_RELATIVE - 0x69CB
+    0x7178 R_AARCH64_RELATIVE - 0x6B69
+    0x7190 R_AARCH64_RELATIVE - 0x4320
+    0x71A8 R_AARCH64_RELATIVE - 0x4334
+    0x71B0 R_AARCH64_RELATIVE - 0x43B0
+    0x71B8 R_AARCH64_RELATIVE - 0x44C8
+    0x71D8 R_AARCH64_RELATIVE - 0x4304
+    0x71E0 R_AARCH64_RELATIVE - 0x6962
+    0x7260 R_AARCH64_RELATIVE - 0x6AE1
+    0x7278 R_AARCH64_RELATIVE - 0x6AE1
+    0x72A8 R_AARCH64_RELATIVE - 0x5ABC
+    0x72B0 R_AARCH64_RELATIVE - 0x5B80
+    0x72B8 R_AARCH64_RELATIVE - 0x5B44
+  }
+]
