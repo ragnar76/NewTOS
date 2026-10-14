@@ -1,0 +1,8 @@
+DESK main.rs:196: inside borrow calls ['act_bsclick']
+DESK main.rs:215: inside borrow calls ['act_bsclick']
+DESK main.rs:2281: inside borrow calls ['desk_clear']
+# Reading: all three are name collisions, not nesting. main.rs:196/215 call the DeskState METHOD
+# g.act_bsclick (act.rs:109), flagged because it calls the method self.desk_clear, whose name is also the
+# free fn main.rs desk_clear (which borrows). main.rs:2281 is the free fn desk_clear calling the METHOD
+# g.desk_clear (win.rs:667). No SESSION hits. Dynamic evidence: series, views (8 screens), selftests
+# (54 checks, ~60 global::with) ran without a borrow panic.

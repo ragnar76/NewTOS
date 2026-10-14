@@ -1101,34 +1101,35 @@ fn mk(ty: u16, fl: u16, spec: u64, x: i16, y: i16, w: i16, h: i16, next: i16, he
     }
 }
 
-// ── Headless self-test (not wired into any boot path) ───────────────────────
+// ── Headless self-test (run only in a `selftest-desk` build) ────────────────
 
 /// `ins_devices` / `rmv_icon` model self-test: drive the icon list through the
 /// same calls the two menu entries make and check what comes out. Printed one
-/// line per case, like the other `selftest_*` entry points; it needs no
+/// line per case on the console ([`super::selftest`]); run by
+/// [`super::selftest::run_once`] in a `selftest-desk` build only. It needs no
 /// keyboard, so it covers everything about DESK03/DESK04 except the dialog's
 /// text entry.
 ///
 /// **Mutates `G.g_ahead`** (not the SD image) — it restores the list it found
 /// before returning, so a desktop that is already up is left as it was.
 pub fn selftest() {
-    use crate::kprintln;
+    use super::selftest::tprintln;
 
-    kprintln!("[desk-ins] Install-devices / Remove-icon self-test");
+    tprintln!("[desk-ins] Install-devices / Remove-icon self-test");
     let mut pass = 0u32;
     let mut fail = 0u32;
     let mut check = |name: &str, cond: bool| {
         if cond {
             pass += 1;
-            kprintln!("[desk-ins]  PASS {}", name);
+            tprintln!("[desk-ins]  PASS {}", name);
         } else {
             fail += 1;
-            kprintln!("[desk-ins]  FAIL {}", name);
+            tprintln!("[desk-ins]  FAIL {}", name);
         }
     };
 
     let Some(saved) = global::with(|g| g.g_ahead.clone()) else {
-        kprintln!("[desk-ins] no desktop state — skipped");
+        tprintln!("[desk-ins] no desktop state — skipped");
         return;
     };
     let current = dos_sdrv(dos_gdrv()) as u32;
@@ -1242,5 +1243,5 @@ pub fn selftest() {
         g.app_blddesk();
     });
 
-    kprintln!("[desk-ins] install/remove self-test: {} passed, {} failed", pass, fail);
+    tprintln!("[desk-ins] install/remove self-test: {} passed, {} failed", pass, fail);
 }

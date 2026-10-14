@@ -1,0 +1,5 @@
+views-u8a-rpi4- vs views-u7-rpi4-: same=8 diff=0 missing=0
+[u7v] cell metrics gl_handle=1 gl_wchar=8 gl_hchar=16 gl_wschar=6 gl_hschar=6
+[desk] desktop up (1 drives)
+[u7v] injector armed at hz_200 3009
+exc/panic: 0

@@ -1,0 +1,39 @@
+NewTOS desktop citation list — kernel/src/desk/ (fns touched since 6aedd159)
+
+file                                 fns  cited newtos  uncited
+kernel/src/desk/dir.rs                 1      0      0        1
+kernel/src/desk/dosbind.rs             1      1      0        0
+kernel/src/desk/global.rs              9      4      2        3
+kernel/src/desk/inf.rs                21     14      0        7
+kernel/src/desk/ins.rs                 2      0      0        2
+kernel/src/desk/main.rs                1      1      0        0
+kernel/src/desk/menu.rs                4      3      0        1
+kernel/src/desk/mod.rs                 1      1      0        0
+kernel/src/desk/redraw.rs              2      0      0        2
+kernel/src/desk/selftest.rs            3      0      3        0
+
+uncited:
+  kernel/src/desk/dir.rs:2559  selftest
+  kernel/src/desk/global.rs:184  patcol_all
+  kernel/src/desk/global.rs:940  with
+  kernel/src/desk/global.rs:955  screen_addr
+  kernel/src/desk/inf.rs:290  default
+  kernel/src/desk/inf.rs:911  reset
+  kernel/src/desk/inf.rs:1005  apply_inf_bytes
+  kernel/src/desk/inf.rs:1733  installed_doctype
+  kernel/src/desk/inf.rs:1934  lookup_association
+  kernel/src/desk/inf.rs:4490  selftest
+  kernel/src/desk/inf.rs:4602  selftest_install
+  kernel/src/desk/ins.rs:1088  mk
+  kernel/src/desk/ins.rs:1115  selftest
+  kernel/src/desk/menu.rs:632  build_menu
+  kernel/src/desk/redraw.rs:175  win_shwall_nocursor
+  kernel/src/desk/redraw.rs:192  snapshot_window_handles
+newtos:
+  kernel/src/desk/global.rs:229  new
+  kernel/src/desk/global.rs:237  deref
+  kernel/src/desk/selftest.rs:37  write_str
+  kernel/src/desk/selftest.rs:50  line
+  kernel/src/desk/selftest.rs:74  run_once
+
+DESK-CITE: fns=45 cited=24 newtos=5 uncited=16

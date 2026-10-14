@@ -25,6 +25,7 @@
 
 use alloc::string::String;
 use alloc::vec::Vec;
+use core::cell::RefCell;
 
 use tos_types::aes::{
     Grect, Object, TedInfo, ADJ3DSTD, DEFAULT, DESKWH, DISABLED, EDITABLE, EXIT, FL3DACT, FL3DBAK,
@@ -34,10 +35,8 @@ use tos_types::aes::{
 use tos_types::error::EFILNF;
 use tos_types::Long;
 
-use crate::sync::SpinMutex;
-
 use super::dosbind::{dos_close, dos_create, dos_gdrv, dos_open, dos_read, dos_sdrv, dos_write};
-use super::global::{self, gl_hchar, gl_wchar, Anode, WSave, AF_ISEXEC, NUM_WNODES};
+use super::global::{self, gl_hchar, gl_wchar, Anode, DeskStatic, WSave, AF_ISEXEC, NUM_WNODES};
 use super::icons;
 use super::model::{AType, DateFmt, DateOrder, Sort, TimeFmt, View};
 
@@ -309,7 +308,7 @@ impl Default for InfData {
 /// The session INF: the last-parsed file, kept so a Save preserves the
 /// file-type `ANODE`s and confirm/format preferences NewTOS does not yet edit
 /// (mirroring EmuTOS keeping the whole `G.g_ahead` list live for the session).
-static SESSION: SpinMutex<Option<InfData>> = SpinMutex::new(None);
+static SESSION: DeskStatic<RefCell<Option<InfData>>> = DeskStatic::new(RefCell::new(None));
 
 // ── Field-scan primitives (`util/optimize.c` `scan_2`, `deskapp.c` `scan_str`)
 
@@ -910,7 +909,7 @@ fn prefs_to_env(
 /// desktop start; dropping it here means a file that has since disappeared
 /// cannot be re-saved from a stale in-memory copy.
 pub(super) fn reset() {
-    *SESSION.lock() = None;
+    *SESSION.borrow_mut() = None;
 }
 
 /// The bytes of a shell-buffer image up to its terminating NUL — EmuTOS's
@@ -1006,7 +1005,7 @@ pub(super) fn load_and_apply() -> bool {
 fn apply_inf_bytes(bytes: &[u8]) {
     let data = parse_inf(bytes);
     apply(&data);
-    *SESSION.lock() = Some(data);
+    *SESSION.borrow_mut() = Some(data);
 }
 
 /// `*p == '#' && (*(p+1) == 'R' || *(p+1) == 'E')` (`deskapp.c:1523-1525`) —
@@ -1174,7 +1173,7 @@ pub(super) fn app_read_inf() -> bool {
 pub(super) fn build_inf() {
     let data = InfData { anodes: InfData::default_type_anodes(), ..InfData::default() };
     apply(&data);
-    *SESSION.lock() = Some(data);
+    *SESSION.borrow_mut() = Some(data);
     build_desk_icons();
 }
 
@@ -1448,7 +1447,7 @@ pub(super) fn window_rect(slot: usize) -> Option<Grect> {
 /// callers run first (`deskmain.c:891,2154`). The desktop-icon spots and
 /// `g_patcol` are read from the live `GLOBES`, exactly as EmuTOS does.
 fn build_from_state() -> InfData {
-    let session = SESSION.lock().clone();
+    let session = SESSION.borrow().clone();
 
     // Env + desktop-icon anodes, under one lock.
     #[allow(clippy::type_complexity)]
@@ -1630,7 +1629,7 @@ pub(super) fn app_save(todisk: bool) -> bool {
     }
     let ok = write_inf_file(&outbuf[CPDATA_LEN..len]);
     if ok {
-        *SESSION.lock() = Some(data);
+        *SESSION.borrow_mut() = Some(data);
     }
     ok
 }
@@ -1732,7 +1731,7 @@ pub(super) struct Installed {
 /// dialog when an application is already installed. [`None`] if it is not
 /// installed.
 pub(super) fn installed_doctype(app_path: &str) -> Option<Installed> {
-    let guard = SESSION.lock();
+    let guard = SESSION.borrow();
     let data = guard.as_ref()?;
     let a = data
         .anodes
@@ -1749,7 +1748,7 @@ pub(super) fn installed_doctype(app_path: &str) -> Option<Installed> {
 
 /// `get_funkey`'s duplicate check (`deskins.c:414-427`), in two halves because
 /// the question the user is asked sits between them and a trap must not run
-/// under the [`SESSION`] lock:
+/// while [`SESSION`] is borrowed:
 ///
 /// ```c
 /// for (an = G.g_ahead; an; an = an->a_next) {
@@ -1768,7 +1767,7 @@ pub(super) fn installed_doctype(app_path: &str) -> Option<Installed> {
 /// node at all (EmuTOS's `pa` is freshly allocated with `a_funkey == 0`, so its
 /// own node can never be the hit either way).
 pub(super) fn funkey_owner(funkey: u8, except_app: &str) -> bool {
-    let guard = SESSION.lock();
+    let guard = SESSION.borrow();
     let Some(data) = guard.as_ref() else {
         return false;
     };
@@ -1781,7 +1780,7 @@ pub(super) fn funkey_owner(funkey: u8, except_app: &str) -> bool {
 /// key away from the **first** other application that holds it, once the user
 /// has confirmed. Returns whether one was found.
 pub(super) fn release_funkey(funkey: u8, except_app: &str) -> bool {
-    let mut guard = SESSION.lock();
+    let mut guard = SESSION.borrow_mut();
     let Some(data) = guard.as_mut() else {
         return false;
     };
@@ -1823,7 +1822,7 @@ pub(super) fn app_by_funkey(funkey: u8) -> Option<FunkeyApp> {
     if funkey == 0 {
         return None; // 0 is "no key", never a match
     }
-    let guard = SESSION.lock();
+    let guard = SESSION.borrow();
     let data = guard.as_ref()?;
     data.anodes
         .iter()
@@ -1868,7 +1867,7 @@ pub(super) fn install_application(
     funkey: u8,
     args: &str,
 ) {
-    let mut guard = SESSION.lock();
+    let mut guard = SESSION.borrow_mut();
     let data = session_with_type_defaults(&mut guard);
 
     let tag = flavor.tag();
@@ -1917,7 +1916,7 @@ pub(super) fn install_application(
 /// `APREMOVE` branch (`deskins.c:584-589`). Returns whether a record was
 /// removed. The change is persisted by Save Desktop.
 pub(super) fn remove_application(app_path: &str) -> bool {
-    let mut guard = SESSION.lock();
+    let mut guard = SESSION.borrow_mut();
     let Some(data) = guard.as_mut() else {
         return false;
     };
@@ -1933,7 +1932,7 @@ pub(super) fn remove_application(app_path: &str) -> bool {
 /// `do_aopen` sees `is_installed(pa) && !isapp`. Walks the session `ANODE`s for
 /// the first *installed* file record whose `a_pdata` wildcard matches `name`.
 pub(super) fn lookup_association(name: &[u8]) -> Option<Association> {
-    let guard = SESSION.lock();
+    let guard = SESSION.borrow();
     let data = guard.as_ref()?;
     for a in &data.anodes {
         if a.is_desk || !is_real_path(&a.pappl) || a.pdata.is_empty() {
@@ -2049,7 +2048,7 @@ pub(super) fn app_afind_by_name(atype: AType, pspec: &str, pname: &str) -> Optio
     let mut pathname = String::from(&pspec[..dir_len]);
     pathname.push_str(pname);
 
-    let guard = SESSION.lock();
+    let guard = SESSION.borrow();
     let data = guard.as_ref()?;
     for (idx, a) in data.anodes.iter().enumerate() {
         if a.is_desk {
@@ -2096,7 +2095,7 @@ pub(super) fn app_afind_by_name(atype: AType, pspec: &str, pname: &str) -> Optio
 /// pool — a ROM-scarcity constraint whose absence is unobservable except as
 /// "the alert never appears" — so that arm has no counterpart.
 pub(super) fn allocate_window_anode(atype: AType) -> usize {
-    let mut guard = SESSION.lock();
+    let mut guard = SESSION.borrow_mut();
     let data = session_with_type_defaults(&mut guard);
     // `pa->a_dicon = (type==AT_ISFOLD) ? IG_FOLDER : IG_DOCU;` (`:1049`), and
     // the save tag `app_save` gives that node before `set_icon` runs
@@ -2129,7 +2128,7 @@ pub(super) fn allocate_window_anode(atype: AType) -> usize {
 /// `scan_str(new_name, &pa->a_pdata)` (`deskins.c:1175`) — give the node at
 /// `idx` its data name.
 pub(super) fn set_anode_data(idx: usize, name: &str) {
-    let mut guard = SESSION.lock();
+    let mut guard = SESSION.borrow_mut();
     if let Some(a) = guard.as_mut().and_then(|d| d.anodes.get_mut(idx)) {
         a.pdata.clear();
         a.pdata.push_str(name);
@@ -2146,7 +2145,7 @@ pub(super) fn set_anode_data(idx: usize, name: &str) {
 /// A folder node keeps its `#D` tag, which is what `app_save` writes for any
 /// `AT_ISFOLD` node that is not a desktop shortcut (`:1238-1244`).
 pub(super) fn set_icon(idx: usize, icon: i16) {
-    let mut guard = SESSION.lock();
+    let mut guard = SESSION.borrow_mut();
     let Some(a) = guard.as_mut().and_then(|d| d.anodes.get_mut(idx)) else {
         return;
     };
@@ -2165,7 +2164,7 @@ pub(super) fn set_icon(idx: usize, icon: i16) {
 
 /// `app_free` (`deskapp.c:227-247`) — unlink the node at `idx`.
 pub(super) fn app_free(idx: usize) {
-    let mut guard = SESSION.lock();
+    let mut guard = SESSION.borrow_mut();
     if let Some(data) = guard.as_mut() {
         if idx < data.anodes.len() {
             data.anodes.remove(idx);
@@ -3853,7 +3852,7 @@ struct FunKey {
 fn get_all_funkeys() -> [Option<FunKey>; NUM_FUNKEYS] {
     const NONE: Option<FunKey> = None;
     let mut out = [NONE; NUM_FUNKEYS];
-    let guard = SESSION.lock();
+    let guard = SESSION.borrow();
     let Some(data) = guard.as_ref() else {
         return out;
     };
@@ -4484,21 +4483,23 @@ pub(super) fn opn_appl(papname: &str, ptail: &mut Vec<u8>) -> bool {
 /// Save→read round-trip verification against the live SD image (mirrors the
 /// other `selftest_*` modules): build a representative [`InfData`], round-trip
 /// it (1) purely in memory and (2) through `NEWDESK.INF` on disk, and confirm
-/// the parsed-back state matches. Prints one line per check. **Mutates the SD
-/// image** — run only against a fresh `/tmp/sd.img`.
+/// the parsed-back state matches. Prints one line per check (console,
+/// [`super::selftest`]); run by [`super::selftest::run_once`] in a
+/// `selftest-desk` build only. **Mutates the SD image** — run only against a
+/// fresh `/tmp/sd.img`.
 pub fn selftest() {
-    use crate::kprintln;
+    use super::selftest::tprintln;
 
-    kprintln!("[desk-inf] NEWDESK.INF round-trip self-test on C:\\ (mutates the SD image)");
+    tprintln!("[desk-inf] NEWDESK.INF round-trip self-test on C:\\ (mutates the SD image)");
     let mut pass = 0u32;
     let mut fail = 0u32;
     let mut check = |name: &str, cond: bool| {
         if cond {
             pass += 1;
-            kprintln!("[desk-inf]  PASS {}", name);
+            tprintln!("[desk-inf]  PASS {}", name);
         } else {
             fail += 1;
-            kprintln!("[desk-inf]  FAIL {}", name);
+            tprintln!("[desk-inf]  FAIL {}", name);
         }
     };
 
@@ -4587,28 +4588,30 @@ pub fn selftest() {
         None => check("disk: read NEWDESK.INF back", false),
     }
 
-    kprintln!("[desk-inf] round-trip self-test: {} passed, {} failed", pass, fail);
+    tprintln!("[desk-inf] round-trip self-test: {} passed, {} failed", pass, fail);
 }
 
 /// Install-Application association self-test (deskins #20): install an
 /// application association, persist it to `NEWDESK.INF`, read it back off disk,
 /// and confirm the document→application lookup resolves correctly. Prints the
-/// written `NEWDESK.INF` and one line per check. **Mutates the SD image** — run
-/// only against a fresh `/tmp/sd.img`. Verifies the parts of the feature that do
+/// written `NEWDESK.INF` and one line per check (console, [`super::selftest`];
+/// run by [`super::selftest::run_once`] in a `selftest-desk` build only).
+/// **Mutates the SD image** — run only against a fresh `/tmp/sd.img`.
+/// Verifies the parts of the feature that do
 /// not need a keyboard (the dialog text entry is real-hardware-only).
 pub fn selftest_install() {
-    use crate::kprintln;
+    use super::selftest::tprintln;
 
-    kprintln!("[desk-ins] Install-Application association self-test on C:\\ (mutates the SD image)");
+    tprintln!("[desk-ins] Install-Application association self-test on C:\\ (mutates the SD image)");
     let mut pass = 0u32;
     let mut fail = 0u32;
     let mut check = |name: &str, cond: bool| {
         if cond {
             pass += 1;
-            kprintln!("[desk-ins]  PASS {}", name);
+            tprintln!("[desk-ins]  PASS {}", name);
         } else {
             fail += 1;
-            kprintln!("[desk-ins]  FAIL {}", name);
+            tprintln!("[desk-ins]  FAIL {}", name);
         }
     };
 
@@ -4617,7 +4620,7 @@ pub fn selftest_install() {
     // document's full path (AF_ISFULL) so the persisted line carries the extra
     // flags block, and giving it function key 7 (DESK20). A .NCP is a
     // TOS-console flavour → the #F tag.
-    *SESSION.lock() = None;
+    *SESSION.borrow_mut() = None;
     install_application("C:\\HELLO.NCP", "TXT", AppFlavor::Tos, true, false, 7, "");
 
     // The in-memory model resolves the association immediately.
@@ -4635,20 +4638,20 @@ pub fn selftest_install() {
     let wrote = app_save(true);
     check("disk: write NEWDESK.INF", wrote);
     if let Some(bytes) = read_inf_file() {
-        kprintln!("[desk-ins] ---- NEWDESK.INF ({} bytes) ----", bytes.len());
+        tprintln!("[desk-ins] ---- NEWDESK.INF ({} bytes) ----", bytes.len());
         for line in bytes.split(|&b| b == b'\n') {
             let end = line.iter().position(|&b| b == b'\r').unwrap_or(line.len());
             if end == 0 {
                 continue;
             }
-            kprintln!("[desk-ins] | {}", core::str::from_utf8(&line[..end]).unwrap_or("<non-utf8>"));
+            tprintln!("[desk-ins] | {}", core::str::from_utf8(&line[..end]).unwrap_or("<non-utf8>"));
         }
-        kprintln!("[desk-ins] ---- end NEWDESK.INF ----");
+        tprintln!("[desk-ins] ---- end NEWDESK.INF ----");
 
         // Reload purely from the disk bytes (fresh parse into the session), then
         // confirm the association survived the write→read round-trip.
         let reparsed = parse_inf(&bytes);
-        *SESSION.lock() = Some(reparsed);
+        *SESSION.borrow_mut() = Some(reparsed);
         let disk = lookup_association(b"README.TXT");
         check("disk: README.TXT resolves to HELLO.NCP", disk.as_ref().map(|a| a.app_path.as_str()) == Some("C:\\HELLO.NCP"));
         check("disk: full-path flag survived", disk.as_ref().map(|a| a.full_path) == Some(true));
@@ -4664,7 +4667,7 @@ pub fn selftest_install() {
         check("disk: read NEWDESK.INF back", false);
     }
 
-    kprintln!("[desk-ins] association self-test: {} passed, {} failed", pass, fail);
+    tprintln!("[desk-ins] association self-test: {} passed, {} failed", pass, fail);
 }
 
 /// Whether `hay` contains the contiguous byte sequence `needle` (self-test aid).

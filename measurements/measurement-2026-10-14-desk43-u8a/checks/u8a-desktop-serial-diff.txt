@@ -1,0 +1,27 @@
+-- on
+12c12
+< [mm]   kernel: 0xX..0xX (2478080 bytes)
+---
+> [mm]   kernel: 0xX..0xX (2465792 bytes)
+54c54
+< [desk] desktop up (1 drives, 0 window(s) from the context)
+---
+> [desk] desktop up (1 drives)
+-- off
+12c12
+< [mm]   kernel: 0xX..0xX (2478080 bytes)
+---
+> [mm]   kernel: 0xX..0xX (2465792 bytes)
+54c54
+< [desk] desktop up (1 drives, 0 window(s) from the context)
+---
+> [desk] desktop up (1 drives)
+-- strict
+12c12
+< [mm]   kernel: 0xX..0xX (2478080 bytes)
+---
+> [mm]   kernel: 0xX..0xX (2465792 bytes)
+54c54
+< [desk] desktop up (1 drives, 0 window(s) from the context)
+---
+> [desk] desktop up (1 drives)

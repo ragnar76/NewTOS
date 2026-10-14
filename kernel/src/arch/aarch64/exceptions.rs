@@ -439,6 +439,13 @@ fn sync_handler(frame: &mut ExceptionFrame) {
         space: tos_api::uaccess::Space::from_spsr(frame.spsr),
     };
 
+    // `[desk] desktop up`: the kernel reports the built-in desktop's first
+    // `evnt_multi` (DESK43 D4 — the desktop itself prints nothing). One atomic
+    // load unless the desktop is running; see `shell_loop`.
+    if matches!(class, TrapClass::Gem) {
+        crate::shell_loop::observe_desktop_gem_call(&args);
+    }
+
     // TEMPORARY `svc` tracer (debug tooling, not product history). It records
     // **every** `svc`, whichever exception level it came from. This gate also
     // tested `SPSR.M[3:0] == 0` until DESK43/U1, on the stated grounds that

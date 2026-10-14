@@ -50,9 +50,9 @@ const SIZETOFIT_CHANGED: u16 = 0x0004;
 /// of every `deskmain` (`:1946`), read by its epilog (`:2136`) to pick between
 /// "free everything and come straight back" and "terminate".
 ///
-/// A plain `AtomicBool` rather than one of the desktop's `SpinMutex` cells: it
-/// is a single flag with no invariant tying it to the rest of `G`, and the
-/// epilog reads it while the desktop lock is free.
+/// A plain `AtomicBool` rather than part of the `RefCell`-held `G`: it is a
+/// single flag with no invariant tying it to the rest of `G`, and the epilog
+/// reads it while `G` is not borrowed.
 static RESTART_DESKTOP: core::sync::atomic::AtomicBool =
     core::sync::atomic::AtomicBool::new(false);
 
@@ -2876,12 +2876,12 @@ pub(super) fn cnx_put() {
 /// walked `0..NUM_WNODES`, i.e. bottom-most first, so the z-order comes back the
 /// way it was saved. A slot with an empty path is not a window.
 ///
-/// Returns how many windows were opened.
-pub(super) fn cnx_get() -> usize {
+/// `void`, as in EmuTOS. (Until DESK43 U8a it returned the number of windows
+/// opened, for the desktop's own `desktop up` debug line, which D4 removed.)
+pub(super) fn cnx_get() {
     cnx_get_prefs();
 
     let desk = g_desk();
-    let mut opened = 0usize;
     for nw in 0..NUM_WNODES {
         let Some(mut ws) = global::with(|g| g.g_cnxsave.cs_wnode[nw].clone()) else {
             break;
@@ -2930,13 +2930,10 @@ pub(super) fn cnx_get() -> usize {
             g.windows.slots[slot].w_cvrow = cvrow;
         });
         let (spec, title) = spec_and_title(&path);
-        if do_diropen(handle, true, obid, &spec, &title, gr, true) {
-            opened += 1;
-        } else {
+        if !do_diropen(handle, true, obid, &spec, &title, gr, true) {
             win_free_window(handle);
         }
     }
-    opened
 }
 
 /// The preference half of [`cnx_get`] (`deskmain.c:1437-1461`), on its own

@@ -1,0 +1,122 @@
+measurement-2026-10-14-desk43-u8a -- DESK43 unit U8a "Entkopplung im Kernel" (docs/analysis/desk43-u5-u10-review-2026-10-14.md
+§3.2 row U8a; decision D4 in TASK/DESK43.md; DESK45). Developer run, base HEAD 6aedd159 (clean tree; 2c7895db = U7) + the
+uncommitted U8a change. Host macOS, QEMU raspi4b + qemu-virt. No SD card, no Pi, nothing committed. 2026-10-14.
+
+WHAT CHANGED (no change on screen intended): kernel/src/desk/ no longer names the kernel (drift probe group B 7 -> 0).
+  - State cells: DESK (global.rs) and SESSION (inf.rs) were crate::sync::SpinMutex; now core::cell::RefCell inside one
+    desktop wrapper DeskStatic<T> (global.rs) that carries the single documented `unsafe impl Sync` with the
+    single-thread invariant. The menu tree's own `unsafe impl Sync for MenuTree` is replaced by the same wrapper, so the
+    desktop's unsafe count stays 24. global::with keeps its signature: the ~173 call sites are unchanged.
+  - D4: the desktop prints nothing. Its two product lines are gone ("[desk] appl_init failed" -- EmuTOS does not test
+    gl_apid either, deskmain.c:1953 -- and "[desk] desktop up (N drives, M window(s) from the context)"). The kernel
+    prints "[desk] desktop up (N drives)" instead (shell_loop.rs observe_desktop_gem_call, hooked into the svc handler
+    for every GEM trap): while sh_ldapp's DESKTOP arm runs the desktop, an EL1 (Space::Kernel) AES appl_init arms it,
+    the next AES evnt_multi prints it once (once per deskmain run, like the old line). N = BIOS drive map
+    (drvbits().count_ones(), the value Dsetdrv returned to the desktop). M has no source outside the desktop and is
+    dropped. main::cnx_get is void again, as in EmuTOS (its count fed only the old line).
+  - Self-tests (DESK45): the four selftest()s stay beside their code, always compiled, print through a desktop-local
+    console writer (desk/selftest.rs: tprintln! -> GEMDOS Cconout via dosbind::dos_conout) instead of kprintln, and run
+    only in a build with the new kernel feature `selftest-desk` (desk/selftest.rs run_once, called by deskmain after
+    its prolog, once per boot).
+  - MENU_H = 19 (U7 open point 1) -> menu.rs title_h() = gl_hchar() + 3, the RSC's 769 through rsrc_obfix
+    (desk_rsc.c:255-283, gemrslib.c:76-82; = gl_hbox by gemgraf.c:412).
+  Details: TASK/DESK43-U8a-STATUS-DONE.MD.
+
+RESULT: drift probe 11 -> 4 (A 0, B 0, C 4, D 0), unsafe 24; 0 pixel change on every screen reached; call sequence
+differs only by the two GEMDOS calls the deleted debug line made; the four self-tests run in one command (53 PASS,
+1 FAIL that HEAD shows identically -- card precondition, see 5).
+
+1. BASELINES (method/checks.sh u8a -> checks/u8a-*; SOURCE_DATE_EPOCH=1791979200; run last on the final tree)
+                                                                   expected      measured
+   host tests tos-api tos-types xtask                              1347/0/1      1347/0/1 (no new host test: the changed
+                                                                                 code is kernel-crate, not host-buildable)
+   release warnings rpi4 / qemu-virt (tos-api/kernel)              64/94         64/94 both, 0 errors
+   clippy rpi4 / qemu-virt (tos-api/kernel)                        76/125        76/125 both; per-file distribution
+                                                                                 identical to U7 (checks/u8a-clippy-
+                                                                                 distribution.txt), 0 in desk/ and
+                                                                                 shell_loop.rs; with selftest-desk also
+                                                                                 76/125 (u8a-clippy-rpi4-selftest-desk.txt)
+   desk drift probe v2 TOTAL / UNSAFE                              4 / <=24      4 / 24
+   cargo xtask emutos-consts                                       green         total=448 matched=281 mismatched=2
+                                                                                 documented=2 undocumented=0 stale=0
+                                                                                 no-counterpart=165 (= U7)
+   SDK host tests                                                  20/0/0        20/0/0
+   programs/build.sh hello-gem (checks/u8a-build-hellogem.txt)     builds        builds; HELLOGEM.NAP sha256 3110e2e3...
+                                                                                 = the U7/U5b file
+   desk-cite-list (u8a-cite-list.txt, u8a-cite-since-base.txt)     --            548/359/5/184; since 6aedd159 45/24/5/16
+   nested-borrow scan (method/nested-borrow-scan.py)               --            3 hits, all name collisions (method vs
+                                                                                 free fn), annotated in the output file
+   Kernel images reproducible: checks.sh rebuilt bin/kernel8-u8a.img and kernel-virt-u8a.img byte-identical to the
+   images the runs below used (sha256 in bin/SHA256SUMS).
+
+2. QEMU RASPI4B SERIES (method/series.sh + run-rpi4.sh + mode.sh + qmp_timed.py + shotcmp.py, copied from the U7 run;
+   summarize.sh adapted to compare with U7; checks/u8a-series-summary.txt, u8a-series-driver.txt). Kernel
+   bin/kernel8-u8a.img; cards = private copies of the MEM05 acceptance cards from /tmp/m5j/u5b/cards (as U5b/U7),
+   sha256 plain f30f360a..., apitest 4c903c52..., teradesk 43a75ede..., qed b4ad4d58...; each run on a fresh copy.
+   memprot on / off / strict x desktop t25, APITEST t25/t40, TeraDesk t35, QED t30 = 12 runs, 0 [EXC]/PANIC.
+     screendumps u8a vs U7 run u7-<mode>-rpi4-*: on 5/5, off 5/5, strict 5/5 BYTE-IDENTICAL
+     desktop t25 sha256 0e6f7704...324b in all three modes (= U7)
+     APITEST TOTAL 106/0/5 in all three modes; [OK]/[FAIL]/[SKIP] lines (126, modulo hex) u8a vs U7: 0 differing
+     desktop serial log vs U7, hex-normalised (checks/u8a-desktop-serial-diff.txt), per mode exactly two lines:
+       [mm] kernel size 2478080 -> 2465792 bytes, and line 54 (same position)
+       "[desk] desktop up (1 drives, 0 window(s) from the context)" -> "[desk] desktop up (1 drives)"
+     TeraDesk/QED cards start their program by #Z, the desktop never runs there: no desktop-up line (as in U7).
+
+3. SCREENS THAT EXERCISE THE STATE CELLS (method/views-run.sh + inj-desk-views.py; checks/u8a-views-compare.txt)
+   U7's injector script unchanged except the arming anchor: it now arms at the kernel's "[desk] desktop up" line in
+   shell_loop.rs (the desktop's line is gone). Scratch tree = rsync of the shared tree, without svc-seq-trace.
+   Alt-C (C:\ window, text view), View -> icons, About, Set preferences, Set background, Desktop configuration, end.
+     views-u8a vs U7 run views-u7: 8/8 BYTE-IDENTICAL; armed at hz_200 3009 (U7: 3008); 147 feeds both; 0 [EXC]/PANIC
+     metrics print as in U7: gl_handle=1 gl_wchar=8 gl_hchar=16 gl_wschar=6 gl_hschar=6 (title_h = 16 + 3 = 19)
+
+4. ORACLE (guard G2; method/seq-run.sh = U7's, header only; inj-desk-seq.py U8a copy = arming anchor moved;
+   checks/u8a-oracle-diff.txt). Reference = U7 run's trace/SVCSEQ-u7.LOG (HEAD's desktop code). 688 lines/554 calls
+   vs 690/556. Differences, all explained in the file:
+     - 2 calls fewer: K GEMDOS Dgetdrv + Dsetdrv right before the first evnt_multi = the deleted desktop line's
+       dos_sdrv(dos_gdrv()). No other call, order or argument shape differs.
+     - Keytbl return pointer (.bss, moved with the smaller .text), as in U7.
+     - boot info "Built:" stamp length 20 -> 21: git rev "unknown" (U7 git-archive tree) vs "6aedd159" (rsync tree).
+     - seq screendumps: 97 px in the C:\ window info line, "3423301" vs "3423225 bytes used" = 76 bytes = the
+       trace file C:\SVCSEQ.LOG's own size difference; the tracer-free views run shows that window byte-identical.
+
+5. SELF-TESTS (DESK45; method/selftest-run.sh = the one repeatable command; checks/u8a-selftest-*.txt,
+   serial/selftest-desk-rpi4-serial.log, screendumps/selftest-desk-rpi4-t75.png)
+   `cargo xtask build --board rpi4 --release --features selftest-desk` in a scratch rsync tree + inj-selftest-return.py
+   (method instrument: Return for the one confirmation box dir::selftest's recursive delete waits on, because the
+   card's NEWDESK.INF has confirm-deletes on; OK is the default button), plain card copy, 75 s.
+     [desk-ins] install/remove 13 passed, 1 failed   [desk-dir] backend 12/0   [desk-inf] round-trip 13/0
+     [desk-ins] association 15/0   "[desk-selftest] done"; 0 [EXC]/PANIC
+   The one FAIL "ins_devices on a complete desktop reports no change" is pre-existing and not a desktop defect: the
+   card's NEWDESK.INF has disk icons C, D, E, F but the drive map holds only C:, so ins_devices removes D/E/F and
+   correctly reports a change -- the test assumes a card whose icons match the drive map. Reference run on HEAD
+   (method/head-selftest-ref.py: git archive 6aedd159 + the four calls at the same place, kprintln, no injector):
+   serial/ref-head-selftest-rpi4-serial.log shows the identical FAIL and the identical 13+8 PASS lines, then stops at
+   the same DELETE FILE(S) box (screendumps/ref-head-selftest-rpi4-t60.png).
+   In a selftest-desk build the kernel's "[desk] desktop up" appears DURING the dir test: dir_op's progress loop
+   issues the desktop's first evnt_multi. Product builds have no such call before the event loop (oracle: the first
+   K evnt_multi follows desk_busy_off's graf_mouse directly). Harnesses of a selftest build key on
+   "[desk-selftest] done".
+   Counter-check (DESK45 acceptance): the product kernel on another plain-card copy for 40 s: card sha256 unchanged
+   (f30f360a...), 0 self-test lines (checks/u8a-selftest-cardcheck.txt).
+
+6. QEMU-VIRT BOOT (method/run-virt.sh + drive.py from the U7 run, until "[desk] desktop up" + 6 s)
+   bin/kernel-virt-u8a.img: "[desk] desktop up (0 drives)", 0 [EXC]/PANIC; end screendump 1920x1080 BYTE-IDENTICAL to
+   U7's u7-on-virt-desktop-end.png (2e0f487f...).
+
+7. WHO CONSUMED THE OLD LINE (checks/u8a-desktop-up-consumers.txt)
+   Live tools (tools/, sdk/, programs/, tosdump/): none. No script anywhere parses the drive/window counts as values.
+   99 immutable method scripts key on the prefix "[desk] desktop up" (drive*.py end markers, summarize/substep greps):
+   unaffected, the kernel line keeps the prefix. 109 immutable method scripts patch the kernel source at the
+   desktop's kprintln (desk_arm_patch.py, desk-arm-m3.py, a79_patch*.py, inj-desk-*.py, ...): their anchor is gone,
+   they fail with an assertion if re-applied to a U8a tree; this run's own copies arm at shell_loop.rs.
+   docs/sdk/06-image-and-testing.md serial-log table updated to the kernel line + the self-test lines.
+
+NOT DONE: real Pi (not asked); memprot=verify / asid=on (not asked); Read .INF file restart path (re-arm on the second
+appl_init) not driven -- no injector script for it; drag/drop, copy/rename dialogs, Install icon/application dialogs not
+driven (the static nested-borrow scan covers them, dynamically only the paths above); the HEAD-tree reference run for the
+self-tests had no Return injector (it stops at the box, as expected).
+
+Scratch: /tmp/m5j/u8a (-> /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/u8a): tree-views-u8a/ tree-u8a/ tree-selftest/
+(rsync copies + injectors), headtree/ (git archive 6aedd159 + head-selftest-ref.py), s/ (QMP sockets). Cards read from
+/tmp/m5j/u5b/cards, copied per run. Repo-root kernel8.img (gitignored) overwritten by checks.sh. bin/*.img gitignored,
+sha256 in bin/SHA256SUMS.

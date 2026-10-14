@@ -38,35 +38,19 @@ pub mod menu;
 pub mod model;
 pub mod pro;
 pub mod redraw;
+pub mod selftest;
 pub mod vdibind;
 pub mod win;
 pub mod xbiosbind;
 
-// The desktop's diagnostic channel — EmuTOS's `KDEBUG` (`bios/kprint.h`),
-// which its desktop also reaches as a linked-in BIOS symbol and which every
-// `desk/*.c` leaves compiled out (`/* #define ENABLE_KDEBUG */`,
-// `deskact.c:19`, `deskapp.c:20`).
-//
-// **[STOP — DESK43 U4] It stays a `crate::` path for now.** The plan's
-// replacement, `Cconws`, is not available to this caller for two independent
-// reasons, both measured rather than assumed:
-//
-// 1. `Cconws` reads its string with the *unprivileged* load `ldtrb`
-//    (`tos-api/src/gemdos/console.rs:527`), so a kernel-VA literal — which is
-//    every literal in this module while the desktop is EL1 code — faults. The
-//    same property already closes `Ssystem`'s pointer form to the desktop
-//    (`docs/api/desktop/gembind.md`).
-// 2. Even from EL0 it would be the wrong device: the console writes to the
-//    framebuffer as well as the serial line (`host_env.rs:58-61` →
-//    `fbcon::write_byte` → `vdi::alpha_conout`), so a diagnostic would paint
-//    characters onto the live desktop. EmuTOS's `kprintf` goes to the *debug*
-//    device, `bconout1(1, c)` (`bios/kprint.c:91-99`), never to `bconout2(2)`
-//    — and our `Bconout(1)` is the no-cable AUX entry that discards the byte
-//    (`tos_api::bios::chardev::AuxNoCable`).
-//
-// So the replacement has to be built before the removal (plan §6.3's ordering
-// rule), and building a debug-output device is not this unit's business.
-use crate::kprintln;
+// No diagnostic channel. EmuTOS's desktop has one only on paper — `KDEBUG`
+// (`bios/kprint.h`), left compiled out in every `desk/*.c`
+// (`/* #define ENABLE_KDEBUG */`, `deskact.c:19`, `deskapp.c:20`) — and the
+// NewTOS desktop prints nothing either (DESK43 decision D4, 2026-10-14). The
+// one line the harnesses key on, `[desk] desktop up`, is the kernel's
+// observation of this desktop reaching its first `evnt_multi`
+// (`crate::shell_loop`, not a desktop call); the self-tests have their own
+// console writer ([`selftest`]).
 
 use global::{MAX_DEPTH, WINDOW_STYLE};
 use tos_types::aes::{
@@ -948,10 +932,10 @@ fn deskmain() -> bool {
     // every `send_redraw` → `post_msg(1, WM_REDRAW)` from a MOVE/SIZE/TOP/CLOSE/
     // open-new-window drops silently and the window content only appears on the
     // direct-draw boot / view-switch paths (the empty directory-window bug).
-    let ap_id = appl_init();
-    if ap_id < 0 {
-        kprintln!("[desk] appl_init failed — AES window redraws will be dropped");
-    }
+    //
+    // EmuTOS keeps the result in `gl_apid` and does not test it; neither does
+    // this desktop (the id is only ever 0, `tos-api/src/aes/appl.rs:200-224`).
+    appl_init();
 
     // `gl_handle = graf_handle(&gl_wchar, &gl_hchar, &gl_wbox, &gl_hbox);`
     // (`deskmain.c:1956`) — the AES's workstation and the normal font's cell.
@@ -1025,7 +1009,7 @@ fn deskmain() -> bool {
     // `app_start` put in `G.g_cnxsave`: the saved view/sort/size-to-fit, then
     // the saved windows, bottom-most first so the z-order comes back.
     wind_update(BEG_UPDATE);
-    let reopened = main::cnx_get();
+    main::cnx_get();
     wind_update(END_UPDATE);
 
     // EmuTOS opens whatever the context says and nothing more — its built-in
@@ -1061,11 +1045,14 @@ fn deskmain() -> bool {
     // once it is ready for input.
     pro::desk_busy_off();
 
-    kprintln!(
-        "[desk] desktop up ({} drives, {} window(s) from the context)",
-        dosbind::dos_sdrv(dosbind::dos_gdrv()).count_ones(),
-        reopened
-    );
+    // The desktop is up. It says so to nobody (D4): the kernel reports
+    // `[desk] desktop up` when it sees the `evnt_multi` below arrive
+    // (`crate::shell_loop::observe_desktop_gem_call`).
+
+    // A `selftest-desk` build runs the four self-tests here, once per boot,
+    // with the desktop fully set up (DESK45; [`selftest`]).
+    #[cfg(feature = "selftest-desk")]
+    selftest::run_once();
 
     // The event loop (`deskmain.c:2077-2123`). It returns when a handler set
     // `done` — a program start (`hndl_button`'s double click, `:988`), *File →

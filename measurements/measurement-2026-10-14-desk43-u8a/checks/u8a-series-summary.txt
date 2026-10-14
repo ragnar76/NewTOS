@@ -1,0 +1,28 @@
+u8a-off-rpi4-apitest |  1 TOTAL 106 0 5 ; | exc/panic=0
+u8a-off-rpi4-desktop |  1 desktop up (1 d; | exc/panic=0
+u8a-off-rpi4-qed |  | exc/panic=0
+u8a-off-rpi4-teradesk |  | exc/panic=0
+u8a-on-rpi4-apitest |  1 TOTAL 106 0 5 ; | exc/panic=0
+u8a-on-rpi4-desktop |  1 desktop up (1 d; | exc/panic=0
+u8a-on-rpi4-qed |  | exc/panic=0
+u8a-on-rpi4-teradesk |  | exc/panic=0
+u8a-strict-rpi4-apitest |  1 TOTAL 106 0 5 ; | exc/panic=0
+u8a-strict-rpi4-desktop |  1 desktop up (1 d; | exc/panic=0
+u8a-strict-rpi4-qed |  | exc/panic=0
+u8a-strict-rpi4-teradesk |  | exc/panic=0
+--- APITEST result lines (modulo hex)
+on: u8a vs u7 0 differing lines (126 lines)
+off: u8a vs u7 0 differing lines (126 lines)
+strict: u8a vs u7 0 differing lines (126 lines)
+--- screendumps u8a vs U7 run u7-*
+u8a-on-rpi4- vs u7-on-rpi4-: same=5 diff=0 missing=0
+u8a-off-rpi4- vs u7-off-rpi4-: same=5 diff=0 missing=0
+u8a-strict-rpi4- vs u7-strict-rpi4-: same=5 diff=0 missing=0
+--- desktop t25 sha256
+0e6f770497da100b6707ff8ac1a79f24f30272a0e371bc368d9b10f56a2c324b  u8a-off-rpi4-desktop-t25.png
+0e6f770497da100b6707ff8ac1a79f24f30272a0e371bc368d9b10f56a2c324b  u8a-on-rpi4-desktop-t25.png
+0e6f770497da100b6707ff8ac1a79f24f30272a0e371bc368d9b10f56a2c324b  u8a-strict-rpi4-desktop-t25.png
+--- '[desk] desktop up' lines, U7 (desktop's own) vs U8a (kernel's)
+on: u7: [desk] desktop up (1 drives, 0 window(s) from the context);  u8a: [desk] desktop up (1 drives);
+off: u7: [desk] desktop up (1 drives, 0 window(s) from the context);  u8a: [desk] desktop up (1 drives);
+strict: u7: [desk] desktop up (1 drives, 0 window(s) from the context);  u8a: [desk] desktop up (1 drives);

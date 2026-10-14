@@ -173,7 +173,7 @@ pub fn win_shwall() {
 /// Split out so [`redraw_desktop`] can fold the fan-out into its own single outer
 /// `graf_mouse` bracket.
 fn win_shwall_nocursor() {
-    // Snapshot the open handles under the lock; draw with the lock released.
+    // Snapshot the open handles inside `global::with`; draw after it returns.
     let mut handles = [0i16; global::NUM_WNODES];
     let n = snapshot_window_handles(&mut handles);
 
@@ -186,9 +186,9 @@ fn win_shwall_nocursor() {
 }
 
 /// Snapshot the open (non-desktop) window handles in z-order into `out`,
-/// returning the count. Taken under the global lock so the drawing that follows
-/// runs with the lock released (each `do_wredraw_nocursor` re-acquires it for the
-/// owner-rectangle-list walk).
+/// returning the count. Taken inside one `global::with` so the drawing that
+/// follows runs with `G` not borrowed (each `do_wredraw_nocursor` borrows it
+/// again for the owner-rectangle-list walk).
 fn snapshot_window_handles(out: &mut [i16; global::NUM_WNODES]) -> usize {
     global::with(|g| {
         let mut n = 0;

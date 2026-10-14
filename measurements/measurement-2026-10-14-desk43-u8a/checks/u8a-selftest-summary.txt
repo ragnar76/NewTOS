@@ -1,0 +1,7 @@
+PASS lines: 53  FAIL lines: 1
+[desk-selftest] begin (selftest-desk build; mutates C:)
+[desk-ins] install/remove self-test: 13 passed, 1 failed
+[desk-dir] backend self-test: 12 passed, 0 failed
+[desk-inf] round-trip self-test: 13 passed, 0 failed
+[desk-ins] association self-test: 15 passed, 0 failed
+[desk-selftest] done

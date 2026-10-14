@@ -1,0 +1,54 @@
+# DESK43 U8a oracle (G2): U7 run's trace/SVCSEQ-u7.LOG (= HEAD's desktop code, U7 newtree) vs trace/SVCSEQ-u8a.LOG,
+# same injector schedule (inj-desk-seq.py; U8a copy arms at the kernel's desktop-up line), same plain card
+## lines/bytes
+     690   23828 measurement-2026-10-14-desk43-u7/trace/SVCSEQ-u7.LOG
+     688   23752 measurement-2026-10-14-desk43-u8a/trace/SVCSEQ-u8a.LOG
+    1378   47580 total
+## diff SVCSEQ-u7.LOG SVCSEQ-u8a.LOG
+339c339
+<     v_gtext at (328,188) len=20 chars=2026-10-
+---
+>     v_gtext at (328,188) len=21 chars=2026-10-
+506,507d505
+< K   GEMDOS #1  fn=0x19 Dgetdrv   -> 2
+< K   GEMDOS #1  fn=0x0e Dsetdrv   -> 4
+511c509
+< K   XBIOS  #14 fn=0x10           -> 0xffff00000034ad08
+---
+> K   XBIOS  #14 fn=0x10           -> 0xffff000000348d08
+## diff sequence-all
+382,383d381
+< K GEMDOS 0x19 Dgetdrv -> 2
+< K GEMDOS 0x0e Dsetdrv -> 4
+386c384
+< K XBIOS 0x10 -> 0xffff00000034ad08
+---
+> K XBIOS 0x10 -> 0xffff000000348d08
+## diff sequence-desktop-K-noresults
+382,383d381
+< K GEMDOS 0x19 Dgetdrv
+< K GEMDOS 0x0e Dsetdrv
+## diff sequence-desktop-K-novdi-shape
+73,74d72
+< GEMDOS 0x19 Dgetdrv -> 2
+< GEMDOS 0x0e Dsetdrv -> 4
+77c75
+< XBIOS 0x10 -> 0xffff00000034ad08
+---
+> XBIOS 0x10 -> 0xffff000000348d08
+## seq screendumps (seqshot-diff.py)
+measurement-2026-10-14-desk43-u7/screendumps/seq-u7-rpi4-t20.png vs measurement-2026-10-14-desk43-u8a/screendumps/seq-u8a-rpi4-t20.png: size (640, 480)/(640, 480), differing pixels 97, bbox (90, 70, 112, 82)
+measurement-2026-10-14-desk43-u7/screendumps/seq-u7-rpi4-t45.png vs measurement-2026-10-14-desk43-u8a/screendumps/seq-u8a-rpi4-t45.png: size (640, 480)/(640, 480), differing pixels 97, bbox (90, 70, 112, 82)
+# info line: u7 '3423301 bytes used', u8a '3423225 bytes used' (read off the dumps): 76 B = 23828 - 23752 = the trace file C:\SVCSEQ.LOG itself
+# Explanation of every difference:
+#  - 2 calls fewer, K GEMDOS Dgetdrv + Dsetdrv right before the first evnt_multi: the desktop's own
+#    "[desk] desktop up (N drives, ...)" line asked dos_sdrv(dos_gdrv()) for N. The line is gone (D4); the kernel's
+#    line reads the BIOS drive map itself (tos_api::bios::drive::drvbits), no trap. 76 bytes = these two lines.
+#  - Keytbl (XBIOS 16) return value: tos_api::xbios::keytbl::KERNEL_AREA in .bss, moved because .text shrank
+#    (kernel 2478080 -> 2465792 bytes, [mm] line of the serial logs). Same call at the same place.
+#  - boot info screen v_gtext "Built: <date> (<rev>)" len 20 -> 21: tos-api/build.rs stamps `git rev-parse --short=8`;
+#    the U7 scratch tree (git archive) had no .git -> "unknown" (7), this run's rsync copy of the shared tree has
+#    .git -> "6aedd159" (8). Build environment, not code.
+#  - seq screendumps: the window info line of the C:\ window "3423301" (u7) vs "3423225" (u8a) bytes used,
+#    76 = the size difference of C:\SVCSEQ.LOG, which lies in that directory. Not a product difference: without
+#    the tracer the same window is byte-identical (checks/u8a-views-compare.txt, views 8/8).

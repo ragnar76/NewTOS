@@ -2549,18 +2549,17 @@ impl DeskState {
 
 /// Direct, programmatic verification of the file-operation backend against a
 /// live drive (the `xtask run --board rpi4 --sd /tmp/sd.img` C: volume). Not
-/// wired into the normal boot — invoked from `lib.rs` only when proving the
-/// backend, exactly like the other `selftest_*` modules. Prints one line per
-/// check to the boot console.
+/// run by the normal desktop — [`super::selftest::run_once`] calls it in a
+/// `selftest-desk` build only. Prints one line per check to the console.
 ///
 /// Exercises: `Dcreate` (new folder), `Fcreate`+`Fwrite` (make a file), a
 /// **copy** (`d_dofcopy`), a **rename** (`d_dofileren`, same-drive move), and a
 /// recursive **delete** (`d_doop` empties + removes a folder), each confirmed by
 /// a fresh directory rescan.
 pub fn selftest() {
-    use crate::kprintln;
+    use super::selftest::tprintln;
 
-    kprintln!("[desk-dir] backend self-test on C:\\ (mutates the SD image)");
+    tprintln!("[desk-dir] backend self-test on C:\\ (mutates the SD image)");
 
     let base = "C:\\DESKT9\\"; // work directory, created + removed by the test
     let mut pass = 0u32;
@@ -2568,10 +2567,10 @@ pub fn selftest() {
     let mut check = |name: &str, cond: bool| {
         if cond {
             pass += 1;
-            kprintln!("[desk-dir]  PASS {}", name);
+            tprintln!("[desk-dir]  PASS {}", name);
         } else {
             fail += 1;
-            kprintln!("[desk-dir]  FAIL {}", name);
+            tprintln!("[desk-dir]  FAIL {}", name);
         }
     };
 
@@ -2655,7 +2654,7 @@ pub fn selftest() {
     let _ = dos_rmdir("C:\\DESKT9");
     check("cleanup: DESKT9 removed", !scan_folder("C:\\").iter().any(|e| e.name_str() == "DESKT9"));
 
-    kprintln!("[desk-dir] backend self-test: {} passed, {} failed", pass, fail);
+    tprintln!("[desk-dir] backend self-test: {} passed, {} failed", pass, fail);
 }
 
 /// `C:\DESKT9\<leaf>` — a helper for [`selftest`].

@@ -11,11 +11,11 @@
 
 use alloc::string::String;
 use alloc::vec::Vec;
+use core::cell::RefCell;
+use core::ops::Deref;
 use core::sync::atomic::{AtomicI16, AtomicU8, Ordering};
 
 use tos_types::aes::{Grect, Object, DESKWH, G_BOX, G_IBOX, LASTOB, NIL};
-
-use crate::sync::SpinMutex;
 
 use super::model::{AType, DateFmt, ScreenInfo, Sort, TimeFmt, View};
 use super::win::WindowList;
@@ -30,9 +30,6 @@ pub const NUM_WNODES: usize = 7;
 /// First `g_screen[]` index available for item objects: `ROOT` (0) + `DROOT`
 /// (1) + one box per possible window (`WOBS_START` = `NUM_WNODES + 2`).
 pub const WOBS_START: i16 = NUM_WNODES as i16 + 2;
-
-/// Menu-bar height in pixels (`gl_hbox`; NewTOS uses its fixed 8x16 font).
-pub const MENU_H: i16 = 19;
 
 /// The `objc_draw`/`render_tree` recursion depth the desktop uses (`MAX_DEPTH`
 /// in EmuTOS `do_wredraw`) — deep enough for `ROOT → window/DROOT → items`.
@@ -53,8 +50,8 @@ pub const MAX_DEPTH: i16 = 8;
 /// `g_ihspc = g_hicon(50) + MIN_HINT(2) = 52` (`app.rs`/`win.rs`).
 ///
 /// **At 1920×1080 (ADR-017 Stage 1, native boot)** a maximised window's border
-/// rect is the desktop work area `{0, MENU_H, 1920, 1080-MENU_H}`; `wind_calc`
-/// subtracts the `WINDOW_STYLE` borders `(l=1, t=42, r=23, b=23)`
+/// rect is the desktop work area `{0, 19, 1920, 1080-19}` (below the
+/// `gl_hbox`-high menu bar); `wind_calc` subtracts the `WINDOW_STYLE` borders `(l=1, t=42, r=23, b=23)`
 /// (`tos-api::aes::window::borders`, the 3D branch: `adj_?box = gl_?box + 4 =
 /// 23`, plus a full `gl_hbox = 19` for the INFO line) → a work area of
 /// `1896 × 996`.
@@ -141,9 +138,9 @@ const EMPTY_OBJ: Object = Object {
 
 // ── Background pattern/colour (`g_patcol`) ─────────────────────────────────
 //
-// Kept as atomics, separate from the mutex-guarded `DeskState`, so the persisted
-// pattern/colour byte can be read/written lock-free (EMUDESK.INF `#Q` load/save,
-// the Set-Background dialog) without contending the `DeskState` lock. This byte
+// Kept as atomics, separate from the `RefCell`-held `DeskState`, so the persisted
+// pattern/colour byte can be read/written (EMUDESK.INF `#Q` load/save, the
+// Set-Background dialog) without borrowing `DeskState`. This byte
 // is the single source of truth that feeds `DROOT`'s box `ob_spec` via
 // [`DeskState::sync_desk_background`] — the AES then draws that box as the screen
 // background (`WF_NEWDESK`/`w_drawdesk`). Six bytes:
@@ -192,6 +189,56 @@ pub fn patcol_all() -> [u8; 6] {
     out
 }
 
+// ── Process-local statics ───────────────────────────────────────────────────
+
+/// A `static` that belongs to the desktop alone — EmuTOS's desktop keeps its
+/// state in plain C globals (`GLOBES G`, `deskglob.c`; the menu, `deskmain.c`)
+/// that only its own single thread of control ever touches. Rust demands
+/// `Sync` of every `static`; this wrapper states that invariant **once** for
+/// all desktop statics instead of per type, so the cells inside can be the
+/// single-threaded `RefCell`/`UnsafeCell` they really are (DESK43 U8a: the
+/// kernel `SpinMutex` the state used to sit behind is a kernel type the
+/// desktop cannot take along into its own crate, and a lock buys nothing for
+/// one thread — a nested borrow is a bug either way, a `RefCell` reports it as
+/// a panic where the spinlock hung).
+///
+/// **The invariant.** Every access comes from the desktop's own control flow,
+/// one call at a time:
+/// * today the desktop is called on the boot CPU from `sh_ldapp`'s DESKTOP arm
+///   (`crate::shell_loop`, kernel context, single core); no interrupt handler,
+///   no AES callback and no other process names any desktop item — the kernel
+///   reaches the desktop only through `run` and `reset`, never while `run` is
+///   active (`tools/desk-drift-probe.sh` group C lists every such line);
+/// * while one of its traps is parked (an `evnt_multi` that yields to an
+///   accessory, ACC03) no desktop code runs: the accessory is an EL0 process
+///   with its own code, and the desktop resumes where it stopped;
+/// * as an EL0 program (DESK43 U9) the desktop is one single-threaded process,
+///   and these statics live in its own address space.
+///
+/// A second thread or an interrupt-context caller would break the invariant;
+/// neither exists, and adding one has to replace this wrapper first.
+pub struct DeskStatic<T>(T);
+
+// SAFETY: see the invariant above — every access to a `DeskStatic` comes from
+// the desktop's single thread of control, so no two threads ever share one.
+unsafe impl<T> Sync for DeskStatic<T> {}
+
+impl<T> DeskStatic<T> {
+    /// Wrap `value`. `const fn`, for `static` initialisers.
+    // NEWTOS: Rust plumbing — a C global needs no `Sync` wrapper.
+    pub const fn new(value: T) -> Self {
+        Self(value)
+    }
+}
+
+impl<T> Deref for DeskStatic<T> {
+    type Target = T;
+    // NEWTOS: Rust plumbing — a C global needs no `Sync` wrapper.
+    fn deref(&self) -> &T {
+        &self.0
+    }
+}
+
 // ── Character-cell metrics (`gl_wchar`/`gl_hchar`, `gl_wschar`/`gl_hschar`) ──
 //
 // EmuTOS keeps these as plain globals beside `G`, not inside it
@@ -203,7 +250,7 @@ pub fn patcol_all() -> [u8; 6] {
 // way the AES itself computes it (`gsx_start`, `aes/gemgraf.c:405-410`, via
 // [`super::vdibind::small_font_cell`]). Kept as atomics, like [`G_PATCOL`], so
 // code running inside [`with`] (e.g. `app_start`) can read them without
-// re-entering the [`DESK`] lock. Zero until the first `deskmain` sets them;
+// re-borrowing [`DESK`]. Zero until the first `deskmain` sets them;
 // nothing in the desktop reads them before that.
 static GL_WCHAR: AtomicI16 = AtomicI16::new(0);
 static GL_HCHAR: AtomicI16 = AtomicI16::new(0);
@@ -840,9 +887,11 @@ impl DeskState {
     }
 }
 
-/// The single desktop-state instance. Lazily initialised by [`init`]; guarded
-/// by the kernel spinlock (single boot CPU, no `OnceCell`/`spin` dependency).
-static DESK: SpinMutex<Option<DeskState>> = SpinMutex::new(None);
+/// The single desktop-state instance (EmuTOS `GLOBES G`, `deskglob.c`).
+/// Lazily initialised by [`init`]; one thread, so a `RefCell` (see
+/// [`DeskStatic`]): a nested [`with`] panics with a borrow error instead of
+/// spinning forever.
+static DESK: DeskStatic<RefCell<Option<DeskState>>> = DeskStatic::new(RefCell::new(None));
 
 /// One-time desktop-state setup for the desktop work area `g_desk` — the
 /// `wind_get(DESKWH, WF_WXYWH)` rectangle EmuTOS stores in `G.g_desk`
@@ -850,7 +899,7 @@ static DESK: SpinMutex<Option<DeskState>> = SpinMutex::new(None);
 /// defaults + window list) then `obj_init()` (the object arena), in that order.
 /// Idempotent — a second call is a no-op.
 pub fn init(g_desk: Grect) {
-    let mut guard = DESK.lock();
+    let mut guard = DESK.borrow_mut();
     if guard.is_none() {
         let mut state = DeskState::new(g_desk);
         state.win_start();
@@ -880,14 +929,16 @@ pub fn init(g_desk: Grect) {
 /// by the `wm_init` inside [`tos_api::aes::reinit`], both of which precede
 /// every caller.
 pub fn reset() {
-    *DESK.lock() = None;
+    *DESK.borrow_mut() = None;
 }
 
-/// Run `f` against the desktop state under the lock. Returns `None` if the
-/// state has not been [`init`]ialised yet. The consumer of the arena/window
-/// APIs from later tasks (view build, event dispatch) goes through here.
+/// Run `f` against the desktop state (mutably borrowed for the duration of
+/// `f`). Returns `None` if the state has not been [`init`]ialised yet. The
+/// consumer of the arena/window APIs from later tasks (view build, event
+/// dispatch) goes through here. `f` must not call `with` again: the borrow is
+/// exclusive, and a nested one panics (it hung under the old spinlock).
 pub fn with<R>(f: impl FnOnce(&mut DeskState) -> R) -> Option<R> {
-    let mut guard = DESK.lock();
+    let mut guard = DESK.borrow_mut();
     guard.as_mut().map(f)
 }
 
@@ -898,10 +949,10 @@ pub fn with<R>(f: impl FnOnce(&mut DeskState) -> R) -> Option<R> {
 /// the `ob_spec`/`ib_ptext` raw pointers baked into the tree — stay valid across
 /// the draw. [`None`] before [`init`].
 ///
-/// The lock is released when this returns; the AES background composite
-/// (`w_drawdesk`/`paint_bg_clip`) reads the tree without re-entering [`DESK`],
-/// so there is no re-entrancy on the single boot CPU.
+/// The borrow ends when this returns; the AES background composite
+/// (`w_drawdesk`/`paint_bg_clip`) reads the tree without borrowing [`DESK`],
+/// so there is no re-entrancy.
 pub fn screen_addr() -> Option<u64> {
-    let guard = DESK.lock();
+    let guard = DESK.borrow();
     guard.as_ref().map(|s| s.g_screen.as_ptr() as u64)
 }

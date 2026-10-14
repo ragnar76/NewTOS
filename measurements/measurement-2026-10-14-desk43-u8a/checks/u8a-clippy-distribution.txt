@@ -1,0 +1,2 @@
+rpi4 clippy per-file identical to U7
+qemu-virt clippy per-file identical to U7

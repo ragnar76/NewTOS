@@ -30,11 +30,97 @@
 //! `DESKTOP_APP` arm. That is the hardware-layer carve-out of
 //! `docs/COMPATIBILITY.md`; everything else follows `gemshlib.c` literally.
 
+use core::sync::atomic::{AtomicBool, Ordering};
+
 use tos_api::aes::shell::{
     self, ShExit, AUTORUN_APP, CONSOLE_APP, DESKTOP_APP, NORMAL_APP,
 };
+use tos_api::bdos::process::{current_abi, Abi};
+use tos_api::trap::TrapArgs;
+use tos_api::uaccess::Space;
 
 use crate::kprintln;
+
+// ── "desktop up" — the kernel's observation of the desktop (DESK43 D4) ──────
+//
+// The desktop prints nothing (EmuTOS leaves `KDEBUG` compiled out of every
+// `desk/*.c`, `deskact.c:19`, `deskapp.c:20`; user decision D4, 2026-10-14).
+// What the harnesses need from it — "the desktop is ready for input" — is
+// observed here instead, from outside, with the criterion the desktop's own
+// line used to have: the desktop has finished `deskmain`'s prolog and issues
+// its first `evnt_multi` (`deskmain.c:2077-2123`, the event loop). The test
+// runs in the GEM-trap path, so it sees exactly the calls the AES sees.
+//
+// **Which caller is the desktop.** While [`sh_ldapp`]'s DESKTOP arm runs the
+// built-in desktop, the desktop is the only EL1 caller of the GEM trap: the
+// kernel context that would otherwise trap (`sh_main`, the boot path, the
+// boot-time selftests) is suspended inside that very call, and accessories
+// and programs are EL0 (`Space::User`). So "GEM trap from `Space::Kernel`
+// while [`DESKTOP_ACTIVE`]" is the desktop. (When the desktop becomes an EL0 program, DESK43 U9, this key
+// becomes "the process the DESKTOP arm started".)
+//
+// **Once per `deskmain` run**, like the old line: `appl_init` (the first call
+// of every run, `deskmain.c:1953`) arms the report, the first `evnt_multi`
+// fires and disarms it. A *Read .INF file* restart runs `deskmain` again and
+// reports again; an `evnt_multi` re-executed after an S2 yield (ACC03) does
+// not report twice.
+
+/// Set while the DESKTOP arm of [`sh_ldapp`] is inside `crate::desk::run`.
+static DESKTOP_ACTIVE: AtomicBool = AtomicBool::new(false);
+/// Armed by the desktop's `appl_init`, consumed by its next `evnt_multi`.
+static DESKTOP_UP_ARMED: AtomicBool = AtomicBool::new(false);
+
+/// AES opcode `APPL_INIT` (`include/aesdefs.h:17`).
+const AES_APPL_INIT: u16 = 10;
+/// AES opcode `EVNT_MULTI` (`include/aesdefs.h:32`).
+const AES_EVNT_MULTI: u16 = 25;
+/// GEM-trap selector of the AES (`x0` = 200, `docs/ARCHITECTURE.md`).
+const GEM_SEL_AES: u64 = 200;
+
+/// Called by the `svc` handler for every GEM trap (`svc #2`), before the
+/// dispatch: report `[desk] desktop up` when the built-in desktop reaches its
+/// first `evnt_multi` of a `deskmain` run (see the block comment above).
+///
+/// A no-op unless the desktop is running. It reads only `control[0]` of the
+/// caller's parameter block — the same word the AES dispatcher reads a few
+/// instructions later — and only for an EL1 caller, whose block is a kernel
+/// address.
+pub fn observe_desktop_gem_call(args: &TrapArgs) {
+    if !DESKTOP_ACTIVE.load(Ordering::Acquire)
+        || args.space != Space::Kernel
+        || args.regs[0] != GEM_SEL_AES
+    {
+        return;
+    }
+    let block = args.regs[1];
+    if block == 0 {
+        return;
+    }
+    // `control` = `block[0]`, a pointer of the caller's ABI width.
+    let control = match current_abi() {
+        Abi::Lp64 => args.space.get_u64(block),
+        Abi::Ilp32 => args.space.get_u32(block).map(u64::from),
+    };
+    let Ok(control) = control else { return };
+    if control == 0 {
+        return;
+    }
+    let Ok(op) = args.space.get_u16(control) else { return };
+    match op {
+        AES_APPL_INIT => DESKTOP_UP_ARMED.store(true, Ordering::Release),
+        AES_EVNT_MULTI if DESKTOP_UP_ARMED.swap(false, Ordering::AcqRel) => {
+            // The drive count the desktop's line carried
+            // (`dos_sdrv(dos_gdrv())` = `Dsetdrv`'s return = the BIOS drive
+            // map). The old "M window(s) from the context" has no source
+            // outside the desktop and is gone; the windows are on the screen.
+            kprintln!(
+                "[desk] desktop up ({} drives)",
+                tos_api::bios::drive::drvbits().count_ones()
+            );
+        }
+        _ => {}
+    }
+}
 
 /// `LEN_ZPATH + LEN_ZFNAME + 1` = `MAXPATHLEN` (`include/sysconf.h:51-55`) —
 /// the size of `D.s_cmd`.
@@ -289,7 +375,10 @@ fn sh_ldapp() -> i32 {
         // dead one's window list, whose AES handles `sh_main`'s `wm_init`
         // (`:717`) has just deleted.
         crate::desk::reset();
+        DESKTOP_ACTIVE.store(true, Ordering::Release);
         crate::desk::run();
+        DESKTOP_ACTIVE.store(false, Ordering::Release);
+        DESKTOP_UP_ARMED.store(false, Ordering::Release);
         // EmuTOS calls `wm_new()` only when the desktop terminated
         // *abnormally* (`:606-610`); the normal exit path already cleaned up
         // in `deskmain`'s epilog. Our built-in desktop has no abnormal-exit

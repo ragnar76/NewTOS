@@ -28,7 +28,7 @@
 //! [`build_menu`], which is exactly where EmuTOS writes the bit by hand too
 //! (`deskmain.c:475-486`).
 
-use super::global::{self, gl_hchar, gl_wchar, MENU_H};
+use super::global::{self, gl_hchar, gl_wchar, DeskStatic};
 use super::model::{Sort, View};
 
 use core::cell::UnsafeCell;
@@ -46,12 +46,23 @@ const MIN_DESKMENU_WIDTH: i16 = 20;
 /// `{0, 0, 80, 513}` (`desk_rsc.c:249-253`): `ob_height = 0x0201` = one
 /// character cell plus 2 pixels, which `rsrc_obfix` turns into `gl_hchar + 2`
 /// (`aes/gemrslib.c:76-82`) = 18 on the 8×16 font. One row short of
-/// `gl_hbox` (`MENU_H`): `mn_bar` draws the box and then the separator on
-/// row `gl_hbox - 1` (`aes/gemmnlib.c:718-722`), the row `THEBAR` ends above.
-/// `THEACTIVE` and the titles stay `gl_hbox` tall (`769` = `gl_hchar + 3`,
-/// `desk_rsc.c:255-283`).
+/// `gl_hbox`: `mn_bar` draws the box and then the separator on row
+/// `gl_hbox - 1` (`aes/gemmnlib.c:718-722`), the row `THEBAR` ends above.
+/// `THEACTIVE` and the titles are [`title_h`] tall.
 fn bar_box_h() -> i16 {
     gl_hchar() + 2
+}
+
+/// Height of `THEACTIVE`, of every `G_TITLE`, and the `ob_y` of the drop-down
+/// container — the RSC's `769` (`desk_rsc.c:255-283`: `{2, 0, 28, 769}`,
+/// `{0, 0, 6, 769}` …; object 7 `{0, 769, 80, 23}`): `0x0301` = one character
+/// cell plus 3 pixels, which `rsrc_obfix` turns into `gl_hchar + 3`
+/// (`aes/gemrslib.c:76-82`) = 19 on the 8×16 font. That is the AES's `gl_hbox`
+/// by definition (`gl_hbox = gl_hchar + 3`, `aes/gemgraf.c:412`), which is why
+/// the bar row and the window gadget row agree. Was the constant `MENU_H = 19`
+/// until DESK43 U8a.
+fn title_h() -> i16 {
+    gl_hchar() + 3
 }
 
 /// Height of one drop-down entry — the RSC's `{0, row, 20, 1}`
@@ -62,7 +73,7 @@ fn bar_box_h() -> i16 {
 /// cells tall as it has entries (`{8, 0, 19, 16}` for the 16-entry *File*
 /// box, `desk_rsc.c:345-349`), i.e. `n · entry_h()`.
 ///
-/// This is **not** `gl_hbox` (`MENU_H` = `gl_hchar + 3` = 19): the bar row is
+/// This is **not** `gl_hbox` ([`title_h`] = `gl_hchar + 3` = 19): the bar row is
 /// 19 px because `gl_hbox` is the gadget box height (`aes/gemgraf.c:412-415`),
 /// the drop-down rows are plain text cells. `adjust_menu` recomputes the
 /// *widths* (`deskmain.c:1608-1635`) and never touches a height, so the
@@ -447,9 +458,8 @@ struct MenuTree {
     shortcuts: UnsafeCell<[u8; NUM_SHORTCUTS]>,
     built: UnsafeCell<bool>,
 }
-// SAFETY: only touched from the single-threaded desktop on the boot CPU.
-unsafe impl Sync for MenuTree {}
-static MENU: MenuTree = MenuTree {
+// `Sync` comes from [`DeskStatic`]: only the single-threaded desktop touches it.
+static MENU: DeskStatic<MenuTree> = DeskStatic::new(MenuTree {
     obj: UnsafeCell::new([EMPTY_OBJ; MENU_CAP]),
     labels: UnsafeCell::new([[0; LABEL_CAP]; MENU_CAP]),
     title_obj: UnsafeCell::new([0; 4]),
@@ -457,7 +467,7 @@ static MENU: MenuTree = MenuTree {
     obj_item: UnsafeCell::new([-1; MENU_CAP]),
     shortcuts: UnsafeCell::new(DEFAULT_SHORTCUTS),
     built: UnsafeCell::new(false),
-};
+});
 
 /// Length of a NUL-terminated label in characters (excludes the terminator).
 fn label_len(s: &[u8]) -> i16 {
@@ -646,7 +656,7 @@ fn build_menu() -> *mut Object {
         // `adjust_menu`'s width — `mbar->ob_width = x`, the titles' sum
         // (`deskmain.c:1534`). Its rectangle is what `menu_bar` hands the
         // Control Manager as `gl_ctwait` (`gemmnlib.c:717`).
-        o[2] = mk(G_IBOX, 0, 0, geom.active_x, 0, geom.active_w, MENU_H, 1, first_title as i16, (themenus - 1) as i16);
+        o[2] = mk(G_IBOX, 0, 0, geom.active_x, 0, geom.active_w, title_h(), 1, first_title as i16, (themenus - 1) as i16);
 
         // Titles, left to right (adjust_menu's measured geometry).
         for (ti, def) in MENUS.iter().enumerate() {
@@ -659,7 +669,7 @@ fn build_menu() -> *mut Object {
                 geom.title_x[ti],
                 0,
                 geom.title_w[ti],
-                MENU_H,
+                title_h(),
                 if last { 2 } else { (first_title + ti + 1) as i16 },
                 -1,
                 -1,
@@ -759,7 +769,7 @@ fn build_menu() -> *mut Object {
                 0,
                 0x00FF_1100,
                 bx_x,
-                MENU_H,
+                title_h(),
                 iw,
                 bh,
                 next_box,

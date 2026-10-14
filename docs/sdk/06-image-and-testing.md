@@ -266,7 +266,8 @@ Lines a port will look for:
 | `[shell] sh_ldapp: starting …, sh_isgem=1` / `… exited with rc=N` | `#Z` autorun or `shel_write` launch, and its exit | `kernel/src/shell_loop.rs:222`, `:316` |
 | `[EXC] Data Abort (lower EL): ESR=… ELR=… FAR=…` | the program faulted at EL0; `ELR` is the faulting PC in the program's own image (`llvm-objdump -d` it), `FAR` the address | `kernel/src/arch/aarch64/exceptions.rs:133`, `:1571` |
 | `[PANIC] …` | kernel panic (debug builds check slice alignment etc. — see [05](05-abi-pitfalls.md#b8)) | — |
-| `[desk] desktop up` | the built-in desktop is running | `kernel/src/desk/` |
+| `[desk] desktop up (N drives)` | the built-in desktop has reached its first `evnt_multi` (ready for input); printed by the kernel, the desktop itself prints nothing (DESK43 D4) | `kernel/src/shell_loop.rs` (`observe_desktop_gem_call`) |
+| `[desk-selftest] begin` … `[desk-selftest] done` | the desktop's four self-tests (`--features selftest-desk`, writes to C:) | `kernel/src/desk/selftest.rs` |
 
 A GEMDOS trap trace is available with `--features gemdos-trace`
 (`docs/analysis/q07-…md:29`); it is a debug feature, not part of a normal run.

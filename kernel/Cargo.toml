@@ -55,6 +55,16 @@ svc-seq-trace = []
 # This is the one boot-path gate the `selftest_*` modules have: without it
 # they are compiled but never called (docs/sdk/06-image-and-testing.md).
 selftest-emmc = []
+# Desktop self-test build (DESK45, DESK43 U8a): the built-in desktop runs its
+# four self-tests once, the first time it reaches its event loop --
+# Install devices / Remove icon on the model, the file-operation backend
+# (C:\DESKT9\), the NEWDESK.INF round trip and the Install-application
+# association -- and prints PASS/FAIL lines on the console (GEMDOS Cconout:
+# serial line and screen), ending with "[desk-selftest] done"; then the desktop
+# continues normally. It WRITES to C: (C:\DESKT9\ is created and removed,
+# C:\NEWDESK.INF is overwritten), so build it only for a test image. Off by
+# default; `cargo xtask build --board rpi4 --release --features selftest-desk`.
+selftest-desk = []
 # USB enumeration diagnostic build: tees every `kprint!` line into a RAM
 # buffer and writes it to `C:\\USBDIAG.LOG` once the card is mounted, so a
 # machine with no serial line still yields the whole boot log as a file. It

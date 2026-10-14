@@ -68,6 +68,9 @@
 use tos_types::Long;
 
 // ── GEMDOS function ids (`bdosbind.h:22-54`) ────────────────────────────────
+/// `Cconout` (`bdosbind.h`, GEMDOS 0x02) — used only by the self-test output
+/// [`dos_conout`], never by the desktop itself.
+const CCONOUT: u16 = 0x02;
 const DSETDRV: u16 = 0x0E;
 const DGETDRV: u16 = 0x19;
 const DSETPATH: u16 = 0x3B;
@@ -169,6 +172,20 @@ fn cpath(s: &str) -> [u8; 130] {
 }
 
 // ── GEMDOS bindings (EmuTOS `include/gemdos.h`) ─────────────────────────────
+
+/// `Cconout(c)` (GEMDOS 0x02, `bdosbind.h`) — one character to the console.
+///
+/// Not an EmuTOS desktop call: the desktop itself has **no** text output
+/// (EmuTOS compiles `KDEBUG` out of every `desk/*.c`, `deskact.c:19`,
+/// `deskapp.c:20`; DESK43 decision D4). Its only caller is the self-test
+/// writer [`super::selftest`], which runs only in a `selftest-desk` build —
+/// the console a test program would print to. `Cconout` and not `Cconws`
+/// because the character travels in a register: `Cconws` reads its string
+/// with the unprivileged `ldtrb` (`tos-api/src/gemdos/console.rs`), which
+/// faults on the kernel-VA literals of the EL1 desktop.
+pub(super) fn dos_conout(c: u8) {
+    dos_trap(CCONOUT, c as u64, 0, 0);
+}
 
 /// `dos_sdta` — `Fsetdta(buf)` (`gemdos.h:50-53`). Points the current search
 /// at `dta`, a writable 44-byte buffer.
