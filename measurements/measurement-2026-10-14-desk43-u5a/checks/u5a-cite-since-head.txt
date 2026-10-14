@@ -1,0 +1,8 @@
+NewTOS desktop citation list — kernel/src/desk/ (fns touched since HEAD)
+
+file                                 fns  cited newtos  uncited
+
+uncited:
+newtos:
+
+DESK-CITE: fns=0 cited=0 newtos=0 uncited=0

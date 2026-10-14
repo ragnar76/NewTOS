@@ -1,0 +1,76 @@
+NewTOS desktop drift probe — /Volumes/Daten/Development/PiRusTOS @ 401b1bc0 (7 modified file(s))
+desktop source: kernel/src/desk/ (kernel module, 20 .rs file(s), subdirectories included)
+
+A  kernel/src/desk/ -> tos_api::                            20 code line(s)
+    tos_api::aes::object                                    12
+    tos_api::vdi::font                                       8
+      kernel/src/desk/act.rs:22          use tos_api::vdi::font::CELL_W;
+      kernel/src/desk/app.rs:18          use tos_api::aes::object::IconBlk;
+      kernel/src/desk/app.rs:19          use tos_api::vdi::font::{CELL_H, CELL_W, SMALL_CELL_H, SMALL_CELL_W};
+      kernel/src/desk/dir.rs:1623        let o = unsafe { &*(tree as *const tos_api::aes::object::Object).add(obj as usize) };
+      kernel/src/desk/dir.rs:53          use tos_api::aes::object::{Object, TedInfo};
+      kernel/src/desk/dir.rs:54          use tos_api::vdi::font::{CELL_H, CELL_W};
+      kernel/src/desk/dlg.rs:21          use tos_api::aes::object::{Object, TedInfo};
+      kernel/src/desk/global.rs:16       use tos_api::aes::object::Object;
+      kernel/src/desk/icons.rs:19        use tos_api::aes::object::IconBlk;
+      kernel/src/desk/icons.rs:20        use tos_api::vdi::font::{SMALL_CELL_H, SMALL_CELL_W};
+      kernel/src/desk/inf.rs:29          use tos_api::aes::object::{Object, TedInfo};
+      kernel/src/desk/inf.rs:30          use tos_api::vdi::font::{CELL_H, CELL_W};
+      kernel/src/desk/ins.rs:31          use tos_api::aes::object::{IconBlk, Object, TedInfo};
+      kernel/src/desk/ins.rs:32          use tos_api::vdi::font::{CELL_H, CELL_W};
+      kernel/src/desk/insapp.rs:32       use tos_api::aes::object::{Object, TedInfo};
+      kernel/src/desk/menu.rs:31         use tos_api::vdi::font::{CELL_H, CELL_W};
+      kernel/src/desk/menu.rs:38         use tos_api::aes::object::Object;
+      kernel/src/desk/model.rs:23        use tos_api::aes::object::IconBlk;
+      kernel/src/desk/win.rs:16          use tos_api::aes::object::IconBlk;
+      kernel/src/desk/win.rs:17          use tos_api::vdi::font::{CELL_H, CELL_W};
+
+B  kernel/src/desk/ -> crate:: (kernel internals)            7 code line(s)
+    crate::kprintln                                          5
+    crate::sync                                              2
+      kernel/src/desk/dir.rs:2577        use crate::kprintln;
+      kernel/src/desk/global.rs:18       use crate::sync::SpinMutex;
+      kernel/src/desk/inf.rs:34          use crate::sync::SpinMutex;
+      kernel/src/desk/inf.rs:4552        use crate::kprintln;
+      kernel/src/desk/inf.rs:4662        use crate::kprintln;
+      kernel/src/desk/ins.rs:1131        use crate::kprintln;
+      kernel/src/desk/mod.rs:69          use crate::kprintln;
+
+C  kernel/ -> desk module (outside kernel/src/desk/)         4 code line(s)
+    crate::desk                                              2
+    desk::reset                                              1
+    mod desk                                                 1
+      kernel/src/lib.rs:606              desk::reset();
+      kernel/src/lib.rs:65               pub mod desk;
+      kernel/src/shell_loop.rs:291       crate::desk::reset();
+      kernel/src/shell_loop.rs:292       crate::desk::run();
+
+D  desktop Cargo.toml -> deps other than newtos-gem/tos-types   0 line(s)   (no desktop crate yet)
+
+unsafe  in kernel/src/desk/                                 24 code line(s)   [not in TOTAL; U5a baseline 24, must not rise]
+      kernel/src/desk/dir.rs:368         let (ptext, len) = unsafe {
+      kernel/src/desk/dir.rs:374         let buf = unsafe { core::slice::from_raw_parts_mut(ptext, len + 1) };
+      kernel/src/desk/dir.rs:1623        let o = unsafe { &*(tree as *const tos_api::aes::object::Object).add(obj as usize) };
+      kernel/src/desk/dosbind.rs:128     unsafe {
+      kernel/src/desk/ins.rs:572         unsafe {
+      kernel/src/desk/ins.rs:865         unsafe {
+      kernel/src/desk/main.rs:1429       let letter = unsafe {
+      kernel/src/desk/menu.rs:453        unsafe impl Sync for MenuTree {}
+      kernel/src/desk/menu.rs:626        unsafe {
+      kernel/src/desk/menu.rs:833        let map = unsafe { &*MENU.title_obj.get() };
+      kernel/src/desk/menu.rs:841        let map = unsafe { &*MENU.item_obj.get() };
+      kernel/src/desk/menu.rs:853        let map = unsafe { &*MENU.obj_item.get() };
+      kernel/src/desk/menu.rs:892        let o = unsafe { &(*MENU.obj.get())[obj as usize] };
+      kernel/src/desk/menu.rs:929        unsafe { (*MENU.shortcuts.get()).get(n).copied().unwrap_or(0) }
+      kernel/src/desk/menu.rs:935        unsafe {
+      kernel/src/desk/menu.rs:945        unsafe { *MENU.shortcuts.get() }
+      kernel/src/desk/menu.rs:953        unsafe { *MENU.shortcuts.get() = v };
+      kernel/src/desk/menu.rs:976        let s = unsafe { &(*MENU.labels.get())[obj] };
+      kernel/src/desk/menu.rs:987        let w = unsafe { (*MENU.obj.get())[obj].ob_width };
+      kernel/src/desk/menu.rs:1017       let s = unsafe { &mut (*MENU.labels.get())[obj] };
+      kernel/src/desk/menu.rs:1040       let s = unsafe { &(*MENU.labels.get())[obj] };
+      kernel/src/desk/mod.rs:179         unsafe {
+      kernel/src/desk/vdibind.rs:62      unsafe {
+      kernel/src/desk/xbiosbind.rs:65    unsafe {
+
+DRIFT-PROBE TOTAL: 31

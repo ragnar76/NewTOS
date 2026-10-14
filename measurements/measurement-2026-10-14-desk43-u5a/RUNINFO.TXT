@@ -1,0 +1,63 @@
+measurement-2026-10-14-desk43-u5a -- DESK43 unit U5a "Instrument vor Umzug" (guards G2 prerequisite, G3, G4, G5 of
+docs/analysis/desk43-u5-u10-review-2026-10-14.md §3.2/§4/§2.4). Developer run, HEAD 401b1bc0 + the uncommitted U5a change
+(tools/desk-drift-probe.sh v2, tools/desk-cite-list.sh, tools/svc-seq.py, xtask emutos-consts + snapshot + deviations,
+dbg_qedtrace sequence mode behind kernel feature svc-seq-trace, docs/api/desktop/_rebuild-plan.md §12). Host macOS, QEMU raspi4b.
+No SD card, no Pi, nothing committed. Date 2026-10-14.
+
+RESULT: no product change (proved byte-wise), baselines held, the four instruments run, the oracle records a call sequence from a
+key-injector run.
+
+1. BASELINES (method/checks.sh u5a -> checks/u5a-*)       expected            measured
+   host tests tos-api tos-types xtask                   1340/0/1 + new      1345/0/1 (+5 = xtask emutos_consts tests)
+   release warnings rpi4 / qemu-virt (tos-api/kernel)   64/94               64/94 both, 0 errors
+   clippy rpi4 / qemu-virt (tos-api/kernel)             76/125              76/125 both
+   desk drift probe (v2)                                31                  31 (A 20, B 7, C 4, D 0; identical lines to v1:
+                                                                            checks/u5a-drift-v1-verbose-before.txt vs -v2-verbose.txt)
+   SDK host tests                                       20/0/0              20 passed 0 failed 0 skipped
+   With --features svc-seq-trace (not a product build): build 64/94 (qemu-virt release, rpi4 dev), clippy 76/125 both boards.
+
+2. NO PRODUCT CHANGE
+   bin/kernel8-u5a.img (checks.sh, release rpi4, default features) vs measurements/measurement-2026-10-13-mem05-acceptance/bin/
+   kernel8-acc.img (built at 9ab10074; 9ab10074..401b1bc0 touches no kernel/tos-api/tos-types file): cmp 20 bytes = the two
+   8-byte git-rev stamps (9ab10074 -> 401b1bc0) + 2 bytes of the build-date immediate (2026-10-13 -> -14).
+   bin/kernel8-u5a-date1013.img = the same tree rebuilt with SOURCE_DATE_EPOCH=1791892800 (2026-10-13 12:00 UTC):
+   cmp 16 bytes = the two rev stamps only.
+   QEMU raspi4b, -append serial=on, card /tmp/m5j/acc/cards/plain.img (MEM05 plain card, sha256 f30f360a...0740, private copy),
+   screendump at 25 s (method/run-rpi4.sh): screendumps/u5a-on-rpi4-desktop-t25.png sha256 0e6f7704...324b =
+   BYTE-IDENTICAL to measurement-2026-10-13-mem05-acceptance/screendumps/acc-on-rpi4-desktop-t25.png. Serial: "[desk] desktop up
+   (1 drives, 0 window(s) from the context)" (serial/u5a-on-rpi4-desktop-serial.log).
+
+3. INSTRUMENTS (current numbers)
+   G5 tools/desk-drift-probe.sh v2: TOTAL 31, UNSAFE 24 (= baseline in the script). Fixture (method/probe-fixture.sh ->
+      checks/u5a-probe-fixture.txt, scratch copies only): desk/ gone + no crate -> exit 1 with message (no empty 0); desk/ moved
+      into a crate "desktop" with a subdirectory, brace/multi-line use lists, block comment, "c:/*.txt" string, forbidden deps,
+      kernel -> desktop:: + Cargo dependency -> crate mode, A 22 / B 1 (kernel::) / C 4 / D 2, UNSAFE 25 -> exit 3.
+   G3 cargo xtask emutos-consts (checks/u5a-emutos-consts.txt): snapshot tools/xtask/emutos-defines.snapshot = 1546 integer
+      #defines of references/emutos @ 1a7484ab (include/*.h desk/*.h aes/*.h desk/*.c). Desktop: 431 literal integer consts,
+      266 matched, 2 mismatched (both documented in tools/xtask/emutos-consts-deviations.txt: DEOK 14 vs 16 intended,
+      BLKDEVNUM 16 vs 26 defect), 163 without EmuTOS counterpart, 0 ambiguous, 0 stale. Host test
+      emutos_consts::tests::desk_consts_match_emutos_snapshot passes on the snapshot alone (no references/ needed).
+   G4 tools/desk-cite-list.sh (checks/u5a-cite-list.txt): 530 fns, 346 cited, 0 NEWTOS, 184 uncited; --since HEAD: 0 touched
+      (U5a touches no desktop fn).
+   G2 oracle (method/seq-run.sh): scratch tree (method/make-scratch.sh) + key injector on the copy only
+      (method/inj-desk-seq.py: armed at "[desk] desktop up", Alt-C after 1 s) + --features svc-seq-trace, release rpi4
+      (bin/kernel8-seq.img; 96 warnings = 94 + 2 missing-doc warnings of the scratch injector), private copy of the plain card
+      (checked: no SVCSEQ.LOG before, trace/card-before.txt), headless raspi4b serial=on, screendumps 20 s / 45 s.
+      Serial: injector armed at hz_200 3011, Alt-C fed +200..+238. screendumps/seq-rpi4-t45.png: drive C window open.
+      trace/SVCSEQ.LOG (684 lines) pulled from the card read-only; tools/svc-seq.py -> trace/sequence-all.txt (551 calls, all
+      caller K -- the plain card has no accessories), trace/sequence-desktop-K-novdi-shape.txt (246 AES/GEMDOS/XBIOS calls):
+      start-up appl_init, wind_get, objc_add x8, Ssystem, wind_calc, shel_get(122), Fopen/Fread/Fclose NEWDESK.INF, ...,
+      menu_ienable x31, menu_icheck x8, ..., >> evnt_multi; then the Alt-C cycle with wind_create / Fsfirst + 83 Fsnext /
+      wind_set / wind_open / wind_get IN STREAM ORDER (the QED-mode tracer would have hoisted wind_create/wind_open/wind_calc/
+      WF_WORKXYWH into its prologue -- U1 §5 point 2), then the redraw cycle. Opcodes 31/32/35 now named.
+
+NOT DONE / OPEN: see TASK/DESK43-U5a-STATUS-DONE.MD "Offen". No qemu-virt oracle run (the desktop needs a card; raspi4b is the
+desktop board in QEMU). No real Pi.
+
+Scratch: /tmp/m5j/u5a (-> /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/u5a): tree/, build logs, card copies (deleted after
+the run). Kernel binaries in bin/ are gitignored:
+  257daa3a69b74eb69e8914b18bc8894a6664e482997c7a07a86bc8eb44d9d0ba  bin/kernel8-u5a.img
+  68779e0d5ff777e2ff54472fa70dde3cc55e868426f0e8ee10b994a368be24cf  bin/kernel-virt-u5a.img
+  3301ea6d7f23383656447409ea8721e4ae788df7f63c7eda20708cd3d9e8ff98  bin/kernel8-u5a-date1013.img
+  99c58ec217ece6ce7d0fdd5cf70596cec5574fd16753fadb0cefe8bb70b96c31  bin/kernel8-seq.img
+Repo-root kernel8.img (gitignored) overwritten by checks.sh / the date rebuild, left equal to bin/kernel8-u5a.img.

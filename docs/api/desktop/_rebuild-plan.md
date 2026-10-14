@@ -240,3 +240,29 @@ lead-commit per module:**
 4. **File/dir/INF/rez 1:1** — `deskdir`/`deskfun`/`deskact`/`deskinf`/`deskins`/
    `deskrez` + the `desksupp.md` launch layer (after the gap above is filled).
 5. **HW retest** after step 1 (the QED/desktop menu redraw) and again at parity.
+
+## 12. Receipt guards — mandatory in every DESK43 unit receipt (U5a, 2026-10-14)
+
+Source: guards G2–G5 of `docs/analysis/desk43-u5-u10-review-2026-10-14.md` §4,
+built in DESK43 U5a (`TASK/DESK43-U5a-STATUS-DONE.MD`). They extend plan v2 §5
+("every receipt carries (a) the drift-probe number, (b) the removed bypasses
+with their replacement, (c) every touched `fn` without an EmuTOS citation").
+A unit receipt that lacks one of the four numbers below is not accepted.
+
+| Guard | Command | What it says | Rule |
+|---|---|---|---|
+| G5 drift probe v2 | `tools/desk-drift-probe.sh` (`-v` for the lines) | `DRIFT-PROBE TOTAL` = code lines in which the desktop names `tos_api::`/kernel internals, the kernel names the desktop, or the desktop crate depends on more than `newtos-gem`/`tos-types`; `DRIFT-PROBE UNSAFE` = code lines with `unsafe` in the desktop | TOTAL never rises; UNSAFE never rises (the baseline is `UNSAFE_BASELINE` in the script — a unit that lowers the count lowers the baseline). The probe fails loudly (exit 1) when it cannot find the desktop source, instead of reporting an empty 0; a unit that moves the desktop (U8b) checks that it now reports the crate |
+| G3 constants | `cargo xtask emutos-consts` (`-v` for the unchecked names) | every literal integer `const` of the desktop vs EmuTOS' `#define` of the same name, from the checked-in snapshot `tools/xtask/emutos-defines.snapshot` | every mismatch is listed in `tools/xtask/emutos-consts-deviations.txt` as `intended` (with the decision) or `defect`; the host test `emutos_consts::tests::desk_consts_match_emutos_snapshot` fails on an undocumented mismatch **and** on a stale entry. Regenerate the snapshot only with `--update` from a local `references/emutos/`, and name the EmuTOS commit in the receipt |
+| G4 citations | `tools/desk-cite-list.sh --since <base commit>` | every `fn` touched since the unit's base without an EmuTOS `file.c:N`/`file.h:N`/`file.S:N` in the comment block above it; plus the global count (`DESK-CITE: fns= cited= newtos= uncited=`) | the receipt lists each touched uncited fn (with one line why it has no citation) and each `// NEWTOS:` fn it added. A fn with deliberately no EmuTOS counterpart carries `// NEWTOS: <why>` in its comment block — greppable, and counted apart from "uncited". The marker is a claim; review checks it |
+| G2 call-sequence oracle | kernel feature `svc-seq-trace` (`cargo xtask build --board rpi4 --release --features svc-seq-trace`), `C:\SVCSEQ.LOG`, `tools/svc-seq.py` | every `svc` in completion order with its caller (`K` = EL1 desktop, `U<slot>` = EL0 process) | mandatory for units that change what the desktop calls or how it is started (U9 proof point 4: kernel-linked vs `.NAP` desktop, same injector, `diff` of `svc-seq.py --caller … --no-caller` output); optional otherwise. Off by default — the feature never goes into a product build |
+
+Receipt block (copy into the unit's `TASK/DESK43-U*-STATUS-DONE.MD`):
+
+```
+Guards (docs/api/desktop/_rebuild-plan.md §12):
+  DRIFT-PROBE TOTAL: <n> (before: <m>)   DRIFT-PROBE UNSAFE: <n> (baseline <b>)
+  EMUTOS-CONSTS: total=… matched=… mismatched=… documented=… undocumented=0 stale=0 no-counterpart=…
+  DESK-CITE: fns=… cited=… newtos=… uncited=…            (whole desktop)
+  DESK-CITE --since <base>: <touched uncited / NEWTOS fns, one line each, or "none">
+  Oracle: <run + diff result, or "not required: <why>">
+```

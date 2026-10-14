@@ -1,0 +1,212 @@
+NewTOS desktop citation list — kernel/src/desk/ (all fns)
+
+file                                 fns  cited newtos  uncited
+kernel/src/desk/act.rs                14      8      0        6
+kernel/src/desk/app.rs                 8      7      0        1
+kernel/src/desk/dir.rs                74     47      0       27
+kernel/src/desk/dlg.rs                 2      0      0        2
+kernel/src/desk/dosbind.rs            25     24      0        1
+kernel/src/desk/ftype.rs               1      0      0        1
+kernel/src/desk/global.rs             16      8      0        8
+kernel/src/desk/icons.rs               5      2      0        3
+kernel/src/desk/inf.rs                97     63      0       34
+kernel/src/desk/ins.rs                16     13      0        3
+kernel/src/desk/insapp.rs              6      3      0        3
+kernel/src/desk/main.rs              108     80      0       28
+kernel/src/desk/menu.rs               27     11      0       16
+kernel/src/desk/mod.rs                56     32      0       24
+kernel/src/desk/model.rs              15      9      0        6
+kernel/src/desk/pro.rs                 5      5      0        0
+kernel/src/desk/redraw.rs              9      6      0        3
+kernel/src/desk/vdibind.rs             8      5      0        3
+kernel/src/desk/win.rs                36     22      0       14
+kernel/src/desk/xbiosbind.rs           2      1      0        1
+
+uncited:
+  kernel/src/desk/act.rs:159  rect_hits_obj
+  kernel/src/desk/act.rs:288  is_selected
+  kernel/src/desk/act.rs:293  obj_atype
+  kernel/src/desk/act.rs:298  is_desktop
+  kernel/src/desk/act.rs:304  in_rect
+  kernel/src/desk/act.rs:310  rects_overlap
+  kernel/src/desk/app.rs:264  place_desk_icon
+  kernel/src/desk/dir.rs:151  from_fnode
+  kernel/src/desk/dir.rs:162  name_str
+  kernel/src/desk/dir.rs:180  is_dir
+  kernel/src/desk/dir.rs:183  name_str
+  kernel/src/desk/dir.rs:191  join_leaf
+  kernel/src/desk/dir.rs:198  as_dir
+  kernel/src/desk/dir.rs:205  strip_dir
+  kernel/src/desk/dir.rs:215  scan_folder
+  kernel/src/desk/dir.rs:250  source_is_parent
+  kernel/src/desk/dir.rs:308  quiet
+  kernel/src/desk/dir.rs:457  filename_start
+  kernel/src/desk/dir.rs:839  new
+  kernel/src/desk/dir.rs:922  ptr
+  kernel/src/desk/dir.rs:1420  attr
+  kernel/src/desk/dir.rs:1571  mkdir
+  kernel/src/desk/dir.rs:1577  rename
+  kernel/src/desk/dir.rs:1703  drag_op
+  kernel/src/desk/dir.rs:1942  cstr_of
+  kernel/src/desk/dir.rs:2388  window_dir
+  kernel/src/desk/dir.rs:2397  window_dir_of
+  kernel/src/desk/dir.rs:2403  window_selected
+  kernel/src/desk/dir.rs:2421  dest_folder_dir
+  kernel/src/desk/dir.rs:2532  root_entries
+  kernel/src/desk/dir.rs:2548  select_all
+  kernel/src/desk/dir.rs:2576  selftest
+  kernel/src/desk/dir.rs:2678  base_join
+  kernel/src/desk/dir.rs:2683  fat_name
+  kernel/src/desk/dlg.rs:51  mk
+  kernel/src/desk/dlg.rs:73  edit_name
+  kernel/src/desk/dosbind.rs:154  sx
+  kernel/src/desk/ftype.rs:80  classify
+  kernel/src/desk/global.rs:196  patcol_desktop
+  kernel/src/desk/global.rs:203  set_patcol_desktop
+  kernel/src/desk/global.rs:210  set_patcol_all
+  kernel/src/desk/global.rs:218  patcol_all
+  kernel/src/desk/global.rs:320  default
+  kernel/src/desk/global.rs:582  new
+  kernel/src/desk/global.rs:868  with
+  kernel/src/desk/global.rs:883  screen_addr
+  kernel/src/desk/icons.rs:147  ig_of
+  kernel/src/desk/icons.rs:292  rasters
+  kernel/src/desk/icons.rs:308  char_spot
+  kernel/src/desk/inf.rs:121  write_inf_file
+  kernel/src/desk/inf.rs:288  default
+  kernel/src/desk/inf.rs:321  peek
+  kernel/src/desk/inf.rs:326  bump
+  kernel/src/desk/inf.rs:335  skip_spaces
+  kernel/src/desk/inf.rs:343  at_line_end
+  kernel/src/desk/inf.rs:349  hexval
+  kernel/src/desk/inf.rs:373  scan_icon
+  kernel/src/desk/inf.rs:486  parse_window
+  kernel/src/desk/inf.rs:563  push_hex2
+  kernel/src/desk/inf.rs:570  push_icon
+  kernel/src/desk/inf.rs:762  env_to_state
+  kernel/src/desk/inf.rs:785  state_to_env
+  kernel/src/desk/inf.rs:909  reset
+  kernel/src/desk/inf.rs:1003  apply_inf_bytes
+  kernel/src/desk/inf.rs:1047  cbuf_str
+  kernel/src/desk/inf.rs:1053  set_cbuf
+  kernel/src/desk/inf.rs:1060  filename_start
+  kernel/src/desk/inf.rs:1663  tag
+  kernel/src/desk/inf.rs:1673  from_tag
+  kernel/src/desk/inf.rs:1731  installed_doctype
+  kernel/src/desk/inf.rs:1840  session_with_type_defaults
+  kernel/src/desk/inf.rs:1932  lookup_association
+  kernel/src/desk/inf.rs:2350  mk
+  kernel/src/desk/inf.rs:2398  new
+  kernel/src/desk/inf.rs:2406  spec
+  kernel/src/desk/inf.rs:2410  width
+  kernel/src/desk/inf.rs:2696  push_dec
+  kernel/src/desk/inf.rs:2720  push_str
+  kernel/src/desk/inf.rs:2730  push_dec2
+  kernel/src/desk/inf.rs:3760  set_background
+  kernel/src/desk/inf.rs:4551  selftest
+  kernel/src/desk/inf.rs:4661  selftest_install
+  kernel/src/desk/inf.rs:4733  contains_subslice
+  kernel/src/desk/ins.rs:1097  cstr
+  kernel/src/desk/ins.rs:1104  mk
+  kernel/src/desk/ins.rs:1130  selftest
+  kernel/src/desk/insapp.rs:171  mk
+  kernel/src/desk/insapp.rs:188  set_flavor_radio
+  kernel/src/desk/insapp.rs:205  set_param_radio
+  kernel/src/desk/main.rs:949  filename_of
+  kernel/src/desk/main.rs:959  doc_full_path
+  kernel/src/desk/main.rs:970  native_path
+  kernel/src/desk/main.rs:1162  alert_accessory_not_launchable
+  kernel/src/desk/main.rs:1334  funkey_number
+  kernel/src/desk/main.rs:1768  default_flavor
+  kernel/src/desk/main.rs:1787  selected_native_program
+  kernel/src/desk/main.rs:2146  set_window_mask
+  kernel/src/desk/main.rs:2187  mask_normalize
+  kernel/src/desk/main.rs:2323  search_current_window
+  kernel/src/desk/main.rs:2495  set_sort
+  kernel/src/desk/main.rs:2567  do_close_window
+  kernel/src/desk/main.rs:2674  do_wfull
+  kernel/src/desk/main.rs:2760  arrow_msg
+  kernel/src/desk/main.rs:2773  slid_msg
+  kernel/src/desk/main.rs:3409  close_window
+  kernel/src/desk/main.rs:3429  g_desk
+  kernel/src/desk/main.rs:3434  open_handles
+  kernel/src/desk/main.rs:3454  set_sliders
+  kernel/src/desk/main.rs:3462  set_sliders_pub
+  kernel/src/desk/main.rs:3478  desk_clear_all
+  kernel/src/desk/main.rs:3496  refresh_top
+  kernel/src/desk/main.rs:3512  desk_verify_last
+  kernel/src/desk/main.rs:3519  redraw_window
+  kernel/src/desk/main.rs:3530  is_drive_root
+  kernel/src/desk/main.rs:3537  parent_spec
+  kernel/src/desk/main.rs:3551  child_spec
+  kernel/src/desk/main.rs:3597  fmt_u64
+  kernel/src/desk/menu.rs:465  label_len
+  kernel/src/desk/menu.rs:605  mk
+  kernel/src/desk/menu.rs:624  build_menu
+  kernel/src/desk/menu.rs:792  entry_label
+  kernel/src/desk/menu.rs:800  screen_dims
+  kernel/src/desk/menu.rs:816  install_menu_bar
+  kernel/src/desk/menu.rs:824  tree_ptr
+  kernel/src/desk/menu.rs:830  title_obj
+  kernel/src/desk/menu.rs:838  item_obj
+  kernel/src/desk/menu.rs:847  item_of_obj
+  kernel/src/desk/menu.rs:859  item_title
+  kernel/src/desk/menu.rs:889  item_disabled
+  kernel/src/desk/menu.rs:927  shortcut_key
+  kernel/src/desk/menu.rs:933  set_shortcut_key
+  kernel/src/desk/menu.rs:943  shortcuts
+  kernel/src/desk/menu.rs:958  shortcut_item
+  kernel/src/desk/mod.rs:177  gem_trap
+  kernel/src/desk/mod.rs:201  new
+  kernel/src/desk/mod.rs:289  objc_draw_tree
+  kernel/src/desk/mod.rs:304  objc_find
+  kernel/src/desk/mod.rs:330  wind_find
+  kernel/src/desk/mod.rs:339  wind_get_work
+  kernel/src/desk/mod.rs:345  wind_get_grect
+  kernel/src/desk/mod.rs:359  wind_get_rect
+  kernel/src/desk/mod.rs:365  wind_get_top
+  kernel/src/desk/mod.rs:374  wind_set_grect
+  kernel/src/desk/mod.rs:387  wind_set_int
+  kernel/src/desk/mod.rs:397  wind_set_ptr
+  kernel/src/desk/mod.rs:425  wind_create
+  kernel/src/desk/mod.rs:437  wind_open
+  kernel/src/desk/mod.rs:448  wind_close
+  kernel/src/desk/mod.rs:455  wind_delete
+  kernel/src/desk/mod.rs:522  graf_rubberbox
+  kernel/src/desk/mod.rs:659  wind_calc_work_width
+  kernel/src/desk/mod.rs:674  menu_bar
+  kernel/src/desk/mod.rs:709  menu_tnormal
+  kernel/src/desk/mod.rs:722  form_alert
+  kernel/src/desk/mod.rs:737  form_do
+  kernel/src/desk/mod.rs:790  form_dial
+  kernel/src/desk/mod.rs:813  objc_draw_dialog
+  kernel/src/desk/model.rs:235  is_dir
+  kernel/src/desk/model.rs:240  name_bytes
+  kernel/src/desk/model.rs:334  pn_sort
+  kernel/src/desk/model.rs:415  default
+  kernel/src/desk/model.rs:430  scan_dir
+  kernel/src/desk/model.rs:511  fnode_from_dta
+  kernel/src/desk/redraw.rs:177  win_shwall_nocursor
+  kernel/src/desk/redraw.rs:194  snapshot_window_handles
+  kernel/src/desk/redraw.rs:254  rc_intersect
+  kernel/src/desk/vdibind.rs:60  vdi_trap
+  kernel/src/desk/vdibind.rs:84  new
+  kernel/src/desk/vdibind.rs:90  call
+  kernel/src/desk/win.rs:127  default
+  kernel/src/desk/win.rs:148  free_slot
+  kernel/src/desk/win.rs:173  fill_cstr
+  kernel/src/desk/win.rs:301  win_count
+  kernel/src/desk/win.rs:491  build_item
+  kernel/src/desk/win.rs:565  root_of
+  kernel/src/desk/win.rs:574  win_slot
+  kernel/src/desk/win.rs:712  clear_obj_selection
+  kernel/src/desk/win.rs:777  count_selected
+  kernel/src/desk/win.rs:826  current_sliders
+  kernel/src/desk/win.rs:930  ceil_div
+  kernel/src/desk/win.rs:939  mul_div
+  kernel/src/desk/win.rs:948  put
+  kernel/src/desk/win.rs:958  fmt_u32
+  kernel/src/desk/xbiosbind.rs:61  xbios_trap
+newtos:
+
+DESK-CITE: fns=530 cited=346 newtos=0 uncited=184

@@ -450,9 +450,9 @@ fn sync_handler(frame: &mut ExceptionFrame) {
     // `desk/deskmain.c` (`docs/analysis/desktop-userspace-plan-v2.md` §5 U1 and
     // measure 4 of §6.4). `pre_dispatch` flushes the RAM trace to C: at each
     // `evnt_multi` entry; `post_dispatch` records the completed call. Both fold
-    // away when `QED_SVC_TRACE` is false, so this is a no-op with the tool
-    // disabled — which is its committed state.
-    if crate::dbg_qedtrace::QED_SVC_TRACE {
+    // away when `SVC_TRACE` is false (no QED mode, no `svc-seq-trace`), so this
+    // is a no-op with the tool disabled — which is its committed state.
+    if crate::dbg_qedtrace::SVC_TRACE {
         crate::dbg_qedtrace::pre_dispatch(class, &args);
     }
 
@@ -598,8 +598,8 @@ fn sync_handler(frame: &mut ExceptionFrame) {
 
     // TEMPORARY `svc` tracer (debug tooling): record the completed call, from
     // either exception level (see the `pre_dispatch` hook above). Folds away
-    // when `QED_SVC_TRACE` is false.
-    if crate::dbg_qedtrace::QED_SVC_TRACE {
+    // when `SVC_TRACE` is false.
+    if crate::dbg_qedtrace::SVC_TRACE {
         crate::dbg_qedtrace::post_dispatch(class, &args, result);
     }
 

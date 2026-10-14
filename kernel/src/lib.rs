@@ -82,8 +82,8 @@ pub mod vdi_backend;
 pub mod vdi_client;
 
 // TEMPORARY debug tooling — NOT for product history. Gated behind
-// `dbg_qedtrace::QED_SVC_TRACE`; remove the module + its exception hooks to
-// drop it entirely.
+// `dbg_qedtrace::SVC_TRACE` (QED mode / `svc-seq-trace` feature); remove the
+// module + its exception hooks to drop it entirely.
 pub mod dbg_qedtrace;
 
 // ---------------------------------------------------------------------------

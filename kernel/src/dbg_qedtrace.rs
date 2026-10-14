@@ -57,6 +57,37 @@
 //! latest full trace and survives even if the following blocking wait never
 //! returns (e.g. no input under QEMU). FS errors are swallowed silently — the
 //! flush never panics or hangs the app.
+//!
+//! ## Sequence mode — the call-sequence oracle (cargo feature `svc-seq-trace`)
+//!
+//! Everything above describes the tool as built for the QED hunt: the
+//! per-cycle buffer is **cleared** at every `evnt_multi` entry, a keystroke
+//! latch freezes it, and the window-geometry calls are **moved** into a kept
+//! prologue at the top of the file. That makes it useless as an oracle for
+//! *the order of calls* — DESK43 U1 had to switch the redirection off by a
+//! scratch patch (`TASK/DESK43-U1-STATUS-DONE.MD` §5 point 2), and the U9
+//! equality proof (guard G2 of `docs/analysis/desk43-u5-u10-review-2026-10-14.md`
+//! §4) needs exactly that order, recorded from a run driven by the key
+//! injector.
+//!
+//! Built with `--features svc-seq-trace` ([`SEQ_MODE`]), the tracer records
+//! instead:
+//!
+//! * every call **in completion order** — no geometry prologue, no clearing,
+//!   no keystroke latch;
+//! * each call line prefixed with its caller: `K` for a kernel-space caller
+//!   (the built-in desktop's `svc` from EL1), `U<slot>` for an EL0 process
+//!   (its process-table slot), so one client's sequence can be cut out of the
+//!   interleaving with accessories;
+//! * a `>> evnt_multi entered` line at every `evnt_multi` entry — a blocking
+//!   wait that never returns (headless QEMU) has no completion line, and this
+//!   is where the client reached its event loop;
+//! * the whole buffer, rewritten at each `evnt_multi` entry, to
+//!   `C:\SVCSEQ.LOG` (512 KiB, then a `TRUNCATED` marker).
+//!
+//! `tools/svc-seq.py` turns the file into a diffable sequence. The feature is
+//! off by default; without it and with [`QED_SVC_TRACE`] `false` both hooks
+//! fold away and the product is unchanged.
 
 use core::cell::UnsafeCell;
 use core::fmt::Write;
@@ -65,17 +96,36 @@ use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use tos_api::bdos::process::{current_abi, Abi};
 use tos_api::trap::{TrapArgs, TrapClass};
 
-/// Master gate for the QED syscall tracer. Set to `false` to compile the tool
-/// out completely (both hook sites fold away, no runtime effect). This is the
-/// single obvious switch the task asks for.
+/// Gate of the tracer's QED-hunt mode (module doc). Set to `true` by hand for
+/// such a hunt; `false` compiles that mode out completely.
 pub const QED_SVC_TRACE: bool = false;
 
-/// RAM trace buffer size (96 KiB) — generous for a full QED startup + a few
-/// idle-loop iterations; excess is dropped after the truncation marker.
-const BUF_LEN: usize = 96 * 1024;
+/// Sequence mode — the call-sequence oracle (module doc, "Sequence mode").
+/// On with the kernel's cargo feature `svc-seq-trace`, off by default.
+pub const SEQ_MODE: bool = cfg!(feature = "svc-seq-trace");
+
+/// The two modes keep, clear and order the buffer differently; one at a time.
+const _: () = assert!(
+    !(QED_SVC_TRACE && SEQ_MODE),
+    "dbg_qedtrace: QED_SVC_TRACE and the svc-seq-trace feature are exclusive"
+);
+
+/// Master gate for both exception-handler hooks: with neither mode on, both
+/// hook sites fold away and there is no runtime effect.
+pub const SVC_TRACE: bool = QED_SVC_TRACE || SEQ_MODE;
+
+/// RAM trace buffer size. QED mode: 96 KiB — generous for a full QED startup
+/// plus a few idle-loop iterations. Sequence mode: 512 KiB — a whole desktop
+/// start plus an injected session, never cleared. Excess is dropped after the
+/// truncation marker.
+const BUF_LEN: usize = if SEQ_MODE { 512 * 1024 } else { 96 * 1024 };
 
 /// Written once when the buffer is nearly full, then all further appends stop.
 const TRUNC_MARK: &[u8] = b"\n*** QEDTRACE TRUNCATED ***\n";
+
+/// Number of `evnt_multi` entries seen in sequence mode (numbers the
+/// `>> evnt_multi entered` lines).
+static SEQ_WAITS: AtomicU32 = AtomicU32::new(0);
 
 /// The bounded trace buffer + write cursor + one-shot truncated flag.
 struct TraceBuf {
@@ -217,10 +267,21 @@ macro_rules! trace {
 /// Flushes the buffer at each `evnt_multi` entry so the startup trace reaches
 /// C: even if the ensuing blocking wait never returns.
 pub fn pre_dispatch(class: TrapClass, args: &TrapArgs) {
-    if !QED_SVC_TRACE {
+    if !SVC_TRACE {
         return;
     }
     if IN_TRACE.swap(true, Ordering::AcqRel) {
+        return;
+    }
+    if SEQ_MODE {
+        // Sequence mode: mark the wait, write everything so far, keep it all.
+        if is_evnt_multi(class, args) {
+            let n = SEQ_WAITS.fetch_add(1, Ordering::AcqRel) + 1;
+            caller_tag(args);
+            trace!(">> evnt_multi entered (#{})\n", n);
+            flush();
+        }
+        IN_TRACE.store(false, Ordering::Release);
         return;
     }
     if is_evnt_multi(class, args) && !FROZEN.load(Ordering::Acquire) {
@@ -263,14 +324,37 @@ pub fn pre_dispatch(class: TrapClass, args: &TrapArgs) {
 /// Appends the one-line record (plus decoded detail for the key calls) for the
 /// call just completed.
 pub fn post_dispatch(class: TrapClass, args: &TrapArgs, result: i64) {
-    if !QED_SVC_TRACE {
+    if !SVC_TRACE {
         return;
     }
     if IN_TRACE.swap(true, Ordering::AcqRel) {
         return;
     }
+    if SEQ_MODE {
+        caller_tag(args);
+    }
     record(class, args, result);
     IN_TRACE.store(false, Ordering::Release);
+}
+
+/// Sequence mode: the caller column in front of a call line — `K ` for a
+/// kernel-space caller (the built-in desktop at EL1), `U<slot> ` for an EL0
+/// process. Taken after dispatch for a completed call, so for `Pexec`/`Pterm`
+/// it may already name the process that runs next.
+fn caller_tag(args: &TrapArgs) {
+    match args.space {
+        tos_api::uaccess::Space::Kernel => trace!("K   "),
+        tos_api::uaccess::Space::User => {
+            // `running_slot()` is `MAX_PROCESSES` (its private `NONE`) when
+            // `RUN` names no slot.
+            let slot = tos_api::bdos::process::sched::running_slot();
+            if slot >= tos_api::bdos::process::MAX_PROCESSES {
+                trace!("U?  ");
+            } else {
+                trace!("U{:<2} ", slot);
+            }
+        }
+    }
 }
 
 /// Whether this GEM trap is an AES `evnt_multi` (selector 200, opcode 25),
@@ -321,10 +405,12 @@ fn record(class: TrapClass, args: &TrapArgs, result: i64) {
             let block = args.regs[1];
             match sel {
                 200 => {
-                    // Window geometry goes to the kept prologue, everything
-                    // else to the per-cycle buffer.
+                    // QED mode: window geometry goes to the kept prologue,
+                    // everything else to the per-cycle buffer. Sequence mode
+                    // keeps every call where it happened.
                     let op = aes_opcode(block);
-                    let geometry = matches!(op, 100 | 101 | 108) || is_work_query(block, op);
+                    let geometry = !SEQ_MODE
+                        && (matches!(op, 100 | 101 | 108) || is_work_query(block, op));
                     if geometry {
                         PRO_MODE.store(true, Ordering::Release);
                     }
@@ -504,7 +590,7 @@ fn record_aes(block: u64) {
                 fired, io(1), io(2), io(3) as u16, io(4) as u16, io(5) as u16, io(6)
             );
             const MU_KEYBD: u16 = 0x0001;
-            if fired & MU_KEYBD != 0 {
+            if !SEQ_MODE && fired & MU_KEYBD != 0 {
                 KEY_SEEN.store(true, Ordering::Release);
                 trace!("    *** keystroke -- this cycle is the one being hunted ***\n");
             }
@@ -728,8 +814,9 @@ fn flush() {
     let data_ptr = BUF.data.get() as *const u8 as u64;
     let pro_ptr = PRO.data.get() as *const u8 as u64;
 
-    // Fcreate("C:\QEDTRACE.LOG", 0) — create/truncate for writing.
-    const PATH: &[u8] = b"C:\\QEDTRACE.LOG\0";
+    // Fcreate("C:\QEDTRACE.LOG", 0) — create/truncate for writing
+    // (sequence mode: C:\SVCSEQ.LOG).
+    const PATH: &[u8] = if SEQ_MODE { b"C:\\SVCSEQ.LOG\0" } else { b"C:\\QEDTRACE.LOG\0" };
     let cargs = TrapArgs {
         regs: [PATH.as_ptr() as u64, 0, 0, 0, 0, 0, 0, 0],
         func: 0x3C,
@@ -832,6 +919,9 @@ fn aes_name(op: i16) -> &'static str {
         78 => "graf_mouse",
         79 => "graf_mkstate",
         30 => "menu_bar",
+        31 => "menu_icheck",
+        32 => "menu_ienable",
+        35 => "menu_register",
         40 => "objc_add",
         42 => "objc_draw",
         43 => "objc_find",

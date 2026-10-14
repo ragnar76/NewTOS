@@ -1,0 +1,40 @@
+=== case 1: no desktop source
+desk-drift-probe: no desktop source found: kernel/src/desk/ does not exist and no Cargo.toml declares name = "desktop". Refusing to report an empty 0 — if the desktop has moved, point DESK_SRC at it.
+case 1 exit=1
+=== case 2: desktop crate
+NewTOS desktop drift probe — /tmp/m5j/u5a/probe-fixture @ ? (0 modified file(s))
+desktop source: desktop/src/ (crate desktop/Cargo.toml, 21 .rs file(s), subdirectories included)
+
+A  desktop/src/ -> tos_api::                                22 code line(s)
+    tos_api::aes::object                                    13
+    tos_api::vdi::font                                       9
+    tos_api::x::y                                            1
+      desktop/src/sub/x.rs:10            fn f() { let s = b"c:/*.txt"; let t = tos_api::x::y::z(); unsafe { } }
+      desktop/src/sub/x.rs:3             use tos_api::{
+
+B  desktop/src/ -> kernel:: (kernel internals)               1 code line(s)
+    kernel::a                                                1
+    kernel::c                                                1
+      desktop/src/sub/x.rs:2             use kernel::{a::b, c};
+
+C  kernel/ -> desktop crate (code + kernel/Cargo.toml)       4 code line(s)
+    Cargo dependency desktop                                 1
+    desktop::reset                                           2
+    desktop::run                                             1
+      kernel/Cargo.toml:87               desktop = …
+      kernel/src/lib.rs:606              desktop::reset();
+      kernel/src/shell_loop.rs:291       desktop::reset();
+      kernel/src/shell_loop.rs:292       desktop::run();
+
+D  desktop/Cargo.toml -> deps other than newtos-gem/tos-types   2 code line(s)
+    spin                                                     1
+    tos-api                                                  1
+      desktop/Cargo.toml:10              dependency spin
+      desktop/Cargo.toml:8               dependency tos-api
+
+unsafe  in desktop/src/                                     25 code line(s)   [not in TOTAL; U5a baseline 24, must not rise]
+      desktop/src/sub/x.rs:10            fn f() { let s = b"c:/*.txt"; let t = tos_api::x::y::z(); unsafe { } }
+
+DRIFT-PROBE TOTAL: 29
+desk-drift-probe: ERROR: unsafe lines rose from 24 to 25 (must not rise; see -v)
+case 2 exit=3

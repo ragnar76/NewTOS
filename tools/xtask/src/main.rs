@@ -55,6 +55,10 @@ mod kernel_emmc_xfer;
 #[path = "../../../kernel/src/drivers/bcm2711/clock_tags.rs"]
 mod kernel_clock_tags;
 
+/// DESK43 U5a (guard G3) — the desktop's integer constants against a
+/// checked-in snapshot of EmuTOS' `#define`s.
+mod emutos_consts;
+
 /// ARCH03 E8b — the loader's ELF parser, compiled here by path (it is pure,
 /// `no_std`, dependency-free) so `xtask prgflags` reads the PRGFLAGS note
 /// exactly the way the kernel does.
@@ -77,6 +81,7 @@ fn main() -> ExitCode {
     let rest: Vec<String> = args.collect();
     let result = match cmd.as_str() {
         "build" => cmd_build(&rest),
+        "emutos-consts" => emutos_consts::cmd(&workspace_root(), &rest),
         "gen-font" => cmd_gen_font(),
         "gen-fsel-rsc" => cmd_gen_fsel_rsc(),
         "prgflags" => cmd_prgflags(&rest),
@@ -105,6 +110,11 @@ Usage: cargo xtask <command> [options]
 
 Commands:
   build --board {{rpi4|qemu-virt}} [--release] [--features a,b]
+  emutos-consts [--update] [-v]  — compare the desktop's integer constants
+                                   with EmuTOS' #defines of the same name
+                                   (snapshot tools/xtask/emutos-defines.snapshot;
+                                   --update regenerates it from a local
+                                   references/emutos; DESK43 U5a, guard G3)
   gen-font                       — extract the EmuTOS 6x6/8x8/8x16 ST system
                                    fonts into tos-api/src/vdi/font_data.rs
   gen-fsel-rsc                   — convert the EmuTOS AES file-selector

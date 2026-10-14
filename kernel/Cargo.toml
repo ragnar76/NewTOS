@@ -36,6 +36,14 @@ initinfo-diag = []
 # by default; build with `--features gemdos-trace` to instrument the GEMDOS
 # trap path (what an application actually asks the file system for).
 gemdos-trace = ["tos-api/gemdos-trace"]
+# AES/GEMDOS call-sequence oracle (DESK43 U5a, guard G2 prerequisite): the
+# temporary `svc` tracer `dbg_qedtrace` in sequence mode -- every `svc` from any
+# caller recorded in completion order with a caller column (K = kernel/EL1
+# desktop, U<slot> = EL0 process), written to `C:\SVCSEQ.LOG` at every
+# `evnt_multi` entry; `tools/svc-seq.py` extracts the diffable sequence. Off by
+# default (the hooks fold away); `cargo xtask build --board rpi4 --features
+# svc-seq-trace`. Writes to C:, so only for a test card.
+svc-seq-trace = []
 # microSD / FAT / GEMDOS-file self-test build (board-rpi4 / QEMU raspi4b):
 # runs `selftest_emmc::run()` right after the card is mounted at boot -- the
 # Phase-09 block-device, FAT, Fopen/Fsfirst/Dsetpath, Fattrib/Frename/Fdatime
