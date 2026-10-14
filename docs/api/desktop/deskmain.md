@@ -714,7 +714,7 @@ Step by step, precisely as the source has it:
      (`:982-983`) — refreshes that window's info line (selected-count/size
      or whole-directory count/size, `deskwin.c:867-906`) since a click may
      have changed the selection. **NewTOS (A110, 2026-09-23):** implemented
-     at the same place in `kernel/src/desk/main.rs` `hndl_button`, together
+     at the same place in `programs/desktop/src/main.rs` `hndl_button`, together
      with the `STINFST2` format string and the other three selection-change
      call sites — see `deskwin.md` § `win_sinfo`.
 6. **Double click (`clicks==2`, `:985-1004`):** `act_bsclick(...,TRUE)`
@@ -1141,7 +1141,7 @@ one is already on record** (`docs/api/desktop.md`,
 | `CONF_WITH_EJECT` | `EJCTITEM` | **Excluded** — Apple-Lisa-only auto-eject, no Atari/AArch64 equivalent (`docs/api/desktop.md` reconciliation) |
 | `WITH_CLI` | `CLIITEM` (File→Execute EmuCON) | **On** — NewTOS ships a shell (`crate::shell::run_console`); wired to the menu 2026-09-23, DESK06 (see the notes below) |
 | `CONF_WITH_SHUTDOWN` | `QUITITEM` | **On (halt-only)** — `docs/HARDWARE-PROFILE.md:406` |
-| `CONF_WITH_SIZE_TO_FIT` | `FITITEM`, `g_ifit`/`g_icols`, horizontal slider messages | **Open question** — current `kernel/src/desktop.rs` has a `size_to_fit()` (vertical only, `:1619-1637`); full EmuTOS semantics (horizontal too) not confirmed decided |
+| `CONF_WITH_SIZE_TO_FIT` | `FITITEM`, `g_ifit`/`g_icols`, horizontal slider messages | **Open question** — current `programs/desktop/srctop.rs` has a `size_to_fit()` (vertical only, `:1619-1637`); full EmuTOS semantics (horizontal too) not confirmed decided |
 | `CONF_WITH_BACKGROUNDS` | `BACKGRND` item, `g_patcol` | **On** — `docs/api/desktop.md:71-72`; NewTOS's `desktop.rs` `G_PATCOL`/`set_background` already implements this |
 | `CONF_WITH_DESKTOP_CONFIG` | `CONFITEM` | **On** — `docs/api/desktop.md:69` |
 | `CONF_WITH_READ_INF` | `READITEM`, desktop-restart path | **On, minus the restart** — the `app_read_inf()` worker (selector, `#R`/`#E` signature, `STFILENF`/`STINVINF`) is implemented (DESK14, 2026-09-23); the `restart_desktop` half is deferred to the desktop's move into user scope (`TASK/DESK14.md`) and replaced by an in-place re-apply |
@@ -1159,7 +1159,7 @@ one is already on record** (`docs/api/desktop.md`,
 exercises but for which no prior NewTOS ADR/decision was found in
 `docs/`. Per CLAUDE.md Rule 3, these are **not** decided in this spec —
 the team lead should resolve them (most are small, low-risk "keep or cut
-this menu item" calls) before or during `kernel/src/desk/` implementation.
+this menu item" calls) before or during `programs/desktop/src/` implementation.
 
 ---
 
@@ -1171,13 +1171,13 @@ this menu item" calls) before or during `kernel/src/desk/` implementation.
 > only way to see anything. With the context save in place (DESK09) it is
 > gone: the desktop starts bare unless `NEWDESK.INF` names a window, which
 > is what EmuTOS does (`desk/deskapp.c:171-180`, its built-in INF carries
-> four `#W` lines with empty paths). `kernel/src/desk/mod.rs`, after
+> four `#W` lines with empty paths). `programs/desktop/src/lib.rs`, after
 > `cnx_get`.
 
 
 ### The context save area — `CSAVE` / `cnx_put` / `cnx_get` (DESK09, 2026-09-23)
 
-`G.g_cnxsave` is `DeskState::g_cnxsave` (`kernel/src/desk/global.rs`),
+`G.g_cnxsave` is `DeskState::g_cnxsave` (`programs/desktop/src/global.rs`),
 a `CSave { cs_view, cs_sort, cs_sizefit, cs_wnode: [WSave; NUM_WNODES] }`
 with `WSave { x_save, y_save, w_save, h_save, hsl_save, vsl_save,
 pth_save }` — the whole `WSAVE` field set (`deskapp.h:120-131`), and the
@@ -1292,10 +1292,10 @@ worker side of `READITEM` — `fsel_exinput` prompt, `#R`/`#E` signature,
 
 ## NewTOS implementation notes — `do_deskmenu`'s About box (DESK01)
 
-`kernel/src/desk/main.rs::do_deskmenu` had one case and no dialog: it put a
+`programs/desktop/src/main.rs::do_deskmenu` had one case and no dialog: it put a
 `form_alert` up with a NewTOS one-liner where EmuTOS shows the `ADDINFO`
 resource tree. DESK01 replaces the alert with a real dialog,
-`kernel/src/desk/inf.rs::do_aboutdesk`, built and run exactly like every other
+`programs/desktop/src/inf.rs::do_aboutdesk`, built and run exactly like every other
 `desk/` dialog (DESK08's `inf_show` chain — `form_center` →
 `form_dial(FMD_START)` → `objc_draw` → `form_do` → `form_dial(FMD_FINISH)` →
 message drain).
@@ -1326,7 +1326,7 @@ replaces the **content**:
 | 10–13 | `G_STRING` ×4 | the `'GPLed'` chain | `desk::inf::CREDIT_GPL` / `CREDIT_DRI` / `CREDIT_CALDERA` / `CREDIT_LINEO` |
 | 14 | `G_BUTTON` | ` OK ` (`SELECTABLE\|DEFAULT\|EXIT\|LASTOB`) | = `DEOK` (EmuTOS 16; no logos here) |
 
-The three strings are **the desktop's own constants in `kernel/src/desk/inf.rs`**;
+The three strings are **the desktop's own constants in `programs/desktop/src/inf.rs`**;
 `kernel/src/initinfo.rs` keeps same-text copies for the boot screen. Until
 DESK43 U4 (version, notice, and the authorship line dropped on 2026-10-09) and X03 (machine line) the box read the
 `initinfo` symbols, on the argument that EmuTOS shares one source —
@@ -1379,7 +1379,7 @@ pixels).
 `deskmain.c` owns four of the six pieces the Desktop-configuration dialog
 edits; the dialog itself is in [`deskinf.md`](deskinf.md#newtos-implementation-notes--inf_conf-desk05),
 which also carries the measurement. All four now exist in
-`kernel/src/desk/menu.rs`.
+`programs/desktop/src/menu.rs`.
 
 | EmuTOS | NewTOS |
 |---|---|
@@ -1811,7 +1811,7 @@ Widths now, from the source rather than from a picture: `17+3+1 = 21`,
 ### Measured
 
 `measurements/measurement-2026-09-25-desk-rest/` §2 — the same action list on two kernels
-that differ in `kernel/src/desk/menu.rs` alone. `[probe] box N abs (x,y) WxH`,
+that differ in `programs/desktop/src/menu.rs` alone. `[probe] box N abs (x,y) WxH`,
 8 px per cell: Desk 176 → 168 px (22 → 21), File 184 → 176 px (23 → 22), View
 184 px (23) and Options 240 px (30) unchanged. Screendumps of all four
 drop-downs in both builds.

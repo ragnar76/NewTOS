@@ -17,7 +17,7 @@
 //! read as an *OK* overwrites a file the user asked to keep. If none were,
 //! `inf_gindex` returns `-1` and `CAOK - 1` is the editable name field.
 //!
-//! `kernel/src/desk/dir.rs` reproduces both reads, so both shapes are pinned
+//! `programs/desktop/src/dir.rs` reproduces both reads, so both shapes are pinned
 //! here, driven through the real dispatcher with `form_button` (AES 56) — the
 //! same entry `form_do`'s inner loop uses for a click.
 //!
@@ -48,7 +48,7 @@ const SELECTED: u16 = 0x0001;
 
 const NIL: i16 = -1;
 
-/// Opaque dialog-box colour word, as `kernel/src/desk/inf.rs` uses.
+/// Opaque dialog-box colour word, as `programs/desktop/src/inf.rs` uses.
 const BOX_SPEC: u64 = (1 << 16) | 0x1100;
 
 static LBL: &[u8] = b" x \0";
@@ -131,7 +131,7 @@ fn form_button(pb: &mut Pb, tree: &mut [Object], obj: usize) -> (i16, i16) {
 
 /// `inf_gindex` (`util/optimize.c:134-147`) — the index, counted from the
 /// start, of the first `SELECTED` object in `tree[base .. base+n]`, or `-1`.
-/// Reproduced from `kernel/src/desk/inf.rs`.
+/// Reproduced from `programs/desktop/src/inf.rs`.
 fn inf_gindex(tree: &[Object], base: usize, n: usize) -> i16 {
     for (k, obj) in tree.iter().skip(base).take(n).enumerate() {
         if obj.ob_state & SELECTED != 0 {

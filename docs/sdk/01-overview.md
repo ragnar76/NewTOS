@@ -41,19 +41,19 @@ parses the ELF directly; there is no flat-binary conversion
   `tos-api/src/bdos/process/loader.rs` `image_end_of`, `arena.rs`.
 
 The file extension decides how the desktop launches the program (ADR-018,
-`docs/MEMORY.md:1004-1107`; classifier `kernel/src/desk/ftype.rs:50-70`):
+`docs/MEMORY.md:1004-1107`; classifier `programs/desktop/src/ftype.rs:50-70`):
 
-| Extension | Role | m68k analogue | Launcher behaviour (`kernel/src/desk/main.rs:467-500`) |
+| Extension | Role | m68k analogue | Launcher behaviour (`programs/desktop/src/main.rs:467-500`) |
 |-----------|------|---------------|---------------------------------------------------------|
 | `.NAP` | native GEM **A**pplication | `.PRG` / `.APP` | desktop relinquishes the screen (`desktop_relinquish`), runs the program, rebuilds itself on `Pterm` (`run_gem_app`, `:524-529`) |
 | `.NCP` | native **C**onsole **P**rogram | `.TOS` | `fbcon::clear_and_home()`, run, wait for a key, redraw the desktop |
-| `.NTP` | native, **T**akes **P**arameters | `.TTP` (**not** `.GTP` — decided 2026-09-26, DESK44) | a **console** program with a command tail: `isgraf = FALSE`, so `sh_chgrf` takes the screen to alpha before it runs (`main.rs:1068`, `gemshlib.c:513-523`). A double-click puts EmuTOS's `ADOPENAP` box up first and passes what was typed there as the tail (`opn_appl`, `deskinf.c:1250-1271`, NewTOS `kernel/src/desk/inf.rs`); *Cancel* starts nothing |
+| `.NTP` | native, **T**akes **P**arameters | `.TTP` (**not** `.GTP` — decided 2026-09-26, DESK44) | a **console** program with a command tail: `isgraf = FALSE`, so `sh_chgrf` takes the screen to alpha before it runs (`main.rs:1068`, `gemshlib.c:513-523`). A double-click puts EmuTOS's `ADOPENAP` box up first and passes what was typed there as the tail (`opn_appl`, `deskinf.c:1250-1271`, NewTOS `programs/desktop/src/inf.rs`); *Cancel* starts nothing |
 
 The extension is a desktop/shell convention, **not** part of the TOS syscall
 ABI (`ftype.rs:16-17`). The classic suffixes `.PRG/.APP/.TOS/.TTP/.GTP` are
 reserved for real m68k binaries; double-clicking one today shows the alert
 *"This is an m68k Atari program. The m68k emulator is not available yet."*
-(`kernel/src/desk/main.rs:342-347`).
+(`programs/desktop/src/main.rs:342-347`).
 
 Only `.NCP` files are auto-run from `C:\AUTO\` at boot
 (`kernel/src/launch.rs:216-226`: `FileType::Native(Flavor::Console)` only);

@@ -10,7 +10,8 @@
 #   tools/desk-cite-list.sh                 # per-file table + summary line
 #   tools/desk-cite-list.sh -v              # …plus every uncited fn (file:line name)
 #   tools/desk-cite-list.sh --since <rev>   # only fns touched since <rev>
-#                                           # (git diff; untracked files count
+#                                           # (git diff -M, renames followed;
+#                                           # untracked files count
 #                                           # as touched entirely) — the list a
 #                                           # unit's receipt carries
 #   tools/desk-cite-list.sh -q              # only the summary line
@@ -100,8 +101,14 @@ trap 'rm -rf "$TMP"' EXIT
 : >"$TMP/changed"
 if [ -n "$SINCE" ]; then
     git rev-parse --verify -q "$SINCE^{commit}" >/dev/null || die "unknown revision: $SINCE"
-    git diff -U0 "$SINCE" -- "$DESK_DIR" | awk '
-        /^\+\+\+ / { f = substr($0, 5); sub(/^b\//, "", f); next }
+    # Rename-aware over the whole tree, then filtered to the desktop source: a
+    # file that moved into $DESK_DIR since <rev> (DESK43 U8b: kernel/src/desk/
+    # -> programs/desktop/src/) counts only its changed lines, not every line
+    # (a pathspec of the new directory alone would hide the old path from
+    # rename detection and report each moved file as entirely new).
+    git diff -U0 -M "$SINCE" | awk -v dir="$DESK_DIR/" '
+        /^\+\+\+ / { f = substr($0, 5); sub(/^b\//, "", f); if (index(f, dir) != 1) f = ""; next }
+        /^@@ / && f == "" { next }
         /^@@ / {
             h = $0; sub(/^@@ -[0-9,]+ \+/, "", h); sub(/ .*$/, "", h)
             n = split(h, p, ","); start = p[1] + 0; cnt = (n > 1) ? p[2] + 0 : 1

@@ -215,7 +215,7 @@ const WIND_OPEN: i16 = 101;
 const WIND_SET: i16 = 105;
 
 /// `WF_TOP` (`aesdefs.h`) — the field `hndl_button` sets on the first click of
-/// a double-click (`kernel/src/desk/main.rs`, EmuTOS `desk/deskmain.c`).
+/// a double-click (`programs/desktop/src/main.rs`, EmuTOS `desk/deskmain.c`).
 const WF_TOP: i16 = 10;
 
 // Window kinds (`aesdefs.h`).
@@ -328,7 +328,7 @@ fn drain(pb: &mut Aespb, pid: i16) -> usize {
 }
 
 /// The desktop's half of `run_gem_app` **before** the child runs
-/// (`kernel/src/desk/main.rs`, `desktop_relinquish`), in its order. EmuTOS's
+/// (`programs/desktop/src/main.rs`, `desktop_relinquish`), in its order. EmuTOS's
 /// desktop epilog is `menu_bar(NULL,0)`, `wind_set(DESKWH,WF_NEWDESK,NULL,0,0)`,
 /// `appl_exit()` (`desk/deskmain.c:2159-2166`); the first two are draws that do
 /// not touch the descriptor, and `appl_exit` is last in EmuTOS as it is here —
@@ -339,7 +339,7 @@ fn desktop_relinquish(pb: &mut Aespb) {
 }
 
 /// The desktop's half of `run_gem_app` after the child `Pterm`s
-/// (`kernel/src/desk/main.rs`, `desktop_resume`).
+/// (`programs/desktop/src/main.rs`, `desktop_resume`).
 fn desktop_resume() {
     tos_api::aes::window::restore_windows();
 }
@@ -446,7 +446,7 @@ fn the_launch_boundary_hands_the_child_a_reset_descriptor() {
     wind_top(&mut pb, w1);
     assert_eq!(pending(desk_pid), 1, "phase 3: setup, one pending WM_REDRAW");
 
-    // Now a console program (`.NCP`) is launched. `kernel/src/desk/main.rs`
+    // Now a console program (`.NCP`) is launched. `programs/desktop/src/main.rs`
     // sends it straight to `launch::run_program_with_tail` — no GEM screen
     // handoff, so no `appl_exit` — and it never calls `appl_init` itself.
     // `sh_ldapp`'s cleanup must therefore find AP_OPEN *clear* and do nothing:

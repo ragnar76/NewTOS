@@ -48,7 +48,7 @@ const INF_SIZE: usize = 300;
 
 /// The `.INF` file the AES reads at boot. EmuTOS uses `EMUDESK.INF`
 /// (`INF_FILE_NAME`); NewTOS uses the Atari-classic name, the same file the
-/// desktop reads for its own `#Q` copy (`kernel/src/desk/inf.rs:51`).
+/// desktop reads for its own `#Q` copy (`programs/desktop/src/inf.rs:51`).
 const INF_PATH: &str = "C:\\NEWDESK.INF";
 
 /// `ob_spec` of the built-in `DESKTOP` tree's ROOT — the literal `4419L` of

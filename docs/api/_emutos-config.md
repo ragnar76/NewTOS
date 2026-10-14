@@ -494,39 +494,39 @@ on every run — see above).
 | Macro | Value | NewTOS |
 |---|---|---|
 | `CONF_WITH_3D_OBJECTS` | `1` | tos-api/src/aes/object.rs:1047-1051,2798 (FL3DOBJ/FL3DIND/FL3DBAK/FL3DACT bit handling) |
-| `CONF_WITH_BACKGROUNDS` | `1` | kernel/src/desk/global.rs:173-179 (g_patcol background pattern/colour, synced to the AES) |
-| `CONF_WITH_BOTTOMTOTOP` | `1` | kernel/src/desk/menu.rs:108 (Item::Cycle in the BTOPITEM slot), menu.rs:187-188 (doc comment 'Cycle windows bottom-to-top'), kernel/src/desk/main.rs:1474,2340 (Item::Cycle => do_cycle()); named Cycle, not BottomToTop -- a name grep for the EmuTOS macro missed it |
+| `CONF_WITH_BACKGROUNDS` | `1` | programs/desktop/src/global.rs:173-179 (g_patcol background pattern/colour, synced to the AES) |
+| `CONF_WITH_BOTTOMTOTOP` | `1` | programs/desktop/src/menu.rs:108 (Item::Cycle in the BTOPITEM slot), menu.rs:187-188 (doc comment 'Cycle windows bottom-to-top'), programs/desktop/src/main.rs:1474,2340 (Item::Cycle => do_cycle()); named Cycle, not BottomToTop -- a name grep for the EmuTOS macro missed it |
 | `CONF_WITH_COLOUR_ICONS` | `1` | tos-api/src/aes/resource.rs:1170-1183,1917 (fixup_colour_icons/CICONBLK relocation) |
-| `CONF_WITH_DESKTOP_CONFIG` | `1` | kernel/src/desk/menu.rs:131,231,272,361 (Item::DeskConfig / CONFITEM); see DESK05 |
-| `CONF_WITH_DESKTOP_SHORTCUTS` | `1` | kernel/src/desk/ins.rs:1016 (ins_shortcut), kernel/src/desk/dir.rs:1701 (remove_locate_shortcut), the #X/#V INF lines including the inf_rev_level<2 swap; landed under DESK30 (ERLEDIGT, commit f85f9c8) -- a shortcut survives Save desktop and a cold start and launches on double-click |
+| `CONF_WITH_DESKTOP_CONFIG` | `1` | programs/desktop/src/menu.rs:131,231,272,361 (Item::DeskConfig / CONFITEM); see DESK05 |
+| `CONF_WITH_DESKTOP_SHORTCUTS` | `1` | programs/desktop/src/ins.rs:1016 (ins_shortcut), programs/desktop/src/dir.rs:1701 (remove_locate_shortcut), the #X/#V INF lines including the inf_rev_level<2 swap; landed under DESK30 (ERLEDIGT, commit f85f9c8) -- a shortcut survives Save desktop and a cold start and launches on double-click |
 | `CONF_WITH_EXTENDED_OBJECTS` | `1` | tos-api/src/aes/object.rs:565,569,2561,3074 (G_BOXTEXT/G_FBOXTEXT/G_FTEXT MagiC-style object types) |
-| `CONF_WITH_FILEMASK` | `1` | kernel/src/desk/main.rs:1860 (fun_mask, File -> Set file mask) |
+| `CONF_WITH_FILEMASK` | `1` | programs/desktop/src/main.rs:1860 (fun_mask, File -> Set file mask) |
 | `CONF_WITH_GDOS` | `1` | kernel/src/arch/aarch64/exceptions.rs:416-427 (the GEM trap leaves x0/d0 unchanged for an unrecognised selector, so vq_gdos() honestly reports 'no GDOS', config.h:1615-1622); fixed and verified under V16 |
 | `CONF_WITH_GRAF_MOUSE_EXTENSION` | `1` | tos-api/src/aes/graf.rs:619-621 (M_SAVE/M_RESTORE/M_PREVIOUS) |
 | `CONF_WITH_MENU_EXTENSION` | `1` | tos-api/src/aes/menu.rs:1278,1590,1861,1899 (menu_popup/menu_settings/menu_attach/menu_istart) |
 | `CONF_WITH_NICELINES` | `1` | tos-api/src/aes/object.rs:3014 (drawn-line menu separators) |
 | `CONF_WITH_PCGEM` | `1` | tos-api/src/aes/appl.rs:364 (APPL_YIELD arm, cites EmuTOS gemsuper.c:115-119 #if CONF_WITH_PCGEM) |
-| `CONF_WITH_PRINTER_ICON` | `1` | kernel/src/desk/icons.rs:74,131,206,214,298 and kernel/src/desk/ins.rs:447,498,533 (desktop Printer icon/Anode, per DESK03/DESK04) |
-| `CONF_WITH_READ_INF` | `1` | kernel/src/desk/main.rs:1754 (do_read_inf) and kernel/src/desk/inf.rs:982 (app_read_inf); per DESK14 |
-| `CONF_WITH_SEARCH` | `1` | kernel/src/desk/main.rs:1482,2053 (Item::Search / do_search) |
-| `CONF_WITH_SELECTALL` | `1` | kernel/src/desk/main.rs:1478 (Item::SelectAll) |
-| `CONF_WITH_SIZE_TO_FIT` | `1` | kernel/src/desk/main.rs:2201,2206,2539,2676 (Item::SizeToFit / g.size_to_fit) |
+| `CONF_WITH_PRINTER_ICON` | `1` | programs/desktop/src/icons.rs:74,131,206,214,298 and programs/desktop/src/ins.rs:447,498,533 (desktop Printer icon/Anode, per DESK03/DESK04) |
+| `CONF_WITH_READ_INF` | `1` | programs/desktop/src/main.rs:1754 (do_read_inf) and programs/desktop/src/inf.rs:982 (app_read_inf); per DESK14 |
+| `CONF_WITH_SEARCH` | `1` | programs/desktop/src/main.rs:1482,2053 (Item::Search / do_search) |
+| `CONF_WITH_SELECTALL` | `1` | programs/desktop/src/main.rs:1478 (Item::SelectAll) |
+| `CONF_WITH_SIZE_TO_FIT` | `1` | programs/desktop/src/main.rs:2201,2206,2539,2676 (Item::SizeToFit / g.size_to_fit) |
 | `CONF_WITH_VDI_16BIT` | `1` | tos-api/src/vdi/inquiry.rs:7 and attributes.rs/raster.rs/workstation.rs (Falcon-truecolor workstation, landed per TASK/A86.md and TASK/A101.md) |
 | `CONF_WITH_VDI_TEXT_SPEEDUP` | `1` | tos-api/src/vdi/text.rs:577 (v_gtext); the observable feature (VDI text output) is implemented through a differently-architected raster backend, not a port of EmuTOS's specific speedup path |
 | `CONF_WITH_VDI_VERTLINE` | `1` | tos-api/src/vdi/primitives.rs:744 (v_pline handles vertical lines); same caveat as CONF_WITH_VDI_TEXT_SPEEDUP |
 | `CONF_WITH_WINDOW_COLOURS` | `1` | tos-api/src/aes/window.rs:78-79 (WF_COLOR/WF_DCOLOR) |
-| `CONF_WITH_WINDOW_ICONS` | `1` | kernel/src/desk/win.rs (win_icalc); per DESK15 |
+| `CONF_WITH_WINDOW_ICONS` | `1` | programs/desktop/src/win.rs (win_icalc); per DESK15 |
 
 **Gap** (5 — filed as GUI01-GUI05; two (GUI01, GUI02) are
 deferred by design, not neglect — see the note on each):
 
 | Macro | Value | What it switches on in EmuTOS, and ticket status |
 |---|---|---|
-| `CONF_WITH_ALT_DESKTOP_GRAPHICS` | `1` | align_title() left-aligns dialog titles and sets ob_state for an underline (config.h:1734-1741; EmuTOS desk/deskmain.c:1727-1747, the CONF_WITH_ALT_DESKTOP_GRAPHICS arm); NewTOS's own align_title equivalents do the OTHER (non-ALT, classic-TOS) arm instead -- centre the title, no underline: kernel/src/desk/dir.rs:567-572 `(dw - title_w) / 2`, kernel/src/desk/inf.rs:3403-3404 `(dw - 21 * CELL_W) / 2`, both citing deskmain.c's centring branch by name in their own comments; ticketed GUI05 (OFFEN, P4) |
+| `CONF_WITH_ALT_DESKTOP_GRAPHICS` | `1` | align_title() left-aligns dialog titles and sets ob_state for an underline (config.h:1734-1741; EmuTOS desk/deskmain.c:1727-1747, the CONF_WITH_ALT_DESKTOP_GRAPHICS arm); NewTOS's own align_title equivalents do the OTHER (non-ALT, classic-TOS) arm instead -- centre the title, no underline: programs/desktop/src/dir.rs:567-572 `(dw - title_w) / 2`, programs/desktop/src/inf.rs:3403-3404 `(dw - 21 * CELL_W) / 2`, both citing deskmain.c's centring branch by name in their own comments; ticketed GUI05 (OFFEN, P4) |
 | `CONF_WITH_EXTENDED_MOUSE` | `1` | IKBD scancode extension for mouse buttons 3/4/5 and the wheel (config.h:1491-1498; EmuTOS bios/aciavecs.S, bios/ikbd.c:748); kernel/src/ikbd.rs:48,92-93 treats 0xF6 as the status-report packet header and 0xF8-0xFB as the standard 2-button relative packet -- no wheel or button-3/4/5 decode anywhere in that dispatch. Distinct from the VDI vex_wheelv vector installer already present (tos-api/src/vdi/mouse.rs:710), which has nothing feeding it without this; ticketed GUI04 (OFFEN, raised to P2 -- half the path already exists in vex_wheelv) |
 | `CONF_WITH_LOADABLE_CURSORS` | `1` | loads mouse cursor shapes from A:\EMUCURS.RSC at runtime (config.h:1286-1295); kernel/src/launch.rs:174-175 says so itself: 'accessories and loadable cursors/icons are not implemented at all'; ticketed GUI03 (OFFEN, P4) |
-| `CONF_WITH_SHOW_FILE` | `1` | double-click-to-show a file's contents in EmuDesk (config.h:1838-1844); no NewTOS reference found in kernel/src/desk (checked); ticketed GUI01 (ZURUECKGESTELLT, P4 -- the user prefers a viewer registered as an application with a file mapping over a built-in view, more flexible and reuses the existing association machinery; stays filed so the gap list stays complete, closes as moot if a .NAP-viewer association already covers the case) |
-| `CONF_WITH_VIEWER_SUPPORT` | `1` | default file viewer when no app claims a document type (config.h:1854-1861); kernel/src/desk/inf.rs:1847-1850 says so itself: 'AF_VIEWER is CONF_WITH_VIEWER_SUPPORT, which this desktop does not implement'; ticketed GUI02 (ZURUECKGESTELLT, P4, depends on GUI01 -- same reason: a viewer registered as an application with a file mapping is preferred over a built-in view; stays filed so the gap list stays complete, closes as moot if a .NAP-viewer association already covers the case) |
+| `CONF_WITH_SHOW_FILE` | `1` | double-click-to-show a file's contents in EmuDesk (config.h:1838-1844); no NewTOS reference found in programs/desktop/src (checked); ticketed GUI01 (ZURUECKGESTELLT, P4 -- the user prefers a viewer registered as an application with a file mapping over a built-in view, more flexible and reuses the existing association machinery; stays filed so the gap list stays complete, closes as moot if a .NAP-viewer association already covers the case) |
+| `CONF_WITH_VIEWER_SUPPORT` | `1` | default file viewer when no app claims a document type (config.h:1854-1861); programs/desktop/src/inf.rs:1847-1850 says so itself: 'AF_VIEWER is CONF_WITH_VIEWER_SUPPORT, which this desktop does not implement'; ticketed GUI02 (ZURUECKGESTELLT, P4, depends on GUI01 -- same reason: a viewer registered as an application with a file mapping is preferred over a built-in view; stays filed so the gap list stays complete, closes as moot if a .NAP-viewer association already covers the case) |
 
 ### Hardware / other machine (65 macros — labelled, no per-switch audit)
 

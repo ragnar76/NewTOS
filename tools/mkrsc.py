@@ -271,7 +271,7 @@ def swap16_raster(b):
     leftmost pixel. Our native (NRSC / native-RSHDR) format is little-endian by
     contract, and the kernel blit reads each raster word as a LITTLE-endian
     `u16` (`kernel/src/vdi_backend.rs` `blit_mono`: `w & (0x8000 >> (sx & 15))`),
-    matching the built-in host-order `[u16]` set in `kernel/src/desk/icons.rs`.
+    matching the built-in host-order `[u16]` set in `programs/desktop/src/icons.rs`.
     Copying the classic bytes verbatim would swap the two 8-pixel halves of every
     16-pixel word (scrambled icons), so swap the two bytes of each word here.
 

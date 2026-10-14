@@ -17,7 +17,7 @@
 //! (`aes/gemfmlib.c`, reproduced in `tos-api/src/aes/form.rs::select_radio`),
 //! so a tree that hangs two groups directly under `ROOT` has, as far as the
 //! AES is concerned, **one** group: picking a date format would clear the time
-//! format. `kernel/src/desk/inf.rs::inf_pref` therefore builds a `G_IBOX` per
+//! format. `programs/desktop/src/inf.rs::inf_pref` therefore builds a `G_IBOX` per
 //! group; this test is what says the box is load-bearing rather than
 //! decorative.
 //!
@@ -45,7 +45,7 @@ const SELECTED: u16 = 0x0001;
 
 const NIL: i16 = -1;
 
-/// Opaque dialog-box colour word, as `kernel/src/desk/inf.rs` uses.
+/// Opaque dialog-box colour word, as `programs/desktop/src/inf.rs` uses.
 const BOX_SPEC: u64 = (1 << 16) | 0x1070;
 
 static LBL: &[u8] = b" x \0";

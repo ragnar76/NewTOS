@@ -374,23 +374,23 @@ CONF_WITH_68030_PMMU|HW|68030 PMMU tree install (config.h:1465-1472)
 CONF_WITH_68040_PMMU|HW|68040 PMMU tree install (config.h:1474-1481)
 CONF_WITH_ACSI|HW|ACSI bus (config.h:1032-1037)
 CONF_WITH_ADVANCED_CPU|HW|68010-68060 CPU support (config.h:828-837)
-CONF_WITH_ALT_DESKTOP_GRAPHICS|MISS|align_title() left-aligns dialog titles and sets ob_state for an underline (config.h:1734-1741; EmuTOS desk/deskmain.c:1727-1747, the CONF_WITH_ALT_DESKTOP_GRAPHICS arm); NewTOS's own align_title equivalents do the OTHER (non-ALT, classic-TOS) arm instead -- centre the title, no underline: kernel/src/desk/dir.rs:567-572 `(dw - title_w) / 2`, kernel/src/desk/inf.rs:3403-3404 `(dw - 21 * CELL_W) / 2`, both citing deskmain.c's centring branch by name in their own comments; ticketed GUI05 (OFFEN, P4)
+CONF_WITH_ALT_DESKTOP_GRAPHICS|MISS|align_title() left-aligns dialog titles and sets ob_state for an underline (config.h:1734-1741; EmuTOS desk/deskmain.c:1727-1747, the CONF_WITH_ALT_DESKTOP_GRAPHICS arm); NewTOS's own align_title equivalents do the OTHER (non-ALT, classic-TOS) arm instead -- centre the title, no underline: programs/desktop/src/dir.rs:567-572 `(dw - title_w) / 2`, programs/desktop/src/inf.rs:3403-3404 `(dw - 21 * CELL_W) / 2`, both citing deskmain.c's centring branch by name in their own comments; ticketed GUI05 (OFFEN, P4)
 CONF_WITH_ALT_RAM|HW|Alt-RAM support (config.h:879-884)
 CONF_WITH_APOLLO_68080|HW|Apollo 68080/Vampire accelerator CPU (config.h:839-848)
 CONF_WITH_ARANYM|OM|ARAnyM emulator target (config.h:1916-1925)
 CONF_WITH_ATARI_VIDEO|HW|ST-Shifter-and-higher video master switch (config.h:1068-1073)
-CONF_WITH_BACKGROUNDS|HAVE|kernel/src/desk/global.rs:173-179 (g_patcol background pattern/colour, synced to the AES)
+CONF_WITH_BACKGROUNDS|HAVE|programs/desktop/src/global.rs:173-179 (g_patcol background pattern/colour, synced to the AES)
 CONF_WITH_BAS_MEMORY_MAP|OM|FireBee/M548x BaS memory map (config.h:1210-1220)
 CONF_WITH_BIOS_EXTENSIONS|HW|gates only an extended Floprate() floppy-drive-type selector (EmuTOS bios/floppy.c:1048-1055, verified in the source, not assumed from the generic-sounding config.h comment); floppy hardware, same recorded decision as CONF_WITH_FORMAT
 CONF_WITH_BLITTER|HW|blitter chip (config.h:1165-1170)
-CONF_WITH_BOTTOMTOTOP|HAVE|kernel/src/desk/menu.rs:108 (Item::Cycle in the BTOPITEM slot), menu.rs:187-188 (doc comment 'Cycle windows bottom-to-top'), kernel/src/desk/main.rs:1474,2340 (Item::Cycle => do_cycle()); named Cycle, not BottomToTop -- a name grep for the EmuTOS macro missed it
+CONF_WITH_BOTTOMTOTOP|HAVE|programs/desktop/src/menu.rs:108 (Item::Cycle in the BTOPITEM slot), menu.rs:187-188 (doc comment 'Cycle windows bottom-to-top'), programs/desktop/src/main.rs:1474,2340 (Item::Cycle => do_cycle()); named Cycle, not BottomToTop -- a name grep for the EmuTOS macro missed it
 CONF_WITH_BUS_ERROR|HW|whether the CPU/bus raises a Bus Error exception on invalid access (config.h:2044-2051); true on Atari, the AArch64 fault model is entirely different
 CONF_WITH_CACHE_CONTROL|HW|'Cache' desktop menu item toggling 68030 CPU cache registers directly (config.h:1759-1768); no ARM-cache equivalent implemented (checked)
 CONF_WITH_CARTRIDGE|HW|ROM port cartridge (config.h:1012-1023)
 CONF_WITH_COLDFIRE_RS232|OM|ColdFire internal serial port (config.h:966-975)
 CONF_WITH_COLOUR_ICONS|HAVE|tos-api/src/aes/resource.rs:1170-1183,1917 (fixup_colour_icons/CICONBLK relocation)
-CONF_WITH_DESKTOP_CONFIG|HAVE|kernel/src/desk/menu.rs:131,231,272,361 (Item::DeskConfig / CONFITEM); see DESK05
-CONF_WITH_DESKTOP_SHORTCUTS|HAVE|kernel/src/desk/ins.rs:1016 (ins_shortcut), kernel/src/desk/dir.rs:1701 (remove_locate_shortcut), the #X/#V INF lines including the inf_rev_level<2 swap; landed under DESK30 (ERLEDIGT, commit f85f9c8) -- a shortcut survives Save desktop and a cold start and launches on double-click
+CONF_WITH_DESKTOP_CONFIG|HAVE|programs/desktop/src/menu.rs:131,231,272,361 (Item::DeskConfig / CONFITEM); see DESK05
+CONF_WITH_DESKTOP_SHORTCUTS|HAVE|programs/desktop/src/ins.rs:1016 (ins_shortcut), programs/desktop/src/dir.rs:1701 (remove_locate_shortcut), the #X/#V INF lines including the inf_rev_level<2 swap; landed under DESK30 (ERLEDIGT, commit f85f9c8) -- a shortcut survives Save desktop and a cold start and launches on double-click
 CONF_WITH_DIP_SWITCHES|HW|STe/TT/Falcon DIP switches (config.h:1150-1156, has.h-gated has_dip_switches)
 CONF_WITH_DMASOUND|HW|DMA sound chip (config.h:1129-1134, has.h-gated has_dmasound)
 CONF_WITH_DSP|HW|Falcon DSP chip (config.h:1136-1141, has.h-gated has_dsp)
@@ -401,7 +401,7 @@ CONF_WITH_EXTENDED_OBJECTS|HAVE|tos-api/src/aes/object.rs:565,569,2561,3074 (G_B
 CONF_WITH_EXTERNAL_DISK_DRIVER|OTH|deactivates the built-in hard disk driver in favour of a disk-resident one (config.h:1670-1677); BIOS disk-driver internal
 CONF_WITH_FALCON_MMU|HW|Falcon MMU (config.h:864-869)
 CONF_WITH_FDC|HW|floppy disk controller chip (config.h:1025-1030)
-CONF_WITH_FILEMASK|HAVE|kernel/src/desk/main.rs:1860 (fun_mask, File -> Set file mask)
+CONF_WITH_FILEMASK|HAVE|programs/desktop/src/main.rs:1860 (fun_mask, File -> Set file mask)
 CONF_WITH_FLEXCAN|OM|ColdFire eval-board CAN port / Eiffel keyboard adapter (config.h:1186-1192)
 CONF_WITH_FORMAT|HW|'Format floppy diskette' desktop menu item (config.h:1802-1807); floppy hardware, recorded decision (docs/STATUS.md:240 'FAT12-Write (Floppy, out of scope)'; docs/analysis/bios-audit/bios-xbios-feasibility-triage.md 'Floppy = HW-Absenz')
 CONF_WITH_FRB|HW|_FRB cookie tied to Alt-RAM presence (config.h:1500-1505)
@@ -425,20 +425,20 @@ CONF_WITH_NICELINES|HAVE|tos-api/src/aes/object.rs:3014 (drawn-line menu separat
 CONF_WITH_NOVA|HW|Nova graphics card adapter (config.h:1179-1184)
 CONF_WITH_NVRAM|HW|NVRAM chip (config.h:1158-1163, has.h-gated has_nvram)
 CONF_WITH_PCGEM|HAVE|tos-api/src/aes/appl.rs:364 (APPL_YIELD arm, cites EmuTOS gemsuper.c:115-119 #if CONF_WITH_PCGEM)
-CONF_WITH_PRINTER_ICON|HAVE|kernel/src/desk/icons.rs:74,131,206,214,298 and kernel/src/desk/ins.rs:447,498,533 (desktop Printer icon/Anode, per DESK03/DESK04)
+CONF_WITH_PRINTER_ICON|HAVE|programs/desktop/src/icons.rs:74,131,206,214,298 and programs/desktop/src/ins.rs:447,498,533 (desktop Printer icon/Anode, per DESK03/DESK04)
 CONF_WITH_PRINTER_PORT|HW|parallel printer port (config.h:984-989)
-CONF_WITH_READ_INF|HAVE|kernel/src/desk/main.rs:1754 (do_read_inf) and kernel/src/desk/inf.rs:982 (app_read_inf); per DESK14
+CONF_WITH_READ_INF|HAVE|programs/desktop/src/main.rs:1754 (do_read_inf) and programs/desktop/src/inf.rs:982 (app_read_inf); per DESK14
 CONF_WITH_RESET|HW|startup 'reset' instruction bypass quirk (config.h:1194-1208)
 CONF_WITH_SCC|HW|SCC chip (config.h:947-952, has.h-gated has_scc)
 CONF_WITH_SCSI|HW|SCSI bus (config.h:1039-1044)
 CONF_WITH_SCSI_DRIVER|HW|raw SCSI command pass-through to a device (config.h:1679-1686); purposeless without a real SCSI target chip, which the RPi4 HAL has none of
 CONF_WITH_SDMMC|HW|EmuTOS's own SD/MMC controller chip driver (config.h:1053-1058); NewTOS's SD/EMMC access is a separately-written HAL component (kernel/src/drivers/bcm2711/emmc.rs), not a port of this switch
-CONF_WITH_SEARCH|HAVE|kernel/src/desk/main.rs:1482,2053 (Item::Search / do_search)
-CONF_WITH_SELECTALL|HAVE|kernel/src/desk/main.rs:1478 (Item::SelectAll)
+CONF_WITH_SEARCH|HAVE|programs/desktop/src/main.rs:1482,2053 (Item::Search / do_search)
+CONF_WITH_SELECTALL|HAVE|programs/desktop/src/main.rs:1478 (Item::SelectAll)
 CONF_WITH_SFP004|HW|68881 FPU board for the Mega ST (config.h:1172-1177)
-CONF_WITH_SHOW_FILE|MISS|double-click-to-show a file's contents in EmuDesk (config.h:1838-1844); no NewTOS reference found in kernel/src/desk (checked); ticketed GUI01 (ZURUECKGESTELLT, P4 -- the user prefers a viewer registered as an application with a file mapping over a built-in view, more flexible and reuses the existing association machinery; stays filed so the gap list stays complete, closes as moot if a .NAP-viewer association already covers the case)
+CONF_WITH_SHOW_FILE|MISS|double-click-to-show a file's contents in EmuDesk (config.h:1838-1844); no NewTOS reference found in programs/desktop/src (checked); ticketed GUI01 (ZURUECKGESTELLT, P4 -- the user prefers a viewer registered as an application with a file mapping over a built-in view, more flexible and reuses the existing association machinery; stays filed so the gap list stays complete, closes as moot if a .NAP-viewer association already covers the case)
 CONF_WITH_SHUTDOWN|OTH|the shutdown() BIOS/XBIOS function (config.h:2024-2034); BIOS API surface, not AES/VDI
-CONF_WITH_SIZE_TO_FIT|HAVE|kernel/src/desk/main.rs:2201,2206,2539,2676 (Item::SizeToFit / g.size_to_fit)
+CONF_WITH_SIZE_TO_FIT|HAVE|programs/desktop/src/main.rs:2201,2206,2539,2676 (Item::SizeToFit / g.size_to_fit)
 CONF_WITH_ST_MMU|HW|ST MMU (config.h:850-855)
 CONF_WITH_STATIC_ALT_RAM|HW|compile-time-fixed Alt-RAM address (config.h:886-893)
 CONF_WITH_STE_SHIFTER|HW|STe Shifter chip (config.h:1075-1080, has.h-gated has_ste_shifter)
@@ -453,10 +453,10 @@ CONF_WITH_VDI_16BIT|HAVE|tos-api/src/vdi/inquiry.rs:7 and attributes.rs/raster.r
 CONF_WITH_VDI_TEXT_SPEEDUP|HAVE|tos-api/src/vdi/text.rs:577 (v_gtext); the observable feature (VDI text output) is implemented through a differently-architected raster backend, not a port of EmuTOS's specific speedup path
 CONF_WITH_VDI_VERTLINE|HAVE|tos-api/src/vdi/primitives.rs:744 (v_pline handles vertical lines); same caveat as CONF_WITH_VDI_TEXT_SPEEDUP
 CONF_WITH_VIDEL|HW|Falcon VIDEL chip (config.h:1089-1094, has.h-gated has_videl)
-CONF_WITH_VIEWER_SUPPORT|MISS|default file viewer when no app claims a document type (config.h:1854-1861); kernel/src/desk/inf.rs:1847-1850 says so itself: 'AF_VIEWER is CONF_WITH_VIEWER_SUPPORT, which this desktop does not implement'; ticketed GUI02 (ZURUECKGESTELLT, P4, depends on GUI01 -- same reason: a viewer registered as an application with a file mapping is preferred over a built-in view; stays filed so the gap list stays complete, closes as moot if a .NAP-viewer association already covers the case)
+CONF_WITH_VIEWER_SUPPORT|MISS|default file viewer when no app claims a document type (config.h:1854-1861); programs/desktop/src/inf.rs:1847-1850 says so itself: 'AF_VIEWER is CONF_WITH_VIEWER_SUPPORT, which this desktop does not implement'; ticketed GUI02 (ZURUECKGESTELLT, P4, depends on GUI01 -- same reason: a viewer registered as an application with a file mapping is preferred over a built-in view; stays filed so the gap list stays complete, closes as moot if a .NAP-viewer association already covers the case)
 CONF_WITH_VME|HW|Mega STe VME bus (config.h:1143-1148, has.h-gated has_vme)
 CONF_WITH_WINDOW_COLOURS|HAVE|tos-api/src/aes/window.rs:78-79 (WF_COLOR/WF_DCOLOR)
-CONF_WITH_WINDOW_ICONS|HAVE|kernel/src/desk/win.rs (win_icalc); per DESK15
+CONF_WITH_WINDOW_ICONS|HAVE|programs/desktop/src/win.rs (win_icalc); per DESK15
 CONF_WITH_XBIOS_SOUND|HW|Falcon-XBIOS-sound-API shim running on STe/TT DMA-sound hardware (config.h:1514-1522); audio (DMA-Sound/DSP) explicitly deferred by User decision (docs/STATUS.md:242 XBIOS feasibility triage)
 CONF_WITH_XHDI|OTH|the XHDI hard-disk abstraction cookie and vector table (config.h:1688-1693); BIOS disk-driver internal (only passing comments reference EmuTOS's XHDI in tos-api/src/bios/bpb.rs:195 and tick.rs:35 -- no cookie or vector table implemented)
 CONF_WITH_YM2149|HW|YM2149 PSG sound chip (config.h:977-982)

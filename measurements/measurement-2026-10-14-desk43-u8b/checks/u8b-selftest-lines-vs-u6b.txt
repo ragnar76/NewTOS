@@ -1,0 +1,2 @@
+# diff u6b-selftest-lines.txt u8b-selftest-lines.txt without the injector's own [u8a-st] lines: (empty below = identical)
+# [u8a-st] lines: same shape (digits normalised); screendumps selftest-desk-rpi4-t75.png and selftest-counter-normal-t40.png byte-identical to U6b's

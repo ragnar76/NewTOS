@@ -1034,12 +1034,12 @@ therefore **contract** (already listed as such in `scrap-shell.md` item 8);
 ## Predictions — confirmed / refuted
 
 The plan predicted two mismatches between EmuTOS and our
-`kernel/src/desk/inf.rs`. Checked directly against the current file (read
+`programs/desktop/src/inf.rs`. Checked directly against the current file (read
 only, no code touched):
 
 **(a) The 128-byte `CPDATA` prefix.** **Confirmed, and stronger than
-predicted.** `kernel/src/desk/inf.rs` has **no `shel_get`/`shel_put` call
-at all** (`grep -n "shel_get\|shel_put\|CPDATA" kernel/src/desk/inf.rs` —
+predicted.** `programs/desktop/src/inf.rs` has **no `shel_get`/`shel_put` call
+at all** (`grep -n "shel_get\|shel_put\|CPDATA" programs/desktop/src/inf.rs` —
 zero hits). It talks to `NEWDESK.INF` exclusively via direct GEMDOS
 `fopen`/`fcreate`/`fread`/`fwrite` (`read_inf_file`/`write_inf_file`,
 `inf.rs:71-101`), unconditionally hitting disk on every load/save. The AES
@@ -1052,7 +1052,7 @@ straight to disk, skipping the memory-first fallback order `app_start`
 implements (`deskapp.c:832-836`) entirely."
 
 **(b) `#Z` with its `isgem` flag and the `sh_wdef` program/directory
-split.** **Confirmed.** `kernel/src/desk/inf.rs`'s `#Z` arm
+split.** **Confirmed.** `programs/desktop/src/inf.rs`'s `#Z` arm
 (`parse_inf`, `:366-369`) reads one byte and **discards** it (comment:
 `"AF_ISCRYS byte — write-only, discarded"`), then stores the *rest of the
 line as a single unsplit string* (`d.autorun = scan_str(&mut c)`). Compared

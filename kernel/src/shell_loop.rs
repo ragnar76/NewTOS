@@ -65,7 +65,7 @@ use crate::kprintln;
 // reports again; an `evnt_multi` re-executed after an S2 yield (ACC03) does
 // not report twice.
 
-/// Set while the DESKTOP arm of [`sh_ldapp`] is inside `crate::desk::run`.
+/// Set while the DESKTOP arm of [`sh_ldapp`] is inside `desktop::run`.
 static DESKTOP_ACTIVE: AtomicBool = AtomicBool::new(false);
 /// Armed by the desktop's `appl_init`, consumed by its next `evnt_multi`.
 static DESKTOP_UP_ARMED: AtomicBool = AtomicBool::new(false);
@@ -374,9 +374,9 @@ fn sh_ldapp() -> i32 {
         // happens there: the state the next desktop must not inherit is the
         // dead one's window list, whose AES handles `sh_main`'s `wm_init`
         // (`:717`) has just deleted.
-        crate::desk::reset();
+        desktop::reset();
         DESKTOP_ACTIVE.store(true, Ordering::Release);
-        crate::desk::run();
+        desktop::run();
         DESKTOP_ACTIVE.store(false, Ordering::Release);
         DESKTOP_UP_ARMED.store(false, Ordering::Release);
         // EmuTOS calls `wm_new()` only when the desktop terminated
@@ -509,7 +509,7 @@ fn p_setappdir(cmd: &[u8]) {
 /// this boundary — a program never starting on the previous occupant's flags
 /// or messages — is in place (A28): the flag reset in `pd::register`, the queue
 /// drain in the desktop's own `appl_exit()` at the end of `deskmain`
-/// (`deskmain.c:2166`, `crate::desk::run`), and since A62 the slot's release
+/// (`deskmain.c:2166`, `desktop::run`), and since A62 the slot's release
 /// (`pterm::release_slot` → `pd::release`) for every way a process ends.
 fn p_nameit_and_appdir(cmd: &[u8]) {
     p_setappdir(cmd);

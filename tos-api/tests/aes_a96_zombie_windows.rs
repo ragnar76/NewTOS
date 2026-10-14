@@ -10,7 +10,7 @@
 //!
 //! NewTOS's shell loop does that (`kernel/src/shell_loop.rs`, the `#Z`
 //! autorun path). The built-in desktop's double-click launch does **not** go
-//! through the shell loop: `run_gem_app` (`kernel/src/desk/main.rs`) runs the
+//! through the shell loop: `run_gem_app` (`programs/desktop/src/main.rs`) runs the
 //! program nested in the desktop's event loop and `desktop_resume` repaints
 //! the desktop from the shared window table — with the dead program's windows
 //! still in it, composited over the desktop as zombies (A83 finding b).
@@ -26,7 +26,7 @@
 //!
 //! The tests drive the launch boundary through the LP64 AES dispatcher in
 //! the order `desktop_relinquish` / the launcher / `desktop_resume` execute
-//! it (`kernel/src/desk/main.rs`, `kernel/src/launch.rs`) and then ask:
+//! it (`programs/desktop/src/main.rs`, `kernel/src/launch.rs`) and then ask:
 //! after the program is gone, **is its window gone** — out of the table,
 //! invisible to `wind_find`, and not one pixel of it in the desktop's
 //! whole-screen composite — while the desktop's own window is still there?
@@ -560,7 +560,7 @@ fn wind_set_newdesk(pb: &mut Aespb, tree: u64, root: i16) {
 }
 
 /// `form_dial(FMD_FINISH, 0,0,0,0, 0,0,W,H)` — the desktop's whole-screen
-/// composite (`redraw_desktop`, `kernel/src/desk/redraw.rs`).
+/// composite (`redraw_desktop`, `programs/desktop/src/redraw.rs`).
 fn form_dial_finish(pb: &mut Aespb) {
     pb.intin.fill(0);
     pb.intin[0] = FMD_FINISH;
@@ -667,7 +667,7 @@ fn desktop_tree() -> Box<Object> {
     })
 }
 
-/// `desktop_relinquish` (`kernel/src/desk/main.rs`): un-register the
+/// `desktop_relinquish` (`programs/desktop/src/main.rs`): un-register the
 /// background tree, leave the AES (`deskmain.c:2159-2166`). The menu bar is
 /// not part of this test.
 fn desktop_relinquish(pb: &mut Aespb) {
@@ -683,7 +683,7 @@ fn launcher_cleanup(slot: usize) {
     tos_api::aes::close_client_if_open(slot);
 }
 
-/// `desktop_resume` (`kernel/src/desk/main.rs`), step for step: the
+/// `desktop_resume` (`programs/desktop/src/main.rs`), step for step: the
 /// `sh_ldapp` window sweep (A96), `appl_init`, re-register the background
 /// tree (`deskmain.c:2049`), the whole-screen composite (`redraw_desktop`).
 fn desktop_resume(pb: &mut Aespb, tree: &Object) {

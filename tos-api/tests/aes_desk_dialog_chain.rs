@@ -3,7 +3,7 @@
 //! `objc_draw` (42) → `form_dial(FMD_FINISH)` (51).
 //!
 //! EmuTOS' desktop wraps every one of its dialogs in `start_dialog` /
-//! `end_dialog` (`desk/deskinf.c:349-390`), and `kernel/src/desk/` did not:
+//! `end_dialog` (`desk/deskinf.c:349-390`), and `programs/desktop/src/` did not:
 //! `dlg.rs`, `inf.rs` and `insapp.rs` each computed a centre of their own from
 //! the screen size, drew with a full-screen clip, and had the caller repaint the
 //! **whole** desktop afterwards (gap G7,
@@ -29,7 +29,7 @@
 //!    previous pixels.
 //!
 //! The tree used is the desktop's own New-folder box
-//! (`kernel/src/desk/dlg.rs::edit_name`): a 290x150 `G_BOX` at the **origin**
+//! (`programs/desktop/src/dlg.rs::edit_name`): a 290x150 `G_BOX` at the **origin**
 //! with a title `G_STRING`, an editable `G_BOXTEXT` and two `G_BUTTON`s — built
 //! with no screen position of its own, exactly as a resource-file dialog is, so
 //! that `form_center` is what places it.
@@ -517,7 +517,7 @@ const LASTOB: u16 = 0x0020;
 const MAX_DEPTH: i16 = 8;
 const ROOT: i16 = 0;
 
-/// The dialog's nominal size — `kernel/src/desk/dlg.rs::edit_name`.
+/// The dialog's nominal size — `programs/desktop/src/dlg.rs::edit_name`.
 const DLG_W: i16 = 290;
 const DLG_H: i16 = 150;
 
@@ -659,7 +659,7 @@ fn form_center_places_the_desktop_dialog_below_the_menu_bar() {
     let want_y = bar + (SCREEN_H as i16 - bar - DLG_H) / 2;
     assert_eq!((t.0, t.1), (want_x, want_y));
 
-    // The formula `kernel/src/desk/` used before DESK08 — `(screen_h - h) / 2`,
+    // The formula `programs/desktop/src/` used before DESK08 — `(screen_h - h) / 2`,
     // the menu row ignored — is a *different* position. Pinned so the two are
     // not silently conflated again.
     let desk_own_y = (SCREEN_H as i16 - DLG_H) / 2;

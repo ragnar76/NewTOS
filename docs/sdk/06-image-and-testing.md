@@ -55,7 +55,7 @@ diskutil unmount "${DEV}s1" && hdiutil detach "$DEV"
 **Warning — AppleDouble files.** Copying with Finder or `cp` onto the FAT
 volume creates `._NAME.NCP` side files. Their names *end in `.NCP`*, so
 `run_auto_folder` would try to load them (it classifies by the last four
-bytes, `kernel/src/desk/ftype.rs:50-70`) and the desktop would list them as
+bytes, `programs/desktop/src/ftype.rs:50-70`) and the desktop would list them as
 programs. `make-sd-image.sh` strips them with `dot_clean -m` (`:291`); do the
 same after any manual copy (observed while writing this page: a
 `._HELLOLIB.NCP` appeared in `\AUTO\` and was removed before the run).
@@ -106,7 +106,7 @@ EmuTOS `(*isauto && !isgem) ? FALSE : TRUE`).
 This is how every headless QEMU measurement launches a `.NAP` — QEMU
 `raspi4b` has no input device, so double-clicking is impossible there
 (memory note *qemu-dump-runs-via-newdesk-inf-autorun*). The desktop's own
-`NEWDESK.INF` parser (`kernel/src/desk/inf.rs:373-379`) reads the same line
+`NEWDESK.INF` parser (`programs/desktop/src/inf.rs:373-379`) reads the same line
 and writes it back on save (`:497-506`), so the autorun survives a desktop
 "Save Desktop".
 
@@ -121,7 +121,7 @@ Serial log of the run made for this document:
 
 ### Double-click on the desktop (real hardware only)
 
-`kernel/src/desk/main.rs:467-500` (`launch_native`): `.NAP`/`.NTP` go
+`programs/desktop/src/main.rs:467-500` (`launch_native`): `.NAP`/`.NTP` go
 through `run_gem_app` (desktop relinquish → run → resume); `.NCP` clears the
 screen, runs, waits for a key (`console_pause_for_key`, `:610`), and redraws
 the desktop. Needs a USB keyboard/mouse, which QEMU `raspi4b` cannot provide.
@@ -267,7 +267,7 @@ Lines a port will look for:
 | `[EXC] Data Abort (lower EL): ESR=… ELR=… FAR=…` | the program faulted at EL0; `ELR` is the faulting PC in the program's own image (`llvm-objdump -d` it), `FAR` the address | `kernel/src/arch/aarch64/exceptions.rs:133`, `:1571` |
 | `[PANIC] …` | kernel panic (debug builds check slice alignment etc. — see [05](05-abi-pitfalls.md#b8)) | — |
 | `[desk] desktop up (N drives)` | the built-in desktop has reached its first `evnt_multi` (ready for input); printed by the kernel, the desktop itself prints nothing (DESK43 D4) | `kernel/src/shell_loop.rs` (`observe_desktop_gem_call`) |
-| `[desk-selftest] begin` … `[desk-selftest] done` | the desktop's four self-tests (`--features selftest-desk`, writes to C:) | `kernel/src/desk/selftest.rs` |
+| `[desk-selftest] begin` … `[desk-selftest] done` | the desktop's four self-tests (`--features selftest-desk`, writes to C:) | `programs/desktop/src/selftest.rs` |
 
 A GEMDOS trap trace is available with `--features gemdos-trace`
 (`docs/analysis/q07-…md:29`); it is a debug feature, not part of a normal run.

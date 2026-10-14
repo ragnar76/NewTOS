@@ -5,7 +5,7 @@
 //! desksupp.c:294-322`) calls `graf_growbox_grect(&d, &t)` (`:315`), whose
 //! binding is `GR_I1..GR_I8` = from x/y/w/h, to x/y/w/h and
 //! `AES_CTRL_CODE(GRAF_GROWBOX, 8, 1, 0)` (`desk/gembind.c:589-600`). The
-//! NewTOS desktop gained that binding in `kernel/src/desk/mod.rs`
+//! NewTOS desktop gained that binding in `programs/desktop/src/lib.rs`
 //! (`graf_growbox`) with exactly that shape; these tests hold the AES side of
 //! the contract it relies on, through the same dispatcher the trap reaches:
 //!
@@ -165,7 +165,7 @@ fn host() -> &'static RecHost {
 /// `(x, y, w, h)`.
 type R = (i16, i16, i16, i16);
 
-/// `graf_growbox(from, to)` laid exactly as `kernel/src/desk/mod.rs` lays it:
+/// `graf_growbox(from, to)` laid exactly as `programs/desktop/src/lib.rs` lays it:
 /// eight `int_in`, one `int_out`, no addresses. Returns `int_out[0]` and the
 /// segments the AES drew.
 fn growbox(from: R, to: R) -> (i16, Vec<Seg>) {

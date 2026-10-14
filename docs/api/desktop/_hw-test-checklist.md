@@ -448,14 +448,14 @@ is unticked and still needs a live run.
 - **`form_center` placement** (`9ae7edf`, `gl_hbox`/menu-bar offset fix) — no
   desk-internal dialog calls the AES `form_center` trap (opcode 54).
   `form_alert` (`tos-api/src/aes/form.rs:195-196`), the file selector's
-  `center()` (`tos-api/src/aes/fsel.rs:534-541`), and `kernel/src/desk/inf.rs`'s
+  `center()` (`tos-api/src/aes/fsel.rs:534-541`), and `programs/desktop/src/inf.rs`'s
   hand-built Show-Info/Set-background dialogs (`:1040-1041,1098-1099`) each
   compute their own full-screen centring independently and do not call the
   fixed function. Confirming this fix needs a probe that invokes opcode 54
   directly.
 - **File selector empty-path → current-drive root** (`5d33238` L-5,
   `gemfslib.c:634-638`) — `fsel_input`/`fsel_exinput` (opcodes 90/91) are not
-  called from anywhere in `kernel/src/desk/` yet (no File→Open/Install picker
+  called from anywhere in `programs/desktop/src/` yet (no File→Open/Install picker
   is wired — a Task #9/#14 item). Needs a direct AES-trap probe.
 - **Resource loader `ob_type` mask, `rsrc_free` return contract, shared-TEDINFO
   relocation dedup** (`5d33238` M-1/M-2/L-4) — internal `.RSC`-loader
@@ -464,7 +464,7 @@ is unticked and still needs a live run.
   round-trip unregressed).
 - **Shell manager fixes** (`74b79c8`: `shel_get`/`put` 4192-byte buffer,
   `shel_envrn` NULL-on-miss, `shel_rdef`/`wdef` own storage, `shel_write`
-  `doex`/`isgem` dispatch, `shel_find` current-drive root) — `kernel/src/desk/`
+  `doex`/`isgem` dispatch, `shel_find` current-drive root) — `programs/desktop/src/`
   calls no `shel_*`/`scrp_*` AES entry point yet; this is forward
   infrastructure for the not-yet-wired shell-loop↔`Pexec` launch path (see
   `docs/STATUS.md` Blocked, the F5/F7 note). Nothing to test on the desktop
@@ -475,7 +475,7 @@ is unticked and still needs a live run.
 ## What the Round-2 audit already confirmed (do NOT re-derive on HW)
 
 Compile clean on **both** boards, zero clippy/compiler warnings under
-`kernel/src/desk/`, no stubs/`todo!`/`unwrap`/panics. Boot on `qemu raspi4b`
+`programs/desktop/src/`, no stubs/`todo!`/`unwrap`/panics. Boot on `qemu raspi4b`
 (QMP screendump, `/tmp/sd.img`): clean boot (no panic), menu bar (4 titles),
 `C:\` window content, correctly occluded desktop drive icon, **default view =
 Icon**, **folder-first name sort**, info-line format, **no label overlap at

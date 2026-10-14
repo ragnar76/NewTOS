@@ -58,7 +58,7 @@ Original Author: Shay Gal-on
  *   2. SEED_METHOD is SEED_VOLATILE, not SEED_ARG.
  *      The Atari port takes its seeds from the command line. NewTOS has no
  *      way to hand a program a command tail interactively: the desktop
- *      launches a `.NCP` with an empty tail (kernel/src/desk/main.rs,
+ *      launches a `.NCP` with an empty tail (programs/desktop/src/main.rs,
  *      launch_native) and there is no command-line shell. SEED_VOLATILE is
  *      CoreMark's own answer for exactly that case -- the README run rules
  *      spell it out: "If not using command line arguments to main: make

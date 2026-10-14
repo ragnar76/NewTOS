@@ -470,7 +470,7 @@ specific behaviour identified (EmuDesk-specific file).
 
 ### The dialog chain — `start_dialog` / `end_dialog` / `inf_show` (DESK08, 2026-09-23)
 
-`kernel/src/desk/inf.rs` carries the three shared dialog primitives, at
+`programs/desktop/src/inf.rs` carries the three shared dialog primitives, at
 the same place in the tree as `deskinf.c` carries them, and every
 desktop dialog goes through them:
 
@@ -951,7 +951,7 @@ scope per `_data-model.md`'s existing note on this topic).
 
 `Options → Set preferences` had no handler (`Item::SetPrefs` fell through
 `do_optnmenu`'s `_ => {}` and `men_update` kept it disabled). DESK02 implements
-it as `kernel/src/desk/inf.rs::inf_pref`, run through DESK08's `inf_show` chain
+it as `programs/desktop/src/inf.rs::inf_pref`, run through DESK08's `inf_show` chain
 and dispatched from `main::do_optnmenu` as `if inf_pref() { desk_all(…) }`
 (`deskmain.c:885-887`).
 
@@ -991,7 +991,7 @@ than shown and ignored:
 
 * **Confirm copies** (`SPCCYES`/`SPCCNO`) — EmuTOS's switch turns on the
   per-item copy dialog inside `d_doop` (`deskdir.c:939`). NewTOS's copy engine
-  has no per-item dialog at all (`kernel/src/desk/dir.rs`'s module header records
+  has no per-item dialog at all (`programs/desktop/src/dir.rs`'s module header records
   that deviation), so there is nothing to turn on.
 * **Confirm overwrites** (`SPCOWYES`/`SPCOWNO`) — same, one level deeper:
   EmuTOS asks before replacing an existing file (`deskdir.c:325`), NewTOS's copy
@@ -1154,7 +1154,7 @@ verschiedene Antworten auf dieselbe Frage.
 
 Die Zeile *Confirm deletes* nennt `dir::confirm_deletes()`; die Funktion gibt es
 nicht mehr. Der Leser ist `dir_op`s `confirm`-Schalter
-(`kernel/src/desk/dir.rs`), und `CSave` traegt jetzt auch `cs_confcpy` und
+(`programs/desktop/src/dir.rs`), und `CSave` traegt jetzt auch `cs_confcpy` und
 `cs_confovwr` (`INF_E1_CONFCPY`, `INF_E2_ALLOWOVW` — letzteres **invertiert**,
 `deskapp.c:98`: gesetzt heisst *nicht* nachfragen).
 
@@ -1349,7 +1349,7 @@ Real-Pi4-only: the 1920 × 1080 look of all of these.
 
 `Options → Desktop configuration…` had no handler (`Item::DeskConfig` fell
 through `do_optnmenu`'s `_ => {}` and `men_update`'s catch-all kept it greyed).
-DESK05 implements it as `kernel/src/desk/inf.rs::inf_conf`, run through DESK08's
+DESK05 implements it as `programs/desktop/src/inf.rs::inf_conf`, run through DESK08's
 `start_dialog` / `form_do` / `end_dialog` chain and dispatched from
 `main::do_optnmenu` as the bare `inf_conf();` of `deskmain.c:895-898`.
 
@@ -1415,7 +1415,7 @@ invent:
 
 The shortcut letters live in a 33-byte array, not in the menu strings; the
 strings only ever carry a rendering of it. The chain, and where each piece now
-lives in NewTOS (`kernel/src/desk/menu.rs` unless noted):
+lives in NewTOS (`programs/desktop/src/menu.rs` unless noted):
 
 | EmuTOS | NewTOS |
 |---|---|
@@ -1426,7 +1426,7 @@ lives in NewTOS (`kernel/src/desk/menu.rs` unless noted):
 | `install_shortcuts` (`:1825-1858`) | `install_shortcuts`, called from `install_menu_bar` |
 | `recover_shortcuts` (`deskinf.c:1062-1090`) | `recover_shortcuts` |
 | `lookup_ascii_shortcut` (`deskmain.c:1169-1198`) | `lookup_ascii_shortcut`, now array-driven |
-| `case 'K'` / `#K` (`deskapp.c:961-975`, `:1183-1193`) | `InfData::shortcuts` in `kernel/src/desk/inf.rs` |
+| `case 'K'` / `#K` (`deskapp.c:961-975`, `:1183-1193`) | `InfData::shortcuts` in `programs/desktop/src/inf.rs` |
 
 Consequences worth naming:
 
@@ -1896,17 +1896,17 @@ limit on the tail this box can produce — well inside `CMDTAILSIZE`.
 
 ### NewTOS
 
-`kernel/src/desk/inf.rs` `opn_appl(papname, ptail)` — the tree built object for
+`programs/desktop/src/inf.rs` `opn_appl(papname, ptail)` — the tree built object for
 object with [`mk`]/[`mk_root`]/[`rsc_ted`]/`align_title`, exactly as DESK42
 built `ADDISKIN`/`ADFFINFO`. `ptail` is a `Vec<u8>` rather than a `String`
 because of the `X` validation above; `inf_sget` is added next to `inf_sset` as
 its `util/optimize.c:119-126` counterpart.
 
-The call sites are the two `do_aopen` embodiments in `kernel/src/desk/main.rs`:
+The call sites are the two `do_aopen` embodiments in `programs/desktop/src/main.rs`:
 `open_item`'s `App` arm (double click / File→Open) and `do_aopen_drop`, whose
 `tail` parameter became `Option<&[u8]>` so that EmuTOS's `tail == NULL`
 distinction is carried rather than approximated by an empty string — `None` is
-`process_funkey`, `Some` the three drop paths in `kernel/src/desk/dir.rs`.
+`process_funkey`, `Some` the three drop paths in `programs/desktop/src/dir.rs`.
 
 **Closed by DESK50 (2026-10-01), kept here for the history:** the paragraph
 below described the state after DESK47. `do_wopen`, `do_diropen` and
@@ -1922,6 +1922,6 @@ the `do_diropen` body is spread over `open_dir_window_at`, `navigate_window`,
 which does `do_wopen`'s `graf_growbox` zoom or its
 `act_chg(…, FALSE, FALSE)` deselect. Building `do_wopen` for `pro_run` alone
 would produce a function wearing the name without being it; it needs its own
-unit, together with a `graf_growbox` binding in `kernel/src/desk/mod.rs`
+unit, together with a `graf_growbox` binding in `programs/desktop/src/lib.rs`
 (AES opcode 73 is implemented in `tos-api/src/aes/graf.rs:356` but the desktop
 has no wrapper for it).

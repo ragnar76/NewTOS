@@ -873,7 +873,7 @@ pub fn on_process_exit(slot: usize) {
 /// By the time this runs every EL0 process of the session that ended is gone
 /// — `sh_main` returns only after the program it started has terminated — so
 /// the only identity that could still hold an entry is the in-kernel desktop
-/// ([`super::pd::DESKTOP`]), which never calls `rsrc_load`: `kernel/src/desk/`
+/// ([`super::pd::DESKTOP`]), which never calls `rsrc_load`: `programs/desktop/src/`
 /// draws from its own built-in trees. The loop covers it regardless.
 pub(super) fn reinit() {
     // SAFETY: single-CPU restart path, no AES call in flight.

@@ -1,6 +1,6 @@
 //! VDI trap binding (`svc #2`, selector 115).
 //!
-//! DESK43 U6b: the trap half of the kernel desktop's `kernel/src/desk/vdibind.rs`
+//! DESK43 U6b: the trap half of the kernel desktop's `programs/desktop/src/gsx.rs`
 //! (its line pen, user line style, polyline, clip and text-height queries)
 //! merged with the calls the U6a runtime had here (a virtual workstation, fill,
 //! text). The desktop keeps only what is desktop logic — its `gsx_*` emulation

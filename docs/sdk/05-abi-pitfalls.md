@@ -287,7 +287,7 @@ runs of blanks/tabs, MagX single-quoting honoured — and publishes
 
 Still true: the desktop passes an **empty** tail on a plain double-click and
 the document path only for an association or drop launch
-(`kernel/src/desk/main.rs`). Since TASK/PORT09 (2026-10-06) the start-up also
+(`programs/desktop/src/main.rs`). Since TASK/PORT09 (2026-10-06) the start-up also
 walks `p_env` into `environ` and honours the Atari `ARGV=` extension
 (arguments in the environment when the tail is too short; `argv[0]` is then
 the program's path), as mintlib's `parseargs()` does — including its in-place
@@ -498,7 +498,7 @@ the same for any other `strong_alias`/`weak_alias` across files.
 prints scrolls text over its own window.
 
 **Cause**: a `.NCP` gets the VT52 text screen and the "press any key" pause
-(`kernel/src/desk/main.rs:482-497`, `:610`); a `.NAP` runs on the GEM screen with no
+(`programs/desktop/src/main.rs:482-497`, `:610`); a `.NAP` runs on the GEM screen with no
 console handoff. `AUTO` programs run **before** the AES; their output is
 painted over when the desktop comes up (`kernel/src/launch.rs:216-226`,
 `tools/make-sd-image.sh:184-187`).

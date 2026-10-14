@@ -261,7 +261,7 @@ original Atari TOS `Pexec`/`Shel_write` behaviour).
 ## NewTOS implementation notes
 
 **Implemented 2026-09-23 (DESK06)** as
-[`kernel/src/desk/pro.rs`](../../../kernel/src/desk/pro.rs) — `pro_exec`,
+[`programs/desktop/src/pro.rs`](../../../programs/desktop/src/pro.rs) — `pro_exec`,
 `pro_run`, plus `desk_busy_on`/`desk_busy_off` (`desksupp.c:1840-1852`),
 which had no home in the tree before and whose first caller is `pro_exec`.
 The one AES call is a real trap: `desk/mod.rs`'s new `shel_write` aesbind
@@ -303,7 +303,7 @@ Two named differences, both from the `tail` buffer this doc's
 ### The current-directory step (DESK18, 2026-09-23)
 
 `set_default_path` (`desksupp.c:1785-1801`) joined `desk_busy_on`/
-`desk_busy_off` in [`kernel/src/desk/pro.rs`](../../../kernel/src/desk/pro.rs)
+`desk_busy_off` in [`programs/desktop/src/pro.rs`](../../../programs/desktop/src/pro.rs)
 for the same reason they are there: it belongs to `desksupp.c`, it has no home
 of its own in the tree, and the module that starts programs is where its
 caller lives.

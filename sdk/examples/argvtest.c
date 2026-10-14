@@ -16,7 +16,7 @@
  * possible faults: the raw tail out of the BasePage, then argc/argv.
  *
  * It is a `.NAP` on purpose: `*.NAP` is a GEM-application ANODE in the
- * desktop's built-in list (kernel/src/desk/inf.rs:678), so dropping a file on
+ * desktop's built-in list (programs/desktop/src/inf.rs:678), so dropping a file on
  * its icon -- or on a desktop shortcut for it -- is a launch with that file as
  * the command tail, the same gesture that starts QED with a document.
  * It uses no AES call, so nothing but the startup stands between the launch

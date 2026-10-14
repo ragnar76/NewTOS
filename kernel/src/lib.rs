@@ -62,7 +62,6 @@ pub mod selftest_timer_restart;
 pub mod selftest_etv_term;
 pub mod accs;
 pub mod aes_demo;
-pub mod desk;
 pub mod embedded;
 pub mod launch;
 pub mod shell_loop;
@@ -526,7 +525,7 @@ extern "C" fn kernel_main_rust(dtb_phys: usize, entry_el: u64) -> ! {
     // assembly, which re-zeroes the global AES area and jumps back to
     // `gem_main` when `gl_changerez` is still set (`:122-124`); here the same
     // decision is `sh_main`'s return value, and the re-zeroing is
-    // `tos_api::aes::reinit()` + `desk::reset()` (A106, ticket `TASK/A106.md`,
+    // `tos_api::aes::reinit()` + `desktop::reset()` (A106, ticket `TASK/A106.md`,
     // design `docs/analysis/a48-shw-reschng-design-2026-09-21.md` §5 tier 2).
     //
     // Only `ShExit::Shutdown` leaves the loop. On a board whose `can_shutdown()`
@@ -609,7 +608,7 @@ extern "C" fn kernel_main_rust(dtb_phys: usize, entry_el: u64) -> ! {
         // desktop's own state — is rebuilt from scratch.
         kprintln!("[shell] AES restart (resolution change requested)");
         tos_api::aes::reinit();
-        desk::reset();
+        desktop::reset();
         // `dos_sdrv(bootdev)` (`geminit.c:796-803`): "resolution change always
         // resets the default drive to the boot device". NewTOS has no boot
         // device variable; the boot drive is the first hard disk in the drive

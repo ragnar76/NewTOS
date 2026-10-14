@@ -340,7 +340,7 @@ Our AES (`tos-api/src/aes/window.rs`) implements **none** of this. Instead:
 - **`DESK_PAINTER`** (`window.rs:246`) — a raw `AtomicUsize` holding a
   `fn(&dyn RasterBackend, ClipRect)` pointer. `set_desktop_painter()`
   (`:249-251`) / `clear_desktop_painter()` (`:263-265`) let *any* caller
-  (in practice, only `kernel/src/desk/`) install/remove it — a side channel
+  (in practice, only `programs/desktop/src/`) install/remove it — a side channel
   that bypasses the AES trap dispatcher entirely; there is no `wind_set`
   opcode involved.
 - **`paint_bg_clip()`** (`window.rs:312-324`) — called from `compose()`
@@ -351,14 +351,14 @@ Our AES (`tos-api/src/aes/window.rs`) implements **none** of this. Instead:
   `CLEAR_SCREEN`, but achieved by literally special-casing "no painter" in
   Rust control flow, not by drawing an `OBJECT` whose `ob_spec` happens to be
   0.
-- **`kernel/src/desk/mod.rs:509-517`** (`paint_desktop_bg`) — the registered
+- **`programs/desktop/src/lib.rs:509-517`** (`paint_desktop_bg`) — the registered
   painter. It fills the desktop pattern via a hand-built `PatternFill` (an
   `IP_PATTERNS` dither table reimplementing `gr_crack`'s bit layout, `mod.rs:485-496`)
   straight through `RasterBackend`, then calls `global::render_desktop_icons`
   — **not** `objc_draw`/a shared drawing engine on a real `OBJECT` tree with
   `ROOT`/`DROOT` semantics. The desktop's icons are pushed to the backend by
   bespoke code, never through the `tos-api` object-manager's `draw_tree`.
-- **`kernel/src/desk/main.rs:519-544`** (`desktop_relinquish`/`desktop_resume`)
+- **`programs/desktop/src/main.rs:519-544`** (`desktop_relinquish`/`desktop_resume`)
   — the app-launch/exit toggle. `desktop_relinquish()` calls
   `save_windows()` + `clear_desktop_painter()` + `redraw()`, i.e. **the exact
   functional intent** of `wm_init()`'s `gl_newdesk = NULL` reset +
@@ -427,12 +427,12 @@ new rasterizer, only wiring the desktop through it.
      naturally reproduces `CLEAR_SCREEN` (a fallback root whose fill is
      white/`IP_HOLLOW` computes to the same all-zero `ob_spec` EmuTOS uses).
    - This one change removes the hand-rolled `IP_PATTERNS`/`PatternFill`
-     dither logic in `kernel/src/desk/mod.rs:485-517` from the desktop crate
+     dither logic in `programs/desktop/src/lib.rs:485-517` from the desktop crate
      entirely — pattern/colour decoding becomes the object manager's
      `gr_crack`-equivalent job (`object.rs:1589-1609` already does this for
      other box types), used generically instead of duplicated per-caller.
 
-3. **`kernel/src/desk/` — build a real `OBJECT` tree for `ROOT`/`DROOT` +
+3. **`programs/desktop/src/` — build a real `OBJECT` tree for `ROOT`/`DROOT` +
    desktop icons instead of pushing raster pixels.**
    - Introduce a desktop-owned `OBJECT` array analogous to `G.g_screen`
      (`deskobj.c:36-146`): object 0 = `ROOT` (full-screen anchor box, e.g.
@@ -445,7 +445,7 @@ new rasterizer, only wiring the desktop through it.
      `ob_spec`-pointed `ICONBLK` (the `object.rs` engine already supports
      `G_ICON` drawing, `object.rs:1776-1779`).
    - Replace the direct pixel-pushing in `paint_desktop_bg`
-     (`kernel/src/desk/mod.rs:509-517`) with: build/refresh this tree once
+     (`programs/desktop/src/lib.rs:509-517`) with: build/refresh this tree once
      (on background-pattern change, icon add/remove/move — i.e. exactly when
      `inf_backgrounds`/`app_blddesk` would run in EmuTOS), then call the same
      `objc_draw`-equivalent used by point 2's fallback path. The existing
@@ -456,7 +456,7 @@ new rasterizer, only wiring the desktop through it.
      tree" structure (§2, point "The desktop's own redraw").
 
 4. **Register/un-register at desktop start/exit — real trap calls.**
-   - `kernel/src/desk/mod.rs::run()` (currently `set_desktop_painter(paint_desktop_bg)`
+   - `programs/desktop/src/lib.rs::run()` (currently `set_desktop_painter(paint_desktop_bg)`
      at `:586`): replace with a real `wind_set(DESKWH, WF_NEWDESK,
      &desktop_tree, 1, ROOT)` AES call (via whatever internal call path
      `tos-api` exposes for kernel-side AES calls without a full SVC
@@ -468,13 +468,13 @@ new rasterizer, only wiring the desktop through it.
      question for whoever implements this to confirm against how other
      kernel→AES-internal calls are already wired, e.g. `menu_bar` at
      `main.rs:522/539` which is called directly, not via `Aespb`).
-   - `kernel/src/desk/main.rs::desktop_relinquish()` (`:519-532`, currently
+   - `programs/desktop/src/main.rs::desktop_relinquish()` (`:519-532`, currently
      `save_windows()` + `clear_desktop_painter()` + `redraw()`): replace
      `clear_desktop_painter()` with the `WF_NEWDESK(NULL,0,0)` un-registration
      — the subsequent `redraw()` then naturally paints the fallback root
      (white, per point 2), reproducing `sh_draw(cmd, TRUE)`'s `CLEAR_SCREEN`
      exactly, with no separate "white erase" special case needed in Rust.
-   - `kernel/src/desk/main.rs::desktop_resume()` (`:536-544`): replace
+   - `programs/desktop/src/main.rs::desktop_resume()` (`:536-544`): replace
      `set_desktop_painter(super::paint_desktop_bg)` with the
      `WF_NEWDESK(&desktop_tree, 1, ROOT)` re-registration.
    - `save_windows()`/`restore_windows()` (`window.rs:279-308`) are a
@@ -486,7 +486,7 @@ new rasterizer, only wiring the desktop through it.
      fixing** — see Out-of-scope observations below.
 
 5. **Persisted background byte.** `global::patcol_desktop()` (already
-   existing, `kernel/src/desk/mod.rs:512`) is the NewTOS analogue of
+   existing, `programs/desktop/src/lib.rs:512`) is the NewTOS analogue of
    `G.g_patcol[index].desktop`/`set_aes_background`'s `patcol` byte — keep it
    as the single source of truth feeding `DROOT`'s `ob_spec` (point 3) and
    the AES-internal fallback root's `ob_spec` (point 1); this mirrors
@@ -508,7 +508,7 @@ responsibility between `aes/` and `desk/`).
 ## Open questions / STOP-blocks
 
 - **Kernel→AES-internal call convention for `WF_NEWDESK` registration**
-  (plan point 4): this document doesn't know whether `kernel/src/desk/`
+  (plan point 4): this document doesn't know whether `programs/desktop/src/`
   already has an established "call an AES function directly, bypassing the
   `Aespb`/SVC marshalling" pattern (the `menu_bar` calls in `main.rs:522/539`
   suggest yes) or whether `WF_NEWDESK` registration should go through a full

@@ -33,7 +33,7 @@
 //! its descriptor.
 //!
 //! The test drives the real launch boundary through the LP64 AES dispatcher,
-//! in the order `kernel/src/desk/main.rs` (`run_gem_app` → `desktop_relinquish`
+//! in the order `programs/desktop/src/main.rs` (`run_gem_app` → `desktop_relinquish`
 //! / `desktop_resume`) and `kernel/src/launch.rs` execute it, and then asks the
 //! only question that matters: **after the program is gone, does the desktop
 //! still get its messages?**
@@ -322,7 +322,7 @@ fn drain(pb: &mut Aespb, pid: i16) -> usize {
 }
 
 /// The desktop's half of `run_gem_app` before the child runs
-/// (`kernel/src/desk/main.rs`, `desktop_relinquish`), in its order. The
+/// (`programs/desktop/src/main.rs`, `desktop_relinquish`), in its order. The
 /// menu-bar removal and the `WF_NEWDESK` un-registration are draws that do not
 /// touch the descriptor; the two that do are `save_windows()` and, last,
 /// `appl_exit()` — EmuTOS's desktop epilog `desk/deskmain.c:2159-2166` (A28).
@@ -334,7 +334,7 @@ fn desktop_relinquish(pb: &mut Aespb) {
 }
 
 /// The desktop's half of `run_gem_app` after the child `Pterm`s
-/// (`kernel/src/desk/main.rs`, `desktop_resume`): the saved window set comes
+/// (`programs/desktop/src/main.rs`, `desktop_resume`): the saved window set comes
 /// back and the desktop re-enters the AES, as EmuTOS's re-entered `deskmain`
 /// does in its first statement (`desk/deskmain.c:1953`).
 fn desktop_resume(pb: &mut Aespb) {
@@ -385,7 +385,7 @@ fn the_desktop_still_receives_messages_after_a_program_returns() {
     install_host();
     let mut pb = Aespb::new();
 
-    // ── the desktop comes up (`kernel/src/desk/mod.rs`, `run`) ────────────
+    // ── the desktop comes up (`programs/desktop/src/lib.rs`, `run`) ────────────
     let desk_pid = appl_init(&mut pb);
     assert_eq!(desk_pid, 0, "the desktop's AES id is the chain's, 0 (gemsuper.c:94, rlr->p_pid)");
     let win = open_window(&mut pb, WR);

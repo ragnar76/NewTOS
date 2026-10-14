@@ -1,0 +1,7 @@
+A: fresh copy has no target/ (git rev 7699f4d7)
+A: clean build rpi4 rc=0 xtask: building program hello-gem for rpi4 -> /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/u8b/clean/tree-clean/target/programs/rpi4/HELLOGEM.NAP xtask: building kernel for board-rpi4 (release) Compiling desktop v0.1.0 (/Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/u8b/clean/tree-clean/programs/desktop) tos-api=64 kernel=94 
+A: rpi4 image vs kernel8-u8b.img: size 1180520/1180520, differing bytes 0
+A: clean build qemu-virt rc=0 xtask: building program hello-gem for qemu-virt -> /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/u8b/clean/tree-clean/target/programs/qemu-virt/HELLOGEM.NAP xtask: building kernel for board-qemu-virt (release) Compiling desktop v0.1.0 (/Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/u8b/clean/tree-clean/programs/desktop) tos-api=64 kernel=94 
+A: qemu-virt image vs kernel-virt-u8b.img: size 1142832/1142832, differing bytes 0
+target/programs/qemu-virt/HELLOGEM.NAP
+target/programs/rpi4/HELLOGEM.NAP

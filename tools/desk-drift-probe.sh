@@ -102,10 +102,11 @@ usage() {
     exit 0
 }
 
-# Baseline of the `unsafe` count (kernel/src/desk/). Lower it when a unit
-# removes `unsafe` lines; never raise it. U5a: 24. DESK43 U6b: 20 (the four
-# trap `asm!` blocks of the AES/GEMDOS/VDI/XBIOS bindings moved to
-# programs/newtos-gem).
+# Baseline of the `unsafe` count (the desktop source: kernel/src/desk/ until
+# DESK43 U8b, programs/desktop/src/ since). Lower it when a unit removes
+# `unsafe` lines; never raise it. U5a: 24. DESK43 U6b: 20 (the four trap
+# `asm!` blocks of the AES/GEMDOS/VDI/XBIOS bindings moved to
+# programs/newtos-gem). U8b: 20 (the same 20 lines, moved with their files).
 UNSAFE_BASELINE=20
 
 VERBOSE=0

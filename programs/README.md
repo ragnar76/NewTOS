@@ -21,8 +21,11 @@ programs/
 │                         desktop links them too), and with feature `rt`
 │                         (default) the heap (GlobalAlloc over GEMDOS Malloc
 │                         hunks) and the panic handler (Cconws, Pterm(-1))
-└── hello-gem/            HELLOGEM.NAP, the U6a spike (window, heap test,
-                          stack measurement, `--features panic-test`)
+├── hello-gem/            HELLOGEM.NAP, the U6a spike (window, heap test,
+│                         stack measurement, `--features panic-test`)
+└── desktop/              the desktop (EmuTOS desk/ in Rust), a library crate
+                          (DESK43 U8b; until then kernel/src/desk/): linked by
+                          the kernel today, by the NEWDESK program from U9
 ```
 
 ## Build
@@ -58,6 +61,23 @@ The programs workspace is still separate (root `Cargo.toml`
 (`default-features = false`: the bindings without `rt`): the kernel desktop
 calls the system through the same bindings a program does. Cargo builds it
 as a non-member path package with the kernel's profile and target.
+
+**The desktop crate (DESK43 U8b).** `desktop/` is a library, not a program
+(no `staticlib`, not in `PROGRAMS`): the kernel links it by path and calls
+`desktop::run`/`desktop::reset` in EL1 from `sh_ldapp`'s DESKTOP arm, as it
+called the module before; the `NEWDESK` program (U9) will be a thin crate
+around the same library — one source, two link targets (review §3.1). Its
+dependencies are **`newtos-gem` (without `rt`) and `tos-types` only**: a
+`tos_api::` or kernel path in the desktop does not compile (guard G1; checked
+by `tools/desk-drift-probe.sh` group D and the host test
+`programs_tests::desktop_depends_only_on_newtos_gem_and_tos_types`). It
+declares `board-rpi4`/`board-qemu-virt` (exactly one required: the About-box
+machine line) and `selftest-desk`; the kernel features of the same names pass
+through (`board-rpi4 = ["desktop/board-rpi4"]`). Building or linting it on
+its own therefore needs a board:
+`cargo clippy -p desktop --features board-rpi4` (in `programs/`); a bare
+`cargo build`/`cargo clippy` over the whole programs workspace stops at the
+desktop's missing-board `compile_error!`.
 
 **Embedding (decision D3).** `cargo xtask build` builds the board's programs
 first; `kernel/build.rs` embeds the ones listed in `kernel/embed.rs` from

@@ -589,7 +589,7 @@ either way).
 
 ### 7.5 Where the extension is classified today, and the ACC02 gap
 
-`kernel/src/desk/ftype.rs`'s `classify()` (`:59-72`, `FileType`/`Flavor`
+`programs/desktop/src/ftype.rs`'s `classify()` (`:59-72`, `FileType`/`Flavor`
 enums `:20-46`) is the single point ADR-018 names for filename → launch-
 behaviour classification, used by `run_auto_folder` and the desktop's
 `open_item` launch path per the doc comment at `ftype.rs:1-18`. **As of this
@@ -684,7 +684,7 @@ by direct search this session (not inferred from the ticket's framing):
    (`menu_fixup`/`gl_dafirst`, already correctly described in
    [`menu.md`](./menu.md)) and the click-routing branch
    (`gemctrl.c:337-350`, §3 above) have no NewTOS counterpart — `menu.rs`'s
-   own comment says so (`:1089-1091`) and `kernel/src/desk/main.rs:1444-1462`
+   own comment says so (`:1089-1091`) and `programs/desktop/src/main.rs:1444-1462`
    documents that the desktop *correctly* does not handle it either, because
    the AES is supposed to. → **ACC03**.
 4. **`AC_CLOSE` is never posted.** `mn_cleanup` (§3, §4 point 5) has no
@@ -735,7 +735,7 @@ what EmuTOS does. Measured in
 | `hctl_rect`'s DA branch (`gemctrl.c:337-350`) | `menu.rs::desk_accessory_pick` + `event.rs::menu_intercept` |
 | `AP_MESAG`/`AP_ACCLOSE` (`gemsuper.c:137-140,147-161`) | `event.rs::evnt_mesag`/`evnt_multi`, `pd::AP_ACCLOSE` |
 | `bootflags & BOOTFLAG_SKIP_AUTO_ACC` (`:269-270`) | `launch::skip_auto_acc()` → `accs::load_accs(skip)` |
-| the `ADMENU` Desk box's six placeholders (`desk_rsc.c:345-407`) | `kernel/src/desk/menu.rs`'s `Entry::Acc` rows |
+| the `ADMENU` Desk box's six placeholders (`desk_rsc.c:345-407`) | `programs/desktop/src/menu.rs`'s `Entry::Acc` rows |
 
 ### 9.2 The cooperative model an accessory needs — and what it cost
 
@@ -906,7 +906,7 @@ case where both sides give up anyway — a DA that never consumes its
 - [`_discrepancies.md`](../_discrepancies.md) — the prior `AC_OPEN`/`msg[4]`
   finding this file's §3 confirms and extends with the `AC_CLOSE`/`msg[3]`
   half.
-- `kernel/src/desk/ftype.rs`, `docs/MEMORY.md` ADR-018 — the extension
+- `programs/desktop/src/ftype.rs`, `docs/MEMORY.md` ADR-018 — the extension
   classification §7.5 found had no `.NAC` entry; `Flavor::Accessory` closed
   that in ACC02 (§9.1).
 - `kernel/src/accs.rs`, `tos-api/src/aes/acc.rs` — the implementation §9

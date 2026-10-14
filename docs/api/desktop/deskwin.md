@@ -426,11 +426,11 @@ full per protocol):
   `STINFST2` = `" %ld bytes used in %d selected items."` — leading blank,
   **size first**, count second, trailing full stop, and the argument order
   of the `sprintf(pwin->w_info, alert, select_size, select_count)` at
-  `:905`. **NewTOS (A109, 2026-09-22):** `kernel/src/desk/main.rs`
+  `:905`. **NewTOS (A109, 2026-09-22):** `programs/desktop/src/main.rs`
   `fmt_info` writes the `STINFOST` form; it had its own wording and the
   numbers the other way round (`" N items   M bytes used"`).
   **NewTOS (A110, 2026-09-23):** `fmt_info` takes the `selected` flag and
-  writes the `STINFST2` form for it, and `kernel/src/desk/main.rs`
+  writes the `STINFST2` form for it, and `programs/desktop/src/main.rs`
   `win_sinfo(handle, check_selected)` is the function above — count the
   selected `FNODE`s, fall back to the directory totals when none is selected
   (which is what makes a *deselect* put the byte count back), `wind_set(…,

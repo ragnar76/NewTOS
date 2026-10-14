@@ -147,7 +147,7 @@ fn cpath(s: &str) -> [u8; 130] {
 /// cannot use [`dos_conws`]: `Cconws` reads its string with the unprivileged
 /// `ldtrb` (`tos-api/src/gemdos/console.rs`), which faults on kernel-VA
 /// literals. The kernel desktop's self-test writer
-/// (`kernel/src/desk/selftest.rs`) is that caller.
+/// (`programs/desktop/src/selftest.rs`) is that caller.
 // NEWTOS: EmuTOS's `include/gemdos.h` has no `dos_*` wrapper for `Cconout`.
 pub fn cconout(c: u8) {
     dos_trap(CCONOUT, c as u64, 0, 0);

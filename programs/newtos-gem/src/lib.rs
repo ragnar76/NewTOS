@@ -12,7 +12,7 @@
 //!
 //! * [`gemdos`], [`aes`], [`vdi`], [`xbios`] — the trap bindings (`svc #1`,
 //!   `svc #2` selectors 200 / 115, `svc #14`). Since DESK43 U6b they are the
-//!   **only** copy: the kernel desktop (`kernel/src/desk/`, still EL1 until
+//!   **only** copy: the kernel desktop (`programs/desktop/src/`, still EL1 until
 //!   U9) calls the system through them as well;
 //! * [`heap`] — the global allocator, over GEMDOS `Malloc` hunks (feature
 //!   `rt`);

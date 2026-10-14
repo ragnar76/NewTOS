@@ -129,11 +129,11 @@ This **local macro** shadows the AES binding of the same name for the rest of
 menu `OBJECT` tree, **not a trap**. This is a deliberate optimisation (the
 desktop owns the menu tree outright, so there's no reason to round-trip
 through the AES to change one `LONG` field) and is the **same category of
-finding** as `kernel/src/desk/menu.rs`'s own documented decision to bypass
+finding** as `programs/desktop/src/menu.rs`'s own documented decision to bypass
 `menu_icheck`/`menu_ienable` (`menu.rs:12-23`) — except EmuTOS itself only
 applies this shortcut to `menu_text`, and (per the table above) **does** use
 the real `menu_icheck`/`menu_ienable` traps 15+13 times from `men_update()`.
-**Cross-check for the lead:** `kernel/src/desk/menu.rs`'s bypass of
+**Cross-check for the lead:** `programs/desktop/src/menu.rs`'s bypass of
 `menu_icheck`/`menu_ienable` is a **wider** deviation from EmuTOS's own call
 pattern than EmuTOS's own `menu_text` shortcut — EmuTOS really does call the
 AES for icheck/ienable; NewTOS's `menu.rs` comment gives its own reasoning
@@ -195,10 +195,10 @@ All of these go through `trap1()` (`util/miscasm.S`, not read this pass) —
 the same real GEMDOS trap entry any TOS program uses. **No GEMDOS shortcut
 analogous to `gsx_trans`/`menu_text` was found in this task's three files.**
 
-## Cross-reference to `kernel/src/desk/mod.rs` (context, not validated against source — code, not spec)
+## Cross-reference to `programs/desktop/src/lib.rs` (context, not validated against source — code, not spec)
 
 For the lead's synthesis only (this is a code observation, not a spec claim —
-no EmuTOS citation applies to NewTOS's own Rust): `kernel/src/desk/mod.rs`
+no EmuTOS citation applies to NewTOS's own Rust): `programs/desktop/src/lib.rs`
 **already implements** a real client-side "aesbind" (`svc #2`, selector 200
 in `x0`, AESPB in `x1` — the same mechanical pattern as `gembind.c`'s
 `trap #2`/`d0=200`), with wrapper functions for `evnt_button`, `evnt_multi`,
@@ -230,18 +230,18 @@ Everything else in the table is a straight, mechanically-verifiable
 function-for-function correspondence between `gembind.c`'s catalogue and
 `tos-api/src/aes/*`'s server-side opcodes — no gaps found on the AES-server
 side; the open question is 100% about the desktop-side client wiring
-(`kernel/src/desk/*.rs`), which is a code-completeness question, not a spec
+(`programs/desktop/src/*.rs`), which is a code-completeness question, not a spec
 gap.
 
 ## NewTOS implementation notes — the desktop reaches the system only through traps (DESK10, 2026-09-23)
 
 The carve-out flagged above ("whether they are already wired there was **not
 checked**") is now closed for the **GEMDOS/BIOS half** of the call surface.
-`kernel/src/desk/` has two client-side binding layers and no third path:
+`programs/desktop/src/` has two client-side binding layers and no third path:
 
 | Layer | NewTOS file | Mechanism | EmuTOS counterpart |
 |---|---|---|---|
-| aesbind | `programs/newtos-gem/src/aes.rs` (until DESK43 U6b `kernel/src/desk/mod.rs`) | `svc #2`, selector 200 in `x0`, AESPB in `x1` | `desk/gembind.c` (`trap #2`, `d0 = 200`) |
+| aesbind | `programs/newtos-gem/src/aes.rs` (until DESK43 U6b `programs/desktop/src/lib.rs`) | `svc #2`, selector 200 in `x0`, AESPB in `x1` | `desk/gembind.c` (`trap #2`, `d0 = 200`) |
 | dosbind | `programs/newtos-gem/src/gemdos.rs` (until U6b `kernel/src/desk/dosbind.rs`) | `svc #1` (GEMDOS), function id in `x8`, arguments in `x0..x7` in TOS order | `include/gemdos.h` → `include/bdosbind.h` `trap1()` |
 
 **DESK43 U6b (2026-10-14):** the bindings moved, unchanged in what they put
@@ -259,7 +259,7 @@ happened to carry trap-shaped arguments. It therefore ran past the very ABI
 every application uses, so a defect in the dispatcher was invisible from the
 desktop (`docs/analysis/desk-aes-gaps-2026-09-14.md` §G6, memory
 `desktop-bypasses-app-abi-path`). That is gone: the sweep
-`/usr/bin/grep -rn "tos_api::bdos\|tos_api::gemdos\|tos_api::bios\|tos_api::xbios" kernel/src/desk/`
+`/usr/bin/grep -rn "tos_api::bdos\|tos_api::gemdos\|tos_api::bios\|tos_api::xbios" programs/desktop/src/`
 returns **comments only**.
 
 ### The binding table
@@ -400,7 +400,7 @@ Pi-4's, HW checklist item 37.
 ## NewTOS implementation notes — `fsel_exinput` reaches the desktop (DESK14, 2026-09-23)
 
 The cross-reference above lists `fsel_exinput` among the AES bindings
-`kernel/src/desk/mod.rs` **did not yet cover**. DESK14 adds it, because
+`programs/desktop/src/lib.rs` **did not yet cover**. DESK14 adds it, because
 `app_read_inf` is its only caller in a NewTOS build (the other EmuTOS caller,
 `desksupp.c`'s `CONF_WITH_DESKTOP_SHORTCUTS`, is a separate feature):
 

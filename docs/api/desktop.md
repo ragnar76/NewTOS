@@ -104,7 +104,7 @@ functions). Texts where read from `desktop.rsc`:
    (`[0]` hard disk, `[1]` floppy disk, then folder/trash/printer/…), each
    a `data` + `mask` pair; the drive letter sits at the `(ib_xchar,
    ib_ychar)` cell. NewTOS extracts the hard-disk and floppy bitmaps into
-   [`kernel/src/desktop_icons.rs`](../../kernel/src/desktop_icons.rs) and
+   [`programs/desktop/srctop_icons.rs`](../../programs/desktop/srctop_icons.rs) and
    blits them (mask = opaque silhouette → body white / data black;
    transparent elsewhere). **Done in Batch 2b.**
 
@@ -121,7 +121,7 @@ The drives themselves are generated in the built-in INF `#M` loop
 
 ## Reconciliation with the Batch-1 draft
 
-The initial `kernel/src/desktop.rs` Batch-1 was guessed; the extraction
+The initial `programs/desktop/srctop.rs` Batch-1 was guessed; the extraction
 shows these **errors** to fix:
 
 1. **Drive icons belong TOP-LEFT in a grid** (`deskapp.c:719`), not on the

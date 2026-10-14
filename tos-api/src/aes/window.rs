@@ -1256,7 +1256,7 @@ fn clear_newdesk() {
 /// 16, A81):
 ///
 /// * **native** (`AIN_LEN >= 1`): tree in `addr_in[0]`, root in `int_in[2]` —
-///   what the native desktop sends (`kernel/src/desk/mod.rs::wind_set_newdesk`)
+///   what the native desktop sends (`programs/desktop/src/lib.rs::wind_set_newdesk`)
 ///   and gemlib's overlay bindings after A81;
 /// * **packed** (`AIN_LEN == 0`): tree packed at the caller's own pointer width
 ///   from `int_in[2]`, root in the word right after it, `int_in[2 + ptr_words]`
@@ -5419,7 +5419,7 @@ pub fn intercept() {
     //
     // The topping is the *owner's* to request with `wind_set(WF_TOP)` (TeraDesk
     // `wd_type_topped`, `sdk/apps/teradesk/window.c:2375-2378`; our desktop's
-    // `top_msg`, `kernel/src/desk/main.rs:1396-1406`). Doing it here as well
+    // `top_msg`, `programs/desktop/src/main.rs:1396-1406`). Doing it here as well
     // made the owner's `WF_TOP` a no-op on an already-topped window — and the
     // repaint it triggered took the window's content with it.
     if handle != get_top() {
@@ -5840,7 +5840,7 @@ mod newdesk_root_word_tests {
     }
 
     /// Native form: tree in `addr_in[0]`, root in `int_in[2]` — what the native
-    /// desktop sends (`kernel/src/desk/mod.rs::wind_set_newdesk`).
+    /// desktop sends (`programs/desktop/src/lib.rs::wind_set_newdesk`).
     #[test]
     fn native_form_root_is_int_in_2() {
         let _g = SERIAL.lock().unwrap_or_else(|e| e.into_inner());

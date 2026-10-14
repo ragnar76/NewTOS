@@ -465,7 +465,7 @@ process (`bdos/proc.c:136`, `free_all_owned`).
 > no such path and is not going to get one: ADR-022 is **rescinded** (user
 > decision 2026-09-02); TeraDesk is the desktop. A second, independent
 > condition would bind first in that case: **`desk/` keeps no persistent
-> `AESGLOBAL`** — `Aes::new()` (`kernel/src/desk/mod.rs`) is a stack local in
+> `AESGLOBAL`** — `Aes::new()` (`programs/desktop/src/lib.rs`) is a stack local in
 > 26 wrappers, so EmuTOS's sequence `rsrc_load(); hdr = AP_1RESV;` — which
 > relies on the module static `GLOBAL UWORD global[G_SIZE]`
 > (`desk/gembind.c:66`) — could not be executed there at all.

@@ -83,7 +83,7 @@ const INFO_LENGTH: i16 = 40;
 // to have neither `kernel` nor `tos-api` in its dependency graph
 // (`docs/analysis/desktop-userspace-plan-v2.md` §6.4, measure 1), so the shared
 // symbol is exactly the kind of link that move removes. The desktop's copies
-// live at `kernel/src/desk/inf.rs`, next to the About box's other literals,
+// live at `programs/desktop/src/inf.rs`, next to the About box's other literals,
 // and name this comment. Editing one means editing both (the `NTOS` cookie is
 // a number, `tos-api/src/cookie.rs:142`; `Sversion` is the GEMDOS version).
 // Programs get `VERSION_STRING` + the build stamp through
@@ -120,7 +120,7 @@ pub(crate) const BUILD_STAMP: &str = tos_api::build::BUILD_STAMP;
 /// `Machine` line prints it.
 ///
 /// **The desktop's About box shows the same texts from its own per-board build
-/// constant** (`MACHINE_NAME` in `kernel/src/desk/inf.rs`, X03, user decision
+/// constant** (`MACHINE_NAME` in `programs/desktop/src/inf.rs`, X03, user decision
 /// 2026-10-01) and no longer calls this function — the last `crate::initinfo`
 /// reference DESK43 U4 left standing. Same reason as the block comment above:
 /// the desktop will not have `kernel` in its dependency graph, and no syscall

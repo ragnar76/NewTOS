@@ -7,7 +7,7 @@
 //! no-pick branch writes `mn_keystate` alone (`aes/gemmnext.c:347`).
 //!
 //! **The tree here is a replica of the kernel desktop's ADMENU as
-//! `kernel/src/desk/menu.rs` `build_menu` lays it out** — same labels, same
+//! `programs/desktop/src/menu.rs` `build_menu` lays it out** — same labels, same
 //! `adjust_menu` arithmetic (EmuTOS `desk/deskmain.c:1511-1641`, A108: title
 //! `strlen · 8`, box `(maxlen + 1) · 8` with the Desk box at least
 //! `MIN_DESKMENU_WIDTH` = 20 cells, `THEACTIVE` at the RSC's 2-cell origin
@@ -516,15 +516,15 @@ const G_TITLE: u16 = 32;
 const LASTOB: u16 = 0x0020;
 const DISABLED: u16 = 0x0008;
 
-/// `kernel/src/desk/menu.rs` `MENU_H` / `CHAR_W`.
+/// `programs/desktop/src/menu.rs` `MENU_H` / `CHAR_W`.
 const BAR_H: i16 = 19;
 const CHAR_W: i16 = 8;
-/// `kernel/src/desk/menu.rs` `BAR_BOX_H` — `THEBAR`'s height, the RSC's
+/// `programs/desktop/src/menu.rs` `BAR_BOX_H` — `THEBAR`'s height, the RSC's
 /// `{0, 0, 80, 513}` = `gl_hchar + 2` (`desk/desk_rsc.c:249-253`,
 /// `aes/gemrslib.c:76-82`); one row above the separator `mn_bar` draws on
 /// `gl_hbox - 1` (`aes/gemmnlib.c:722`).
 const BAR_BOX_H: i16 = 16 + 2;
-/// `kernel/src/desk/menu.rs` `ENTRY_H` — one drop-down entry, the RSC's
+/// `programs/desktop/src/menu.rs` `ENTRY_H` — one drop-down entry, the RSC's
 /// `{0, row, 20, 1}` (`desk/desk_rsc.c:297-341`) after `rsrc_obfix`
 /// multiplies the char cell by `gl_hchar` (`aes/gemrslib.c:53-99`) = 16 px on
 /// the 8×16 font, **not** the 19 px bar row (`gl_hbox`). Before A109
@@ -542,14 +542,14 @@ const SPEC_OUTSIDE: u64 = 0x00FF_1100;
 const SPEC_INSIDE: u64 = (1 << 16) | 0x1070;
 
 /// One drop-down entry: a disabled separator or a selectable item, both
-/// NUL-terminated (`kernel/src/desk/menu.rs` `Entry`).
+/// NUL-terminated (`programs/desktop/src/menu.rs` `Entry`).
 enum Entry {
     Sep(&'static [u8]),
     Act(&'static [u8]),
 }
 use Entry::{Act, Sep};
 
-/// The four desktop menus, labels as in `kernel/src/desk/menu.rs` `MENUS`.
+/// The four desktop menus, labels as in `programs/desktop/src/menu.rs` `MENUS`.
 const MENUS: [(&[u8], &[Entry]); 4] = [
     (b" Desk \0", &[Act(b"  Desktop info... \0"), Sep(b"------------------\0")]),
     (
@@ -616,7 +616,7 @@ fn entry_label(e: &Entry) -> &'static [u8] {
     }
 }
 
-/// `adjust_menu` as `kernel/src/desk/menu.rs` computes it (EmuTOS
+/// `adjust_menu` as `programs/desktop/src/menu.rs` computes it (EmuTOS
 /// `deskmain.c:1511-1641`, in cells of `CHAR_WIDTH` = 8): `THEACTIVE` at
 /// `2 · CHAR_W` (`desk_rsc.c:255-259`) and `Σ title_w` wide (`:1534`), titles
 /// left to right each `strlen` cells wide (`:1528-1533`), boxes `maxlen + 1`

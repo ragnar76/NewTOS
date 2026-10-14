@@ -28,7 +28,7 @@
 //! Point 2 is the ground truth behind DESK13's date decision: `_IDT` says DMY
 //! and `/`, and the desktop's text view used to print MDY with a dash. The
 //! resolution rule now lives in exactly one place
-//! (`kernel/src/desk/model.rs`'s `DateFmt::rendered`/`TimeFmt::rendered`), and
+//! (`programs/desktop/src/model.rs`'s `DateFmt::rendered`/`TimeFmt::rendered`), and
 //! it reads the word this test pins.
 
 use std::sync::{Mutex, Once};

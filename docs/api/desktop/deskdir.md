@@ -560,7 +560,7 @@ algorithm are free.
 
 ### Die beiden Rueckfragen des Dateiwerks (DESK13, 2026-09-23)
 
-`kernel/src/desk/dir.rs` hatte bis DESK13 **keine** der beiden Rueckfragen,
+`programs/desktop/src/dir.rs` hatte bis DESK13 **keine** der beiden Rueckfragen,
 die EmuTOS beim Kopieren stellt: es kopierte los und ueberschrieb
 bedingungslos (`Fcreate` kuerzt). DESK13 baut beide, an EmuTOS' eigenen
 Stellen.
@@ -637,7 +637,7 @@ Fehler in die Zusammenfassung gehoert.
 (`deskdir.c:700-779`), aufgerufen aus `dir_op`s Ordnerzweig (`:1002`) — nicht
 aus `d_doop`: nur der **oberste** Ordner eines Kopier-/Verschiebeauftrags wird
 erfragt, tiefer liegende Namensgleichheiten mischt auch EmuTOS wortlos
-(`:626-632`). `kernel/src/desk/dir.rs` hat beide Funktionen; sie nutzen
+(`:626-632`). `programs/desktop/src/dir.rs` hat beide Funktionen; sie nutzen
 denselben `ADCPALER`-Baum wie der Dateikonflikt, weil EmuTOS
 `desk_rs_trees[ADCPALER]` fuer beide wiederverwendet. Ein Unterschied im
 Inhalt: beim Ordner stehen in **beiden** Feldern die Ziel-Namen

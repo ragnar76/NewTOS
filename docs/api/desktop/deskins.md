@@ -574,7 +574,7 @@ disassembly, out of scope).
 
 ### `ins_app` — Install Application (deskins #20)
 
-The dialog half lives in `kernel/src/desk/insapp.rs`, the resolution and
+The dialog half lives in `programs/desktop/src/insapp.rs`, the resolution and
 commit half in `desk::main::do_install_app`; the association itself is a
 `NEWDESK.INF` `#G`/`#Y`/`#P`/`#F` line held by `desk::inf`. See that
 module's header for the field subset it offers and why.
@@ -629,7 +629,7 @@ field cleared for a retry; a second application asking for `7` answered with
 
 ### `ins_devices` / `ins_icon` / `rmv_icon` (DESK03 + DESK04, 2026-09-24)
 
-`kernel/src/desk/ins.rs` is the `deskins.c` module: `grid_free`,
+`programs/desktop/src/ins.rs` is the `deskins.c` module: `grid_free`,
 `ins_posdisk`, `install_drive`, `remove_drive`, `ins_devices`,
 `install_desktop_icon` (the `ADINSDSK` dialog), `ins_icon` and `rmv_icon`.
 `snap_icon` itself sits with the other grid metrics in `desk::app`
@@ -1100,7 +1100,7 @@ putting the document icon back.
 (`include/config.h:1782-1784`; the `0` at `:325-327` sits inside
 `#ifdef TARGET_192`), so the second half of the DESK15 report — a **file or
 folder icon parked on the desktop surface** — was a real gap. It is now
-implemented; the entry point is `kernel/src/desk/ins.rs::ins_shortcut`
+implemented; the entry point is `programs/desktop/src/ins.rs::ins_shortcut`
 (`deskins.c:1341-1406`), called from `dir::fun_drag`'s "dropping onto desktop
 surface" arm (`deskfun.c:1312-1319`), which until now raised the `#else`
 branch's alert.

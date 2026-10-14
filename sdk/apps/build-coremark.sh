@@ -35,7 +35,7 @@
 #   CoreMark writes a text report and needs no GEM. `.NCP` gets the VT52 text
 #   screen and -- crucially for a machine whose only output is its monitor --
 #   the desktop's "[ Press any key to return to the desktop ]" pause after the
-#   program exits (kernel/src/desk/main.rs, launch_native), so the result stays
+#   program exits (programs/desktop/src/main.rs, launch_native), so the result stays
 #   on screen. `.NTP` would prompt for a command tail (not implemented) and
 #   runs through the GEM screen handoff, i.e. no console at all.
 #

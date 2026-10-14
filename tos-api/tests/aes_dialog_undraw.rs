@@ -535,7 +535,7 @@ fn desktop_pen(x: i16, y: i16) -> Pel {
 /// exactly as they were — removing a menu bar does not repaint them either
 /// (`mn_bar`, `aes/gemmnlib.c:724-728`); installing one does. NewTOS' desktop
 /// repaints that strip with `menu::install_menu_bar` after its own whole-screen
-/// composite (`kernel/src/desk/redraw.rs:206-213`), exactly as EmuTOS' desktop
+/// composite (`programs/desktop/src/redraw.rs:206-213`), exactly as EmuTOS' desktop
 /// does with `menu_bar()`.
 #[test]
 fn the_desktop_background_is_the_aes_desktop_tree_not_white() {

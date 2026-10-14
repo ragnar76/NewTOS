@@ -1,4 +1,4 @@
-# Desktop rebuild — implementation plan (`kernel/src/desk/`)
+# Desktop rebuild — implementation plan (`programs/desktop/src/`)
 
 > Team-lead synthesis (Task #4) from the extracted specs (`_overview.md`,
 > `_data-model.md`, `deskapp.md`, `deskwin.md`, `desksupp-redraw.md`,
@@ -31,7 +31,7 @@ AES/VDI/GEMDOS call sequence** (both spec-documented). Two EmuTOS single-binary
 shortcuts are **not** replicated (they re-bypass the AES): `gsx_trans` → public
 VDI `vr_trnfm`; `menu_text` → the real AES `menu_text` opcode.
 
-## 2. Target module layout (`kernel/src/desk/`)
+## 2. Target module layout (`programs/desktop/src/`)
 
 | Module | EmuTOS origin | Spec | Content |
 |---|---|---|---|

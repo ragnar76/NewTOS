@@ -224,7 +224,7 @@ Return: `TRUE` on success.
 
 ## NewTOS implementation (DESK50, 2026-10-01)
 
-`kernel/src/desk/main.rs`:
+`programs/desktop/src/main.rs`:
 
 | EmuTOS | NewTOS |
 |---|---|

@@ -1,7 +1,7 @@
 //! AES trap binding (`svc #2`, selector 200) — EmuTOS's `desk/gembind.c`.
 //!
 //! DESK43 U6b: this is the *aesbind* the kernel desktop used to carry in
-//! `kernel/src/desk/mod.rs`, merged with the calls the U6a runtime had here.
+//! `programs/desktop/src/lib.rs`, merged with the calls the U6a runtime had here.
 //! The kernel desktop (still EL1) and every native program call the AES
 //! through these functions; a binding is a parameter block and a trap, never
 //! a Rust call into the server.
@@ -125,7 +125,7 @@ pub use tos_types::aes::{
 /// The application's `global[]` array (`AESGLOBAL`, 15 WORDs used).
 struct Global(UnsafeCell<[i16; 16]>);
 // SAFETY: a NewTOS program is single-threaded, and so is the kernel desktop
-// (one control flow, `kernel/src/desk/global.rs` `DeskStatic`); the array is
+// (one control flow, `programs/desktop/src/global.rs` `DeskStatic`); the array is
 // only touched by the AES through the trap, while that one flow waits in it,
 // and read by [`ap_id`] afterwards.
 unsafe impl Sync for Global {}

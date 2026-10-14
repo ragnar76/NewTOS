@@ -1,0 +1,35 @@
+# DESK43 U8b oracle (G2): U6b run's trace/SVCSEQ-u6b.LOG vs trace/SVCSEQ-u8b.LOG, same injector schedule, same plain card
+## lines/bytes
+     688   23752 measurement-2026-10-14-desk43-u6b/trace/SVCSEQ-u6b.LOG
+     688   23752 measurement-2026-10-14-desk43-u8b/trace/SVCSEQ-u8b.LOG
+    1376   47504 total
+## diff SVCSEQ-u6b.LOG SVCSEQ-u8b.LOG
+339c339
+<     v_gtext at (328,188) len=21 chars=2026-10-
+---
+>     v_gtext at (328,188) len=20 chars=2026-10-
+509c509
+< K   XBIOS  #14 fn=0x10           -> 0xffff00000034ad08
+---
+> K   XBIOS  #14 fn=0x10           -> 0xffff000000345d08
+## diff sequence-all
+384c384
+< K XBIOS 0x10 -> 0xffff00000034ad08
+---
+> K XBIOS 0x10 -> 0xffff000000345d08
+## diff sequence-desktop-K-noresults
+## diff sequence-desktop-K-novdi-shape
+75c75
+< XBIOS 0x10 -> 0xffff00000034ad08
+---
+> XBIOS 0x10 -> 0xffff000000345d08
+## seq screendumps
+seq t20: identical
+seq t45: identical
+## reading
+line 339: the boot screen's "Built:" stamp (kernel initinfo, before the desktop starts), "2026-10-14 (cfb6a238)" in the
+  U6b seq kernel vs "2026-10-14 (unknown)" here (the U8b scratch tree is a make-scratch copy without .git; tos-api/build.rs
+  rev-parse --short=8 -> "unknown"); `strings bin/kernel8-seq-u8b.img` = "2026-10-14 (unknown)". Not a desktop call.
+line 509: K XBIOS Keytbl result = KERNEL_AREA in .bss, moved by the 16 KiB smaller kernel (2473984 -> 2457600 bytes);
+  same call, same place (as U7 -> U8a -> U6b).
+No call, order or result otherwise; both seq screendumps byte-identical.

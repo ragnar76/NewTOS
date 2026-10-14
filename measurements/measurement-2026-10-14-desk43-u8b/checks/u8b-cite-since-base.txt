@@ -1,0 +1,16 @@
+NewTOS desktop citation list — programs/desktop/src/ (fns touched since 7699f4d7)
+
+file                                 fns  cited newtos  uncited
+programs/desktop/src/global.rs         3      1      1        1
+programs/desktop/src/inf.rs            2      2      0        0
+programs/desktop/src/lib.rs           14     13      0        1
+programs/desktop/src/main.rs           6      6      0        0
+programs/desktop/src/redraw.rs         1      1      0        0
+
+uncited:
+  programs/desktop/src/global.rs:184  patcol_all
+  programs/desktop/src/lib.rs:124  wind_get_work
+newtos:
+  programs/desktop/src/global.rs:237  deref
+
+DESK-CITE: fns=26 cited=23 newtos=1 uncited=2

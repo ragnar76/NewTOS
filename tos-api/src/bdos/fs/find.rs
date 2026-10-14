@@ -55,7 +55,7 @@ const EXHAUSTED: u32 = u32::MAX;
 /// `run`, a process descriptor with a `p_xdta` field. NewTOS has exactly one
 /// caller class that is not — the **in-kernel (EL1) desktop**, which calls
 /// `find::fsetdta` directly with a 44-byte DTA on its own kernel stack
-/// (`kernel/src/desk/dir.rs:270`, `kernel/src/desk/model.rs:281`) while
+/// (`programs/desktop/src/dir.rs:270`, `programs/desktop/src/model.rs:281`) while
 /// [`crate::bdos::process::current`] is null and there is no basepage to
 /// store into. Such an address is a high-half kernel VA and does not even fit
 /// the 32-bit on-wire `p_xdta` field.

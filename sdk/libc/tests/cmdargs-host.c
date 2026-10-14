@@ -60,7 +60,7 @@ static unsigned char basepage[BASEPAGE_SIZE];
 
 /*
  * Lay the classic Atari command-tail image into the test BasePage, exactly as
- * the NewTOS desktop builds it (kernel/src/desk/main.rs `build_cmd_tail`) and
+ * the NewTOS desktop builds it (programs/desktop/src/main.rs `build_cmd_tail`) and
  * the loader copies it: length byte, the characters, a NUL, a trailing CR.
  */
 static void

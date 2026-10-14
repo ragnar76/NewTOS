@@ -920,7 +920,7 @@ Any unlisted field → `ret = FALSE` (`gemwmlib.c:1736`).
 > bounded by the gadget's width in glyphs plus a 512-byte ceiling — a walk
 > bound, not a contract limit. The earlier 80-byte copy (`NAME_CAP`,
 > `copy_cstr`) is gone. The kernel desktop keeps its titles in the `WNode`
-> (`kernel/src/desk/win.rs` `w_name[116]`/`w_info[72]`, as EmuTOS
+> (`programs/desktop/src/win.rs` `w_name[116]`/`w_info[72]`, as EmuTOS
 > `desk/deskwin.h:73,79`).
 
 > **`WF_NEWDESK` stores a pointer read through the registrant's mapping
@@ -1223,7 +1223,7 @@ window (handle 0) is not deleted.
 >
 > NewTOS's shell loop (`kernel/src/shell_loop.rs`) does exactly that. The
 > built-in desktop's double-click launch does **not** pass through the shell
-> loop (`kernel/src/desk/main.rs` `run_gem_app`, AES gap G1): the program runs
+> loop (`programs/desktop/src/main.rs` `run_gem_app`, AES gap G1): the program runs
 > nested in the desktop's event loop and the desktop **resumes in place**,
 > repainting the windows it still holds in the shared table (gap G2 — no
 > `cnx_get`). So the sweep NewTOS runs when the desktop regains control
@@ -1779,7 +1779,7 @@ byte of any buffer the caller passed (TASK/A42).
   `WM_*SLID` in its event loop (each answered by the matching `wind_set`), and
   `wind_close`/`wind_delete` at exit; it walks `WF_FIRSTXYWH`/`NEXTXYWH` inside
   every `WM_REDRAW`.
-- **The desktop** (`kernel/src/desk/`) owns the desktop window (handle 0) and
+- **The desktop** (`programs/desktop/src/`) owns the desktop window (handle 0) and
   registers its object tree as the AES screen background via
   `wind_set(DESKWH, WF_NEWDESK, g_screen, 1, DROOT)` at startup (un-registered
   with a NULL tree on app-launch / exit). This is **implemented**
@@ -2204,7 +2204,7 @@ byte of any buffer the caller passed (TASK/A42).
     boundary validation. For `WF_NEWDESK` the root travels in `int_in[2]`
     (the generic first value word, otherwise idle once the pointer moves out
     of `int_in`). This is what the native desktop sends
-    (`kernel/src/desk/mod.rs::wind_set_newdesk`: `addr_in[0]` = tree,
+    (`programs/desktop/src/lib.rs::wind_set_newdesk`: `addr_in[0]` = tree,
     `int_in[2]` = root, dispatched with `IN_LEN 3, OUT_LEN 1, AIN_LEN 1`)
     and is the mapping gemlib's pointer-typed bindings
     (`wind_set_str`/`_ptr`/`_ptr_int`, `sdk/gemlib/overlay/`) are being moved

@@ -7,8 +7,14 @@
 //!   [`PROGRAMS`] would silently not be built).
 //! * The version and machine strings the desktop's About box shows are
 //!   deliberate second copies of the boot screen's (`kernel/src/initinfo.rs`,
-//!   `kernel/src/desk/inf.rs`, X03): the desktop must not name a kernel
+//!   `programs/desktop/src/inf.rs`, X03): the desktop must not name a kernel
 //!   symbol, so the copies are kept equal by this test instead.
+//! * DESK43 U8b: the desktop is the library crate `programs/desktop`. It is
+//!   not a program (no `staticlib`, not in [`PROGRAMS`]) but takes the same
+//!   board features, which the kernel passes through together with
+//!   `selftest-desk`; and its dependency graph is the boundary guard G1 of
+//!   the review (§4.2): `newtos-gem` + `tos-types`, nothing else, all the way
+//!   down.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -173,8 +179,8 @@ fn sources(dir: &Path) -> Vec<(PathBuf, String)> {
 
 /// Review §6 (X03 row): the desktop's version, notice and per-board machine
 /// strings equal the boot screen's. Found by name in the desktop source
-/// (`kernel/src/desk/` today, the `desktop` crate after U8b — the rule of
-/// `emutos_consts::desktop_src`), so the check survives the move.
+/// (the `desktop` crate since U8b, `kernel/src/desk/` before — the rule of
+/// `emutos_consts::desktop_src`).
 #[test]
 fn desktop_and_boot_screen_strings_agree() {
     let root = root();
@@ -202,6 +208,129 @@ fn desktop_and_boot_screen_strings_agree() {
         assert_eq!(found.len(), 1, "desktop: one MACHINE_NAME for {} expected, found {found:?}", board.feature());
         assert_eq!(found[0].1, b, "machine line for {}: desktop {} vs boot screen", board.name(), found[0].0);
     }
+}
+
+/// `(table, name)` for every dependency of a manifest: inline `name = …`,
+/// dotted `name.workspace = true` and `[dependencies.name]` headers, in every
+/// `[dependencies]`, `[dev-dependencies]`, `[build-dependencies]` and
+/// `[target.….dependencies]` table.
+fn dependencies(manifest: &str) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let mut table: Option<String> = None;
+    for line in manifest.lines() {
+        let l = line.trim();
+        if l.starts_with('#') || l.is_empty() {
+            continue;
+        }
+        if l.starts_with('[') {
+            let h = l.trim_matches(|c| c == '[' || c == ']').trim().to_string();
+            let is_dep_table = |h: &str| {
+                h == "dependencies"
+                    || h == "dev-dependencies"
+                    || h == "build-dependencies"
+                    || h.ends_with(".dependencies")
+                    || h.ends_with(".dev-dependencies")
+                    || h.ends_with(".build-dependencies")
+            };
+            table = None;
+            if is_dep_table(&h) {
+                table = Some(h);
+            } else if let Some((t, name)) = h.rsplit_once('.') {
+                if is_dep_table(t) {
+                    out.push((t.to_string(), name.to_string()));
+                }
+            }
+            continue;
+        }
+        if let Some(t) = &table {
+            let name: String =
+                l.chars().take_while(|c| c.is_ascii_alphanumeric() || *c == '-' || *c == '_').collect();
+            if !name.is_empty() {
+                out.push((t.clone(), name));
+            }
+        }
+    }
+    out
+}
+
+/// The manifest of the path dependency `dep` of the package at `dir`.
+fn path_dependency(dir: &Path, manifest: &str, dep: &str) -> PathBuf {
+    let line = manifest
+        .lines()
+        .find(|l| l.trim_start().starts_with(&format!("{dep} ")) || l.trim_start().starts_with(&format!("{dep}=")))
+        .unwrap_or_else(|| panic!("{}: no line for dependency {dep}", dir.display()));
+    let at = line.find("path").unwrap_or_else(|| panic!("{dep} is not a path dependency: {line}"));
+    let p = string_literal(&line[at..]).expect("path literal");
+    dir.join(p).join("Cargo.toml")
+}
+
+/// Guard G1 (review §4.2, DESK43 U8b): the desktop crate depends on
+/// `newtos-gem` and `tos-types` only — so a `tos_api::` or kernel path in it
+/// is a compiler error — and so do they, transitively: `newtos-gem` on
+/// `tos-types` alone, `tos-types` on nothing. `newtos-gem` comes without its
+/// `rt` (the kernel links the desktop and has its own allocator and panic
+/// handler). Mirrors group D of `tools/desk-drift-probe.sh`.
+#[test]
+fn desktop_depends_only_on_newtos_gem_and_tos_types() {
+    let root = root();
+    let desk_dir = root.join("programs/desktop");
+    let desk = fs::read_to_string(desk_dir.join("Cargo.toml")).expect("programs/desktop/Cargo.toml");
+    let deps = dependencies(&desk);
+    let mut names: Vec<&str> = deps.iter().map(|(_, n)| n.as_str()).collect();
+    names.sort_unstable();
+    assert_eq!(names, ["newtos-gem", "tos-types"], "programs/desktop/Cargo.toml dependencies: {deps:?}");
+    assert!(
+        deps.iter().all(|(t, _)| t == "dependencies"),
+        "programs/desktop/Cargo.toml: dependencies outside [dependencies]: {deps:?}"
+    );
+    let gem_line = desk.lines().find(|l| l.trim_start().starts_with("newtos-gem")).unwrap();
+    assert!(gem_line.contains("default-features = false"), "desktop must link newtos-gem without `rt`: {gem_line}");
+
+    let gem_toml = path_dependency(&desk_dir, &desk, "newtos-gem");
+    let gem = fs::read_to_string(&gem_toml).unwrap_or_else(|e| panic!("{}: {e}", gem_toml.display()));
+    let gem_deps: Vec<String> = dependencies(&gem).into_iter().map(|(_, n)| n).collect();
+    assert_eq!(gem_deps, ["tos-types"], "{}: {gem_deps:?}", gem_toml.display());
+
+    let types_toml = path_dependency(&desk_dir, &desk, "tos-types");
+    let types = fs::read_to_string(&types_toml).unwrap_or_else(|e| panic!("{}: {e}", types_toml.display()));
+    assert_eq!(dependencies(&types), [], "{}: tos-types must stay dependency-free", types_toml.display());
+}
+
+/// X03 for the desktop crate (DESK43 U8b): it declares both board features and
+/// `selftest-desk`, and the kernel passes each of its own through
+/// (`board-x = ["desktop/board-x"]`), so the desktop is always built for the
+/// kernel's board — and the NEWDESK program (U9) gets the same switch from
+/// `build-programs`.
+#[test]
+fn desktop_takes_the_kernel_board_and_selftest_features() {
+    let root = root();
+    let desk = fs::read_to_string(root.join("programs/desktop/Cargo.toml")).expect("programs/desktop/Cargo.toml");
+    let kernel = fs::read_to_string(root.join("kernel/Cargo.toml")).expect("kernel/Cargo.toml");
+    let desk_feats = features(&desk);
+    let mut switches: Vec<&str> = Board::ALL.iter().map(|b| b.feature()).collect();
+    switches.push("selftest-desk");
+    for f in switches {
+        assert!(desk_feats.iter().any(|d| d == f), "programs/desktop/Cargo.toml does not declare `{f}`");
+        let line = kernel
+            .lines()
+            .find(|l| l.trim_start().starts_with(&format!("{f} =")))
+            .unwrap_or_else(|| panic!("kernel/Cargo.toml: no feature `{f}`"));
+        assert!(
+            line.contains(&format!("\"desktop/{f}\"")),
+            "kernel/Cargo.toml feature `{f}` does not enable `desktop/{f}`: {line}"
+        );
+    }
+}
+
+#[test]
+fn dependency_scanner_reads_every_table_form() {
+    let m = "[package]\nname = \"x\"\n[dependencies]\n# c\na = { path = \"../a\" }\nb.workspace = true\n\
+             [dependencies.c]\npath = \"../c\"\n[target.'cfg(x)'.dependencies]\nd = \"1\"\n\
+             [dev-dependencies]\ne = \"1\"\n[features]\nf = []\n";
+    let d = dependencies(m);
+    let names: Vec<&str> = d.iter().map(|(_, n)| n.as_str()).collect();
+    assert_eq!(names, ["a", "b", "c", "d", "e"], "{d:?}");
+    assert_eq!(dependencies("[package]\nname = \"t\"\n"), []);
 }
 
 #[test]

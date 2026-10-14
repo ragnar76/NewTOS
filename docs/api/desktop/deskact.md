@@ -489,10 +489,10 @@ terms either: `gembind.md` records that the desktop's binding does not contain
 it, `aesbind.h:103-105`.)
 
 The loop now lives where `deskact.c` has it, in
-`kernel/src/desk/main.rs` — `gr_drgplns`, `gr_bwait`, `gr_isdown`, `gr_plns`,
+`programs/desktop/src/main.rs` — `gr_drgplns`, `gr_bwait`, `gr_isdown`, `gr_plns`,
 `gr_extent`, `gr_obalign`, `rc_constrain` — next to `gr_obfind` and
 `act_bdown`, which were already there because they need the AES trap wrappers.
-The pure halves stay in `kernel/src/desk/act.rs`: `gr_accobs` (the origins of
+The pure halves stay in `programs/desktop/src/act.rs`: `gr_accobs` (the origins of
 the selected objects) and `DeskState::act_chg`/`obj_extent`; `act_chg_draw` in
 `main.rs` is the `dodraw` half, `do_wredraw(wh, rc_intersect(pc, extent))`.
 
@@ -505,7 +505,7 @@ with `gsx_pline` → `gsx_xline`, i.e. `vsl_udsty` + `v_pline` per segment in
 `MD_XOR` (`aes/gemgraf.c:140-182`), on the workstation EmuTOS's desktop
 *shares* with the AES — it may, because the ROM desktop is linked into the AES.
 NewTOS's desktop reaches the system only through traps, so
-`kernel/src/desk/vdibind.rs` makes the same VDI calls over the VDI trap, on
+`programs/desktop/src/gsx.rs` makes the same VDI calls over the VDI trap, on
 the handle `graf_handle` reports (`deskmain.c:1956`, `gl_handle`): the AES's
 own physical workstation, opened at session start
 (`tos_api::aes::gsxif::gsx_init`, EmuTOS `gsx_wsopen`,

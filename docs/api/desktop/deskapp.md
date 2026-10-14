@@ -539,16 +539,16 @@ choice.
 
 (Empty during Phase 00 / this extraction task, except for one staleness
 correction found while cross-checking: this note previously referenced
-`kernel/src/desktop.rs`'s `ICON_LABEL_W`/`ICON_GAP_W`/`ICON_STEP_W`
+`programs/desktop/srctop.rs`'s `ICON_LABEL_W`/`ICON_GAP_W`/`ICON_STEP_W`
 constants, commit `af426a0`, as "NewTOS's current" grid-metric code. As of
-this validation pass, `kernel/src/desktop.rs` no longer exists — it has been
-superseded by `kernel/src/desk/` (`app.rs`, per `_rebuild-plan.md`'s module
+this validation pass, `programs/desktop/srctop.rs` no longer exists — it has been
+superseded by `programs/desktop/src/` (`app.rs`, per `_rebuild-plan.md`'s module
 table), a substantially-progressed rebuild already wired into
 `kernel/src/lib.rs`. Whether `desk/app.rs` reproduces the `g_wicon`/`g_hicon`/
 `g_icw`/`g_ich` formulas above exactly, and whether it adopts the resolved
 `ib_xtext=0` precedent or the desktop-vs-window pitch distinction, was **not
 checked** this pass — out of scope for a docs-only validation task; flagged
-for the lead to confirm against the current `kernel/src/desk/app.rs` before
+for the lead to confirm against the current `programs/desktop/src/app.rs` before
 treating this spec as implemented.
 
 ---
@@ -557,8 +557,8 @@ treating this spec as implemented.
 
 `Options → Read .INF file` is EmuTOS's `app_read_inf()`
 (`deskapp.c:1491-1546`, `CONF_WITH_READ_INF`). NewTOS's counterpart is
-`kernel/src/desk/inf.rs::app_read_inf`, called from
-`kernel/src/desk/main.rs::do_read_inf` (the `READITEM` arm of the Options
+`programs/desktop/src/inf.rs::app_read_inf`, called from
+`programs/desktop/src/main.rs::do_read_inf` (the `READITEM` arm of the Options
 menu). Before DESK14 that path read a fixed `C:\NEWDESK.INF`, accepted any
 buffer whose first byte was `#`, and returned silently on every failure.
 
@@ -670,7 +670,7 @@ Two previously unimplemented pieces of `deskapp.c` landed together.
 
 **`app_start:988-1011` — `G.g_xyicon` / `G.g_xytext`.** The two point lists
 `gr_drgplns` translates once per dragged object are now built in
-`DeskState::app_drag_outlines` (`kernel/src/desk/app.rs`) and carried in
+`DeskState::app_drag_outlines` (`programs/desktop/src/app.rs`) and carried in
 `DeskState`. The icon outline is the 9-vertex silhouette of one icon cell —
 a column `ib_wicon` wide over a full-cell-wide label box, stepping down at
 `g_hicon - gl_hschar - 2`; the text outline is a `DRAG_BOX_WIDTH`
@@ -682,6 +682,6 @@ a column `ib_wicon` wide over a full-cell-wide label box, stepping down at
 `AF_ISEXEC`-from-extension mark (`:422-426`), `app_save`'s `'X'`/`'V'` type
 switch (`:1224-1243`) and `app_blddesk`'s two shortcut-dependent choices — the
 icon (`:1374-1378`) and the label (`:1392-1396`) — are all implemented.
-`kernel/src/desk/inf.rs` holds the `.INF` halves, `app.rs` the `app_blddesk`
+`programs/desktop/src/inf.rs` holds the `.INF` halves, `app.rs` the `app_blddesk`
 half. `deskins.md`'s DESK30 note carries the rest of the feature and the
 measurement.

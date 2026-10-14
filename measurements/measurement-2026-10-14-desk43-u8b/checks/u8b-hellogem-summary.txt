@@ -1,0 +1,46 @@
+== hg-inj-on-z
+[shell] sh_ldapp: starting C:\HELLOGEM.NAP, sh_nextapp=2, sh_isgem=1
+[HELLOGEM] ap_id=0 vwk=2 redraws=1 quit by key 0x1c0d; heap OK allocs=7726 Malloc=8 Mfree=7 peak_hunks=8 end: hunks=1 live=10; stack used 2464 of 65536 bytes; appl_exit=1
+[shell] sh_ldapp: 'C:\HELLOGEM.NAP' exited with rc=0
+[shell] sh_ldapp: starting NEWDESK, sh_nextapp=3, sh_isgem=1
+[desk] desktop up (1 drives)
+== hg-inj-off-z
+[shell] sh_ldapp: starting C:\HELLOGEM.NAP, sh_nextapp=2, sh_isgem=1
+[HELLOGEM] ap_id=0 vwk=2 redraws=1 quit by key 0x1c0d; heap OK allocs=7726 Malloc=8 Mfree=7 peak_hunks=8 end: hunks=1 live=10; stack used 2464 of 65536 bytes; appl_exit=1
+[shell] sh_ldapp: 'C:\HELLOGEM.NAP' exited with rc=0
+[shell] sh_ldapp: starting NEWDESK, sh_nextapp=3, sh_isgem=1
+[desk] desktop up (1 drives)
+== hg-inj-strict-z
+[shell] sh_ldapp: starting C:\HELLOGEM.NAP, sh_nextapp=2, sh_isgem=1
+[HELLOGEM] ap_id=0 vwk=2 redraws=1 quit by key 0x1c0d; heap OK allocs=7726 Malloc=8 Mfree=7 peak_hunks=8 end: hunks=1 live=10; stack used 2464 of 65536 bytes; appl_exit=1
+[shell] sh_ldapp: 'C:\HELLOGEM.NAP' exited with rc=0
+[shell] sh_ldapp: starting NEWDESK, sh_nextapp=3, sh_isgem=1
+[desk] desktop up (1 drives)
+== hg-inj-on-f1
+[shell] sh_ldapp: starting NEWDESK, sh_nextapp=3, sh_isgem=1
+[desk] desktop up (1 drives)
+[shell] sh_ldapp: starting C:\HELLOGEM.NAP, sh_nextapp=0, sh_isgem=1
+[HELLOGEM] ap_id=0 vwk=2 redraws=1 quit by key 0x1c0d; heap OK allocs=7726 Malloc=8 Mfree=7 peak_hunks=8 end: hunks=1 live=10; stack used 2464 of 65536 bytes; appl_exit=1
+[shell] sh_ldapp: 'C:\HELLOGEM.NAP' exited with rc=0
+[shell] sh_ldapp: starting NEWDESK, sh_nextapp=3, sh_isgem=1
+[desk] desktop up (1 drives)
+== screendumps
+f7b266f5ce9fad81fa1621207070113acc979449cd333f0d753079d846113053  hg-inj-off-z-app.png
+0e6f770497da100b6707ff8ac1a79f24f30272a0e371bc368d9b10f56a2c324b  hg-inj-off-z-end.png
+f7b266f5ce9fad81fa1621207070113acc979449cd333f0d753079d846113053  hg-inj-on-f1-app.png
+0e6f770497da100b6707ff8ac1a79f24f30272a0e371bc368d9b10f56a2c324b  hg-inj-on-f1-end.png
+f7b266f5ce9fad81fa1621207070113acc979449cd333f0d753079d846113053  hg-inj-on-z-app.png
+0e6f770497da100b6707ff8ac1a79f24f30272a0e371bc368d9b10f56a2c324b  hg-inj-on-z-end.png
+f7b266f5ce9fad81fa1621207070113acc979449cd333f0d753079d846113053  hg-inj-strict-z-app.png
+0e6f770497da100b6707ff8ac1a79f24f30272a0e371bc368d9b10f56a2c324b  hg-inj-strict-z-end.png
+== vs U6b
+hg-inj-off-z-app.png identical
+hg-inj-off-z-end.png identical
+hg-inj-on-f1-app.png identical
+hg-inj-on-f1-end.png identical
+hg-inj-on-z-app.png identical
+hg-inj-on-z-end.png identical
+hg-inj-strict-z-app.png identical
+hg-inj-strict-z-end.png identical
+== summary lines vs U6b (sections above)
+serial verdict lines identical to U6b

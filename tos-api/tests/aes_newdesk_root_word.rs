@@ -609,7 +609,7 @@ fn lp64_packed_form_takes_the_root_from_the_word_after_the_pointer() {
 
 /// **Native** form: tree in `addr_in[0]`, root in `int_in[2]`, `IN_LEN 3`,
 /// `AIN_LEN 1` — what the native desktop sends
-/// (`kernel/src/desk/mod.rs::wind_set_newdesk`) and what gemlib's overlay
+/// (`programs/desktop/src/lib.rs::wind_set_newdesk`) and what gemlib's overlay
 /// bindings send after A81. Green before and after.
 #[test]
 fn native_form_takes_the_root_from_int_in_2() {

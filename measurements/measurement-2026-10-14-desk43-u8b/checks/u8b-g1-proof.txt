@@ -1,0 +1,25 @@
+== 0 unmodified copy
+    Finished `dev` profile [optimized + debuginfo] target(s) in 3.94s
+== 1 desktop gets: tos_api::aes::reinit();
+error[E0433]: cannot find module or crate `tos_api` in this scope
+   --> programs/desktop/src/lib.rs:542:5
+error: could not compile `desktop` (lib) due to 1 previous error
+== 2 desktop gets: kernel::shell_loop::observe_desktop_gem_call(core::ptr::null());
+error[E0433]: cannot find module or crate `kernel` in this scope
+   --> programs/desktop/src/lib.rs:542:5
+error: could not compile `desktop` (lib) due to 1 previous error
+== 3 desktop gets: crate::kprintln!("x");
+error[E0433]: cannot find `kprintln` in `crate`
+   --> programs/desktop/src/lib.rs:542:12
+error: could not compile `desktop` (lib) due to 1 previous error
+== 4 programs/desktop/Cargo.toml gets: tos-api = { path = "../../tos-api" }
+40:tos-api = { path = "../../tos-api" }
+D  programs/desktop/Cargo.toml -> deps other than newtos-gem/tos-types   1 code line(s)
+    tos-api                                                  1
+      programs/desktop/Cargo.toml:40     dependency tos-api
+
+unsafe  in programs/desktop/src/                            20 code line(s)   [not in TOTAL; baseline 20, must not rise]
+DRIFT-PROBE TOTAL: 5
+thread 'programs_tests::desktop_depends_only_on_newtos_gem_and_tos_types' (5529657) panicked at tools/xtask/src/programs_tests.rs:281:5:
+assertion `left == right` failed: programs/desktop/Cargo.toml dependencies: [("dependencies", "newtos-gem"), ("dependencies", "tos-types"), ("dependencies", "tos-api")]
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 91 filtered out; finished in 0.00s

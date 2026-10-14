@@ -198,7 +198,7 @@ fi
 # like every ported application and shows what the APPLICATION receives. It
 # prints both in one run, over Cconws, i.e. to the serial console as well as
 # the screen. A `.NAP` on purpose -- `*.NAP` is a GEM-application ANODE
-# (kernel/src/desk/inf.rs:678), so dropping a file on it is the same launch
+# (programs/desktop/src/inf.rs:678), so dropping a file on it is the same launch
 # gesture that starts QED with a document. Root of C:, so the drag is one
 # gesture inside the C:\ window; never in \AUTO\ (console-only, ADR-018).
 # Built by `sdk/libc/build-libc.sh sdk/examples/argvtest.c \
@@ -443,7 +443,7 @@ fi
 #
 # Both files go in the ROOT of C: on purpose. The dumper reads its case table
 # and writes its output through RELATIVE paths, and the desktop does not set
-# the current directory before launching a program (kernel/src/desk/main.rs,
+# the current directory before launching a program (programs/desktop/src/main.rs,
 # `launch_native` -- no Dsetpath), so the working directory is whatever the
 # boot left it at. The root is the one place that is likely to be.
 TOSDUMP_DIR="$SCRIPT_DIR/../tosdump"
