@@ -1,0 +1,32 @@
+on 1-text: EL0 = EL1
+on 2-viewmenu: EL0 = EL1
+on 3-icons: EL0 = EL1
+on 4-about: EL0 = EL1
+on 5-prefs: EL0 = EL1
+on 6-background: EL0 = EL1
+on 7-config: EL0 != EL1: DIFF 137 px bbox x=357..386 y=355..366  (7e5566142843 / 2efcd212a012)   box x=357 y=355 w=30 h=12 px=137 A[(0, 0, 0), (189, 189, 189)] B[(0, 0, 0), (189, 189, 189)] 
+on 8-end: EL0 = EL1
+off 1-text: EL0 = EL1
+off 2-viewmenu: EL0 = EL1
+off 3-icons: EL0 = EL1
+off 4-about: EL0 = EL1
+off 5-prefs: EL0 = EL1
+off 6-background: EL0 = EL1
+off 7-config: EL0 != EL1: DIFF 122 px bbox x=357..386 y=355..366  (cbd433e539bb / 066b3203cd7a)   box x=357 y=355 w=30 h=12 px=122 A[(0, 0, 0), (189, 189, 189)] B[(0, 0, 0), (189, 189, 189)] 
+off 8-end: EL0 = EL1
+strict 1-text: EL0 = EL1
+strict 2-viewmenu: EL0 = EL1
+strict 3-icons: EL0 = EL1
+strict 4-about: EL0 = EL1
+strict 5-prefs: EL0 = EL1
+strict 6-background: EL0 = EL1
+strict 7-config: EL0 != EL1: DIFF 137 px bbox x=357..386 y=355..366  (7e5566142843 / 2efcd212a012)   box x=357 y=355 w=30 h=12 px=137 A[(0, 0, 0), (189, 189, 189)] B[(0, 0, 0), (189, 189, 189)] 
+strict 8-end: EL0 = EL1
+on 1-text: EL1 = U9-0
+on 2-viewmenu: EL1 = U9-0
+on 3-icons: EL1 = U9-0
+on 4-about: EL1 = U9-0
+on 5-prefs: EL1 = U9-0
+on 6-background: EL1 = U9-0
+on 7-config: EL1 = U9-0
+on 8-end: EL1 = U9-0

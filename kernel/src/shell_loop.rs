@@ -30,7 +30,7 @@
 //! `DESKTOP_APP` arm. That is the hardware-layer carve-out of
 //! `docs/COMPATIBILITY.md`; everything else follows `gemshlib.c` literally.
 
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 use tos_api::aes::shell::{
     self, ShExit, AUTORUN_APP, CONSOLE_APP, DESKTOP_APP, NORMAL_APP,
@@ -56,13 +56,14 @@ use crate::kprintln;
 // program the DESKTOP arm started, while [`DESKTOP_ACTIVE`]. Its identity is
 // the launcher's published child slot ([`crate::launch::shell_child_slot`]):
 //
-// * **A launched desktop** (the EL0 `NEWDESK` of DESK43 U9): the DESKTOP arm
+// * **A launched desktop** (the EL0 `NEWDESK`, DESK43 U9-4): the DESKTOP arm
 //   starts it through the launcher like any program (`aes_run_rom_program`,
 //   `gemshlib.c:606`), so it is the shell's child, and its GEM traps are the
 //   ones whose running slot (`RUN`, [`running_slot`]) is that child slot.
 //   Accessories, and programs the desktop itself `Pexec`s, have other slots.
-// * **The built-in desktop** (today; `desk=kernel` later, DESK43 D5): a kernel
-//   call, not a launched program, so there is no shell child while it runs.
+// * **The built-in desktop** (`desk=kernel`, or the fallback after `NEWDESK`
+//   could not be loaded; DESK43 D5/D6-d): a kernel call, not a launched
+//   program, so there is no shell child while it runs.
 //   It is then the only EL1 caller of the GEM trap: the kernel context that
 //   would otherwise trap (`sh_main`, the boot path, the boot-time selftests)
 //   is suspended inside that very call, and accessories and programs are EL0
@@ -75,7 +76,8 @@ use crate::kprintln;
 // reports again; an `evnt_multi` re-executed after an S2 yield (ACC03) does
 // not report twice.
 
-/// Set while the DESKTOP arm of [`sh_ldapp`] is inside `desktop::run`.
+/// Set while the DESKTOP arm of [`sh_ldapp`] runs the desktop — the launched
+/// `NEWDESK` program or the built-in `desktop::run`.
 static DESKTOP_ACTIVE: AtomicBool = AtomicBool::new(false);
 /// Armed by the desktop's `appl_init`, consumed by its next `evnt_multi`.
 static DESKTOP_UP_ARMED: AtomicBool = AtomicBool::new(false);
@@ -146,6 +148,51 @@ pub fn observe_desktop_gem_call(args: &TrapArgs) {
         }
         _ => {}
     }
+}
+
+// ── Which desktop the DESKTOP arm runs (DESK43 D5/D6, U9-3/U9-4) ──────────
+//
+// EmuTOS has one desktop, started as a process (`aes_run_rom_program
+// (deskstart)`, `gemshlib.c:606`). NewTOS's is the program `NEWDESK`, embedded
+// in the kernel image under that registry name (`crate::embedded`, D3) and
+// started the same way — the default. Until DESK43 U10 the image also still
+// links the same desktop as a library and can run it as a kernel call, the
+// desktop before U9; the boot argument `desk=kernel`
+// ([`crate::bootargs::DESK_KERNEL`], D5-a) chooses that one, and the DESKTOP
+// arm falls back to it when the program cannot be loaded (D6-c/D6-d).
+
+/// [`DESKTOP_PATH`]: the EL0 program `NEWDESK` (default).
+const DESK_PROGRAM: u8 = 0;
+/// [`DESKTOP_PATH`]: the built-in desktop, chosen by `desk=kernel`.
+const DESK_KERNEL_ARG: u8 = 1;
+/// [`DESKTOP_PATH`]: the built-in desktop, because `NEWDESK` could not be
+/// loaded (D6-c: never retried this boot; D6-d: the fallback while D5 lives).
+const DESK_KERNEL_FALLBACK: u8 = 2;
+
+/// The desktop the DESKTOP arm runs — one of the `DESK_*` values above.
+static DESKTOP_PATH: AtomicU8 = AtomicU8::new(DESK_PROGRAM);
+
+/// Record the boot's desktop choice (`desk=kernel` given or not) and name it
+/// on the boot log. Called once, by the boot path, while the boot arguments
+/// are reachable.
+pub fn select_desktop(kernel: bool) {
+    DESKTOP_PATH.store(if kernel { DESK_KERNEL_ARG } else { DESK_PROGRAM }, Ordering::Release);
+    if kernel {
+        kprintln!("[shell] desktop: built-in kernel desktop (boot argument desk=kernel)");
+    } else {
+        kprintln!(
+            "[shell] desktop: EL0 program {} (embedded; desk=kernel selects the built-in one)",
+            as_str(shell::DEF_DESKTOP)
+        );
+    }
+}
+
+/// `true` while the DESKTOP arm runs the built-in desktop — `desk=kernel`, or
+/// the fallback after `NEWDESK` failed to load. The AES restart re-zeroes the
+/// built-in desktop's state only then (A106; a program's state dies with its
+/// process).
+pub fn kernel_desktop_in_use() -> bool {
+    DESKTOP_PATH.load(Ordering::Acquire) != DESK_PROGRAM
 }
 
 /// `LEN_ZPATH + LEN_ZFNAME + 1` = `MAXPATHLEN` (`include/sysconf.h:51-55`) —
@@ -383,26 +430,45 @@ fn sh_ldapp() -> i32 {
         }
         shell::sh_show(&[]); // `sh_show("")` — no name for the desktop (:603)
         p_setappdir(&cmd); // (:605)
-        // `aes_run_rom_program(deskstart)` (:606) starts the desktop as a
-        // **fresh process** every time: the previous one terminated
-        // (`deskmain.c:2166-2171`, `deskstart.S:57-59`) and GEMDOS gave its
-        // memory back, so `deskstart` re-runs `app_start`/`win_start`/`cnx_get`
-        // on a zeroed `G`. NewTOS's desktop state is a lazily-built singleton
-        // that outlives the call, so the equivalent of that free is explicit —
-        // and it must happen *here*, before the start, for the same reason it
-        // happens there: the state the next desktop must not inherit is the
-        // dead one's window list, whose AES handles `sh_main`'s `wm_init`
-        // (`:717`) has just deleted.
-        desktop::reset();
+        if kernel_desktop_in_use() {
+            run_kernel_desktop();
+            return 0;
+        }
+        // `if (aes_run_rom_program(deskstart)) wm_new();` (:606-610) — the
+        // desktop as a fresh process every time: the embedded `NEWDESK`,
+        // started without a file and without the hourglass
+        // ([`crate::launch::run_desktop_program`], which also does the
+        // `p_nameit(rlr, fname)` of `:604`). `sh_nextapp` stays `DESKTOP_APP`,
+        // so whatever ends it — `Pterm(0)` after a `shel_write`, a crash's
+        // `Pterm(-1)` after the report's key (`bios/kprint.c:581-594`), a Rust
+        // panic after its key (D6-a) — the next pass starts it again. No loop
+        // guard (D6-b), no alert: the arm returns 0 (`:611`).
         DESKTOP_ACTIVE.store(true, Ordering::Release);
-        desktop::run();
+        let rc = crate::launch::run_desktop_program(shell::DEF_DESKTOP, &cmd);
         DESKTOP_ACTIVE.store(false, Ordering::Release);
         DESKTOP_UP_ARMED.store(false, Ordering::Release);
-        // EmuTOS calls `wm_new()` only when the desktop terminated
-        // *abnormally* (`:606-610`); the normal exit path already cleaned up
-        // in `deskmain`'s epilog. Our built-in desktop has no abnormal-exit
-        // channel (it is a kernel call, not a `dos_exec`), so this is the
-        // normal path and, as in EmuTOS, no `wm_new` runs here.
+        if rc != 0 {
+            // "ROM desktop terminated abnormally" (:607-609): any value other
+            // than 0 — `Pterm(-1)`'s 65535, any other exit code, a load error.
+            tos_api::aes::window::wm_new();
+        }
+        if rc < 0 {
+            // NEWTOS: D6-c/D6-d. The desktop program never ran (a load error
+            // — no EmuTOS counterpart: a ROM entry point cannot fail to load).
+            // Loading the same blob again would fail again, so it is not
+            // retried; the built-in desktop takes over for the rest of the
+            // boot (after DESK43 U10: EmuCON).
+            DESKTOP_PATH.store(DESK_KERNEL_FALLBACK, Ordering::Release);
+            kprintln!(
+                "[shell] desktop {} could not be loaded (rc={}) — not retried; \
+                 falling back to the built-in kernel desktop",
+                as_str(shell::DEF_DESKTOP),
+                rc
+            );
+            run_kernel_desktop();
+            return 0;
+        }
+        kprintln!("[shell] sh_ldapp: desktop '{}' exited with rc={}", as_str(&cmd), rc);
         return 0;
     }
 
@@ -481,6 +547,32 @@ fn sh_ldapp() -> i32 {
     // `if (ret < 0) return ret; else return 0;` (:681-684) — a load error goes
     // to `sh_main`'s alert, a child's exit code (never negative) never does.
     shell::sh_ldapp_result(ret)
+}
+
+/// The DESKTOP arm with the built-in desktop (`desk=kernel`, or the fallback
+/// after a load failure): the desktop as a kernel call.
+///
+/// `aes_run_rom_program(deskstart)` (`gemshlib.c:606`) starts the desktop as a
+/// **fresh process** every time: the previous one terminated
+/// (`deskmain.c:2166-2171`, `deskstart.S:57-59`) and GEMDOS gave its memory
+/// back, so `deskstart` re-runs `app_start`/`win_start`/`cnx_get` on a zeroed
+/// `G`. The built-in desktop's state is a lazily-built singleton that outlives
+/// the call, so the equivalent of that free is explicit — and it must happen
+/// *here*, before the start, for the same reason it happens there: the state
+/// the next desktop must not inherit is the dead one's window list, whose AES
+/// handles `sh_main`'s `wm_init` (`:717`) has just deleted.
+///
+/// EmuTOS calls `wm_new()` only when the desktop terminated *abnormally*
+/// (`:606-610`); the normal exit path already cleaned up in `deskmain`'s
+/// epilog. The built-in desktop has no abnormal-exit channel (it is a kernel
+/// call, not a `dos_exec`; a fault in it is fatal), so this is the normal path
+/// and, as in EmuTOS, no `wm_new` runs here.
+fn run_kernel_desktop() {
+    desktop::reset();
+    DESKTOP_ACTIVE.store(true, Ordering::Release);
+    desktop::run();
+    DESKTOP_ACTIVE.store(false, Ordering::Release);
+    DESKTOP_UP_ARMED.store(false, Ordering::Release);
 }
 
 /// The `CONSOLE_APP` arm body (`gemshlib.c:614-622`):

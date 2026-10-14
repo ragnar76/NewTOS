@@ -1,0 +1,9 @@
+A: /tmp/m5j/u935/clean/an-other-path/tree-clean -- fresh copy has no target/ (git rev 18428179)
+A: clean build rpi4 rc=0 xtask: building program hello-gem for rpi4 -> /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/u935/clean/an-other-path/tree-clean/target/programs/rpi4/HELLOGEM.NAP xtask: building program newdesk for rpi4 -> /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/u935/clean/an-other-path/tree-clean/target/programs/rpi4/NEWDESK.NAP xtask: building kernel for board-rpi4 (release) tos-api=64 kernel=94 
+A: rpi4 image vs kernel8-u935.img: size 1528712/1528712, differing bytes 0
+A: rpi4 NEWDESK.NAP vs shared tree: differing bytes 0
+A: rpi4 HELLOGEM.NAP vs shared tree: differing bytes 0
+A: clean build qemu-virt rc=0 xtask: building program hello-gem for qemu-virt -> /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/u935/clean/an-other-path/tree-clean/target/programs/qemu-virt/HELLOGEM.NAP xtask: building program newdesk for qemu-virt -> /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/u935/clean/an-other-path/tree-clean/target/programs/qemu-virt/NEWDESK.NAP xtask: building kernel for board-qemu-virt (release) tos-api=64 kernel=94 
+A: qemu-virt image vs kernel-virt-u935.img: size 1491024/1491024, differing bytes 0
+A: qemu-virt NEWDESK.NAP vs shared tree: differing bytes 0
+A: qemu-virt HELLOGEM.NAP vs shared tree: differing bytes 0

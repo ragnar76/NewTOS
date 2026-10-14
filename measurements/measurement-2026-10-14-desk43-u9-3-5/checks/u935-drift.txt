@@ -1,0 +1,41 @@
+NewTOS desktop drift probe — /Volumes/Daten/Development/PiRusTOS @ 18428179 (8 modified file(s))
+desktop source: programs/desktop/src/ (crate programs/desktop/Cargo.toml, 19 .rs file(s), subdirectories included)
+
+A  programs/desktop/src/ -> tos_api::                        0 code line(s)
+
+B  programs/desktop/src/ -> kernel:: (kernel internals)      0 code line(s)
+
+C  kernel/ -> desktop crate (code + kernel/Cargo.toml)       4 code line(s)
+    Cargo dependency desktop                                 1
+    desktop::reset                                           2
+    desktop::run                                             1
+      kernel/Cargo.toml:113              desktop = …
+      kernel/src/lib.rs:622              desktop::reset();
+      kernel/src/shell_loop.rs:571       desktop::reset();
+      kernel/src/shell_loop.rs:573       desktop::run();
+
+D  programs/desktop/Cargo.toml -> deps other than newtos-gem/tos-types   0 code line(s)
+
+unsafe  in programs/desktop/src/                            20 code line(s)   [not in TOTAL; baseline 20, must not rise]
+      programs/desktop/src/dir.rs:353    let (ptext, len) = unsafe {
+      programs/desktop/src/dir.rs:359    let buf = unsafe { core::slice::from_raw_parts_mut(ptext, len + 1) };
+      programs/desktop/src/dir.rs:1607   let o = unsafe { &*(tree as *const Object).add(obj as usize) };
+      programs/desktop/src/global.rs:224 unsafe impl<T> Sync for DeskStatic<T> {}
+      programs/desktop/src/ins.rs:556    unsafe {
+      programs/desktop/src/ins.rs:849    unsafe {
+      programs/desktop/src/main.rs:1422  let letter = unsafe {
+      programs/desktop/src/menu.rs:634   unsafe {
+      programs/desktop/src/menu.rs:841   let map = unsafe { &*MENU.title_obj.get() };
+      programs/desktop/src/menu.rs:849   let map = unsafe { &*MENU.item_obj.get() };
+      programs/desktop/src/menu.rs:861   let map = unsafe { &*MENU.obj_item.get() };
+      programs/desktop/src/menu.rs:900   let o = unsafe { &(*MENU.obj.get())[obj as usize] };
+      programs/desktop/src/menu.rs:937   unsafe { (*MENU.shortcuts.get()).get(n).copied().unwrap_or(0) }
+      programs/desktop/src/menu.rs:943   unsafe {
+      programs/desktop/src/menu.rs:953   unsafe { *MENU.shortcuts.get() }
+      programs/desktop/src/menu.rs:961   unsafe { *MENU.shortcuts.get() = v };
+      programs/desktop/src/menu.rs:984   let s = unsafe { &(*MENU.labels.get())[obj] };
+      programs/desktop/src/menu.rs:995   let w = unsafe { (*MENU.obj.get())[obj].ob_width };
+      programs/desktop/src/menu.rs:1025  let s = unsafe { &mut (*MENU.labels.get())[obj] };
+      programs/desktop/src/menu.rs:1048  let s = unsafe { &(*MENU.labels.get())[obj] };
+
+DRIFT-PROBE TOTAL: 4

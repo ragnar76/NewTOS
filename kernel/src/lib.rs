@@ -280,6 +280,13 @@ extern "C" fn kernel_main_rust(dtb_phys: usize, entry_el: u64) -> ! {
     } else {
         input_gate::InputMode::Irq
     });
+    // DESK43 D5/U9-3: which desktop the shell loop's DESKTOP arm runs — the
+    // embedded EL0 program `NEWDESK` (default) or, with `desk=kernel`, the
+    // desktop built into the kernel. Decided while the boot arguments are
+    // reachable; the boot log names the choice.
+    shell_loop::select_desktop(boot_switch(dtb, false, |args: &[u8]| {
+        bootargs::has_token(args, bootargs::DESK_KERNEL)
+    }));
 
     // Discover the physical memory map and dump it for visibility.
     // Pure function of the board constants, the DTB and the firmware
@@ -608,7 +615,12 @@ extern "C" fn kernel_main_rust(dtb_phys: usize, entry_el: u64) -> ! {
         // desktop's own state — is rebuilt from scratch.
         kprintln!("[shell] AES restart (resolution change requested)");
         tos_api::aes::reinit();
-        desktop::reset();
+        // The built-in desktop's state outlives a session (A106); the EL0
+        // desktop's dies with its process, so this is for the built-in one
+        // only (`desk=kernel`, or the load-failure fallback; DESK43 U9-4).
+        if shell_loop::kernel_desktop_in_use() {
+            desktop::reset();
+        }
         // `dos_sdrv(bootdev)` (`geminit.c:796-803`): "resolution change always
         // resets the default drive to the boot device". NewTOS has no boot
         // device variable; the boot drive is the first hard disk in the drive

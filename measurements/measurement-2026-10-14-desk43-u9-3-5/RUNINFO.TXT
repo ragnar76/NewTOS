@@ -1,0 +1,143 @@
+measurement-2026-10-14-desk43-u9-3-5 -- DESK43 U9-3 (boot argument desk=kernel), U9-4 (the DESKTOP arm starts the embedded EL0
+NEWDESK, crash policy D6) and U9-5 (proof points EL0 vs EL1 in ONE image), per docs/analysis/desk43-u9-prep-2026-10-14.md §6
+(rows U9-3/U9-4/U9-5) and §7 (tests), decisions TASK/DESK43.md "U9-Vorbereitung entschieden" (D6 = gemshlib.c:600-611,
+D6-a key in NEWDESK's panic, D6-b no loop guard, D6-c no retry of a load error, D6-d fallback = built-in desktop while D5
+lives, D5-a `desk=kernel`, D5-b default EL0 NEWDESK). Developer run, base HEAD 18428179 (clean tree) + the uncommitted
+U9-3/4 change. Host macOS, QEMU raspi4b + qemu-virt. No SD card, no Pi, nothing committed. 2026-10-14/15.
+
+WHAT CHANGED IN THE PRODUCT
+  kernel/src/bootargs.rs   DESK_KERNEL = b"desk=kernel" (+1 host test, whole-token rules as input=aes/emmc=compat).
+  kernel/src/lib.rs        boot: shell_loop::select_desktop(boot_switch(.. DESK_KERNEL)) right after the input=aes switch;
+                           AES restart: desktop::reset() (A106) only if shell_loop::kernel_desktop_in_use().
+  kernel/src/shell_loop.rs DESKTOP_PATH (EL0 program | desk=kernel | load-failure fallback), select_desktop() prints
+                           "[shell] desktop: EL0 program NEWDESK (embedded; desk=kernel selects the built-in one)" or
+                           "[shell] desktop: built-in kernel desktop (boot argument desk=kernel)".
+                           DESKTOP arm: sh_show(""), p_setappdir; built-in path = run_kernel_desktop() (desktop::reset +
+                           run, unchanged); else DESKTOP_ACTIVE around launch::run_desktop_program(DEF_DESKTOP, D.s_cmd);
+                           rc != 0 -> wm_new() (gemshlib.c:606-609); rc < 0 (load error) -> fallback line, DESKTOP_PATH =
+                           fallback for the rest of the boot (not retried), run_kernel_desktop(); always return 0 (:611);
+                           line "[shell] sh_ldapp: desktop '<cmd>' exited with rc=N".
+  kernel/src/launch.rs     launch(path, name, tail, kind) behind run_program_with_tail_rc (unchanged behaviour) and the new
+                           run_desktop_program(name, cmd): no hourglass, empty tail, no D.s_cmd/ad_stail rewrite (EmuTOS
+                           aes_run_rom_program, gemshlib.c:570-580), no "[acc] launching" line, p_nameit from D.s_cmd,
+                           no set_app_dir (the arm did p_setappdir).
+  tools/xtask              PROGRAM_FEATURES = [("newdesk","selftest-desk")]: `cargo xtask build --features selftest-desk`
+                           builds NEWDESK with the self-tests (build_programs/program_build_command take the kernel
+                           features); +1 host test (kernel_selftest_desk_reaches_the_newdesk_program).
+  programs/newdesk/src/lib.rs  doc lines 3-5 only (same line count; NAPs byte-identical to U9-1-2).
+  docs/api/aes/shell-loop.md   §8 notes "the DESKTOP arm starts NEWDESK (DESK43 U9-3/U9-4)".
+
+RESULT: default boot = EL0 NEWDESK, `desk=kernel` = the built-in desktop, both in the same image, log line names the path.
+Every screendump EL0 vs EL1 on the same kernel byte-identical except ONE field ("Free RAM" 2nd number in the desktop
+configuration dialog, -684 KB = NEWDESK's TPA + heap). desk=kernel = U9-1-2/U9-0 byte for byte (screens, APITEST lines,
+serial except the new boot line and the kernel size). Oracle: the desktop's call sequence identical in both link targets
+except the EL0 runtime's Mshrink + 4 Malloc and the address Keytbl returns (user vs kernel VA). "Save desktop": the written
+NEWDESK.INF of EL0 and EL1 byte-identical. Crash policy: panic -> key -> restart -> panic -> waits (no loop); load error /
+missing registry entry -> one attempt, fallback line, built-in desktop, no retry after a program end; crashing programs
+under the EL0 desktop -> desktop back; HELLOGEM, CRASHTST (6 crashes), QED, TeraDesk, APITEST 106/0/5, Doom, SYSACC under
+the EL0 desktop: screens = EL1.
+
+1. BASELINES (method/checks.sh u935 -> checks/u935-*; SOURCE_DATE_EPOCH=1791979200; checks/u935-checks-summary.txt)
+                                                    expected               measured
+   host tests tos-api tos-types xtask               1368/0/1 + new         1370/0/1 (+1 bootargs, +1 programs_tests)
+   release warnings rpi4 / qemu-virt                tos-api 64, kernel 94  64 / 94 both, 0 errors
+   clippy kernel rpi4 / qemu-virt / +selftest-desk  76 / 125               76 / 125 all three
+   clippy programs (all blocks of checks.sh)        0                      0
+   clippy xtask --tests (not in checks.sh)          --                     8, all pre-existing (none in touched lines)
+   desk drift probe TOTAL / UNSAFE                  4 / <= 20              4 / 20
+   emutos-consts                                    green (= U9-1-2)       466/332/2/2/0/0/132
+   SDK host tests                                   20/0/0                 20/0/0
+   build-programs rpi4 / qemu-virt                  rc 0                   rc 0, 0 warnings; NAPs = U9-1-2 byte for byte
+                                                                           (HELLOGEM 97f14224 / f686f6ba, NEWDESK
+                                                                           dca37fe1 / 2bab28be)
+   cite list                                        --                     fns=476 cited=315 newtos=5 uncited=156
+   kernel images                                    --                     rpi4 1528712 B (U9-1-2 1524592, +4120),
+                                                                           qemu-virt flat 1491024 B
+   reproducible (method/clean-build.sh, fresh copy at /tmp/m5j/u935/clean/an-other-path, clean target;
+   checks/u935-repro.txt)                                                  rpi4 + qemu-virt image 0 differing bytes,
+                                                                           NEWDESK/HELLOGEM.NAP both boards 0
+   bin/kernel8-smoke.img (first build, before two doc-only edits) = bin/kernel8-u935.img (same sha256).
+
+2. QEMU RASPI4B SERIES, ONE KERNEL bin/kernel8-u935.img (method/series.sh, run-rpi4.sh, mode.sh; DESK=kernel adds desk=kernel;
+   summary method/summarize.sh -> checks/u935-series-summary.txt). Cards /tmp/m5j/u5b/cards (= U9-0/U9-1-2).
+   Modes on, off, strict, on-asid; tags u935-<mode> = EL0 NEWDESK (default), u935k-<mode> = desk=kernel.
+   (a) desk=kernel vs U9-1-2 (u912; on/off/strict): screendumps 5/5 BYTE-IDENTICAL each mode; APITEST result lines 0 differing
+       (126 each); serial (hex-normalised) only "+[shell] desktop: built-in kernel desktop (boot argument desk=kernel)" and
+       "[mm] kernel .. (2805760 -> 2809856 bytes)".
+   (b) EL0 vs desk=kernel, on/off/strict/on-asid: screendumps 5/5 BYTE-IDENTICAL each mode (desktop t25, APITEST t25/t40,
+       TeraDesk t35, QED t30); APITEST TOTAL 106/0/5 both, 0 differing result lines; serial only the boot line and, in the
+       desktop runs, "[launch] EL0: slot 0 entry .." (the NEWDESK start). 0 [EXC]/PANIC/"load failed" in all 32 logs.
+
+3. EIGHT VIEWS, ONE KERNEL (method/views.sh, kernel kv = tools/inject-arm.py --tag u7v desktop=views.script; views.script =
+   U9-0's; screendumps at U9-0's times; method/views-cmp.sh -> checks/u935-views-summary.txt)
+   EL0 vs EL1, on/off/strict: 7/8 BYTE-IDENTICAL each mode; 7-config differs in ONE box x=357 y=355 w=30 h=12 (137 px on and
+   strict, 122 px off): "Free RAM: 10240 KB + 915432 KB" (EL1) vs "+ 914748 KB" (EL0), on (= U9-1-2's -684 KB). Cause: the
+   desktop is a process -- its TPA (image + 64 KiB stack, PRGFLAGS 7 -> alt RAM) and Malloc heap hunks are not free.
+   EL1 (desk=kernel) vs U9-0 views-u90 (on): 8/8 BYTE-IDENTICAL.
+
+4. ORACLE G2 (method/seq.sh, kernel ks = inj-desk-seq.py + --features svc-seq-trace; method/oracle-split.sh ->
+   checks/u935-oracle-split.txt). The same image run with EL0 NEWDESK and with desk=kernel, C:\SVCSEQ.LOG read back.
+   seq.sh's own diff (K vs U0, checks/u935-oracle-diff*.txt, 310/312 lines) is NOT the comparison: under desk=kernel the
+   K column holds the kernel's shell/boot calls AND the desktop's. Correct split: EL0 log = 305 K lines then 254 U0 lines
+   (NEWDESK = slot 0), no other caller; EL1 log = 554 K lines.
+     (a) kernel-context part, EL1 lines 1..305 vs EL0's K lines: IDENTICAL.
+     (b) desktop part, EL1 lines 306..554 vs EL0's U0 lines (caller column dropped): identical except
+         + GEMDOS Mshrink (crt0, = EmuTOS deskstart.S:28-41), + 4 x GEMDOS Malloc (newtos-gem heap hunks, 3 at start, 1 at
+         line 156), and XBIOS 0x10 Keytbl -> 0xffff00000039bd08 (EL1, kernel VA) vs 0x768 (EL0, the user mapping).
+   EL1 SVCSEQ.LOG vs U9-0's SVCSEQ-u90.LOG: 688 lines, one differs: the Keytbl kernel address (0xffff000000345d08 ->
+   0xffff00000039bd08, the kernel image grew by the embedded NEWDESK in U9-2) -- checks/u935-oracle-el1-vs-u90.txt.
+
+5. SAVE DESKTOP (method/save.sh, kernel ksave = inject-arm desktop=save.script: Alt-C, Options -> Save desktop by mouse;
+   run-rpi4.sh KEEP=1 keeps the card copy; NEWDESK.INF read back read-only -> checks/save-*):
+   EL0 and EL1 NEWDESK.INF BYTE-IDENTICAL (672 B; original 374 B: + #K line + 7 #W lines, the open C:\ window).
+   First attempt dumped/quit at 12/20 s, before the click (~22 s): nothing saved, files = original; re-run with 25/40 s
+   (same tags, overwritten).
+
+6. PROGRAMS UNDER THE EL0 DESKTOP (method/apps.sh + apps2.sh, both.sh; cards method/make-cards.sh + derive-card.sh (ZOFF
+   added) -> /tmp/m5j/u935/cards, sha256 checks/u935-cards-sha256.txt; summary method/apps-summary.sh ->
+   checks/u935-apps-summary.txt). F1 at desktop-up +1 s starts the program on F1; EL0 vs EL1 on the same kernel.
+   kf runs: tools/inject-arm.py's launch: arms NEVER FIRED on the EL0 path -- NEWDESK (slot 0) ends and the program it
+   asked for starts in slot 0 within one injector tick, the tick-side poll sees no new child. The programs waiting for a
+   key therefore hung on EL0 (f1hg, f1crch, f1crash kf runs; their EL0 end screens differ for that reason only). Fixed
+   in a COPY, method/inject-arm-u935.py (launch: fires from a scratch hook at the launcher's slot publication), kernel kf2;
+   tools/inject-arm.py untouched (out-of-scope observation).
+   kf2 (f1hg2/f1hgp2/f1crch2 on/off/strict, f1crash2 on): every screendump EL0 = EL1 BYTE-IDENTICAL (20/20);
+     HELLOGEM quit by key, rc=0, desktop back; HGPANIC Rust panic, rc=65535, desktop back; CRCHILD (write fault) crash
+     report + key, rc=65535, desktop back; CRASHTST: 6 crash reports, "CRASHTST: PASS", rc=0, desktop back.
+     EL0 sequence: "desktop 'NEWDESK' exited with rc=0" (shel_write + Pterm(0)) -> program -> NEWDESK launched again.
+   kf (no key needed): QED (t30), TeraDesk (t35), APITEST.NCP via #F (t30/t45, TOTAL 106/0/5) EL0 = EL1 BYTE-IDENTICAL;
+     Doom (C:\DOOM\DOOM.NAP, from the MEM05 doom card with #Z turned off): runs in both, frames differ (demo timing).
+   Accessory (kernel ka = desktop=acc.script: Desk menu -> first accessory; /tmp/m5j/cards/acc.img with C:\ACC\SYSACC.NAC),
+     on/off/strict: SYSACC loaded (slot 0, NEWDESK then slot 1), AC_OPEN shows its System Information dialog; 9/9
+     screendumps EL0 = EL1 BYTE-IDENTICAL.
+
+7. CRASH POLICY D6 (method/crash.sh)
+   kp = NEWDESK with a scratch panic!() before desktop::run() (bin/NEWDESK-kp-panic.NAP), injector launch:NEWDESK=key.script
+     (ONE Return at first launch +8 s), on/off/strict: panic message + "*** Press any key to continue ***"; key ->
+     "desktop 'NEWDESK' exited with rc=65535" -> wm_new -> NEWDESK started again -> panic -> prompt, and it WAITS: 2 launches
+     in 45 s, after-key screendump = end screendump (+15 s). No tight loop. (The key's break code, +50 ms, arrives during
+     the 2nd prompt; a break code gives no character, so the prompt keeps waiting.) desk=kernel control: built-in desktop up.
+   kc = blob with zeroed ELF header (bin/NEWDESK-BAD.NAP, registry name NEWDESK), card f1hg: "[launch] load failed:
+     LoadFailed(Parse(BadMagic))", "[shell] desktop NEWDESK could not be loaded (rc=-66) -- not retried; falling back to
+     the built-in kernel desktop", built-in desktop up; F1 -> HELLOGEM -> rc=0 -> built-in desktop again, NO second load
+     attempt (1 "load failed" in the log). Screens = the desk=kernel twin BYTE-IDENTICAL.
+   km = no registry entry NEWDESK (embedded as NEWDESKX): "load failed: NotFound", rc=-33 (EFILNF), same as kc.
+
+8. SELF-TESTS THROUGH build-programs (method/selftest.sh; kernel kt = `cargo xtask build --features selftest-desk` +
+   launch:NEWDESK=st-launch.script; bin/NEWDESK-kt-selftest.NAP 380112 B is the NAP that build embedded): default boot,
+   the EL0 NEWDESK runs the self-tests: 53 PASS / 1 FAIL (pre-existing ins_devices), PASS/FAIL lines identical to U8b's
+   checks/u8b-selftest-lines.txt (checks/u935-selftest-el0-lines.txt).
+
+9. QEMU-VIRT (method/virt.sh, run-virt.sh, drive.py; bin/kernel-virt-u935.img), on/off/strict x EL0/desk=kernel: desktop up,
+   0 EXC; end screens EL0 = EL1 = U9-1-2's u912-on-virt-desktop-end.png BYTE-IDENTICAL (all six); serial vs u912 (on): only the
+   boot line; EL0 adds "[launch] EL0: slot 0".
+
+10. NOT DONE: real Pi (U9-6). memprot=verify, asid=tiny. Latency/stack of the EL0 restart from the registry after a program
+   (no instruments in these kernels; U9-1 instruments exist in measurement-2026-10-14-desk43-u9-1-2/method). input=aes. TeraDesk
+   -> QED chain and TeraDesk exit back to the EL0 desktop. A program that leaves windows open and crashes (wm_new
+   visibility). appl_find("NEWDESK") from an accessory (source: EL0 NEWDESK's AES descriptor is named NEWDESK by p_nameit,
+   the built-in desktop's pd::DESKTOP has a blank name -- not exercised by any run here). Read .INF file restart.
+
+Scratch: /tmp/m5j/u935 (-> /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/u935): tree-<id> (instrumented copies), cards/,
+save/, seq/, clean/. bin/*.img gitignored, sha256 in bin/SHA256SUMS; bin/*.NAP kept (as U6a..U9-2). Repo-root kernel8.img
+(gitignored) overwritten by checks.sh.

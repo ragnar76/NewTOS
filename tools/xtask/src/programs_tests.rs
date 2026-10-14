@@ -24,7 +24,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 
-use crate::{emutos_consts, kernel_embed, program_build_command, Board, PROGRAMS};
+use crate::{emutos_consts, kernel_embed, program_build_command, Board, PROGRAMS, PROGRAM_FEATURES};
 
 fn root() -> PathBuf {
     crate::workspace_root()
@@ -102,7 +102,7 @@ fn build_programs_passes_the_board_feature_and_writes_the_board_directory() {
     let root = root();
     for b in Board::ALL {
         for (krate, file) in PROGRAMS {
-            let c = program_build_command(&root, b, krate, file);
+            let c = program_build_command(&root, b, krate, file, &[]);
             let args: Vec<String> = c.get_args().map(|a| a.to_string_lossy().into_owned()).collect();
             let i = args.iter().position(|a| a == "--features").expect("no --features");
             assert_eq!(args.get(i + 1).map(String::as_str), Some(b.feature()), "{args:?}");
@@ -112,6 +112,38 @@ fn build_programs_passes_the_board_feature_and_writes_the_board_directory() {
             assert!(args[0].ends_with("programs/build.sh"), "{args:?}");
             assert_eq!(args[1], *krate);
         }
+    }
+}
+
+/// DESK43 U9-4: a kernel build with `selftest-desk` builds the NEWDESK program
+/// with it (the desktop the boot runs is that program), other programs and
+/// other kernel features are not touched, and every pass-through feature is
+/// one the program declares (else its cargo build would fail).
+#[test]
+fn kernel_selftest_desk_reaches_the_newdesk_program() {
+    let root = root();
+    let args_of = |b: Board, krate: &str, file: &str, kf: &[String]| -> String {
+        let c = program_build_command(&root, b, krate, file, kf);
+        let args: Vec<String> = c.get_args().map(|a| a.to_string_lossy().into_owned()).collect();
+        let i = args.iter().position(|a| a == "--features").expect("no --features");
+        args[i + 1].clone()
+    };
+    let st = vec!["selftest-desk".to_string()];
+    let other = vec!["aes-trace".to_string(), "selftest-emmc".to_string()];
+    for b in Board::ALL {
+        let with = format!("{},selftest-desk", b.feature());
+        assert_eq!(args_of(b, "newdesk", "NEWDESK.NAP", &st), with);
+        assert_eq!(args_of(b, "newdesk", "NEWDESK.NAP", &other), b.feature());
+        assert_eq!(args_of(b, "newdesk", "NEWDESK.NAP", &[]), b.feature());
+        assert_eq!(args_of(b, "hello-gem", "HELLOGEM.NAP", &st), b.feature());
+    }
+    for (krate, f) in PROGRAM_FEATURES {
+        assert!(PROGRAMS.iter().any(|(k, _)| k == krate), "PROGRAM_FEATURES names `{krate}`, not in PROGRAMS");
+        let toml = fs::read_to_string(root.join("programs").join(krate).join("Cargo.toml"))
+            .unwrap_or_else(|e| panic!("programs/{krate}/Cargo.toml: {e}"));
+        assert!(features(&toml).iter().any(|d| d == f), "programs/{krate} does not declare `{f}`");
+        let kernel = fs::read_to_string(root.join("kernel/Cargo.toml")).expect("kernel/Cargo.toml");
+        assert!(features(&kernel).iter().any(|d| d == f), "kernel/Cargo.toml has no feature `{f}`");
     }
 }
 

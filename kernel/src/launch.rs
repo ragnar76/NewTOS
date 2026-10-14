@@ -126,8 +126,54 @@ pub fn run_program_with_tail(path: &[u8], tail: &[u8]) -> bool {
 ///   a missing file, `EPLFMT` for a non-ELF, `ENSMEM` when the TPA cannot be
 ///   allocated).
 pub fn run_program_with_tail_rc(path: &[u8], tail: &[u8]) -> i32 {
+    launch(path, path, tail, Launch::Program)
+}
+
+/// Start the desktop **program** — the shell loop's DESKTOP arm, EmuTOS's
+/// `aes_run_rom_program(deskstart)` (`aes/gemshlib.c:570-580,606`; DESK43 U9-4).
+///
+/// `name` is the registry name of the embedded desktop (`DEF_DESKTOP`) — what
+/// EmuTOS's `deskstart` entry point is: the desktop the image carries, found
+/// without a file. `cmd` is `D.s_cmd`, from which the arm's `p_nameit(rlr,
+/// fname)` (`:604`) names the AES descriptor.
+///
+/// It is [`run_program_with_tail_rc`] with what EmuTOS's ROM-program start does
+/// not do left out:
+///
+/// * **no hourglass** — the DESKTOP arm has no `set_mouse_to_hourglass`
+///   (`gemshlib.c:600-612`); the pointer keeps the shape it has;
+/// * **no `D.s_cmd`/`ad_stail` rewrite** — `aes_run_rom_program` creates the
+///   basepage with an **empty** tail (`Pexec(PE_BASEPAGEFLAGS, PF_STANDARD,
+///   "", NULL)`, `:575`) and leaves the shell's command pair alone, so
+///   `shel_read` answers during the desktop what it answered before;
+/// * no `[acc] launching …` report (it describes an application start after
+///   the previous one's `appl_exit`).
+///
+/// Returns what [`run_program_with_tail_rc`] returns: the desktop's exit code
+/// `0 … 65535`, or a negative load error (the desktop never ran).
+pub fn run_desktop_program(name: &[u8], cmd: &[u8]) -> i32 {
+    launch(name, cmd, &[], Launch::Desktop)
+}
+
+/// What kind of start [`launch`] performs — see [`run_desktop_program`].
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Launch {
+    /// An application: `dos_exec(PE_LOADGO, D.s_cmd, ad_stail, ad_envrn)`
+    /// (`gemshlib.c:645`) or an `\AUTO\` program.
+    Program,
+    /// The desktop: `aes_run_rom_program(deskstart)` (`gemshlib.c:606`).
+    Desktop,
+}
+
+/// Load `path` (a registry key or a FAT path), run it at EL0 to its end and
+/// return its exit code or the negative load error. `name` names the AES
+/// descriptor (`p_nameit`); for an application it is `path` itself.
+fn launch(path: &[u8], name: &[u8], tail: &[u8], kind: Launch) -> i32 {
+    let program = kind == Launch::Program;
     // Busy cursor while loading from disk (the desktop is still on screen).
-    busy_cursor(true);
+    if program {
+        busy_cursor(true);
+    }
     // Load from the registry or the FAT16 file system into a fresh slot,
     // TPA and environment owned by the child (the shell's `PE_LOADGO`: its
     // `Pterm` frees them). The environment is `run->p_env`'s copy, as EmuTOS
@@ -146,11 +192,15 @@ pub fn run_program_with_tail_rc(path: &[u8], tail: &[u8]) -> i32 {
         Ok(c) => c,
         Err(e) => {
             kprintln!("[launch] load failed: {:?}", e);
-            busy_cursor(false);
+            if program {
+                busy_cursor(false);
+            }
             return e.errno();
         }
     };
-    busy_cursor(false);
+    if program {
+        busy_cursor(false);
+    }
 
     // Desk accessories: by this point the caller's `appl_exit` has posted
     // `AC_CLOSE` to every registered one and blocked until each had seen it
@@ -160,7 +210,7 @@ pub fn run_program_with_tail_rc(path: &[u8], tail: &[u8]) -> i32 {
     // for one with no state tied to the dying application — leaves no other
     // trace that it arrived.
     let accs = tos_api::aes::acc::count();
-    if accs > 0 {
+    if program && accs > 0 {
         kprintln!(
             "[acc] launching with {} accessory(s); AC_CLOSE seen by all: {}",
             accs,
@@ -175,12 +225,17 @@ pub fn run_program_with_tail_rc(path: &[u8], tail: &[u8]) -> i32 {
     s.set_state(State::Running);
     // Record the program's own directory so a GEM app's `rsrc_load` finds its
     // `.RSC` beside the executable (lead directive 2026-07-20): QED passes a
-    // bare `qed.rsc`, and its resource is staged next to `QED.NAP`.
-    tos_api::aes::resource::set_app_dir(path);
+    // bare `qed.rsc`, and its resource is staged next to `QED.NAP`. The
+    // DESKTOP arm has done its `p_setappdir(rlr, D.s_cmd)` (`gemshlib.c:605`)
+    // already.
+    if program {
+        tos_api::aes::resource::set_app_dir(path);
+    }
     // Name the launched program's AES process descriptor — the slot's entry
     // (A62) — from its launch path (EmuTOS `pstart` → `p_nameit`,
-    // `aes/gempd.c:110-131`), so a later `appl_find(name)` resolves it.
-    tos_api::aes::register_process(child.slot, path);
+    // `aes/gempd.c:110-131`), so a later `appl_find(name)` resolves it; the
+    // desktop from `D.s_cmd` (`gemshlib.c:604`).
+    tos_api::aes::register_process(child.slot, name);
     // Publish the start command + command-tail image as `D.s_cmd`/`ad_stail`
     // — the one pair `shel_read` answers from and `shel_write(SHW_EXEC)`
     // overwrites (`aes/gemshlib.c:104-105,169-170`; H05). In EmuTOS the
@@ -192,8 +247,10 @@ pub fn run_program_with_tail_rc(path: &[u8], tail: &[u8]) -> i32 {
     // EmuTOS `bios/bios.c:713-714`, which precedes the AES entirely), so the
     // launcher publishes them here on every path, one writer for both. `tail`
     // is handed over verbatim: it is the length-prefixed `p_cmdlin` image the
-    // loader copied.
-    tos_api::aes::shell::set_launch_info(path, tail);
+    // loader copied. Not for the desktop (see [`run_desktop_program`]).
+    if program {
+        tos_api::aes::shell::set_launch_info(path, tail);
+    }
     // `proc_go`: `p->p_parent = run` (`bdos/proc.c:541`) — `run` is kernel
     // code here, so the stand-in PD of this moment: `initial_basepage` for an
     // AUTO program (`bios/bios.c:693`), the AES PD for the desktop's and the

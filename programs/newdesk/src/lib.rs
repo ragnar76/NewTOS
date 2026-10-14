@@ -1,9 +1,9 @@
 //! `NEWDESK.NAP` — the NewTOS desktop as an EL0 program (DESK43 U9-2).
 //!
 //! A thin entry around the `desktop` library: one source, two link targets
-//! (decision D1). The kernel links the same library and calls
-//! `desktop::run()` from `sh_ldapp`'s DESKTOP arm in EL1 (until DESK43 U9-4
-//! switches that arm to this program); this crate links it with the program
+//! (decision D1). The kernel links the same library and calls `desktop::run()`
+//! in EL1 only with `desk=kernel` or as the load-failure fallback; its DESKTOP
+//! arm starts this program (DESK43 U9-4). This crate links it with the program
 //! runtime (`newtos-gem` with `rt`) into a position-independent program,
 //! built for each board by `cargo xtask build-programs` and embedded in the
 //! kernel image under the registry name `NEWDESK` (decision D3,

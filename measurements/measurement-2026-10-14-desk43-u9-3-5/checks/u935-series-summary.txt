@@ -1,0 +1,220 @@
+u935-off-rpi4-apitest |  1 TOTAL 106 0 5 ; | exc/panic/loadfail=0 | launches=1
+u935-off-rpi4-desktop |  1 desktop up (1 d; | exc/panic/loadfail=0 | launches=1
+u935-off-rpi4-qed |  | exc/panic/loadfail=0 | launches=1
+u935-off-rpi4-teradesk |  | exc/panic/loadfail=0 | launches=1
+u935-on-asid-rpi4-apitest |  1 TOTAL 106 0 5 ; | exc/panic/loadfail=0 | launches=1
+u935-on-asid-rpi4-desktop |  1 desktop up (1 d; | exc/panic/loadfail=0 | launches=1
+u935-on-asid-rpi4-qed |  | exc/panic/loadfail=0 | launches=1
+u935-on-asid-rpi4-teradesk |  | exc/panic/loadfail=0 | launches=1
+u935-on-rpi4-apitest |  1 TOTAL 106 0 5 ; | exc/panic/loadfail=0 | launches=1
+u935-on-rpi4-desktop |  1 desktop up (1 d; | exc/panic/loadfail=0 | launches=1
+u935-on-rpi4-qed |  | exc/panic/loadfail=0 | launches=1
+u935-on-rpi4-teradesk |  | exc/panic/loadfail=0 | launches=1
+u935-strict-rpi4-apitest |  1 TOTAL 106 0 5 ; | exc/panic/loadfail=0 | launches=1
+u935-strict-rpi4-desktop |  1 desktop up (1 d; | exc/panic/loadfail=0 | launches=1
+u935-strict-rpi4-qed |  | exc/panic/loadfail=0 | launches=1
+u935-strict-rpi4-teradesk |  | exc/panic/loadfail=0 | launches=1
+u935k-off-rpi4-apitest |  1 TOTAL 106 0 5 ; | exc/panic/loadfail=0 | launches=1
+u935k-off-rpi4-desktop |  1 desktop up (1 d; | exc/panic/loadfail=0 | launches=0
+u935k-off-rpi4-qed |  | exc/panic/loadfail=0 | launches=1
+u935k-off-rpi4-teradesk |  | exc/panic/loadfail=0 | launches=1
+u935k-on-asid-rpi4-apitest |  1 TOTAL 106 0 5 ; | exc/panic/loadfail=0 | launches=1
+u935k-on-asid-rpi4-desktop |  1 desktop up (1 d; | exc/panic/loadfail=0 | launches=0
+u935k-on-asid-rpi4-qed |  | exc/panic/loadfail=0 | launches=1
+u935k-on-asid-rpi4-teradesk |  | exc/panic/loadfail=0 | launches=1
+u935k-on-rpi4-apitest |  1 TOTAL 106 0 5 ; | exc/panic/loadfail=0 | launches=1
+u935k-on-rpi4-desktop |  1 desktop up (1 d; | exc/panic/loadfail=0 | launches=0
+u935k-on-rpi4-qed |  | exc/panic/loadfail=0 | launches=1
+u935k-on-rpi4-teradesk |  | exc/panic/loadfail=0 | launches=1
+u935k-strict-rpi4-apitest |  1 TOTAL 106 0 5 ; | exc/panic/loadfail=0 | launches=1
+u935k-strict-rpi4-desktop |  1 desktop up (1 d; | exc/panic/loadfail=0 | launches=0
+u935k-strict-rpi4-qed |  | exc/panic/loadfail=0 | launches=1
+u935k-strict-rpi4-teradesk |  | exc/panic/loadfail=0 | launches=1
+=== (1) desk=kernel (u935k) vs U9-1-2 (u912)
+u935k-on-rpi4- vs u912-on-rpi4-: same=5 diff=0 missing=0
+on APITEST lines: 0 differing (126 lines)
+-- on desktop serial diff (u912 < > u935k)
+9a10
+> [shell] desktop: built-in kernel desktop (boot argument desk=kernel)
+12c13
+< [mm]   kernel: 0xX..0xX (2805760 bytes)
+---
+> [mm]   kernel: 0xX..0xX (2809856 bytes)
+-- on apitest serial diff (u912 < > u935k)
+9a10
+> [shell] desktop: built-in kernel desktop (boot argument desk=kernel)
+12c13
+< [mm]   kernel: 0xX..0xX (2805760 bytes)
+---
+> [mm]   kernel: 0xX..0xX (2809856 bytes)
+-- on teradesk serial diff (u912 < > u935k)
+9a10
+> [shell] desktop: built-in kernel desktop (boot argument desk=kernel)
+12c13
+< [mm]   kernel: 0xX..0xX (2805760 bytes)
+---
+> [mm]   kernel: 0xX..0xX (2809856 bytes)
+-- on qed serial diff (u912 < > u935k)
+9a10
+> [shell] desktop: built-in kernel desktop (boot argument desk=kernel)
+12c13
+< [mm]   kernel: 0xX..0xX (2805760 bytes)
+---
+> [mm]   kernel: 0xX..0xX (2809856 bytes)
+u935k-off-rpi4- vs u912-off-rpi4-: same=5 diff=0 missing=0
+off APITEST lines: 0 differing (126 lines)
+-- off desktop serial diff (u912 < > u935k)
+9a10
+> [shell] desktop: built-in kernel desktop (boot argument desk=kernel)
+12c13
+< [mm]   kernel: 0xX..0xX (2805760 bytes)
+---
+> [mm]   kernel: 0xX..0xX (2809856 bytes)
+-- off apitest serial diff (u912 < > u935k)
+9a10
+> [shell] desktop: built-in kernel desktop (boot argument desk=kernel)
+12c13
+< [mm]   kernel: 0xX..0xX (2805760 bytes)
+---
+> [mm]   kernel: 0xX..0xX (2809856 bytes)
+-- off teradesk serial diff (u912 < > u935k)
+9a10
+> [shell] desktop: built-in kernel desktop (boot argument desk=kernel)
+12c13
+< [mm]   kernel: 0xX..0xX (2805760 bytes)
+---
+> [mm]   kernel: 0xX..0xX (2809856 bytes)
+-- off qed serial diff (u912 < > u935k)
+9a10
+> [shell] desktop: built-in kernel desktop (boot argument desk=kernel)
+12c13
+< [mm]   kernel: 0xX..0xX (2805760 bytes)
+---
+> [mm]   kernel: 0xX..0xX (2809856 bytes)
+u935k-strict-rpi4- vs u912-strict-rpi4-: same=5 diff=0 missing=0
+strict APITEST lines: 0 differing (126 lines)
+-- strict desktop serial diff (u912 < > u935k)
+9a10
+> [shell] desktop: built-in kernel desktop (boot argument desk=kernel)
+12c13
+< [mm]   kernel: 0xX..0xX (2805760 bytes)
+---
+> [mm]   kernel: 0xX..0xX (2809856 bytes)
+-- strict apitest serial diff (u912 < > u935k)
+9a10
+> [shell] desktop: built-in kernel desktop (boot argument desk=kernel)
+12c13
+< [mm]   kernel: 0xX..0xX (2805760 bytes)
+---
+> [mm]   kernel: 0xX..0xX (2809856 bytes)
+-- strict teradesk serial diff (u912 < > u935k)
+9a10
+> [shell] desktop: built-in kernel desktop (boot argument desk=kernel)
+12c13
+< [mm]   kernel: 0xX..0xX (2805760 bytes)
+---
+> [mm]   kernel: 0xX..0xX (2809856 bytes)
+-- strict qed serial diff (u912 < > u935k)
+9a10
+> [shell] desktop: built-in kernel desktop (boot argument desk=kernel)
+12c13
+< [mm]   kernel: 0xX..0xX (2805760 bytes)
+---
+> [mm]   kernel: 0xX..0xX (2809856 bytes)
+=== (2) EL0 (u935) vs desk=kernel (u935k)
+u935-on-rpi4- vs u935k-on-rpi4-: same=5 diff=0 missing=0
+on APITEST lines EL0 vs EL1: 0 differing
+-- on desktop serial diff (u935k < > u935)
+10c10
+< [shell] desktop: built-in kernel desktop (boot argument desk=kernel)
+---
+> [shell] desktop: EL0 program NEWDESK (embedded; desk=kernel selects the built-in one)
+54a55
+> [launch] EL0: slot 0 entry 0xX
+-- on apitest serial diff (u935k < > u935)
+10c10
+< [shell] desktop: built-in kernel desktop (boot argument desk=kernel)
+---
+> [shell] desktop: EL0 program NEWDESK (embedded; desk=kernel selects the built-in one)
+-- on teradesk serial diff (u935k < > u935)
+10c10
+< [shell] desktop: built-in kernel desktop (boot argument desk=kernel)
+---
+> [shell] desktop: EL0 program NEWDESK (embedded; desk=kernel selects the built-in one)
+-- on qed serial diff (u935k < > u935)
+10c10
+< [shell] desktop: built-in kernel desktop (boot argument desk=kernel)
+---
+> [shell] desktop: EL0 program NEWDESK (embedded; desk=kernel selects the built-in one)
+u935-off-rpi4- vs u935k-off-rpi4-: same=5 diff=0 missing=0
+off APITEST lines EL0 vs EL1: 0 differing
+-- off desktop serial diff (u935k < > u935)
+10c10
+< [shell] desktop: built-in kernel desktop (boot argument desk=kernel)
+---
+> [shell] desktop: EL0 program NEWDESK (embedded; desk=kernel selects the built-in one)
+54a55
+> [launch] EL0: slot 0 entry 0xX
+-- off apitest serial diff (u935k < > u935)
+10c10
+< [shell] desktop: built-in kernel desktop (boot argument desk=kernel)
+---
+> [shell] desktop: EL0 program NEWDESK (embedded; desk=kernel selects the built-in one)
+-- off teradesk serial diff (u935k < > u935)
+10c10
+< [shell] desktop: built-in kernel desktop (boot argument desk=kernel)
+---
+> [shell] desktop: EL0 program NEWDESK (embedded; desk=kernel selects the built-in one)
+-- off qed serial diff (u935k < > u935)
+10c10
+< [shell] desktop: built-in kernel desktop (boot argument desk=kernel)
+---
+> [shell] desktop: EL0 program NEWDESK (embedded; desk=kernel selects the built-in one)
+u935-strict-rpi4- vs u935k-strict-rpi4-: same=5 diff=0 missing=0
+strict APITEST lines EL0 vs EL1: 0 differing
+-- strict desktop serial diff (u935k < > u935)
+10c10
+< [shell] desktop: built-in kernel desktop (boot argument desk=kernel)
+---
+> [shell] desktop: EL0 program NEWDESK (embedded; desk=kernel selects the built-in one)
+54a55
+> [launch] EL0: slot 0 entry 0xX
+-- strict apitest serial diff (u935k < > u935)
+10c10
+< [shell] desktop: built-in kernel desktop (boot argument desk=kernel)
+---
+> [shell] desktop: EL0 program NEWDESK (embedded; desk=kernel selects the built-in one)
+-- strict teradesk serial diff (u935k < > u935)
+10c10
+< [shell] desktop: built-in kernel desktop (boot argument desk=kernel)
+---
+> [shell] desktop: EL0 program NEWDESK (embedded; desk=kernel selects the built-in one)
+-- strict qed serial diff (u935k < > u935)
+10c10
+< [shell] desktop: built-in kernel desktop (boot argument desk=kernel)
+---
+> [shell] desktop: EL0 program NEWDESK (embedded; desk=kernel selects the built-in one)
+u935-on-asid-rpi4- vs u935k-on-asid-rpi4-: same=5 diff=0 missing=0
+on-asid APITEST lines EL0 vs EL1: 0 differing
+-- on-asid desktop serial diff (u935k < > u935)
+10c10
+< [shell] desktop: built-in kernel desktop (boot argument desk=kernel)
+---
+> [shell] desktop: EL0 program NEWDESK (embedded; desk=kernel selects the built-in one)
+55a56
+> [launch] EL0: slot 0 entry 0xX
+-- on-asid apitest serial diff (u935k < > u935)
+10c10
+< [shell] desktop: built-in kernel desktop (boot argument desk=kernel)
+---
+> [shell] desktop: EL0 program NEWDESK (embedded; desk=kernel selects the built-in one)
+-- on-asid teradesk serial diff (u935k < > u935)
+10c10
+< [shell] desktop: built-in kernel desktop (boot argument desk=kernel)
+---
+> [shell] desktop: EL0 program NEWDESK (embedded; desk=kernel selects the built-in one)
+-- on-asid qed serial diff (u935k < > u935)
+10c10
+< [shell] desktop: built-in kernel desktop (boot argument desk=kernel)
+---
+> [shell] desktop: EL0 program NEWDESK (embedded; desk=kernel selects the built-in one)

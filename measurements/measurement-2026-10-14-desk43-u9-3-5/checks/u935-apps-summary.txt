@@ -1,0 +1,391 @@
+== f1api-el0-on
+   launches(EL0 slot)=2 desktop-up=1 load-failed=0 EXC=0 rust-panic=0 prompts=1
+   [shell] sh_ldapp: desktop 'NEWDESK' exited with rc=0
+   TOTAL      106   0     5     
+== f1api-el1-on
+   launches(EL0 slot)=1 desktop-up=1 load-failed=0 EXC=0 rust-panic=0 prompts=1
+   TOTAL      106   0     5     
+== f1crash-el0-on
+   launches(EL0 slot)=2 desktop-up=1 load-failed=0 EXC=1 rust-panic=0 prompts=1
+   [shell] sh_ldapp: desktop 'NEWDESK' exited with rc=0
+== f1crash-el1-on
+   launches(EL0 slot)=1 desktop-up=2 load-failed=0 EXC=12 rust-panic=0 prompts=6
+   CRASHTST: PASS
+   [shell] sh_ldapp: 'C:\CRASHTST.NAP' exited with rc=0
+== f1crash2-el0-on
+   launches(EL0 slot)=3 desktop-up=2 load-failed=0 EXC=12 rust-panic=0 prompts=6
+   [shell] sh_ldapp: desktop 'NEWDESK' exited with rc=0
+   CRASHTST: PASS
+   [shell] sh_ldapp: 'C:\CRASHTST.NAP' exited with rc=0
+== f1crash2-el1-on
+   launches(EL0 slot)=1 desktop-up=2 load-failed=0 EXC=12 rust-panic=0 prompts=6
+   CRASHTST: PASS
+   [shell] sh_ldapp: 'C:\CRASHTST.NAP' exited with rc=0
+== f1crch-el0-off
+   launches(EL0 slot)=2 desktop-up=1 load-failed=0 EXC=1 rust-panic=0 prompts=1
+   [shell] sh_ldapp: desktop 'NEWDESK' exited with rc=0
+== f1crch-el0-on
+   launches(EL0 slot)=2 desktop-up=1 load-failed=0 EXC=1 rust-panic=0 prompts=1
+   [shell] sh_ldapp: desktop 'NEWDESK' exited with rc=0
+== f1crch-el0-strict
+   launches(EL0 slot)=2 desktop-up=1 load-failed=0 EXC=1 rust-panic=0 prompts=1
+   [shell] sh_ldapp: desktop 'NEWDESK' exited with rc=0
+== f1crch-el1-off
+   launches(EL0 slot)=1 desktop-up=2 load-failed=0 EXC=2 rust-panic=0 prompts=1
+   [shell] sh_ldapp: 'C:\CRCHILD.NAP' exited with rc=65535
+== f1crch-el1-on
+   launches(EL0 slot)=1 desktop-up=2 load-failed=0 EXC=2 rust-panic=0 prompts=1
+   [shell] sh_ldapp: 'C:\CRCHILD.NAP' exited with rc=65535
+== f1crch-el1-strict
+   launches(EL0 slot)=1 desktop-up=2 load-failed=0 EXC=2 rust-panic=0 prompts=1
+   [shell] sh_ldapp: 'C:\CRCHILD.NAP' exited with rc=65535
+== f1crch2-el0-off
+   launches(EL0 slot)=3 desktop-up=2 load-failed=0 EXC=2 rust-panic=0 prompts=1
+   [shell] sh_ldapp: desktop 'NEWDESK' exited with rc=0
+   [shell] sh_ldapp: 'C:\CRCHILD.NAP' exited with rc=65535
+== f1crch2-el0-on
+   launches(EL0 slot)=3 desktop-up=2 load-failed=0 EXC=2 rust-panic=0 prompts=1
+   [shell] sh_ldapp: desktop 'NEWDESK' exited with rc=0
+   [shell] sh_ldapp: 'C:\CRCHILD.NAP' exited with rc=65535
+== f1crch2-el0-strict
+   launches(EL0 slot)=3 desktop-up=2 load-failed=0 EXC=2 rust-panic=0 prompts=1
+   [shell] sh_ldapp: desktop 'NEWDESK' exited with rc=0
+   [shell] sh_ldapp: 'C:\CRCHILD.NAP' exited with rc=65535
+== f1crch2-el1-off
+   launches(EL0 slot)=1 desktop-up=2 load-failed=0 EXC=2 rust-panic=0 prompts=1
+   [shell] sh_ldapp: 'C:\CRCHILD.NAP' exited with rc=65535
+== f1crch2-el1-on
+   launches(EL0 slot)=1 desktop-up=2 load-failed=0 EXC=2 rust-panic=0 prompts=1
+   [shell] sh_ldapp: 'C:\CRCHILD.NAP' exited with rc=65535
+== f1crch2-el1-strict
+   launches(EL0 slot)=1 desktop-up=2 load-failed=0 EXC=2 rust-panic=0 prompts=1
+   [shell] sh_ldapp: 'C:\CRCHILD.NAP' exited with rc=65535
+== f1doom-el0-on
+   launches(EL0 slot)=2 desktop-up=1 load-failed=0 EXC=0 rust-panic=0 prompts=0
+   [shell] sh_ldapp: desktop 'NEWDESK' exited with rc=0
+== f1doom-el1-on
+   launches(EL0 slot)=1 desktop-up=1 load-failed=0 EXC=0 rust-panic=0 prompts=0
+== f1hg-el0-off
+   launches(EL0 slot)=2 desktop-up=1 load-failed=0 EXC=0 rust-panic=0 prompts=0
+   [shell] sh_ldapp: desktop 'NEWDESK' exited with rc=0
+== f1hg-el0-on
+   launches(EL0 slot)=2 desktop-up=1 load-failed=0 EXC=0 rust-panic=0 prompts=0
+   [shell] sh_ldapp: desktop 'NEWDESK' exited with rc=0
+== f1hg-el0-strict
+   launches(EL0 slot)=2 desktop-up=1 load-failed=0 EXC=0 rust-panic=0 prompts=0
+   [shell] sh_ldapp: desktop 'NEWDESK' exited with rc=0
+== f1hg-el1-off
+   launches(EL0 slot)=1 desktop-up=2 load-failed=0 EXC=0 rust-panic=0 prompts=0
+   [HELLOGEM] ap_id=0 vwk=2 redraws=1 quit by key 0x1c0d; heap OK allocs=7726 Malloc=8 Mfree=7 peak_hunks=8 end: hunks=1 live=10; stack used 2464 of 65536 bytes; appl_exit=1
+   [shell] sh_ldapp: 'C:\HELLOGEM.NAP' exited with rc=0
+== f1hg-el1-on
+   launches(EL0 slot)=1 desktop-up=2 load-failed=0 EXC=0 rust-panic=0 prompts=0
+   [HELLOGEM] ap_id=0 vwk=2 redraws=1 quit by key 0x1c0d; heap OK allocs=7726 Malloc=8 Mfree=7 peak_hunks=8 end: hunks=1 live=10; stack used 2464 of 65536 bytes; appl_exit=1
+   [shell] sh_ldapp: 'C:\HELLOGEM.NAP' exited with rc=0
+== f1hg-el1-strict
+   launches(EL0 slot)=1 desktop-up=2 load-failed=0 EXC=0 rust-panic=0 prompts=0
+   [HELLOGEM] ap_id=0 vwk=2 redraws=1 quit by key 0x1c0d; heap OK allocs=7726 Malloc=8 Mfree=7 peak_hunks=8 end: hunks=1 live=10; stack used 2464 of 65536 bytes; appl_exit=1
+   [shell] sh_ldapp: 'C:\HELLOGEM.NAP' exited with rc=0
+== f1hg2-el0-off
+   launches(EL0 slot)=3 desktop-up=2 load-failed=0 EXC=0 rust-panic=0 prompts=0
+   [shell] sh_ldapp: desktop 'NEWDESK' exited with rc=0
+   [HELLOGEM] ap_id=0 vwk=2 redraws=1 quit by key 0x1c0d; heap OK allocs=7726 Malloc=8 Mfree=7 peak_hunks=8 end: hunks=1 live=10; stack used 2464 of 65536 bytes; appl_exit=1
+   [shell] sh_ldapp: 'C:\HELLOGEM.NAP' exited with rc=0
+== f1hg2-el0-on
+   launches(EL0 slot)=3 desktop-up=2 load-failed=0 EXC=0 rust-panic=0 prompts=0
+   [shell] sh_ldapp: desktop 'NEWDESK' exited with rc=0
+   [HELLOGEM] ap_id=0 vwk=2 redraws=1 quit by key 0x1c0d; heap OK allocs=7726 Malloc=8 Mfree=7 peak_hunks=8 end: hunks=1 live=10; stack used 2464 of 65536 bytes; appl_exit=1
+   [shell] sh_ldapp: 'C:\HELLOGEM.NAP' exited with rc=0
+== f1hg2-el0-strict
+   launches(EL0 slot)=3 desktop-up=2 load-failed=0 EXC=0 rust-panic=0 prompts=0
+   [shell] sh_ldapp: desktop 'NEWDESK' exited with rc=0
+   [HELLOGEM] ap_id=0 vwk=2 redraws=1 quit by key 0x1c0d; heap OK allocs=7726 Malloc=8 Mfree=7 peak_hunks=8 end: hunks=1 live=10; stack used 2464 of 65536 bytes; appl_exit=1
+   [shell] sh_ldapp: 'C:\HELLOGEM.NAP' exited with rc=0
+== f1hg2-el1-off
+   launches(EL0 slot)=1 desktop-up=2 load-failed=0 EXC=0 rust-panic=0 prompts=0
+   [HELLOGEM] ap_id=0 vwk=2 redraws=1 quit by key 0x1c0d; heap OK allocs=7726 Malloc=8 Mfree=7 peak_hunks=8 end: hunks=1 live=10; stack used 2464 of 65536 bytes; appl_exit=1
+   [shell] sh_ldapp: 'C:\HELLOGEM.NAP' exited with rc=0
+== f1hg2-el1-on
+   launches(EL0 slot)=1 desktop-up=2 load-failed=0 EXC=0 rust-panic=0 prompts=0
+   [HELLOGEM] ap_id=0 vwk=2 redraws=1 quit by key 0x1c0d; heap OK allocs=7726 Malloc=8 Mfree=7 peak_hunks=8 end: hunks=1 live=10; stack used 2464 of 65536 bytes; appl_exit=1
+   [shell] sh_ldapp: 'C:\HELLOGEM.NAP' exited with rc=0
+== f1hg2-el1-strict
+   launches(EL0 slot)=1 desktop-up=2 load-failed=0 EXC=0 rust-panic=0 prompts=0
+   [HELLOGEM] ap_id=0 vwk=2 redraws=1 quit by key 0x1c0d; heap OK allocs=7726 Malloc=8 Mfree=7 peak_hunks=8 end: hunks=1 live=10; stack used 2464 of 65536 bytes; appl_exit=1
+   [shell] sh_ldapp: 'C:\HELLOGEM.NAP' exited with rc=0
+== f1hgp-el0-off
+   launches(EL0 slot)=3 desktop-up=2 load-failed=0 EXC=0 rust-panic=1 prompts=0
+   [shell] sh_ldapp: desktop 'NEWDESK' exited with rc=0
+   [shell] sh_ldapp: 'C:\HGPANIC.NAP' exited with rc=65535
+== f1hgp-el0-on
+   launches(EL0 slot)=3 desktop-up=2 load-failed=0 EXC=0 rust-panic=1 prompts=0
+   [shell] sh_ldapp: desktop 'NEWDESK' exited with rc=0
+   [shell] sh_ldapp: 'C:\HGPANIC.NAP' exited with rc=65535
+== f1hgp-el0-strict
+   launches(EL0 slot)=3 desktop-up=2 load-failed=0 EXC=0 rust-panic=1 prompts=0
+   [shell] sh_ldapp: desktop 'NEWDESK' exited with rc=0
+   [shell] sh_ldapp: 'C:\HGPANIC.NAP' exited with rc=65535
+== f1hgp-el1-off
+   launches(EL0 slot)=1 desktop-up=2 load-failed=0 EXC=0 rust-panic=1 prompts=0
+   [shell] sh_ldapp: 'C:\HGPANIC.NAP' exited with rc=65535
+== f1hgp-el1-on
+   launches(EL0 slot)=1 desktop-up=2 load-failed=0 EXC=0 rust-panic=1 prompts=0
+   [shell] sh_ldapp: 'C:\HGPANIC.NAP' exited with rc=65535
+== f1hgp-el1-strict
+   launches(EL0 slot)=1 desktop-up=2 load-failed=0 EXC=0 rust-panic=1 prompts=0
+   [shell] sh_ldapp: 'C:\HGPANIC.NAP' exited with rc=65535
+== f1hgp2-el0-off
+   launches(EL0 slot)=3 desktop-up=2 load-failed=0 EXC=0 rust-panic=1 prompts=0
+   [shell] sh_ldapp: desktop 'NEWDESK' exited with rc=0
+   [shell] sh_ldapp: 'C:\HGPANIC.NAP' exited with rc=65535
+== f1hgp2-el0-on
+   launches(EL0 slot)=3 desktop-up=2 load-failed=0 EXC=0 rust-panic=1 prompts=0
+   [shell] sh_ldapp: desktop 'NEWDESK' exited with rc=0
+   [shell] sh_ldapp: 'C:\HGPANIC.NAP' exited with rc=65535
+== f1hgp2-el0-strict
+   launches(EL0 slot)=3 desktop-up=2 load-failed=0 EXC=0 rust-panic=1 prompts=0
+   [shell] sh_ldapp: desktop 'NEWDESK' exited with rc=0
+   [shell] sh_ldapp: 'C:\HGPANIC.NAP' exited with rc=65535
+== f1hgp2-el1-off
+   launches(EL0 slot)=1 desktop-up=2 load-failed=0 EXC=0 rust-panic=1 prompts=0
+   [shell] sh_ldapp: 'C:\HGPANIC.NAP' exited with rc=65535
+== f1hgp2-el1-on
+   launches(EL0 slot)=1 desktop-up=2 load-failed=0 EXC=0 rust-panic=1 prompts=0
+   [shell] sh_ldapp: 'C:\HGPANIC.NAP' exited with rc=65535
+== f1hgp2-el1-strict
+   launches(EL0 slot)=1 desktop-up=2 load-failed=0 EXC=0 rust-panic=1 prompts=0
+   [shell] sh_ldapp: 'C:\HGPANIC.NAP' exited with rc=65535
+== f1qed-el0-on
+   launches(EL0 slot)=2 desktop-up=1 load-failed=0 EXC=0 rust-panic=0 prompts=0
+   [shell] sh_ldapp: desktop 'NEWDESK' exited with rc=0
+== f1qed-el1-on
+   launches(EL0 slot)=1 desktop-up=1 load-failed=0 EXC=0 rust-panic=0 prompts=0
+== f1tera-el0-on
+   launches(EL0 slot)=2 desktop-up=1 load-failed=0 EXC=0 rust-panic=0 prompts=0
+   [shell] sh_ldapp: desktop 'NEWDESK' exited with rc=0
+== f1tera-el1-on
+   launches(EL0 slot)=1 desktop-up=1 load-failed=0 EXC=0 rust-panic=0 prompts=0
+== acc-el0-off
+   launches(EL0 slot)=1 desktop-up=1 load-failed=0 EXC=0 rust-panic=0 prompts=0
+   [acc] loaded C:\ACC\SYSACC.NAC into slot 0 (entry 0x1002000)
+   [acc] 1 file(s) found, 1 process(es) started
+   [acc] all accessories have issued their message wait
+   [acc] desktop armed at hz_200 3012 (slot Some(1) name NEWDESK)
+   [acc] desktop feed 0xf8 at hz_200 3212 (+200)
+   [acc] desktop feed 0x80 at hz_200 3212 (+200)
+   [acc] desktop feed 0x80 at hz_200 3212 (+200)
+   [acc] desktop feed 0xf8 at hz_200 3212 (+200)
+   [acc] desktop feed 0x80 at hz_200 3212 (+200)
+   [acc] desktop feed 0x80 at hz_200 3212 (+200)
+   [acc] desktop feed 0xf8 at hz_200 3212 (+200)
+   [acc] desktop feed 0x80 at hz_200 3212 (+200)
+   [acc] desktop feed 0x80 at hz_200 3212 (+200)
+   [acc] desktop feed 0xf8 at hz_200 3212 (+200)
+   [acc] desktop feed 0x80 at hz_200 3212 (+200)
+   [acc] desktop feed 0x80 at hz_200 3212 (+200)
+   [acc] desktop feed 0xf8 at hz_200 3222 (+210)
+   [acc] desktop feed 0x14 at hz_200 3222 (+210)
+   [acc] desktop feed 0x09 at hz_200 3222 (+210)
+   [acc] desktop feed 0xf8 at hz_200 3312 (+300)
+== acc-el0-on
+   launches(EL0 slot)=1 desktop-up=1 load-failed=0 EXC=0 rust-panic=0 prompts=0
+   [acc] loaded C:\ACC\SYSACC.NAC into slot 0 (entry 0x1971000)
+   [acc] 1 file(s) found, 1 process(es) started
+   [acc] all accessories have issued their message wait
+   [acc] desktop armed at hz_200 3026 (slot Some(1) name NEWDESK)
+   [acc] desktop feed 0xf8 at hz_200 3226 (+200)
+   [acc] desktop feed 0x80 at hz_200 3226 (+200)
+   [acc] desktop feed 0x80 at hz_200 3226 (+200)
+   [acc] desktop feed 0xf8 at hz_200 3226 (+200)
+   [acc] desktop feed 0x80 at hz_200 3226 (+200)
+   [acc] desktop feed 0x80 at hz_200 3226 (+200)
+   [acc] desktop feed 0xf8 at hz_200 3226 (+200)
+   [acc] desktop feed 0x80 at hz_200 3226 (+200)
+   [acc] desktop feed 0x80 at hz_200 3226 (+200)
+   [acc] desktop feed 0xf8 at hz_200 3226 (+200)
+   [acc] desktop feed 0x80 at hz_200 3226 (+200)
+   [acc] desktop feed 0x80 at hz_200 3226 (+200)
+   [acc] desktop feed 0xf8 at hz_200 3236 (+210)
+   [acc] desktop feed 0x14 at hz_200 3236 (+210)
+   [acc] desktop feed 0x09 at hz_200 3236 (+210)
+   [acc] desktop feed 0xf8 at hz_200 3326 (+300)
+== acc-el0-strict
+   launches(EL0 slot)=1 desktop-up=1 load-failed=0 EXC=0 rust-panic=0 prompts=0
+   [acc] loaded C:\ACC\SYSACC.NAC into slot 0 (entry 0x1971000)
+   [acc] 1 file(s) found, 1 process(es) started
+   [acc] all accessories have issued their message wait
+   [acc] desktop armed at hz_200 3024 (slot Some(1) name NEWDESK)
+   [acc] desktop feed 0xf8 at hz_200 3224 (+200)
+   [acc] desktop feed 0x80 at hz_200 3224 (+200)
+   [acc] desktop feed 0x80 at hz_200 3224 (+200)
+   [acc] desktop feed 0xf8 at hz_200 3224 (+200)
+   [acc] desktop feed 0x80 at hz_200 3224 (+200)
+   [acc] desktop feed 0x80 at hz_200 3224 (+200)
+   [acc] desktop feed 0xf8 at hz_200 3224 (+200)
+   [acc] desktop feed 0x80 at hz_200 3224 (+200)
+   [acc] desktop feed 0x80 at hz_200 3224 (+200)
+   [acc] desktop feed 0xf8 at hz_200 3224 (+200)
+   [acc] desktop feed 0x80 at hz_200 3224 (+200)
+   [acc] desktop feed 0x80 at hz_200 3224 (+200)
+   [acc] desktop feed 0xf8 at hz_200 3234 (+210)
+   [acc] desktop feed 0x14 at hz_200 3234 (+210)
+   [acc] desktop feed 0x09 at hz_200 3234 (+210)
+   [acc] desktop feed 0xf8 at hz_200 3324 (+300)
+== acc-el1-off
+   launches(EL0 slot)=0 desktop-up=1 load-failed=0 EXC=0 rust-panic=0 prompts=0
+   [acc] loaded C:\ACC\SYSACC.NAC into slot 0 (entry 0x1002000)
+   [acc] 1 file(s) found, 1 process(es) started
+   [acc] all accessories have issued their message wait
+   [acc] desktop armed at hz_200 3012 (slot None name )
+   [acc] desktop feed 0xf8 at hz_200 3212 (+200)
+   [acc] desktop feed 0x80 at hz_200 3212 (+200)
+   [acc] desktop feed 0x80 at hz_200 3212 (+200)
+   [acc] desktop feed 0xf8 at hz_200 3212 (+200)
+   [acc] desktop feed 0x80 at hz_200 3212 (+200)
+   [acc] desktop feed 0x80 at hz_200 3212 (+200)
+   [acc] desktop feed 0xf8 at hz_200 3212 (+200)
+   [acc] desktop feed 0x80 at hz_200 3212 (+200)
+   [acc] desktop feed 0x80 at hz_200 3212 (+200)
+   [acc] desktop feed 0xf8 at hz_200 3212 (+200)
+   [acc] desktop feed 0x80 at hz_200 3212 (+200)
+   [acc] desktop feed 0x80 at hz_200 3212 (+200)
+   [acc] desktop feed 0xf8 at hz_200 3222 (+210)
+   [acc] desktop feed 0x14 at hz_200 3222 (+210)
+   [acc] desktop feed 0x09 at hz_200 3222 (+210)
+   [acc] desktop feed 0xf8 at hz_200 3312 (+300)
+== acc-el1-on
+   launches(EL0 slot)=0 desktop-up=1 load-failed=0 EXC=0 rust-panic=0 prompts=0
+   [acc] loaded C:\ACC\SYSACC.NAC into slot 0 (entry 0x1971000)
+   [acc] 1 file(s) found, 1 process(es) started
+   [acc] all accessories have issued their message wait
+   [acc] desktop armed at hz_200 3018 (slot None name )
+   [acc] desktop feed 0xf8 at hz_200 3218 (+200)
+   [acc] desktop feed 0x80 at hz_200 3218 (+200)
+   [acc] desktop feed 0x80 at hz_200 3218 (+200)
+   [acc] desktop feed 0xf8 at hz_200 3218 (+200)
+   [acc] desktop feed 0x80 at hz_200 3218 (+200)
+   [acc] desktop feed 0x80 at hz_200 3218 (+200)
+   [acc] desktop feed 0xf8 at hz_200 3218 (+200)
+   [acc] desktop feed 0x80 at hz_200 3218 (+200)
+   [acc] desktop feed 0x80 at hz_200 3218 (+200)
+   [acc] desktop feed 0xf8 at hz_200 3218 (+200)
+   [acc] desktop feed 0x80 at hz_200 3218 (+200)
+   [acc] desktop feed 0x80 at hz_200 3218 (+200)
+   [acc] desktop feed 0xf8 at hz_200 3228 (+210)
+   [acc] desktop feed 0x14 at hz_200 3228 (+210)
+   [acc] desktop feed 0x09 at hz_200 3228 (+210)
+   [acc] desktop feed 0xf8 at hz_200 3318 (+300)
+== acc-el1-strict
+   launches(EL0 slot)=0 desktop-up=1 load-failed=0 EXC=0 rust-panic=0 prompts=0
+   [acc] loaded C:\ACC\SYSACC.NAC into slot 0 (entry 0x1971000)
+   [acc] 1 file(s) found, 1 process(es) started
+   [acc] all accessories have issued their message wait
+   [acc] desktop armed at hz_200 3018 (slot None name )
+   [acc] desktop feed 0xf8 at hz_200 3218 (+200)
+   [acc] desktop feed 0x80 at hz_200 3218 (+200)
+   [acc] desktop feed 0x80 at hz_200 3218 (+200)
+   [acc] desktop feed 0xf8 at hz_200 3218 (+200)
+   [acc] desktop feed 0x80 at hz_200 3218 (+200)
+   [acc] desktop feed 0x80 at hz_200 3218 (+200)
+   [acc] desktop feed 0xf8 at hz_200 3218 (+200)
+   [acc] desktop feed 0x80 at hz_200 3218 (+200)
+   [acc] desktop feed 0x80 at hz_200 3218 (+200)
+   [acc] desktop feed 0xf8 at hz_200 3218 (+200)
+   [acc] desktop feed 0x80 at hz_200 3218 (+200)
+   [acc] desktop feed 0x80 at hz_200 3218 (+200)
+   [acc] desktop feed 0xf8 at hz_200 3228 (+210)
+   [acc] desktop feed 0x14 at hz_200 3228 (+210)
+   [acc] desktop feed 0x09 at hz_200 3228 (+210)
+   [acc] desktop feed 0xf8 at hz_200 3318 (+300)
+== kp-el0-off
+   launches(EL0 slot)=2 desktop-up=0 load-failed=0 EXC=0 rust-panic=2 prompts=2
+   [shell] sh_ldapp: desktop 'NEWDESK' exited with rc=65535
+== kp-el0-on
+   launches(EL0 slot)=2 desktop-up=0 load-failed=0 EXC=0 rust-panic=2 prompts=2
+   [shell] sh_ldapp: desktop 'NEWDESK' exited with rc=65535
+== kp-el0-strict
+   launches(EL0 slot)=2 desktop-up=0 load-failed=0 EXC=0 rust-panic=2 prompts=2
+   [shell] sh_ldapp: desktop 'NEWDESK' exited with rc=65535
+== kp-el1-on
+   launches(EL0 slot)=0 desktop-up=1 load-failed=0 EXC=0 rust-panic=0 prompts=0
+== kc-el0-on
+   launches(EL0 slot)=1 desktop-up=2 load-failed=1 EXC=0 rust-panic=0 prompts=0
+   [shell] desktop NEWDESK could not be loaded (rc=-66) — not retried; falling back to the built-in kernel desktop
+   [HELLOGEM] ap_id=0 vwk=2 redraws=1 quit by key 0x1c0d; heap OK allocs=7726 Malloc=8 Mfree=7 peak_hunks=8 end: hunks=1 live=10; stack used 2464 of 65536 bytes; appl_exit=1
+   [shell] sh_ldapp: 'C:\HELLOGEM.NAP' exited with rc=0
+== kc-el1-on
+   launches(EL0 slot)=1 desktop-up=2 load-failed=0 EXC=0 rust-panic=0 prompts=0
+   [HELLOGEM] ap_id=0 vwk=2 redraws=1 quit by key 0x1c0d; heap OK allocs=7726 Malloc=8 Mfree=7 peak_hunks=8 end: hunks=1 live=10; stack used 2464 of 65536 bytes; appl_exit=1
+   [shell] sh_ldapp: 'C:\HELLOGEM.NAP' exited with rc=0
+== km-el0-on
+   launches(EL0 slot)=1 desktop-up=2 load-failed=1 EXC=0 rust-panic=0 prompts=0
+   [shell] desktop NEWDESK could not be loaded (rc=-33) — not retried; falling back to the built-in kernel desktop
+   [HELLOGEM] ap_id=0 vwk=2 redraws=1 quit by key 0x1c0d; heap OK allocs=7726 Malloc=8 Mfree=7 peak_hunks=8 end: hunks=1 live=10; stack used 2464 of 65536 bytes; appl_exit=1
+   [shell] sh_ldapp: 'C:\HELLOGEM.NAP' exited with rc=0
+== km-el1-on
+   launches(EL0 slot)=1 desktop-up=2 load-failed=0 EXC=0 rust-panic=0 prompts=0
+   [HELLOGEM] ap_id=0 vwk=2 redraws=1 quit by key 0x1c0d; heap OK allocs=7726 Malloc=8 Mfree=7 peak_hunks=8 end: hunks=1 live=10; stack used 2464 of 65536 bytes; appl_exit=1
+   [shell] sh_ldapp: 'C:\HELLOGEM.NAP' exited with rc=0
+== st-el0-on-rpi4
+   launches(EL0 slot)=1 desktop-up=1 load-failed=0 EXC=0 rust-panic=0 prompts=0
+   [desk-selftest] done
+=== screendumps EL0 vs EL1
+f1api-el0-on-t30.png: EL0 = EL1
+f1api-el0-on-t45.png: EL0 = EL1
+f1crash-el0-on-app.png: EL0 != EL1 DIFF 216700 px bbox x=0..639 y=2..479  (35655a2bbf2c / fe1229b35e25)   box x=0 y=2 w=640 h=478 px=216700 A[(0, 0, 0), (255, 255, 255)] B[(0, 0, 0), (0, 173, 0), (255, 255, 255)] 
+f1crash-el0-on-end.png: EL0 != EL1 DIFF 116542 px bbox x=0..599 y=2..383  (0e6f770497da / fe1229b35e25)   box x=0 y=2 w=223 h=57 px=4601 A[(0, 0, 0), (0, 173, 0), (255, 255, 255)] B[(0, 0, 0), (0, 173, 0), (255, 255, 255)]   box x=273 y=4 w=94 h=12 px=512 A[(255, 255, 255)] B[(0, 0, 0)]   box x=366 y=19 w=72 h=40 px=1582 A[(0, 0, 0), (255, 255, 255)] B[(0, 173, 0)]   box x=0 y=64 w=600 h=224 px=95511 A[(0, 0, 0), (0, 173, 0), (255, 255, 255)] B[(0, 0, 0), (0, 173, 0), (255, 255, 255)]   box x=0 y=304 w=320 h=48 px=10112 A[(0, 173, 0)] B[(0, 0, 0), (255, 255, 255)]   box x=0 y=368 w=264 h=16 px=4224 A[(0, 173, 0)] B[(0, 0, 0), (255, 255, 255)] 
+f1crash2-el0-on-app.png: EL0 = EL1
+f1crash2-el0-on-end.png: EL0 = EL1
+f1crch-el0-off-app.png: EL0 = EL1
+f1crch-el0-off-end.png: EL0 != EL1 DIFF 104785 px bbox x=0..599 y=2..351  (0e6f770497da / e9adf8248d4f)   box x=0 y=2 w=600 h=254 px=87717 A[(0, 0, 0), (0, 173, 0), (255, 255, 255)] B[(0, 0, 0), (0, 173, 0), (255, 255, 255)]   box x=112 y=2 w=111 h=15 px=529 A[(0, 0, 0), (255, 255, 255)] B[(0, 0, 0), (255, 255, 255)]   box x=73 y=3 w=30 h=12 px=141 A[(0, 0, 0), (255, 255, 255)] B[(0, 0, 0), (255, 255, 255)]   box x=277 y=4 w=86 h=12 px=480 A[(255, 255, 255)] B[(0, 0, 0)]   box x=366 y=19 w=72 h=40 px=1582 A[(0, 0, 0), (255, 255, 255)] B[(0, 173, 0)]   box x=0 y=272 w=320 h=48 px=10112 A[(0, 173, 0)] B[(0, 0, 0), (255, 255, 255)]   box x=0 y=336 w=264 h=16 px=4224 A[(0, 173, 0)] B[(0, 0, 0), (255, 255, 255)] 
+f1crch-el0-on-app.png: EL0 = EL1
+f1crch-el0-on-end.png: EL0 != EL1 DIFF 112278 px bbox x=0..599 y=2..367  (0e6f770497da / 8003f0677175)   box x=0 y=2 w=600 h=270 px=95210 A[(0, 0, 0), (0, 173, 0), (255, 255, 255)] B[(0, 0, 0), (0, 173, 0), (255, 255, 255)]   box x=112 y=2 w=111 h=15 px=529 A[(0, 0, 0), (255, 255, 255)] B[(0, 0, 0), (255, 255, 255)]   box x=73 y=3 w=30 h=12 px=141 A[(0, 0, 0), (255, 255, 255)] B[(0, 0, 0), (255, 255, 255)]   box x=277 y=4 w=86 h=12 px=480 A[(255, 255, 255)] B[(0, 0, 0)]   box x=366 y=19 w=72 h=40 px=1582 A[(0, 0, 0), (255, 255, 255)] B[(0, 173, 0)]   box x=0 y=288 w=320 h=48 px=10112 A[(0, 173, 0)] B[(0, 0, 0), (255, 255, 255)]   box x=0 y=352 w=264 h=16 px=4224 A[(0, 173, 0)] B[(0, 0, 0), (255, 255, 255)] 
+f1crch-el0-strict-app.png: EL0 = EL1
+f1crch-el0-strict-end.png: EL0 != EL1 DIFF 112278 px bbox x=0..599 y=2..367  (0e6f770497da / 8003f0677175)   box x=0 y=2 w=600 h=270 px=95210 A[(0, 0, 0), (0, 173, 0), (255, 255, 255)] B[(0, 0, 0), (0, 173, 0), (255, 255, 255)]   box x=112 y=2 w=111 h=15 px=529 A[(0, 0, 0), (255, 255, 255)] B[(0, 0, 0), (255, 255, 255)]   box x=73 y=3 w=30 h=12 px=141 A[(0, 0, 0), (255, 255, 255)] B[(0, 0, 0), (255, 255, 255)]   box x=277 y=4 w=86 h=12 px=480 A[(255, 255, 255)] B[(0, 0, 0)]   box x=366 y=19 w=72 h=40 px=1582 A[(0, 0, 0), (255, 255, 255)] B[(0, 173, 0)]   box x=0 y=288 w=320 h=48 px=10112 A[(0, 173, 0)] B[(0, 0, 0), (255, 255, 255)]   box x=0 y=352 w=264 h=16 px=4224 A[(0, 173, 0)] B[(0, 0, 0), (255, 255, 255)] 
+f1crch2-el0-off-app.png: EL0 = EL1
+f1crch2-el0-off-end.png: EL0 = EL1
+f1crch2-el0-on-app.png: EL0 = EL1
+f1crch2-el0-on-end.png: EL0 = EL1
+f1crch2-el0-strict-app.png: EL0 = EL1
+f1crch2-el0-strict-end.png: EL0 = EL1
+f1doom-el0-on-t35.png: EL0 != EL1 DIFF 306954 px bbox x=0..639 y=0..479  (3ea7af1c5f93 / 6b2854bd7939)   box x=0 y=0 w=640 h=480 px=306954 A[(57, 0, 0), (66, 8, 8), (66, 16, 0), (66, 16, 8)] B[(0, 0, 0), (0, 0, 132), (8, 8, 8), (8, 24, 8)] 
+f1doom-el0-on-t50.png: EL0 != EL1 DIFF 139550 px bbox x=0..639 y=0..403  (eec0d340c0fa / 5731fd92c2fa)   box x=0 y=0 w=640 h=404 px=136988 A[(0, 0, 0), (8, 8, 8), (8, 24, 8), (16, 16, 16)] B[(0, 0, 0), (8, 8, 8), (8, 24, 8), (16, 16, 16)]   box x=64 y=72 w=4 h=3 px=12 A[(33, 24, 8)] B[(16, 16, 16)]   box x=28 y=137 w=2 h=3 px=6 A[(24, 16, 8)] B[(8, 8, 8)]   box x=0 y=147 w=200 h=19 px=1778 A[(8, 8, 8), (16, 16, 16), (24, 16, 8)] B[(8, 8, 8), (16, 16, 16), (24, 16, 8)]   box x=0 y=183 w=36 h=7 px=142 A[(8, 8, 8), (24, 16, 8)] B[(8, 8, 8), (24, 16, 8)]   box x=0 y=233 w=14 h=51 px=546 A[(16, 16, 16), (24, 16, 8), (24, 24, 24), (33, 24, 8)] B[(8, 8, 8)]   box x=304 y=276 w=2 h=3 px=6 A[(16, 16, 16)] B[(8, 8, 8)]   box x=0 y=288 w=2 h=3 px=6 A[(16, 16, 16)] B[(8, 8, 8)]   box x=0 y=298 w=20 h=7 px=66 A[(8, 8, 8), (24, 16, 8)] B[(8, 8, 8), (24, 16, 8)] 
+f1hg-el0-off-app.png: EL0 = EL1
+f1hg-el0-off-end.png: EL0 != EL1 DIFF 98740 px bbox x=2..538 y=3..339  (0e6f770497da / f7b266f5ce9f)   box x=2 y=3 w=72 h=56 px=1757 A[(0, 0, 0), (255, 255, 255)] B[(0, 173, 0), (255, 255, 255)]   box x=73 y=3 w=30 h=12 px=135 A[(0, 0, 0)] B[(255, 255, 255)]   box x=121 y=3 w=30 h=12 px=155 A[(0, 0, 0)] B[(255, 255, 255)]   box x=169 y=3 w=54 h=14 px=273 A[(0, 0, 0)] B[(255, 255, 255)]   box x=273 y=4 w=94 h=12 px=530 A[(255, 255, 255)] B[(0, 0, 0)]   box x=366 y=19 w=72 h=40 px=1582 A[(0, 0, 0), (255, 255, 255)] B[(0, 173, 0)]   box x=2 y=65 w=72 h=86 px=3170 A[(0, 0, 0), (255, 255, 255)] B[(0, 173, 0)]   box x=366 y=65 w=72 h=40 px=1582 A[(0, 0, 0), (255, 255, 255)] B[(0, 173, 0)]   box x=103 y=138 w=436 h=202 px=87971 A[(0, 173, 0)] B[(0, 0, 0), (140, 140, 140), (189, 189, 189), (255, 255, 255)]   box x=2 y=157 w=72 h=40 px=1585 A[(0, 0, 0), (255, 255, 255)] B[(0, 173, 0)] 
+f1hg-el0-on-app.png: EL0 = EL1
+f1hg-el0-on-end.png: EL0 != EL1 DIFF 98740 px bbox x=2..538 y=3..339  (0e6f770497da / f7b266f5ce9f)   box x=2 y=3 w=72 h=56 px=1757 A[(0, 0, 0), (255, 255, 255)] B[(0, 173, 0), (255, 255, 255)]   box x=73 y=3 w=30 h=12 px=135 A[(0, 0, 0)] B[(255, 255, 255)]   box x=121 y=3 w=30 h=12 px=155 A[(0, 0, 0)] B[(255, 255, 255)]   box x=169 y=3 w=54 h=14 px=273 A[(0, 0, 0)] B[(255, 255, 255)]   box x=273 y=4 w=94 h=12 px=530 A[(255, 255, 255)] B[(0, 0, 0)]   box x=366 y=19 w=72 h=40 px=1582 A[(0, 0, 0), (255, 255, 255)] B[(0, 173, 0)]   box x=2 y=65 w=72 h=86 px=3170 A[(0, 0, 0), (255, 255, 255)] B[(0, 173, 0)]   box x=366 y=65 w=72 h=40 px=1582 A[(0, 0, 0), (255, 255, 255)] B[(0, 173, 0)]   box x=103 y=138 w=436 h=202 px=87971 A[(0, 173, 0)] B[(0, 0, 0), (140, 140, 140), (189, 189, 189), (255, 255, 255)]   box x=2 y=157 w=72 h=40 px=1585 A[(0, 0, 0), (255, 255, 255)] B[(0, 173, 0)] 
+f1hg-el0-strict-app.png: EL0 = EL1
+f1hg-el0-strict-end.png: EL0 != EL1 DIFF 98740 px bbox x=2..538 y=3..339  (0e6f770497da / f7b266f5ce9f)   box x=2 y=3 w=72 h=56 px=1757 A[(0, 0, 0), (255, 255, 255)] B[(0, 173, 0), (255, 255, 255)]   box x=73 y=3 w=30 h=12 px=135 A[(0, 0, 0)] B[(255, 255, 255)]   box x=121 y=3 w=30 h=12 px=155 A[(0, 0, 0)] B[(255, 255, 255)]   box x=169 y=3 w=54 h=14 px=273 A[(0, 0, 0)] B[(255, 255, 255)]   box x=273 y=4 w=94 h=12 px=530 A[(255, 255, 255)] B[(0, 0, 0)]   box x=366 y=19 w=72 h=40 px=1582 A[(0, 0, 0), (255, 255, 255)] B[(0, 173, 0)]   box x=2 y=65 w=72 h=86 px=3170 A[(0, 0, 0), (255, 255, 255)] B[(0, 173, 0)]   box x=366 y=65 w=72 h=40 px=1582 A[(0, 0, 0), (255, 255, 255)] B[(0, 173, 0)]   box x=103 y=138 w=436 h=202 px=87971 A[(0, 173, 0)] B[(0, 0, 0), (140, 140, 140), (189, 189, 189), (255, 255, 255)]   box x=2 y=157 w=72 h=40 px=1585 A[(0, 0, 0), (255, 255, 255)] B[(0, 173, 0)] 
+f1hg2-el0-off-app.png: EL0 = EL1
+f1hg2-el0-off-end.png: EL0 = EL1
+f1hg2-el0-on-app.png: EL0 = EL1
+f1hg2-el0-on-end.png: EL0 = EL1
+f1hg2-el0-strict-app.png: EL0 = EL1
+f1hg2-el0-strict-end.png: EL0 = EL1
+f1hgp-el0-off-app.png: EL0 = EL1
+f1hgp-el0-off-end.png: EL0 = EL1
+f1hgp-el0-on-app.png: EL0 = EL1
+f1hgp-el0-on-end.png: EL0 = EL1
+f1hgp-el0-strict-app.png: EL0 = EL1
+f1hgp-el0-strict-end.png: EL0 = EL1
+f1hgp2-el0-off-app.png: EL0 = EL1
+f1hgp2-el0-off-end.png: EL0 = EL1
+f1hgp2-el0-on-app.png: EL0 = EL1
+f1hgp2-el0-on-end.png: EL0 = EL1
+f1hgp2-el0-strict-app.png: EL0 = EL1
+f1hgp2-el0-strict-end.png: EL0 = EL1
+f1qed-el0-on-app.png: EL0 = EL1
+f1tera-el0-on-app.png: EL0 = EL1
+acc-el0-off-after.png: EL0 = EL1
+acc-el0-off-desk.png: EL0 = EL1
+acc-el0-off-open.png: EL0 = EL1
+acc-el0-on-after.png: EL0 = EL1
+acc-el0-on-desk.png: EL0 = EL1
+acc-el0-on-open.png: EL0 = EL1
+acc-el0-strict-after.png: EL0 = EL1
+acc-el0-strict-desk.png: EL0 = EL1
+acc-el0-strict-open.png: EL0 = EL1
+kc-el0-on-app.png: EL0 = EL1
+kc-el0-on-end.png: EL0 = EL1
+km-el0-on-app.png: EL0 = EL1
+km-el0-on-end.png: EL0 = EL1

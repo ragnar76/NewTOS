@@ -420,13 +420,21 @@ fn cmd_gen_fsel_rsc() -> Result<(), String> {
 /// is the desktop program the kernel image embeds (`kernel/embed.rs`).
 const PROGRAMS: &[(&str, &str)] = &[("hello-gem", "HELLOGEM.NAP"), ("newdesk", "NEWDESK.NAP")];
 
+/// Kernel features a program build takes over (DESK43 U9-4): `(crate,
+/// feature)`. Since the desktop is the EL0 program `NEWDESK`, the kernel's
+/// `selftest-desk` must reach that program — the self-tests run inside the
+/// desktop (`programs/desktop/src/lib.rs`), and the kernel's own copy of the
+/// desktop runs only with `desk=kernel`. Every listed feature is declared by
+/// the crate (host test `programs_tests`).
+const PROGRAM_FEATURES: &[(&str, &str)] = &[("newdesk", "selftest-desk")];
+
 fn cmd_build_programs(args: &[String]) -> Result<(), String> {
     let opts = parse_board_and_profile(args)?;
     let board = opts.board.ok_or("build-programs: --board {rpi4|qemu-virt} is required")?;
     if opts.release || !opts.features.is_empty() {
         return Err("build-programs: programs are always release builds; only --board is accepted".into());
     }
-    build_programs(board)
+    build_programs(board, &[])
 }
 
 /// Build every program of [`PROGRAMS`] for `board` with `programs/build.sh`
@@ -435,21 +443,35 @@ fn cmd_build_programs(args: &[String]) -> Result<(), String> {
 /// line is a per-board build constant, so a separately built desktop needs the
 /// board as the kernel has it). One output directory per board,
 /// `target/programs/<board>/` — the directory the kernel build embeds from
-/// (`kernel/embed.rs`).
-fn build_programs(board: Board) -> Result<(), String> {
+/// (`kernel/embed.rs`). `kernel_features` are the kernel build's optional
+/// features; those in [`PROGRAM_FEATURES`] reach their program.
+fn build_programs(board: Board, kernel_features: &[String]) -> Result<(), String> {
     let root = workspace_root();
     let dir = kernel_embed::programs_dir(&root, board.name());
     std::fs::create_dir_all(&dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
     for (krate, file) in PROGRAMS {
         println!("xtask: building program {krate} for {} -> {}", board.name(), dir.join(file).display());
-        run(program_build_command(&root, board, krate, file))?;
+        run(program_build_command(&root, board, krate, file, kernel_features))?;
     }
     Ok(())
 }
 
+/// The `--features` list of one program build: the board feature, then every
+/// kernel feature [`PROGRAM_FEATURES`] hands to `krate`.
+fn program_features(board: Board, krate: &str, kernel_features: &[String]) -> String {
+    let mut feats = board.feature().to_string();
+    for (k, f) in PROGRAM_FEATURES {
+        if *k == krate && kernel_features.iter().any(|kf| kf == f) {
+            feats.push(',');
+            feats.push_str(f);
+        }
+    }
+    feats
+}
+
 /// `bash programs/build.sh <crate> target/programs/<board>/<file> --
-/// --features board-<board>` — one program for one board.
-fn program_build_command(root: &Path, board: Board, krate: &str, file: &str) -> Command {
+/// --features board-<board>[,…]` — one program for one board.
+fn program_build_command(root: &Path, board: Board, krate: &str, file: &str, kernel_features: &[String]) -> Command {
     let out = kernel_embed::programs_dir(root, board.name()).join(file);
     let mut c = Command::new("bash");
     c.current_dir(root)
@@ -458,15 +480,16 @@ fn program_build_command(root: &Path, board: Board, krate: &str, file: &str) -> 
         .arg(out)
         .arg("--")
         .arg("--features")
-        .arg(board.feature());
+        .arg(program_features(board, krate, kernel_features));
     c
 }
 
 fn build_kernel(board: Board, release: bool, extra: &[String]) -> Result<(), String> {
     // The kernel build depends on the program build (DESK43 D3): the image
     // embeds the board's programs (`kernel/embed.rs`), and `kernel/build.rs`
-    // stops with a hard error when one has not been built. Build them first.
-    build_programs(board)?;
+    // stops with a hard error when one has not been built. Build them first,
+    // with the kernel features that belong to them (`selftest-desk`, U9-4).
+    build_programs(board, extra)?;
     // The board feature is always present; `extra` appends optional ones
     // (e.g. `aes-trace`) to the same comma-separated `--features` list.
     let mut feats = board.feature().to_string();

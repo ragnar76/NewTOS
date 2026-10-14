@@ -612,9 +612,52 @@ internal. The shell loop's decision is `tos_api::aes::shell::sh_ldapp_result`
 / `sh_main_alert` (host tests `tos-api/tests/proc05_shell_exit_code.rs`). The
 serial line `[shell] sh_ldapp: '<cmd>' exited with rc=N` shows the real value
 (until U9-0b always 0); a program that ends cleanly still shows `rc=0`. The
-DESKTOP arm still runs the built-in desktop as a kernel call, which has no exit
-code — its `wm_new()`-on-abnormal-exit becomes reachable when the desktop is a
-launched program (DESK43 U9-4).
+DESKTOP arm's `wm_new()`-on-abnormal-exit is reachable since the desktop is a
+launched program (DESK43 U9-4, next section).
+
+### NewTOS implementation notes — the DESKTOP arm starts `NEWDESK` (DESK43 U9-3/U9-4, 2026-10-15)
+
+Decisions D5/D6 (`TASK/DESK43.md`, "U9-Vorbereitung entschieden";
+`docs/analysis/desk43-u9-prep-2026-10-14.md` §1). `kernel/src/shell_loop.rs`
+`sh_ldapp`, DESKTOP arm:
+
+1. `sh_show("")`, `p_setappdir(rlr, D.s_cmd)` as above (`:603-605`).
+2. **`aes_run_rom_program(deskstart)`** (`:606`) = `launch::run_desktop_program`:
+   the desktop program embedded in the kernel image under the registry name
+   `DEF_DESKTOP` (`NEWDESK`, `kernel/embed.rs`) is loaded and run at EL0 as a
+   fresh process, every time. `p_nameit(rlr, fname)` (`:604`) names its AES
+   descriptor from `D.s_cmd`. Like EmuTOS's ROM-program start, and unlike a
+   `dos_exec(PE_LOADGO)` of the NORMAL arm: **no hourglass**, an **empty**
+   command tail (`Pexec(PE_BASEPAGEFLAGS, PF_STANDARD, "", NULL)`, `:575`), and
+   `D.s_cmd`/`ad_stail` are **not** rewritten (`shel_read` answers during the
+   desktop what it answered before). The name in `D.s_cmd` is not used to find
+   the desktop (EmuTOS starts `deskstart` whatever `sh_desk` says).
+3. `if (rc != 0) wm_new();` (`:606-609`) — any value other than 0: `Pterm(-1)`'s
+   65535 after a crash report's key or a panic's key (D6-a), any other exit
+   code, a load error. The arm returns 0 (`:611`); `sh_nextapp` stays
+   `DESKTOP_APP`, so the next pass starts the desktop again. **No loop guard**
+   (D6-b), **no alert** — EmuTOS's only brake is the crash report's key, and
+   NewTOS's desktop panic waits for a key too (`newtos-gem` feature
+   `panic-wait-key`, D6-a).
+4. **NEWTOS (no EmuTOS counterpart): a load error is not retried** (D6-c). A ROM
+   entry point cannot fail to load; an embedded program can (`EPLFMT`,
+   `ENSMEM`, no slot, `EFILNF` if the registry has no `NEWDESK`). Loading the
+   same blob again would fail again, so the arm logs
+   `[shell] desktop NEWDESK could not be loaded (rc=N) — not retried; falling
+   back to the built-in kernel desktop` and runs the built-in desktop instead,
+   for the rest of the boot (D6-d; after DESK43 U10, which removes the built-in
+   desktop, the fallback becomes EmuCON).
+5. **The fallback switch `desk=kernel`** (D5-a; `kernel/src/bootargs.rs`
+   `DESK_KERNEL`): with this boot argument the arm runs the desktop linked into
+   the kernel as a kernel call, the arm as it was before U9-4
+   (`desktop::reset()` + `desktop::run()`, no exit code). Both desktops are in
+   every image; the boot log names the choice (`[shell] desktop: …`). Default
+   (D5-b): the EL0 program. The AES restart's `desktop::reset()` (A106,
+   `kernel/src/lib.rs`) runs only while the built-in desktop is the one in use.
+
+The serial line of a desktop end is `[shell] sh_ldapp: desktop '<cmd>' exited
+with rc=N`. The kernel's "desktop up" observation keys on the launched child's
+slot (U9-0c) — `DESKTOP_ACTIVE` is set around the program's start.
 
 **`wm_new()` itself** (`aes/gemwmlib.c:1875-1893`, cited by the plan and
 re-verified here): drains outstanding mouse-control and sync-block waiters,

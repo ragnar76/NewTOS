@@ -1,0 +1,4 @@
+# f1.script -- DESK43 U9-0: SCRIPT_A of measurement-2026-10-14-desk43-u8b/method/inj-u6a.py:
+# F1 make/break 200/210 ticks after "desktop up" (launches the program installed on F1).
+200 0x3B
+210 0xBB
