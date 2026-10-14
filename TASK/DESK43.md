@@ -185,3 +185,19 @@ entfernt ihn. Vor U9: Researcher-Analyse zu D6 (Absturzpolitik), T10
 (Injektor-Bewaffnung) und [PROC05](PROC05.md) (Exitcode im Shell-Start);
 der Registry-Vergleich ueber den ganzen 128-Byte-`s_cmd` wird im U9-Auftrag
 zuerst behoben.
+
+**U9-Vorbereitung entschieden (Anwender 2026-10-14)**, Grundlage
+`docs/analysis/desk43-u9-prep-2026-10-14.md`:
+- **D6** wie EmuTOS (`aes/gemshlib.c:600-611`): Desktop endet → bei Fehler
+  `wm_new()`, Neustart, keine Meldung. **D6-a** Panic in NEWDESK wartet auf
+  eine Taste (Feature nur fuer NEWDESK). **D6-b** kein Schleifenwaechter in U9.
+  **D6-c** Ladefehler wird nicht wiederholt. **D6-d** Rueckfall bei
+  Ladefehler: Kernel-Desktop solange D5 lebt, danach EmuCON.
+- **D5-a** Rueckfallschalter = Boot-Argument `desk=kernel`; **D5-b** Standard
+  ab U9 ist der EL0-Desktop.
+- **PROC05** korrigiert und als U9-0b eingeplant; **REG** exakter Vergleich bis
+  NUL; **T10** Kernel veroeffentlicht den Shell-Kind-Slot (Injektor und
+  „desktop up“); **STK** Stackgroesse erst nach Messung.
+- Reihenfolge: U9-0a Registry · U9-0b PROC05 · U9-0c Slot + Orakelschluessel ·
+  U9-0d Injektor · U9-1 Instrumente · U9-2 NEWDESK + Einbettung · U9-3
+  `desk=kernel` · U9-4 Umstieg + D6 · U9-5 Beweislaeufe · U9-6 Pi-Abnahme.
