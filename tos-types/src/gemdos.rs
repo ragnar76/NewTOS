@@ -19,8 +19,12 @@
 
 /// `Cconout(c)` — GEMDOS 0x02 (`docs/api/gemdos/`); not in `bdosbind.h`.
 pub const CCONOUT: u16 = 0x02;
+/// `Crawcin()` — `bdosbind.h:23`.
+pub const CRAWCIN: u16 = 0x07;
 /// `Cconws(buf)` — `bdosbind.h:24`.
 pub const CCONWS: u16 = 0x09;
+/// `Cconis()` — `bdosbind.h:25`.
+pub const CCONIS: u16 = 0x0B;
 /// `Dsetdrv(drv)` — `bdosbind.h:26`.
 pub const DSETDRV: u16 = 0x0E;
 /// `Dgetdrv()` — `bdosbind.h:30`.

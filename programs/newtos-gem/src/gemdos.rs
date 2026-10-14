@@ -52,7 +52,7 @@ use core::ffi::CStr;
 
 use alloc::string::String;
 use tos_types::gemdos::{
-    CCONOUT, CCONWS, DCREATE, DDELETE, DFREE, DGETDRV, DSETDRV, DSETPATH, FATTRIB, FCLOSE, FCREATE,
+    CCONIS, CCONOUT, CCONWS, CRAWCIN, DCREATE, DDELETE, DFREE, DGETDRV, DSETDRV, DSETPATH, FATTRIB, FCLOSE, FCREATE,
     FDATIME, FDELETE, FOPEN, FREAD, FRENAME, FSETDTA, FSFIRST, FSNEXT, FWRITE, MALLOC, MFREE, MXALLOC,
     PTERM, SSYSTEM,
 };
@@ -158,6 +158,23 @@ pub fn cconout(c: u8) {
 /// GEMDOS result (EmuTOS's wrapper drops it).
 pub fn dos_conws(s: &CStr) -> Long {
     dos_trap(CCONWS, s.as_ptr() as u64, 0, 0)
+}
+
+/// `Crawcin()` (GEMDOS 0x07, `bdosbind.h:23`) — read one character from the
+/// console, **blocking**, without echo and without Ctrl-key handling
+/// (`docs/api/gemdos/console/07-crawcin.md`). Returns the `LONG` the BIOS
+/// console gives: scancode in bits 16-23, ASCII in bits 0-7.
+// NEWTOS: EmuTOS's `include/gemdos.h` has no `dos_*` wrapper for `Crawcin`.
+pub fn crawcin() -> Long {
+    dos_trap(CRAWCIN, 0, 0, 0)
+}
+
+/// `Cconis()` (GEMDOS 0x0B, `bdosbind.h:25`) — is a console character
+/// waiting? Non-zero (canonically `-1`) if so, `0` if not
+/// (`docs/api/gemdos/console/0b-cconis.md`).
+// NEWTOS: EmuTOS's `include/gemdos.h` has no `dos_*` wrapper for `Cconis`.
+pub fn cconis() -> Long {
+    dos_trap(CCONIS, 0, 0, 0)
 }
 
 // ── Files, directories, drives (EmuTOS `include/gemdos.h`) ──────────────────

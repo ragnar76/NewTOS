@@ -14,6 +14,12 @@
 target = "aarch64-unknown-none-softfloat"
 # Inside the repository's ignored /target, not a new build directory.
 target-dir = "../target/programs"
+# Path-independent crate hashes (DESK43 U9-2): the program files -- NEWDESK.NAP
+# is embedded in the kernel image -- must not depend on the checkout path.
+# Cargo hashes the absolute path of `tos-types` (outside this workspace) into
+# every crate's `-C metadata`; the wrapper replaces it with a hash of the
+# crate's identity. Rationale in the script.
+rustc-wrapper = "./rustc-stable-metadata.sh"
 
 [target.aarch64-unknown-none-softfloat]
 rustflags = ["-C", "relocation-model=pic"]

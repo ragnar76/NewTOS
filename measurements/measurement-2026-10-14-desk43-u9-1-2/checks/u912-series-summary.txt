@@ -1,0 +1,49 @@
+u912-off-rpi4-apitest |  1 TOTAL 106 0 5 ; | exc/panic=0
+u912-off-rpi4-desktop |  1 desktop up (1 d; | exc/panic=0
+u912-off-rpi4-qed |  | exc/panic=0
+u912-off-rpi4-teradesk |  | exc/panic=0
+u912-on-rpi4-apitest |  1 TOTAL 106 0 5 ; | exc/panic=0
+u912-on-rpi4-desktop |  1 desktop up (1 d; | exc/panic=0
+u912-on-rpi4-qed |  | exc/panic=0
+u912-on-rpi4-teradesk |  | exc/panic=0
+u912-strict-rpi4-apitest |  1 TOTAL 106 0 5 ; | exc/panic=0
+u912-strict-rpi4-desktop |  1 desktop up (1 d; | exc/panic=0
+u912-strict-rpi4-qed |  | exc/panic=0
+u912-strict-rpi4-teradesk |  | exc/panic=0
+--- APITEST result lines (modulo hex)
+on: u912 vs u90 0 differing lines (126 lines)
+off: u912 vs u90 0 differing lines (126 lines)
+strict: u912 vs u90 0 differing lines (126 lines)
+--- screendumps u912 vs U9-0 run u90-*
+u912-on-rpi4- vs u90-on-rpi4-: same=5 diff=0 missing=0
+u912-off-rpi4- vs u90-off-rpi4-: same=5 diff=0 missing=0
+u912-strict-rpi4- vs u90-strict-rpi4-: same=5 diff=0 missing=0
+--- desktop t25 sha256
+0e6f770497da100b6707ff8ac1a79f24f30272a0e371bc368d9b10f56a2c324b  u912-off-rpi4-desktop-t25.png
+0e6f770497da100b6707ff8ac1a79f24f30272a0e371bc368d9b10f56a2c324b  u912-on-rpi4-desktop-t25.png
+0e6f770497da100b6707ff8ac1a79f24f30272a0e371bc368d9b10f56a2c324b  u912-strict-rpi4-desktop-t25.png
+--- desktop serial log u912 vs U9-0 (hex normalised, CR stripped)
+== on
+12c12
+< [mm]   kernel: 0xX..0xX (2457600 bytes)
+---
+> [mm]   kernel: 0xX..0xX (2805760 bytes)
+== off
+12c12
+< [mm]   kernel: 0xX..0xX (2457600 bytes)
+---
+> [mm]   kernel: 0xX..0xX (2805760 bytes)
+== strict
+12c12
+< [mm]   kernel: 0xX..0xX (2457600 bytes)
+---
+> [mm]   kernel: 0xX..0xX (2805760 bytes)
+on apitest:        0 differing lines besides [mm] kernel size
+on teradesk:        0 differing lines besides [mm] kernel size
+on qed:        0 differing lines besides [mm] kernel size
+off apitest:        0 differing lines besides [mm] kernel size
+off teradesk:        0 differing lines besides [mm] kernel size
+off qed:        0 differing lines besides [mm] kernel size
+strict apitest:        0 differing lines besides [mm] kernel size
+strict teradesk:        0 differing lines besides [mm] kernel size
+strict qed:        0 differing lines besides [mm] kernel size

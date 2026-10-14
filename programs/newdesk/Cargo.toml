@@ -1,0 +1,35 @@
+[package]
+name = "newdesk"
+version = "0.1.0"
+description = "NEWDESK.NAP: the NewTOS desktop as an EL0 program -- a thin entry around the `desktop` library (DESK43 U9)"
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[lib]
+# Linked by programs/build.sh with sdk/crt0.S and sdk/newtos.ld; built for
+# every board by `cargo xtask build-programs` and embedded in the kernel image
+# under the registry name NEWDESK (decision D3, kernel/embed.rs).
+crate-type = ["staticlib"]
+test = false
+bench = false
+
+[features]
+# The board (X03 pass-through, as for every program): `cargo xtask
+# build-programs --board <b>` passes `board-<b>`; here it selects the desktop's
+# About-box machine line (`desktop/board-*`), as the kernel's feature of the
+# same name does for the built-in desktop.
+board-rpi4 = ["desktop/board-rpi4"]
+board-qemu-virt = ["desktop/board-qemu-virt"]
+# The desktop's self-tests (DESK45), passed through like the kernel's
+# `selftest-desk`. Writes to C: -- test images only.
+selftest-desk = ["desktop/selftest-desk"]
+
+[dependencies]
+# One source, two link targets (decision D1): the same library the kernel
+# links. The desktop takes `newtos-gem` without `rt`; the program supplies it.
+desktop = { path = "../desktop" }
+# The program runtime (`rt`: allocator, panic handler) with the desktop's
+# crash policy D6-a: a panic waits for a key before Pterm (TASK/DESK43.md,
+# "U9-Vorbereitung entschieden"; on for this program only).
+newtos-gem = { path = "../newtos-gem", features = ["panic-wait-key"] }

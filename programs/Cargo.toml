@@ -10,7 +10,7 @@
 # (`sdk/build.sh`).
 [workspace]
 resolver = "2"
-members = ["newtos-gem", "hello-gem", "desktop"]
+members = ["newtos-gem", "hello-gem", "desktop", "newdesk"]
 
 [workspace.package]
 edition = "2021"

@@ -19,6 +19,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "newdesk"
+version = "0.1.0"
+dependencies = [
+ "desktop",
+ "newtos-gem",
+]
+
+[[package]]
 name = "newtos-gem"
 version = "0.1.0"
 dependencies = [

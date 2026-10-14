@@ -18,6 +18,13 @@ default = ["rt"]
 # has its own allocator and panic handler, so it depends with
 # `default-features = false`.
 rt = []
+# DESK43 U9, crash policy D6-a (TASK/DESK43.md, "U9-Vorbereitung entschieden";
+# docs/analysis/desk43-u9-prep-2026-10-14.md §1.3 D6-2): the panic handler
+# waits for a key before it ends the program, as EmuTOS's exception report
+# does before `kill_program` (bios/kprint.c:581-584). Off by default -- every
+# other program ends at once, as before; the NEWDESK program turns it on (a
+# desktop that panics at start would otherwise be restarted without pause).
+panic-wait-key = ["rt"]
 
 [dependencies]
 # The shared GEM records and constants (Object/TedInfo/IconBlk/Grect, G_*, WF_*,

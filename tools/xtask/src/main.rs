@@ -416,8 +416,9 @@ fn cmd_gen_fsel_rsc() -> Result<(), String> {
 /// The native Rust programs in `programs/` (DESK43 U6a/U6b): the crate and
 /// the file `build-programs` writes it to in the board's directory. Every
 /// `staticlib` member of `programs/Cargo.toml` is listed here and declares the
-/// two board features (host test `programs_tests`).
-const PROGRAMS: &[(&str, &str)] = &[("hello-gem", "HELLOGEM.NAP")];
+/// two board features (host test `programs_tests`). `NEWDESK.NAP` (DESK43 U9)
+/// is the desktop program the kernel image embeds (`kernel/embed.rs`).
+const PROGRAMS: &[(&str, &str)] = &[("hello-gem", "HELLOGEM.NAP"), ("newdesk", "NEWDESK.NAP")];
 
 fn cmd_build_programs(args: &[String]) -> Result<(), String> {
     let opts = parse_board_and_profile(args)?;

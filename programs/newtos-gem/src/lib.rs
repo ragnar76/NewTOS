@@ -16,7 +16,9 @@
 //!   U9) calls the system through them as well;
 //! * [`heap`] — the global allocator, over GEMDOS `Malloc` hunks (feature
 //!   `rt`);
-//! * the panic handler — the program ends with [`PANIC_EXIT`] (feature `rt`).
+//! * the panic handler — the program ends with [`PANIC_EXIT`] (feature `rt`;
+//!   with feature `panic-wait-key` after a key, DESK43 U9 D6-a — the NEWDESK
+//!   program's choice).
 //!
 //! **Feature `rt`** (default on) is the program runtime proper: the
 //! `#[global_allocator]` and the `#[panic_handler]`. A program needs both; the
@@ -107,6 +109,10 @@ static PANICKING: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBoo
 /// (`panic = "abort"`). Windows and AES state the program leaves behind are
 /// swept by the AES shell after the program ends (`sh_ldapp`, `wm_new`,
 /// the missing-`appl_exit` path) as for any program that terminates early.
+///
+/// With the feature `panic-wait-key` the handler first waits for a key
+/// (`wait_key`), as EmuTOS's exception report does before it ends the
+/// program (`bios/kprint.c:581-584`).
 #[cfg(feature = "rt")]
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
@@ -120,5 +126,35 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
     }
     let _ = write!(m, ": {}\r\n", info.message());
     gemdos::dos_conws(m.as_cstr());
+    #[cfg(feature = "panic-wait-key")]
+    wait_key();
     gemdos::pterm(PANIC_EXIT)
+}
+
+/// Feature `panic-wait-key` (DESK43 U9, crash policy D6-a): the tail of
+/// EmuTOS's `dopanic` (`bios/kprint.c:581-585`) before `kill_program`, through
+/// the GEMDOS counterparts of its BIOS calls on the console device —
+/// `Cconis`/`Crawcin` read the console like `bconstat2`/`bconin2`, without
+/// echo and without Ctrl-C handling (`docs/api/gemdos/console/07-crawcin.md`):
+///
+/// ```c
+/// while(bconstat2())      /* eat any pending ones */
+///     bconin2();
+/// cprintf(_("\n*** Press any key to continue ***"));
+/// bconin2();
+/// cprintf("\n");
+/// ```
+///
+/// The prompt is EmuTOS's English text (`cprintf` turns `\n` into CR LF);
+/// a program has no access to the kernel's translated copy.
+// NEWTOS: EmuTOS has no Rust panic; this gives one the brake its exception
+// report has (docs/analysis/desk43-u9-prep-2026-10-14.md §1.3 D6-2).
+#[cfg(feature = "panic-wait-key")]
+fn wait_key() {
+    while gemdos::cconis() != 0 {
+        gemdos::crawcin();
+    }
+    gemdos::dos_conws(c"\r\n*** Press any key to continue ***");
+    gemdos::crawcin();
+    gemdos::dos_conws(c"\r\n");
 }

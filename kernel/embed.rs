@@ -18,13 +18,18 @@
 //!
 //! The run-time half is `kernel/src/embedded.rs` (registration at boot).
 //!
-//! **State at DESK43 U6b: the list is empty.** The mechanism is complete —
-//! board directory, hard error, generated `include_bytes!`, registration — but
-//! the desktop program it is for does not exist before U9, and nothing else
-//! belongs in the image (a test program embedded here would also shadow a
-//! card file of the same name, `registry::lookup` runs before FAT,
-//! `tos-api/src/bdos/process/pexec.rs`). U9 adds the one entry
-//! `Embedded { name: "NEWDESK", file: "NEWDESK.NAP" }`.
+//! **Since DESK43 U9-2 the list holds the desktop program** — `NEWDESK`,
+//! built from `programs/newdesk` — and nothing else: any other program
+//! embedded here would also shadow a card file of the same name
+//! (`registry::lookup` runs before FAT, `tos-api/src/bdos/process/pexec.rs`;
+//! a name with a drive or an extension never matches, so `#Z C:\NEWDESK.NAP@`
+//! still loads the card file). Until U9-4 switches `sh_ldapp`'s DESKTOP arm to
+//! it, the image carries it without starting it at boot: it is reachable only
+//! by its registry name (an `.INF` `#Z 01 NEWDESK@`, or `Pexec("NEWDESK")`).
+//!
+//! The blob is path-reproducible (the kernel image must stay so): the program
+//! crates are compiled with path-independent crate hashes,
+//! `programs/rustc-stable-metadata.sh`.
 
 use std::path::{Path, PathBuf};
 
@@ -38,9 +43,10 @@ pub struct Embedded {
     pub file: &'static str,
 }
 
-/// The programs embedded in every kernel image. Empty until DESK43 U9 (see
-/// the module documentation).
-pub const EMBEDDED: &[Embedded] = &[];
+/// The programs embedded in every kernel image: the desktop program (DESK43
+/// U9, decision D3; see the module documentation). The registry name is
+/// `tos_api::aes::shell`'s `DEF_DESKTOP`.
+pub const EMBEDDED: &[Embedded] = &[Embedded { name: "NEWDESK", file: "NEWDESK.NAP" }];
 
 /// The directory `cargo xtask build-programs --board <board>` writes the
 /// programs of one board into: `<workspace>/target/programs/<board>/`.
@@ -139,10 +145,11 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// U6b state: nothing is embedded yet, and in particular no `NEWDESK` —
-    /// the boot path is unchanged until U9 adds it.
+    /// DESK43 U9-2 (decision D3): the image carries exactly the desktop
+    /// program, under its registry name, from the file `build-programs` writes.
     #[test]
-    fn nothing_embedded_before_u9() {
-        assert!(EMBEDDED.is_empty());
+    fn newdesk_is_the_one_embedded_program() {
+        let list: Vec<(&str, &str)> = EMBEDDED.iter().map(|e| (e.name, e.file)).collect();
+        assert_eq!(list, [("NEWDESK", "NEWDESK.NAP")]);
     }
 }

@@ -1,0 +1,23 @@
+# cyc-nd.script -- DESK43 U9-1/U9-2: 10 desktop restarts of the EL0 NEWDESK: F1 (C:\NEWDESK.NAP on F1) at
+# 200+2000k, k = 0..9 -- the desktop starts the program on F1 and terminates (shel_write), the shell loads it again;
+# armed at the first NEWDESK's up.
+200 0x3B
+210 0xBB
+2200 0x3B
+2210 0xBB
+4200 0x3B
+4210 0xBB
+6200 0x3B
+6210 0xBB
+8200 0x3B
+8210 0xBB
+10200 0x3B
+10210 0xBB
+12200 0x3B
+12210 0xBB
+14200 0x3B
+14210 0xBB
+16200 0x3B
+16210 0xBB
+18200 0x3B
+18210 0xBB

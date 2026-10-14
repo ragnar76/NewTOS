@@ -1,0 +1,131 @@
+== k1c-on-cychg
+   lat n= 1 el1-desktop NEWDESK          A->U    16.5 ms  A->B      -  B->U      -  X->U       -
+   lat n= 2 el0-child   C:\HELLOGEM.NAP  A->U    58.5 ms  A->B   31.8  B->U   26.7  X->U       -
+   lat n= 3 el1-desktop NEWDESK          A->U     4.6 ms  A->B      -  B->U      -  X->U     7.5
+   lat n= 4 el0-child   C:\HELLOGEM.NAP  A->U    44.4 ms  A->B   23.5  B->U   20.9  X->U  8043.0
+   lat n= 5 el1-desktop NEWDESK          A->U     4.1 ms  A->B      -  B->U      -  X->U     6.2
+   lat n= 6 el0-child   C:\HELLOGEM.NAP  A->U    45.9 ms  A->B   23.4  B->U   22.5  X->U  8045.4
+   lat n= 7 el1-desktop NEWDESK          A->U     4.1 ms  A->B      -  B->U      -  X->U     6.1
+   lat n= 8 el0-child   C:\HELLOGEM.NAP  A->U    46.1 ms  A->B   23.3  B->U   22.8  X->U  8045.6
+   lat n= 9 el1-desktop NEWDESK          A->U     4.0 ms  A->B      -  B->U      -  X->U     6.0
+   lat n=10 el0-child   C:\HELLOGEM.NAP  A->U    47.1 ms  A->B   24.6  B->U   22.4  X->U  8046.8
+   lat n=11 el1-desktop NEWDESK          A->U     3.8 ms  A->B      -  B->U      -  X->U     5.8
+   lat n=12 el0-child   C:\HELLOGEM.NAP  A->U    48.1 ms  A->B   25.1  B->U   23.0  X->U  8047.0
+   lat n=13 el1-desktop NEWDESK          A->U     3.9 ms  A->B      -  B->U      -  X->U     5.9
+   lat n=14 el0-child   C:\HELLOGEM.NAP  A->U    47.9 ms  A->B   24.5  B->U   23.5  X->U  8047.5
+   lat n=15 el1-desktop NEWDESK          A->U     3.7 ms  A->B      -  B->U      -  X->U     5.8
+   lat n=16 el0-child   C:\HELLOGEM.NAP  A->U    44.2 ms  A->B   23.4  B->U   20.8  X->U  8043.6
+   lat n=17 el1-desktop NEWDESK          A->U     4.1 ms  A->B      -  B->U      -  X->U     6.2
+   lat n=18 el0-child   C:\HELLOGEM.NAP  A->U    44.8 ms  A->B   23.3  B->U   21.5  X->U  8043.5
+   lat n=19 el1-desktop NEWDESK          A->U     4.2 ms  A->B      -  B->U      -  X->U     6.3
+   lat n=20 el0-child   C:\HELLOGEM.NAP  A->U    46.1 ms  A->B   23.2  B->U   23.0  X->U  8045.8
+   lat n=21 el1-desktop NEWDESK          A->U     3.6 ms  A->B      -  B->U      -  X->U     5.6
+   stack el1 max depth 2736 B (2.7 KiB)
+== k1s-on-plain
+   lat n= 1 el1-desktop NEWDESK          A->U  2022.9 ms  A->B      -  B->U      -  X->U       -
+   stack el1 max depth 3296 B (3.2 KiB)
+== k1v-on-el1big
+   lat n= 1 el1-desktop NEWDESK          A->U    15.3 ms  A->B      -  B->U      -  X->U       -
+   stack el1 max depth 8192 B (8.0 KiB)
+== k1v-on-el1big-try1
+   lat n= 1 el1-desktop NEWDESK          A->U   101.4 ms  A->B      -  B->U      -  X->U       -
+   stack el1 max depth 8192 B (8.0 KiB)
+== k1v-plain
+   lat n= 1 el1-desktop NEWDESK          A->U    15.0 ms  A->B      -  B->U      -  X->U       -
+   stack el1 max depth 8000 B (7.8 KiB)
+== k2c-on-cychg
+   lat n= 1 el1-desktop NEWDESK          A->U    15.8 ms  A->B      -  B->U      -  X->U       -
+   lat n= 2 el0-child   C:\HELLOGEM.NAP  A->U    58.2 ms  A->B   32.4  B->U   25.8  X->U       -
+   lat n= 3 el1-desktop NEWDESK          A->U     4.4 ms  A->B      -  B->U      -  X->U     7.1
+   lat n= 4 el0-child   C:\HELLOGEM.NAP  A->U    42.9 ms  A->B   22.9  B->U   20.0  X->U  8041.5
+   lat n= 5 el1-desktop NEWDESK          A->U     3.6 ms  A->B      -  B->U      -  X->U     5.4
+   lat n= 6 el0-child   C:\HELLOGEM.NAP  A->U    43.1 ms  A->B   22.7  B->U   20.5  X->U  8043.4
+   lat n= 7 el1-desktop NEWDESK          A->U     3.4 ms  A->B      -  B->U      -  X->U     5.1
+   lat n= 8 el0-child   C:\HELLOGEM.NAP  A->U    45.1 ms  A->B   24.1  B->U   21.0  X->U  8045.2
+   lat n= 9 el1-desktop NEWDESK          A->U     3.4 ms  A->B      -  B->U      -  X->U     5.1
+   lat n=10 el0-child   C:\HELLOGEM.NAP  A->U    43.0 ms  A->B   22.9  B->U   20.1  X->U  8042.4
+   lat n=11 el1-desktop NEWDESK          A->U     3.6 ms  A->B      -  B->U      -  X->U     5.3
+   lat n=12 el0-child   C:\HELLOGEM.NAP  A->U    43.1 ms  A->B   22.9  B->U   20.2  X->U  8043.4
+   lat n=13 el1-desktop NEWDESK          A->U     3.4 ms  A->B      -  B->U      -  X->U     5.1
+   lat n=14 el0-child   C:\HELLOGEM.NAP  A->U    44.7 ms  A->B   22.8  B->U   21.9  X->U  8044.5
+   lat n=15 el1-desktop NEWDESK          A->U     3.5 ms  A->B      -  B->U      -  X->U     5.1
+   lat n=16 el0-child   C:\HELLOGEM.NAP  A->U    42.9 ms  A->B   22.5  B->U   20.4  X->U  8041.8
+   lat n=17 el1-desktop NEWDESK          A->U     3.5 ms  A->B      -  B->U      -  X->U     5.2
+   lat n=18 el0-child   C:\HELLOGEM.NAP  A->U    42.5 ms  A->B   22.3  B->U   20.2  X->U  8042.6
+   lat n=19 el1-desktop NEWDESK          A->U     3.5 ms  A->B      -  B->U      -  X->U     5.3
+   lat n=20 el0-child   C:\HELLOGEM.NAP  A->U    45.6 ms  A->B   22.8  B->U   22.8  X->U  8045.7
+   lat n=21 el1-desktop NEWDESK          A->U     3.6 ms  A->B      -  B->U      -  X->U     5.4
+   stack el1 max depth 2736 B (2.7 KiB)
+== k2c-on-cycnd
+   lat n= 1 el0-child   C:\NEWDESK.NAP   A->U    99.9 ms  A->B   76.4  B->U   23.5  X->U       -
+   lat n= 2 el0-child   C:\NEWDESK.NAP   A->U    42.8 ms  A->B   26.2  B->U   16.6  X->U    45.6
+   lat n= 3 el0-child   C:\NEWDESK.NAP   A->U    43.1 ms  A->B   26.4  B->U   16.7  X->U    44.9
+   lat n= 4 el0-child   C:\NEWDESK.NAP   A->U    45.7 ms  A->B   27.6  B->U   18.2  X->U    47.5
+   lat n= 5 el0-child   C:\NEWDESK.NAP   A->U    43.6 ms  A->B   27.0  B->U   16.6  X->U    45.5
+   lat n= 6 el0-child   C:\NEWDESK.NAP   A->U    43.8 ms  A->B   27.0  B->U   16.9  X->U    45.6
+   lat n= 7 el0-child   C:\NEWDESK.NAP   A->U    43.7 ms  A->B   27.2  B->U   16.5  X->U    45.5
+   lat n= 8 el0-child   C:\NEWDESK.NAP   A->U    46.9 ms  A->B   29.9  B->U   17.0  X->U    49.2
+   lat n= 9 el0-child   C:\NEWDESK.NAP   A->U    43.3 ms  A->B   26.5  B->U   16.8  X->U    45.1
+   lat n=10 el0-child   C:\NEWDESK.NAP   A->U    43.6 ms  A->B   26.8  B->U   16.8  X->U    45.4
+   lat n=11 el0-child   C:\NEWDESK.NAP   A->U    43.1 ms  A->B   26.4  B->U   16.7  X->U    44.9
+   stack el0 max depth 3584 B (3.5 KiB)
+== k2p-on-el0panic
+   lat n= 2 el1-desktop NEWDESK          A->U    15.3 ms  A->B      -  B->U      -  X->U    18.3
+   stack el0 max depth 736 B (0.7 KiB)
+   stack el1 max depth 2112 B (2.1 KiB)
+== k2s-on-el0st
+   lat n= 1 el0-child   C:\NEWDESK.NAP   A->U  2095.6 ms  A->B   83.4  B->U 2012.1  X->U       -
+   stack el0 max depth 4496 B (4.4 KiB)
+== k2v-off-el0nap
+   lat n= 1 el0-child   C:\NEWDESK.NAP   A->U    74.1 ms  A->B   58.7  B->U   15.4  X->U       -
+   stack el0 max depth 8120 B (7.9 KiB)
+== k2v-off-el0reg
+   lat n= 1 el0-child   NEWDESK          A->U    21.3 ms  A->B    6.2  B->U   15.1  X->U       -
+   stack el0 max depth 8120 B (7.9 KiB)
+== k2v-off-el1nap
+   lat n= 1 el1-desktop NEWDESK          A->U    15.2 ms  A->B      -  B->U      -  X->U       -
+   stack el1 max depth 8000 B (7.8 KiB)
+== k2v-off-el1reg
+   lat n= 1 el1-desktop NEWDESK          A->U    17.5 ms  A->B      -  B->U      -  X->U       -
+   stack el1 max depth 8000 B (7.8 KiB)
+== k2v-on-el0big
+   lat n= 1 el0-child   NEWDESK          A->U    57.5 ms  A->B   28.9  B->U   28.6  X->U       -
+   stack el0 max depth 9152 B (8.9 KiB)
+== k2v-on-el0nap
+   lat n= 1 el0-child   C:\NEWDESK.NAP   A->U    99.1 ms  A->B   75.7  B->U   23.5  X->U       -
+   stack el0 max depth 8120 B (7.9 KiB)
+== k2v-on-el0panic-nokey
+   stack el0 max depth 736 B (0.7 KiB)
+== k2v-on-el0reg
+   lat n= 1 el0-child   NEWDESK          A->U    46.9 ms  A->B   23.5  B->U   23.4  X->U       -
+   stack el0 max depth 8120 B (7.9 KiB)
+== k2v-on-el1big
+   lat n= 1 el1-desktop NEWDESK          A->U    15.5 ms  A->B      -  B->U      -  X->U       -
+   stack el1 max depth 8192 B (8.0 KiB)
+== k2v-on-el1nap
+   lat n= 1 el1-desktop NEWDESK          A->U    15.2 ms  A->B      -  B->U      -  X->U       -
+   stack el1 max depth 8000 B (7.8 KiB)
+== k2v-on-el1reg
+   lat n= 1 el1-desktop NEWDESK          A->U    15.3 ms  A->B      -  B->U      -  X->U       -
+   stack el1 max depth 8000 B (7.8 KiB)
+== k2v-strict-el0nap
+   lat n= 1 el0-child   C:\NEWDESK.NAP   A->U   102.8 ms  A->B   79.5  B->U   23.2  X->U       -
+   stack el0 max depth 8120 B (7.9 KiB)
+== k2v-strict-el0reg
+   lat n= 1 el0-child   NEWDESK          A->U    47.3 ms  A->B   23.8  B->U   23.5  X->U       -
+   stack el0 max depth 8120 B (7.9 KiB)
+== k2v-strict-el1nap
+   lat n= 1 el1-desktop NEWDESK          A->U    15.5 ms  A->B      -  B->U      -  X->U       -
+   stack el1 max depth 8000 B (7.8 KiB)
+== k2v-strict-el1reg
+   lat n= 1 el1-desktop NEWDESK          A->U    17.2 ms  A->B      -  B->U      -  X->U       -
+   stack el1 max depth 8000 B (7.8 KiB)
+
+== aggregates (QEMU raspi4b, host macOS; not representative for the Pi -- prep §5.2)
+k1 el1-desktop after-program NEWDESK          n=10  A->U median 4.0 min 3.6 max 4.6 ms | A->B - | B->U - | X->U median 6.1 min 5.6 max 7.5 ms
+k1 el1-desktop boot          NEWDESK          n= 4  A->U median 15.9 min 15.0 max 101.4 ms | A->B - | B->U - | X->U -
+k2 el0-child   after-program C:\NEWDESK.NAP   n=10  A->U median 43.6 min 42.8 max 46.9 ms | A->B median 26.9 min 26.2 max 29.9 ms | B->U median 16.8 min 16.5 max 18.2 ms | X->U median 45.5 min 44.9 max 49.2 ms
+k2 el0-child   boot          C:\NEWDESK.NAP   n= 4  A->U median 99.5 min 74.1 max 102.8 ms | A->B median 76.0 min 58.7 max 79.5 ms | B->U median 23.3 min 15.4 max 23.5 ms | X->U -
+k2 el0-child   boot          NEWDESK          n= 4  A->U median 47.1 min 21.3 max 57.5 ms | A->B median 23.6 min 6.2 max 28.9 ms | B->U median 23.5 min 15.1 max 28.6 ms | X->U -
+k2 el1-desktop after-program NEWDESK          n=10  A->U median 3.5 min 3.4 max 4.4 ms | A->B - | B->U - | X->U median 5.2 min 5.1 max 7.1 ms
+k2 el1-desktop boot          NEWDESK          n= 8  A->U median 15.5 min 15.2 max 17.5 ms | A->B - | B->U - | X->U -

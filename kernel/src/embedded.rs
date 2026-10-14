@@ -10,8 +10,9 @@
 //! file system (`pexec.rs` `load`) — the place EmuTOS' ROM desktop has
 //! (`aes_run_rom_program(deskstart)`, `aes/gemshlib.c:606`).
 //!
-//! At DESK43 U6b the list is empty (the desktop program arrives with U9), so
-//! the table is empty and [`register`] registers nothing.
+//! Since DESK43 U9-2 the table holds the desktop program `NEWDESK`
+//! (`programs/newdesk`), registered at boot; until U9-4 nothing starts it on
+//! the boot path (the shell's DESKTOP arm still runs the built-in desktop).
 
 use tos_api::bdos::process::registry;
 

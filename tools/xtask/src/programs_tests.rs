@@ -15,6 +15,11 @@
 //!   `selftest-desk`; and its dependency graph is the boundary guard G1 of
 //!   the review (§4.2): `newtos-gem` + `tos-types`, nothing else, all the way
 //!   down.
+//! * DESK43 U9-2: the `NEWDESK` program (`programs/newdesk`) is the desktop
+//!   library plus the program runtime (`newtos-gem` with `rt` and the crash
+//!   policy `panic-wait-key`), takes the kernel's three desktop switches, and
+//!   is the one program the kernel image embeds, under the shell's default
+//!   desktop name.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -345,4 +350,59 @@ fn string_scanner_reads_multi_line_and_escaped_literals() {
     let i = "fn machine_name() -> &'static str {\n    match B {\n        \"x\" => \"Ex\",\n        other => other,\n    }\n}";
     assert_eq!(boot_machine_name(i, "x").as_deref(), Some("Ex"));
     assert_eq!(boot_machine_name(i, "y"), None);
+}
+
+/// DESK43 U9-2: `programs/newdesk` depends on exactly `desktop` and
+/// `newtos-gem`; it takes `newtos-gem` **with** its runtime (no
+/// `default-features = false`) and the D6-a crash policy `panic-wait-key`; and
+/// it passes the three desktop switches through as the kernel does
+/// (`board-x = ["desktop/board-x"]`, `selftest-desk`), so the program and the
+/// built-in desktop are built from the same source with the same switches.
+#[test]
+fn newdesk_is_the_desktop_with_the_program_runtime() {
+    let root = root();
+    let toml = fs::read_to_string(root.join("programs/newdesk/Cargo.toml")).expect("programs/newdesk/Cargo.toml");
+    let deps = dependencies(&toml);
+    let mut names: Vec<&str> = deps.iter().map(|(_, n)| n.as_str()).collect();
+    names.sort_unstable();
+    assert_eq!(names, ["desktop", "newtos-gem"], "programs/newdesk/Cargo.toml dependencies: {deps:?}");
+    assert!(deps.iter().all(|(t, _)| t == "dependencies"), "{deps:?}");
+    let gem = toml.lines().find(|l| l.trim_start().starts_with("newtos-gem")).unwrap();
+    assert!(!gem.contains("default-features"), "NEWDESK needs newtos-gem's runtime (`rt`): {gem}");
+    assert!(gem.contains("\"panic-wait-key\""), "NEWDESK takes the D6-a crash policy: {gem}");
+    let mut switches: Vec<&str> = Board::ALL.iter().map(|b| b.feature()).collect();
+    switches.push("selftest-desk");
+    for f in switches {
+        let line = toml
+            .lines()
+            .find(|l| l.trim_start().starts_with(&format!("{f} =")))
+            .unwrap_or_else(|| panic!("programs/newdesk/Cargo.toml: no feature `{f}`"));
+        assert!(line.contains(&format!("\"desktop/{f}\"")), "feature `{f}` does not enable `desktop/{f}`: {line}");
+    }
+}
+
+/// DESK43 U9-2 (decision D3): every program the kernel image embeds is built
+/// by `build-programs` into the file `kernel/embed.rs` names, and the desktop
+/// program's registry name is the shell's default desktop (`DEF_DESKTOP`,
+/// `tos-api/src/aes/shell.rs`), the name `sh_ldapp`'s DESKTOP arm will start.
+#[test]
+fn the_embedded_desktop_is_built_and_named_as_the_shell_names_it() {
+    let root = root();
+    for e in kernel_embed::EMBEDDED {
+        assert!(
+            PROGRAMS.iter().any(|(_, f)| *f == e.file),
+            "kernel/embed.rs embeds {} ({}), which no xtask PROGRAMS entry builds",
+            e.name,
+            e.file
+        );
+    }
+    let shell = fs::read_to_string(root.join("tos-api/src/aes/shell.rs")).expect("tos-api/src/aes/shell.rs");
+    let key = "pub const DEF_DESKTOP: &[u8] = b";
+    let at = shell.find(key).expect("shell.rs: no DEF_DESKTOP") + key.len();
+    let def = string_literal(&shell[at..]).expect("DEF_DESKTOP literal");
+    assert!(
+        kernel_embed::EMBEDDED.iter().any(|e| e.name == def && e.file == "NEWDESK.NAP"),
+        "the embedded desktop must be registered as DEF_DESKTOP = {def:?}"
+    );
+    assert!(PROGRAMS.contains(&("newdesk", "NEWDESK.NAP")), "{PROGRAMS:?}");
 }

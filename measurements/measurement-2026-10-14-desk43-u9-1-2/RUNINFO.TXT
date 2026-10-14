@@ -1,0 +1,140 @@
+measurement-2026-10-14-desk43-u9-1-2 -- DESK43 U9-1 (scratch stack/latency instruments, EL1 baseline) and U9-2 (the NEWDESK
+program, embedded in the kernel image), per docs/analysis/desk43-u9-prep-2026-10-14.md §5.1/§5.2/§6 and the decisions in
+TASK/DESK43.md ("U9-Vorbereitung entschieden": D6-a panic waits for a key in NEWDESK only; STK after measurement).
+Developer run, base HEAD c53e9267 (clean tree) + the uncommitted U9-2 change. Host macOS, QEMU raspi4b + qemu-virt. No SD
+card, no Pi, nothing committed. 2026-10-14.
+
+WHAT CHANGED IN THE PRODUCT (U9-2; U9-1 is scratch only):
+  programs/newdesk/            new staticlib crate: `main` -> desktop::run(), returns 0 (crt0 Pterm). Deps desktop +
+                               newtos-gem (rt + panic-wait-key); features board-rpi4/board-qemu-virt/selftest-desk ->
+                               desktop/*.
+  programs/newtos-gem          feature `panic-wait-key` (= ["rt"], default off): panic handler -> Cconws(msg), drain
+                               (Cconis/Crawcin), "*** Press any key to continue ***", Crawcin, Pterm(-1)
+                               (EmuTOS dopanic bios/kprint.c:581-585). Bindings crawcin()/cconis();
+                               tos-types CRAWCIN 0x07 / CCONIS 0x0B (bdosbind.h:23,25).
+  programs/rustc-stable-metadata.sh + programs/.cargo/config.toml `rustc-wrapper`: path-independent crate hashes (§4).
+  tools/xtask PROGRAMS += ("newdesk","NEWDESK.NAP"); kernel/embed.rs EMBEDDED = [NEWDESK/NEWDESK.NAP]; test
+  nothing_embedded_before_u9 replaced by newdesk_is_the_one_embedded_program; +2 programs_tests. Boot path UNCHANGED
+  (sh_ldapp's DESKTOP arm still runs the built-in EL1 desktop; the blob is registered, nothing starts it at boot).
+
+RESULT: NEWDESK.NAP loads (only R_AARCH64_RELATIVE, DT_* all on the loader's positive list) and runs as a working EL0
+desktop from the card file and from the registry, in memprot on/off/strict: 8 views, Alt-C directory window, About box --
+every screendump BYTE-IDENTICAL to the EL1 desktop on the twin card except ONE field: "Free RAM" (2nd number, alt RAM) in
+the desktop-configuration dialog, -684 KB (-716 KB with a 150-file directory) = the desktop process' TPA + heap. Self-tests
+53/1 identical. Panic build waits for the key, then rc=65535. Normal boot: U9-0 series 15/15 byte-identical, APITEST
+106/0/5, qemu-virt end screen identical; only "[mm] kernel" size changes. Kernel images path-reproducible from clean target.
+
+1. BASELINES (method/checks.sh u912 -> checks/u912-*; SOURCE_DATE_EPOCH=1791979200)
+   host tests tos-api tos-types xtask             1368/0/1 (U9-0 1366 + 2 new programs_tests; the embed test replaced)
+   release warnings rpi4 / qemu-virt              tos-api 64, kernel 94 both; build-programs 0 warnings
+   clippy kernel rpi4 / qemu-virt / +selftest-desk tos-api 76, kernel 125 (all three)
+   clippy programs                                hello-gem+newtos-gem 0, newtos-gem no-rt 0, newtos-gem +panic-wait-key 0,
+                                                  desktop x3 0, newdesk rpi4/qemu-virt/rpi4+selftest-desk 0
+   desk drift probe TOTAL / UNSAFE                4 (A 0, B 0, C 4, D 0) / 20 -- only shell_loop.rs line numbers moved
+   emutos-consts                                  total=466 matched=332 mismatched=2 documented=2 undocumented=0 stale=0
+                                                  no-counterpart=132 (+2: CRAWCIN, CCONIS -- bdosbind.h macros, no
+                                                  #define, same class as CCONOUT)
+   SDK host tests                                 20/0/0
+   cite list                                      fns=476 cited=315 newtos=5 uncited=156 (= U9-0; desktop untouched)
+   NAP sha256 (checks/u912-nap-sha256.txt)        HELLOGEM rpi4 97f14224.. (U9-0: 5b4f283c.. -- changed by the wrapper,
+                                                  §4; behaviour identical, §8), NEWDESK rpi4 dca37fe1.. (344344 B),
+                                                  NEWDESK qemu-virt 2bab28be.. (344168 B)
+   kernel images                                  rpi4 1524592 B (U8b/U9-0 1180520, +344072), qemu-virt flat 1491000 B
+
+2. NEWDESK.NAP (checks/u912-readobj-newdesk-{rpi4,qemu-virt}.txt, llvm-readobj -h -d -r -l)
+   ELF64 ET_DYN, EM_AARCH64, entry 0x1000; PT_LOAD R-X 201152 B; PT_LOAD RW- file 15136 / mem 15200 (bss 64 B);
+   PT_DYNAMIC 272 B; PT_NOTE 24 B (PRGFLAGS 7 = default, no note value change).
+   DT_*: FLAGS_1(PIE) DEBUG RELA RELASZ(6624) RELAENT(24) RELACOUNT(276) SYMTAB SYMENT STRTAB STRSZ(1) GNU_HASH HASH
+         INIT_ARRAY(0) INIT_ARRAYSZ(0) FINI_ARRAY(0) FINI_ARRAYSZ(0) NULL -- all on the positive list
+         (tos-api/src/bdos/process/reloc.rs:265-268). Relocations: 276, all R_AARCH64_RELATIVE. Both boards the same.
+   Not stripped: .symtab/.strtab (~48 KB) and .debug_* of the precompiled core/alloc (~62 KB) stay in the file (not
+   loaded; kept for resolving a crash pc of the EL0 desktop). Loaded image 216 KB, file 344 KB.
+
+3. U9-1 INSTRUMENTS (scratch only: method/u91_instr.rs + method/u91-instr.py, applied to rsync copies /tmp/m5j/u912/tree-*)
+   Stack, paint-and-measure (EmuTOS CONF_DEBUG_DESK_STACK, deskstart.S:43-51 / deskmain.c:404-417):
+     EL1: the built-in desktop runs on the main kernel stack (SPSel=0, SP_EL0 = [__stack_bottom_inclusive,
+          __stack_top_exclusive), 64 KiB; every exception incl. its own svc runs on SP_EL1 -- exception_vectors.s:81-83,
+          lib.rs:137-207). Painted [bottom, SP-1KiB) right before desktop::run(); depth = SP_at_call - lowest touched.
+     EL0: painted by the launcher right before the drop to EL0: crt0's stack [B+round16(_end-B), +MINKEEP) with
+          _end = p_bbase+p_blen (newtos.ld:161-172, crt0.S:66-85), via the kernel alias; depth = top - lowest touched.
+     Reported at desktop up, once a second when grown (pump_devices), at desktop::run() return / child Pterm.
+   Latency (CNTVCT_EL0 in us): A = sh_ldapp entry, B = drop to EL0, U = desktop up (EL1: the kernel's "[desk] desktop
+     up"; EL0: the shell child's first evnt_multi after appl_init), X = the shell child's Pterm.
+   Check: the instrumented base kernel's views (k1v, plain card, event-timed driver) = U9-0 views 8/8 BYTE-IDENTICAL.
+
+4. REPRODUCIBILITY (decision: fixed crate metadata, no strip; checks/u912-repro.txt, checks/u912-clean-build-*.txt)
+   Cause found: cargo's -C metadata of a path package OUTSIDE the workspace root hashes its absolute path -- tos-types
+   (../tos-types from programs/); every dependent hashes its deps' values. Symbol hashes come from it, and codegen orders
+   functions by symbol name: NEWDESK.NAP built in the shared tree vs a copy at another path differed in 5106 file bytes,
+   815 of them in the LOADED image (objcopy -O binary) -- function order, not only .symtab. So stripping cannot fix it;
+   an extra `-C metadata` cannot either (rustc hashes all of them). Fix: rustc wrapper replacing cargo's value by a hash of
+   name+version+crate-name+crate-type+target+cfgs. Proof: clean build (fresh copy + .git, no target/) at
+   /tmp/m5j/u912/clean/an-other-path: rpi4 kernel8.img 0 differing bytes vs bin/kernel8-u912.img, qemu-virt flat image 0,
+   NEWDESK.NAP and HELLOGEM.NAP of both boards 0 (method/clean-build.sh).
+
+5. EL0 NEWDESK RUNS (kernel k2v = U9-2 tree + instruments + injector desktop=views.script AND up:NEWDESK=views.script;
+   method/views-matrix.sh, drive-ev.py, run-ev.sh; screendumps timed from the arm event; pixdiff.py; checks/u912-pixel-matrix.txt)
+   Twin cards (method/derive-card.sh from the MEM05 plain card): the EL0 card's NEWDESK.INF carries `#Z 01 NEWDESK@`
+   (registry) or `#Z 01 C:\NEWDESK.NAP@` (+ the file), the EL1 twin the same line as `#z` (ignored by AES and desktop:
+   init.rs process_inf2 / inf.rs:446 match b'Z' only) -- same bytes, sizes and FAT dates in the directory listing.
+     registry  on/off/strict: 8 views each vs EL1 twin (same mode): 7/8 BYTE-IDENTICAL, 7-config differs
+     card file on/off/strict: same
+     150-file directory (on): same
+   The only difference, every pair: box x=357 y=355 w=30 h=12 (122-150 px), the second number of "Free RAM: 10240 KB +
+   N KB" in the desktop-configuration dialog: on/strict 915432 -> 914748 KB, off 925092 -> 924408 KB (-684 KB), big
+   directory 915432 -> 914716 KB (-716 KB). Cause: NEWDESK is a process -- its TPA (image 220 KB + 64 KB stack, PRGFLAGS 7 ->
+   alt RAM) and its Malloc heap hunks are no longer free; the EL1 desktop's state lives in the kernel heap. Expected
+   (prep §5.6 / review §3.3(2)). ST RAM unchanged (10240 KB).
+   Initial desktop screen: smoke run (product kernel bin/kernel8-u912.img, card file, t25) = U9-0 desktop t25 BYTE-IDENTICAL.
+   (Its first attempt failed with "[launch] load failed: NotFound" / rc=-33: the card carried the file under the name
+   NEWDESK-rpi4.NAP -- a card-making mistake, re-run with C:\NEWDESK.NAP; the log was overwritten.)
+   No hourglass difference is visible in these runs: #Z goes through launch.rs's busy_cursor, the screen is dumped later.
+   [EXC]/[crash]/PANIC/"load failed" in all serial logs of this run directory: 0.
+   Self-tests (kernel k1s2 = base + selftest-desk + U8b's Return injector; kernel k2s2 + launch:NEWDESK=st-launch.script,
+   card with bin/NDSELFT.NAP = newdesk +selftest-desk): result lines EL0 == EL1 == U8b, 53 PASS / 1 FAIL (pre-existing).
+   First self-test attempt (k1s/k2s, `desktop`/`up:` trigger) stalled: the DELETE box comes before "desktop up"; images
+   deleted, re-done with k1s2/k2s2.
+
+6. PANIC BUILD (D6-a; bin/NDPANIC.NAP = newdesk with a scratch panic!() before desktop::run(), U92-PANIC-TEMP; the
+   desktop code is then dead and LTO drops it -> 27720 B; the handler path is the product's)
+     k2p (launch:NEWDESK=key.script, Return at launch+8 s): "*** Rust panic at newdesk/src/lib.rs:53: ..." + prompt at
+     hz 3005..3013, key fed at hz 4613, "[shell] sh_ldapp: 'C:\NEWDESK.NAP' exited with rc=65535" right after, then the
+     EL1 desktop (AUTORUN -> default desktop). Screendump k2p-on-el0panic-prompt1.png: message + prompt on screen.
+     Control k2v (no injector arm for it): no "exited" in 35 s, screen = the prompt (byte-identical to the k2p prompt dump).
+
+7. STACK AND LATENCY (checks/u912-stack-latency.txt, method/u91-summary.py; QEMU numbers, not Pi numbers)
+   Stack, max depth:            EL1 (built-in, base tree)      EL0 NEWDESK
+     views (8), plain/twin card    8000 B                         8120 B
+     views, 150-file directory     8192 B                         9152 B
+     self-tests (4)                3296 B                         4496 B
+     restart cycles                2736 B (HELLOGEM F1 x10)       3584 B (NEWDESK F1 x10)
+     at "desktop up"               2112 B                         3328 B
+   Room: EL1 63888 B below sh_ldapp's SP; EL0 65536 B (MINKEEP). EmuTOS' C desktop: 2560 B (deskstart.S:15).
+   (HELLOGEM paints its own stack -> its el0 depth reads 65536, an artefact, excluded.)
+   Latency, sh_ldapp entry -> desktop up (A->U), and previous program's Pterm -> desktop up (X->U):
+     EL1 after boot                A->U median 15.9 ms (15.0..17.5; one outlier 101.4 ms, run k1v-on-el1big-try1)
+     EL1 after a program (x10)     A->U 4.0 ms (3.6..4.6), X->U 6.1 ms (5.6..7.5)          [k1c; k2c: 3.5 / 5.2 ms]
+     EL0 boot, registry (x4)       A->U 47.1 ms (21.3 off .. 57.5), load A->B 23.6 ms (6.2 off), init B->U 23.5 ms
+     EL0 boot, card file (x4)      A->U 99.5 ms (74.1 off .. 102.8), load A->B 76.0 ms, init B->U 23.3 ms
+     EL0 after a program (x10)     A->U 43.6 ms (42.8..46.9), A->B 26.9, B->U 16.8, X->U 45.5 ms (card file, warm)
+   The EL0 restart after a program from the REGISTRY (what U9-4 does) is not reachable before U9-4; estimate from the
+   parts: load (registry) ~24 ms + init ~17 ms.
+
+8. NORMAL BOOT UNCHANGED (product kernel bin/kernel8-u912.img; method/series.sh + summarize.sh; checks/u912-series-summary.txt)
+   rpi4 series on/off/strict: 15/15 screendumps BYTE-IDENTICAL to U9-0; desktop t25 0e6f7704..; APITEST TOTAL 106/0/5 all
+   modes, 0 differing result lines (126 each); serial desktop/apitest/teradesk/qed: 0 differing lines except
+   "[mm] kernel: .. (2457600 -> 2805760 bytes)". qemu-virt (method/run-virt.sh): end screen BYTE-IDENTICAL to U9-0, log
+   differs only in "[mm] kernel" (2428928 -> 2777088). HELLOGEM.NAP rebuilt with the wrapper, #Z on the U9-0 injector
+   kernel: app + end screendumps and [HELLOGEM]/exited lines identical to U9-0 (hg-newnap-on-z).
+
+9. NOT DONE: real Pi (not asked). qemu-virt EL0 NEWDESK (no card on qemu-virt -> no #Z; the virt NAP is built + readobj
+   only). memprot=verify / asid=on. TeraDesk/QED/accessories under the EL0 NEWDESK. EL0 restart from the registry after a
+   program (needs U9-4). Copy of a deep directory tree (only the self-test's C:\DESKT9\ backend run).
+
+METHOD NOTE: method/make-cards.sh and method/build-naps.sh were written after the runs from the commands used
+interactively (same commands, same inputs); kernels: method/build-kernels.sh (k1v k1c k2v k2c k2p k2s2) and the k1s2
+recipe in §5 (u91-instr.py, then inj-selftest-return.py, `cargo xtask build --features selftest-desk`).
+
+Scratch: /tmp/m5j/u912 (-> /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/u912): src-base (base tree), src-u92 (U9-2 tree),
+tree-* (instrumented copies), cards/ (derived cards), nap-*/, clean/ (clean build at another path), pathB/ (the
+reproducibility experiment). bin/*.img gitignored, sha256 in bin/SHA256SUMS; bin/*.NAP kept.

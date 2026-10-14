@@ -14,18 +14,24 @@ those two files only.
 programs/
 ├── Cargo.toml            own workspace (root Cargo.toml: exclude = ["programs"])
 ├── .cargo/config.toml    target aarch64-unknown-none-softfloat,
-│                         -C relocation-model=pic, target-dir ../target/programs
+│                         -C relocation-model=pic, target-dir ../target/programs,
+│                         rustc-wrapper ./rustc-stable-metadata.sh
 ├── build.sh              crt0.o + cargo staticlib + rust-lld -> <name>.NAP
+├── rustc-stable-metadata.sh  path-independent crate hashes (DESK43 U9-2)
 ├── newtos-gem/           runtime crate: gemdos / aes / vdi / xbios trap
 │                         bindings (since U6b the only copy -- the kernel
 │                         desktop links them too), and with feature `rt`
 │                         (default) the heap (GlobalAlloc over GEMDOS Malloc
-│                         hunks) and the panic handler (Cconws, Pterm(-1))
+│                         hunks) and the panic handler (Cconws, Pterm(-1));
+│                         feature `panic-wait-key`: a key first (D6-a)
 ├── hello-gem/            HELLOGEM.NAP, the U6a spike (window, heap test,
 │                         stack measurement, `--features panic-test`)
-└── desktop/              the desktop (EmuTOS desk/ in Rust), a library crate
-                          (DESK43 U8b; until then kernel/src/desk/): linked by
-                          the kernel today, by the NEWDESK program from U9
+├── desktop/              the desktop (EmuTOS desk/ in Rust), a library crate
+│                         (DESK43 U8b; until then kernel/src/desk/): linked by
+│                         the kernel (built-in desktop) and by NEWDESK
+└── newdesk/              NEWDESK.NAP (DESK43 U9-2): the desktop as an EL0
+                          program -- `main` calls `desktop::run()`; embedded in
+                          the kernel image under the registry name NEWDESK
 ```
 
 ## Build
@@ -65,8 +71,8 @@ as a non-member path package with the kernel's profile and target.
 **The desktop crate (DESK43 U8b).** `desktop/` is a library, not a program
 (no `staticlib`, not in `PROGRAMS`): the kernel links it by path and calls
 `desktop::run`/`desktop::reset` in EL1 from `sh_ldapp`'s DESKTOP arm, as it
-called the module before; the `NEWDESK` program (U9) will be a thin crate
-around the same library — one source, two link targets (review §3.1). Its
+called the module before; the `NEWDESK` program (`newdesk/`, U9-2) is a thin
+crate around the same library — one source, two link targets (review §3.1). Its
 dependencies are **`newtos-gem` (without `rt`) and `tos-types` only**: a
 `tos_api::` or kernel path in the desktop does not compile (guard G1; checked
 by `tools/desk-drift-probe.sh` group D and the host test
@@ -79,13 +85,33 @@ its own therefore needs a board:
 `cargo build`/`cargo clippy` over the whole programs workspace stops at the
 desktop's missing-board `compile_error!`.
 
+**The desktop program (DESK43 U9-2).** `newdesk/` is a `staticlib` whose
+`main` calls `desktop::run()` and returns 0 (EmuTOS `deskstart.S`: `jsr
+_deskmain` … `Pterm(0)`; crt0 does the `Mshrink` and the stack). It depends on
+`desktop` and on `newtos-gem` **with** `rt` and the feature `panic-wait-key`
+(crash policy D6-a: a panic shows its message and waits for a key before
+`Pterm(-1)`, as EmuTOS' exception report does), and passes `board-*` and
+`selftest-desk` through to `desktop` (host test
+`programs_tests::newdesk_is_the_desktop_with_the_program_runtime`).
+
 **Embedding (decision D3).** `cargo xtask build` builds the board's programs
 first; `kernel/build.rs` embeds the ones listed in `kernel/embed.rs` from
 `target/programs/<board>/` (one `include_bytes!` each, registered under their
 registry name at boot, `kernel/src/embedded.rs`) and **stops with a hard
-error** when a listed program has not been built. At U6b the list is empty —
-the desktop program (`NEWDESK`) arrives with U9; nothing is embedded and
-nothing changes at boot.
+error** when a listed program has not been built. Since U9-2 the list is
+`NEWDESK` (`NEWDESK.NAP`, the shell's `DEF_DESKTOP`). Until U9-4 nothing on
+the boot path starts it — the DESKTOP arm still runs the built-in desktop; it
+is reachable by its registry name (`#Z 01 NEWDESK@` in `NEWDESK.INF`).
+
+**Reproducible program files (U9-2).** The kernel image embeds a program file,
+so the program files must not depend on the checkout path. Cargo hashes the
+absolute path of `tos-types` (outside this workspace) into every crate's
+`-C metadata`, from which rustc derives the symbol hashes — and the code
+order. `programs/.cargo/config.toml` therefore runs rustc through
+`rustc-stable-metadata.sh`, which replaces that value by a hash of the
+crate's name, version, type, target and features (rationale in the script).
+Cargo does not track the wrapper in its fingerprints: a `target/programs/`
+from before it needs one `cargo clean` (in `programs/`).
 
 ## Writing a program
 
