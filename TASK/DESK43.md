@@ -178,3 +178,10 @@ Kernel-Image eingebettet (Registry-Name `NEWDESK`, wie EmuTOS' Desktop im
 ROM); `#Z` kann weiterhin einen anderen Desktop von der Karte starten. Der
 Kernel-Bau haengt vom Desktop-Bau ab und bricht bei fehlendem Blob hart ab;
 je Board ein Blob (X03-Feature durchgereicht).
+
+**D5 entschieden (Anwender 2026-10-14):** U9 kommt mit einem Rueckfall-Schalter
+(Desktop im Kernel), der nur bis zur Abnahme auf der echten Pi lebt; U10
+entfernt ihn. Vor U9: Researcher-Analyse zu D6 (Absturzpolitik), T10
+(Injektor-Bewaffnung) und [PROC05](PROC05.md) (Exitcode im Shell-Start);
+der Registry-Vergleich ueber den ganzen 128-Byte-`s_cmd` wird im U9-Auftrag
+zuerst behoben.
