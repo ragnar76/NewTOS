@@ -123,7 +123,8 @@ der Schnitt steht und der Anwender ihn gesehen hat.
 | U6a Rust-EL0-Spike | **fertig** 2026-10-14 (`1257b7cc`) — HELLOGEM.NAP, Lader unveraendert |
 | U5b Typen/Konstanten | **fertig** 2026-10-14 (`ac521aeb`) — Driftprobe 31 → 19 |
 | U7 Zellmasse | **fertig** 2026-10-14 (`2c7895db`) — Driftprobe 19 → 11, 0 Pixel |
-| U8a … U10 | Neuschnitt 2026-10-14, siehe unten |
+| U8a Entkopplung | **fertig** 2026-10-14 (`87adb580`) — Driftprobe 11 → 4, Kernel meldet „desktop up“ |
+| U6b … U10 | Neuschnitt 2026-10-14, siehe unten |
 
 ## Hardware-Abnahme U3/U4 (2026-09-28)
 
