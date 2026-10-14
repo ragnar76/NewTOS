@@ -44,10 +44,10 @@ use core::fmt::Write;
 #[global_allocator]
 pub static HEAP: heap::Heap = heap::Heap::new();
 
-/// The exit code of a program that panicked: GEMDOS `ERROR` (−1), the
-/// generic error. A panic is the program's own abort; the value is this
-/// runtime's choice (TOS reserves no code for it), picked so the shell's
-/// `[shell] sh_ldapp: ... exited with rc=-1` names it as a failure.
+/// The exit code of a program that panicked: GEMDOS `ERROR` (−1), the generic
+/// error — this runtime's choice (TOS reserves no code for it). The parent gets
+/// the `UWORD` zero-extended (EmuTOS `xterm`, `bdos/proc.c:601,616`): 65535, as
+/// the shell's `[shell] sh_ldapp: ... exited with rc=65535` line shows (PROC05).
 pub const PANIC_EXIT: i16 = tos_types::error::ERROR as i16;
 
 /// A `core::fmt` sink into a fixed byte buffer that always keeps room for a

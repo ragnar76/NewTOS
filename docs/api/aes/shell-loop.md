@@ -580,6 +580,42 @@ Key points not obvious from a skim:
   virtue of having been written into `EMUDESK.INF` by a previous
   `app_save`); it is trusted rather than re-searched.
 
+### NewTOS implementation notes — the child's exit code (PROC05, DESK43 U9-0b, 2026-10-14)
+
+**[CONTRACT]** `dos_exec(PE_LOADGO, …)`'s value, as `sh_ldapp` sees it
+(`docs/analysis/desk43-u9-prep-2026-10-14.md` §2):
+
+1. **Load error** — the child never ran: the negative `xexec` code
+   (`EFILNF`, `EPLFMT`, `ENSMEM`, …), unchanged.
+2. **The child ran** — its exit code as a **`UWORD`, zero-extended into a
+   non-negative LONG `0 … 65535`** (`xterm(UWORD rc)`, `run->p_dreg[0] = rc`,
+   `bdos/proc.c:601,616`). A child that ends with `Pterm(-1)` (a crash report's
+   `kill_program`, a Rust panic) delivers **65535**, not −1; the console
+   Ctrl-C's `xterm(-32)` (`bdos/console.c:101`) delivers 65504.
+
+Consequences, all EmuTOS's:
+
+* **NORMAL/AUTORUN arm:** `(ret < 0) ? ret : 0` (`:681-684`) — a child's
+  exit code, whatever it is, **never** raises an alert; `sh_main`'s
+  `fm_error(-rc-31)` (`:722-723`) is reached only by load errors and by
+  `sh_find`'s `EFILNF` (`:687-688`). There is no alert for `Pterm(-1)`.
+* **DESKTOP arm:** `if (aes_run_rom_program(deskstart)) wm_new();` — any value
+  other than 0 (`:606-609`); the arm returns 0 in every case (`:611`).
+
+NewTOS: `kernel/src/launch.rs` `run_program_with_tail_rc` returns that value.
+The `Pterm` trap already masks the code to 16 bits (D-005); for a program the
+kernel launched there is no `Pexec` caller whose `x0` could take it, so the
+trap's terminate tail (`finish_terminate`, kernel-launch branch) leaves it for
+the launcher (`launch::record_kernel_child_exit`, zero-extended through
+`tos_api::bdos::process::pterm::parent_exit_code`) — **how** it gets there is
+internal. The shell loop's decision is `tos_api::aes::shell::sh_ldapp_result`
+/ `sh_main_alert` (host tests `tos-api/tests/proc05_shell_exit_code.rs`). The
+serial line `[shell] sh_ldapp: '<cmd>' exited with rc=N` shows the real value
+(until U9-0b always 0); a program that ends cleanly still shows `rc=0`. The
+DESKTOP arm still runs the built-in desktop as a kernel call, which has no exit
+code — its `wm_new()`-on-abnormal-exit becomes reachable when the desktop is a
+launched program (DESK43 U9-4).
+
 **`wm_new()` itself** (`aes/gemwmlib.c:1875-1893`, cited by the plan and
 re-verified here): drains outstanding mouse-control and sync-block waiters,
 then closes and deletes every window still `VF_ISOPEN`/`VF_INUSE`. This is

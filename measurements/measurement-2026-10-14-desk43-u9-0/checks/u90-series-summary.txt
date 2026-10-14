@@ -1,0 +1,37 @@
+u90-off-rpi4-apitest |  1 TOTAL 106 0 5 ; | exc/panic=0
+u90-off-rpi4-desktop |  1 desktop up (1 d; | exc/panic=0
+u90-off-rpi4-qed |  | exc/panic=0
+u90-off-rpi4-teradesk |  | exc/panic=0
+u90-on-rpi4-apitest |  1 TOTAL 106 0 5 ; | exc/panic=0
+u90-on-rpi4-desktop |  1 desktop up (1 d; | exc/panic=0
+u90-on-rpi4-qed |  | exc/panic=0
+u90-on-rpi4-teradesk |  | exc/panic=0
+u90-strict-rpi4-apitest |  1 TOTAL 106 0 5 ; | exc/panic=0
+u90-strict-rpi4-desktop |  1 desktop up (1 d; | exc/panic=0
+u90-strict-rpi4-qed |  | exc/panic=0
+u90-strict-rpi4-teradesk |  | exc/panic=0
+--- APITEST result lines (modulo hex)
+on: u90 vs u8b 0 differing lines (126 lines)
+off: u90 vs u8b 0 differing lines (126 lines)
+strict: u90 vs u8b 0 differing lines (126 lines)
+--- screendumps u90 vs U8b run u8b-*
+u90-on-rpi4- vs u8b-on-rpi4-: same=5 diff=0 missing=0
+u90-off-rpi4- vs u8b-off-rpi4-: same=5 diff=0 missing=0
+u90-strict-rpi4- vs u8b-strict-rpi4-: same=5 diff=0 missing=0
+--- desktop t25 sha256
+0e6f770497da100b6707ff8ac1a79f24f30272a0e371bc368d9b10f56a2c324b  u90-off-rpi4-desktop-t25.png
+0e6f770497da100b6707ff8ac1a79f24f30272a0e371bc368d9b10f56a2c324b  u90-on-rpi4-desktop-t25.png
+0e6f770497da100b6707ff8ac1a79f24f30272a0e371bc368d9b10f56a2c324b  u90-strict-rpi4-desktop-t25.png
+--- desktop serial log u90 vs U8b (hex normalised, CR stripped)
+== on
+== off
+== strict
+== on teradesk: 0 differing lines
+== on qed: 0 differing lines
+== on apitest: 0 differing lines
+== off teradesk: 0 differing lines
+== off qed: 0 differing lines
+== off apitest: 0 differing lines
+== strict teradesk: 0 differing lines
+== strict qed: 0 differing lines
+== strict apitest: 0 differing lines

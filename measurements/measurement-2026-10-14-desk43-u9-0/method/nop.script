@@ -1,0 +1,3 @@
+# nop.script -- DESK43 U9-0: one zero-motion relative mouse packet (0xF8 0 0: no button, dx 0, dy 0) 100 ticks after
+# arming -- exercises the `up:` trigger on an EL0 shell child (TeraDesk) without changing its screen.
+100 0xF8 0x00 0x00

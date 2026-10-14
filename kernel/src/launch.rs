@@ -12,7 +12,7 @@
 //! `pexec::load` directly reads the path with `read_file` (an ordinary
 //! kernel function), so the caller may pass a kernel string.
 
-use core::sync::atomic::Ordering;
+use core::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
 
 use tos_api::bdos::process::{self, set_current, slot, State, PROCESS_TABLE};
 
@@ -35,11 +35,64 @@ fn busy_cursor(on: bool) {
     }
 }
 
+// ── The kernel-launched child: its slot and its exit code ───────────────────
+
+/// "No kernel-launched child is running" in [`SHELL_CHILD_SLOT`].
+const NO_CHILD: usize = usize::MAX;
+
+/// The process slot of the program [`run_program_with_tail_rc`] started and
+/// that has not terminated yet, or [`NO_CHILD`].
+///
+/// The launcher is the one place that starts a program on behalf of the
+/// kernel: the shell loop's `sh_ldapp` (EmuTOS `dos_exec(PE_LOADGO, …)`,
+/// `aes/gemshlib.c:645`) and, before the AES, the `\AUTO\` runner. Published
+/// right before the drop to EL0 and withdrawn as soon as the program is back,
+/// so while it holds a slot, that slot *is* the shell's child — the program
+/// identity the kernel's "desktop up" observation keys on
+/// ([`crate::shell_loop::observe_desktop_gem_call`], DESK43 U9-0c) and that a
+/// measurement injector can arm on (T10, `tools/inject-arm.py`). Programs the
+/// child `Pexec`s, and desk accessories, have other slots.
+static SHELL_CHILD_SLOT: AtomicUsize = AtomicUsize::new(NO_CHILD);
+
+/// The slot of the program the kernel's launcher started and that is still
+/// running — see [`SHELL_CHILD_SLOT`]. `None` while no such program runs
+/// (in particular while the built-in desktop runs: it is a kernel call, not a
+/// launched program).
+pub fn shell_child_slot() -> Option<usize> {
+    match SHELL_CHILD_SLOT.load(Ordering::Acquire) {
+        NO_CHILD => None,
+        slot => Some(slot),
+    }
+}
+
+/// The exit code of the last program that terminated back into a **kernel**
+/// resume point (written by the trap handler's terminate tail,
+/// [`record_kernel_child_exit`]), read by [`run_program_with_tail_rc`] after
+/// the resume.
+static KERNEL_CHILD_RC: AtomicI32 = AtomicI32::new(0);
+
+/// Record the exit code of a program whose "parent" is a kernel function — the
+/// launcher here, or a boot-time selftest — at the moment its termination
+/// resumes that function (`finish_terminate`'s kernel-launch branch in
+/// `arch::aarch64::exceptions`). There is no `Pexec` caller whose `x0` could
+/// carry it, so it is left here for the resumed function to read.
+///
+/// The value is stored as EmuTOS's parent sees it
+/// ([`process::pterm::parent_exit_code`]: `xterm(UWORD rc)`, `bdos/proc.c:601,
+/// 616`, the low 16 bits zero-extended) — `Pterm(-1)` arrives as 65535, the
+/// console Ctrl-C's `-32` as 65504. The `Pterm` paths hand over `rc & 0xFFFF`
+/// already (D-005); the mask makes the other terminate paths (Ctrl-C, upcall
+/// nesting overflow) read the same way, so a child's exit code is never
+/// negative here and never mistaken for a load error (PROC05).
+pub(crate) fn record_kernel_child_exit(rc: i32) {
+    KERNEL_CHILD_RC.store(process::pterm::parent_exit_code(rc), Ordering::Release);
+}
+
 /// Load and run the program named `path` (NUL-terminated; a registry key or a
 /// FAT16 path like `b"C:\\HELLO.PRG\0"`) with **no command tail**. Drops to EL0,
-/// runs it, and returns when it `Pterm`s. Returns `true` if it launched, `false`
-/// on a load/launch failure. The desktop / boot caller repaints the screen
-/// afterwards (the program owned it while running).
+/// runs it, and returns when it `Pterm`s. Returns `true` if it ran (whatever
+/// its exit code), `false` on a load/launch failure. The desktop / boot caller
+/// repaints the screen afterwards (the program owned it while running).
 pub fn run_program(path: &[u8]) -> bool {
     run_program_with_tail(path, &[])
 }
@@ -50,8 +103,11 @@ pub fn run_program(path: &[u8]) -> bool {
 /// characters (the loader appends the terminating NUL). This is the mechanism
 /// behind the desktop's document→application association (`deskins`/`do_aopen`):
 /// the associated application receives the document path as its command tail.
+///
+/// `true` means "the program ran" — [`run_program_with_tail_rc`] returned its
+/// exit code (`0 … 65535`) — and `false` a load failure (a negative code).
 pub fn run_program_with_tail(path: &[u8], tail: &[u8]) -> bool {
-    run_program_with_tail_rc(path, tail) == tos_types::error::E_OK
+    run_program_with_tail_rc(path, tail) >= tos_types::error::E_OK
 }
 
 /// [`run_program_with_tail`] reporting the **GEMDOS return code** rather than a
@@ -59,10 +115,16 @@ pub fn run_program_with_tail(path: &[u8], tail: &[u8]) -> bool {
 /// (`aes/gemshlib.c:645`), whose negative result `sh_ldapp` returns to
 /// `sh_main`, which turns it into an `fm_error` alert (`:722-723`).
 ///
-/// Returns `E_OK` (0) when the program ran to its `Pterm`, otherwise the load
-/// failure's GEMDOS code ([`tos_api::bdos::process::pexec::PexecError::errno`],
-/// e.g. `EFILNF` for a missing file, `EPLFMT` for a non-ELF, `ENSMEM` when the
-/// TPA cannot be allocated).
+/// Returns what EmuTOS's `dos_exec` returns (`docs/api/aes/shell-loop.md` §8,
+/// "the child's exit code", PROC05):
+///
+/// * the program ran: **its exit code**, the `UWORD` of its `Pterm`
+///   zero-extended, `0 … 65535` (`bdos/proc.c:601,616`) — `Pterm(-1)` (a
+///   crashed program, a Rust panic) is `65535`, never negative;
+/// * it could not be started: the load failure's negative GEMDOS code
+///   ([`tos_api::bdos::process::pexec::PexecError::errno`], e.g. `EFILNF` for
+///   a missing file, `EPLFMT` for a non-ELF, `ENSMEM` when the TPA cannot be
+///   allocated).
 pub fn run_program_with_tail_rc(path: &[u8], tail: &[u8]) -> i32 {
     // Busy cursor while loading from disk (the desktop is still on screen).
     busy_cursor(true);
@@ -139,6 +201,8 @@ pub fn run_program_with_tail_rc(path: &[u8], tail: &[u8]) -> i32 {
     // SAFETY: single-CPU kernel context; the slot holds the loaded image.
     unsafe { process::pexec::set_kernel_parent(child.slot) };
     set_current(process::pd_of(child.slot));
+    // The child's identity, for the kernel's observers (DESK43 U9-0c).
+    SHELL_CHILD_SLOT.store(child.slot, Ordering::Release);
     kprintln!("[launch] EL0: slot {} entry 0x{:x}", child.slot, child.entry_va);
 
     // SAFETY: single-CPU; `parent_frame` captures this kernel resume point,
@@ -158,6 +222,10 @@ pub fn run_program_with_tail_rc(path: &[u8], tail: &[u8]) -> i32 {
         );
     }
 
+    // Back: the terminate tail has released the slot and left the child's
+    // exit code in `KERNEL_CHILD_RC` (`record_kernel_child_exit`).
+    SHELL_CHILD_SLOT.store(NO_CHILD, Ordering::Release);
+    let rc = KERNEL_CHILD_RC.load(Ordering::Acquire);
     kprintln!("[launch] returned (program Pterm'd)");
 
     // `sh_ldapp`'s `AP_OPEN` cleanup (`aes/gemshlib.c:650-657`), at exactly
@@ -169,7 +237,7 @@ pub fn run_program_with_tail_rc(path: &[u8], tail: &[u8]) -> i32 {
     // is the `sh_ldapp` step, addressed by the slot the descriptor is keyed by.
     tos_api::aes::close_client_if_open(child.slot);
 
-    tos_types::error::E_OK
+    rc
 }
 
 /// `MODE_CTRL` (`references/emutos/include/biosdefs.h:92`) — the Control bit of

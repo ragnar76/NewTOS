@@ -88,6 +88,18 @@ pub enum PtermError {
     NoParentResumeContext,
 }
 
+/// The exit code `rc` as the terminated process's parent receives it — EmuTOS
+/// `xterm(UWORD rc)` stores `run->p_dreg[0] = rc` (`bdos/proc.c:601,616`):
+/// the low 16 bits, **zero-extended** into the LONG `Pexec` returns (D-005).
+/// `Pterm(-1)` → 65535, `Pterm(0x12345)` → 0x2345, the console Ctrl-C's `-32`
+/// → 65504. Never negative, so never confused with a `Pexec` load error.
+///
+/// Used for the kernel-launched child's exit code (the shell's `dos_exec`
+/// value, PROC05); the `Pterm` trap applies the same mask to `x0` itself.
+pub fn parent_exit_code(rc: i32) -> i32 {
+    i32::from(rc as u16)
+}
+
 /// Tear down the running process's *resources* and return the
 /// metadata the kernel SVC handler needs to finish the round-trip
 /// (frame copy + TTBR0 restore + slot release).

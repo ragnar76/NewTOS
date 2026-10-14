@@ -1,6 +1,6 @@
 # PROC05 — Shell-Start liefert nie den Exitcode des Programms
 
-Status: **OFFEN** · Prioritaet: **P3** · Typ: Konformitaet — Nebenfund DESK43 U6a (2026-10-14)
+Status: **ERLEDIGT (2026-10-14, DESK43 U9-0b, uncommitted)** · Prioritaet: **P3** · Typ: Konformitaet — Nebenfund DESK43 U6a (2026-10-14) · [Quittung](PROC05-STATUS-DONE.MD)
 
 `kernel/src/launch.rs` `run_program_with_tail_rc` (`:62-65,172`) gibt fuer
 jedes Programm, das `Pterm` erreicht, `E_OK` zurueck. EmuTOS' `sh_ldapp`

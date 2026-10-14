@@ -35,6 +35,7 @@ use core::sync::atomic::{AtomicBool, Ordering};
 use tos_api::aes::shell::{
     self, ShExit, AUTORUN_APP, CONSOLE_APP, DESKTOP_APP, NORMAL_APP,
 };
+use tos_api::bdos::process::sched::running_slot;
 use tos_api::bdos::process::{current_abi, Abi};
 use tos_api::trap::TrapArgs;
 use tos_api::uaccess::Space;
@@ -51,13 +52,22 @@ use crate::kprintln;
 // its first `evnt_multi` (`deskmain.c:2077-2123`, the event loop). The test
 // runs in the GEM-trap path, so it sees exactly the calls the AES sees.
 //
-// **Which caller is the desktop.** While [`sh_ldapp`]'s DESKTOP arm runs the
-// built-in desktop, the desktop is the only EL1 caller of the GEM trap: the
-// kernel context that would otherwise trap (`sh_main`, the boot path, the
-// boot-time selftests) is suspended inside that very call, and accessories
-// and programs are EL0 (`Space::User`). So "GEM trap from `Space::Kernel`
-// while [`DESKTOP_ACTIVE`]" is the desktop. (When the desktop becomes an EL0 program, DESK43 U9, this key
-// becomes "the process the DESKTOP arm started".)
+// **Which caller is the desktop** ([`is_desktop_caller`], DESK43 U9-0c): the
+// program the DESKTOP arm started, while [`DESKTOP_ACTIVE`]. Its identity is
+// the launcher's published child slot ([`crate::launch::shell_child_slot`]):
+//
+// * **A launched desktop** (the EL0 `NEWDESK` of DESK43 U9): the DESKTOP arm
+//   starts it through the launcher like any program (`aes_run_rom_program`,
+//   `gemshlib.c:606`), so it is the shell's child, and its GEM traps are the
+//   ones whose running slot (`RUN`, [`running_slot`]) is that child slot.
+//   Accessories, and programs the desktop itself `Pexec`s, have other slots.
+// * **The built-in desktop** (today; `desk=kernel` later, DESK43 D5): a kernel
+//   call, not a launched program, so there is no shell child while it runs.
+//   It is then the only EL1 caller of the GEM trap: the kernel context that
+//   would otherwise trap (`sh_main`, the boot path, the boot-time selftests)
+//   is suspended inside that very call, and accessories and programs are EL0
+//   (`Space::User`). So "no shell child, GEM trap from `Space::Kernel`" is
+//   the desktop.
 //
 // **Once per `deskmain` run**, like the old line: `appl_init` (the first call
 // of every run, `deskmain.c:1953`) arms the report, the first `evnt_multi`
@@ -77,18 +87,34 @@ const AES_EVNT_MULTI: u16 = 25;
 /// GEM-trap selector of the AES (`x0` = 200, `docs/ARCHITECTURE.md`).
 const GEM_SEL_AES: u64 = 200;
 
+/// `true` when the GEM trap `args` comes from the desktop the DESKTOP arm
+/// started — the launched shell child, or the built-in desktop when there is
+/// none (see the block comment above). Only meaningful while
+/// [`DESKTOP_ACTIVE`].
+fn is_desktop_caller(args: &TrapArgs) -> bool {
+    match crate::launch::shell_child_slot() {
+        Some(child) => args.space == Space::User && running_slot() == child,
+        None => args.space == Space::Kernel,
+    }
+}
+
 /// Called by the `svc` handler for every GEM trap (`svc #2`), before the
-/// dispatch: report `[desk] desktop up` when the built-in desktop reaches its
-/// first `evnt_multi` of a `deskmain` run (see the block comment above).
+/// dispatch: report `[desk] desktop up` when the desktop reaches its first
+/// `evnt_multi` of a `deskmain` run (see the block comment above).
 ///
-/// A no-op unless the desktop is running. It reads only `control[0]` of the
-/// caller's parameter block — the same word the AES dispatcher reads a few
-/// instructions later — and only for an EL1 caller, whose block is a kernel
-/// address.
+/// A no-op unless the desktop is running. It reads only `block[0]` and
+/// `control[0]` of the desktop's own parameter block — words the AES
+/// dispatcher reads a few instructions later (`Aespb::from_raw`: `block[0..6]`,
+/// `control[0..5]`). For the built-in desktop those are kernel addresses. For a
+/// launched (EL0) desktop they are read with the program's rights
+/// (`tos_api::uaccess`): a bad pointer faults here and is recorded as the
+/// call's fault, and the dispatcher's own read of the same words fails the
+/// same way and ends the program as before — the observation cannot change
+/// what happens to the program, only which of the two reads is reported.
 pub fn observe_desktop_gem_call(args: &TrapArgs) {
     if !DESKTOP_ACTIVE.load(Ordering::Acquire)
-        || args.space != Space::Kernel
         || args.regs[0] != GEM_SEL_AES
+        || !is_desktop_caller(args)
     {
         return;
     }
@@ -125,13 +151,6 @@ pub fn observe_desktop_gem_call(args: &TrapArgs) {
 /// `LEN_ZPATH + LEN_ZFNAME + 1` = `MAXPATHLEN` (`include/sysconf.h:51-55`) —
 /// the size of `D.s_cmd`.
 const MAXPATHLEN: usize = 128;
-
-/// `IS_BIOS_ERROR(n)` (`include/gemerror.h:64`): `(n < E_OK) && (n > EINVFN)`
-/// — the BIOS error range `-1 … -31`, which `sh_main` does **not** raise an
-/// alert for (`gemshlib.c:722`).
-fn is_bios_error(n: i32) -> bool {
-    n < tos_types::error::E_OK && n > tos_types::error::EINVFN
-}
 
 /// `sh_main(isauto, isgem)` (`gemshlib.c:692-731`) — the AES shell loop.
 ///
@@ -187,8 +206,8 @@ pub fn sh_main(isauto: bool, isgem: bool) -> ShExit {
         // Alert for the *previous* iteration's error (`:722-723`). GEMDOS
         // codes (`rc <= EINVFN`) become a positive DOS error number for
         // `fm_error`; BIOS-level codes are suppressed.
-        if rc != 0 && !is_bios_error(rc) {
-            tos_api::aes::form::fm_error((-rc - 31) as i16);
+        if let Some(n) = shell::sh_main_alert(rc) {
+            tos_api::aes::form::fm_error(n);
         }
 
         rc = sh_ldapp(); // :725
@@ -429,6 +448,8 @@ fn sh_ldapp() -> i32 {
     // `ret = dos_exec(PE_LOADGO, D.s_cmd, ad_stail, ad_envrn);` (:645).
     // `ad_stail` is already the Atari command-tail image (length byte first),
     // which is exactly what the loader copies into the child's `p_cmdlin`.
+    // `ret` is `dos_exec`'s value (PROC05): the child's exit code, zero-extended
+    // `0 … 65535` (`Pterm(-1)` → 65535), or a negative load error.
     let mut tail = [0u8; MAXPATHLEN];
     let tlen = shell::s_tail_image(&mut tail);
     let ret = crate::launch::run_program_with_tail_rc(&cmd, &tail[..tlen]);
@@ -457,11 +478,9 @@ fn sh_ldapp() -> i32 {
     kprintln!("[shell] sh_ldapp: '{}' exited with rc={}", as_str(&cmd), ret);
     crate::print_mem05_stats("after program");
 
-    if ret < 0 {
-        ret
-    } else {
-        0
-    }
+    // `if (ret < 0) return ret; else return 0;` (:681-684) — a load error goes
+    // to `sh_main`'s alert, a child's exit code (never negative) never does.
+    shell::sh_ldapp_result(ret)
 }
 
 /// The `CONSOLE_APP` arm body (`gemshlib.c:614-622`):

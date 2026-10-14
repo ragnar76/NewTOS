@@ -662,6 +662,48 @@ pub fn sh_main_exit() -> ShExit {
     }
 }
 
+/// `IS_BIOS_ERROR(n)` (`include/gemerror.h:64`): `(n < E_OK) && (n > EINVFN)`
+/// — the BIOS error range `-1 … -31`, which `sh_main` does **not** raise an
+/// alert for (`gemshlib.c:722`).
+pub fn is_bios_error(n: i32) -> bool {
+    n < tos_types::error::E_OK && n > tos_types::error::EINVFN
+}
+
+/// `sh_main`'s alert for the previous iteration's `sh_ldapp` result `rc`
+/// (`gemshlib.c:722-723`):
+///
+/// ```c
+/// if (rc && !IS_BIOS_ERROR(rc))
+///     fm_error(-rc-31);
+/// ```
+///
+/// `Some(n)` is the positive DOS error number to hand to `fm_error` (e.g.
+/// `EFILNF` −33 → 2, `EPLFMT` −66 → 35), `None` means no alert. `rc` is what
+/// [`sh_ldapp_result`] made of `dos_exec`'s value, so it is never positive.
+pub fn sh_main_alert(rc: i32) -> Option<i16> {
+    if rc != 0 && !is_bios_error(rc) {
+        Some((-rc - 31) as i16)
+    } else {
+        None
+    }
+}
+
+/// What `sh_ldapp`'s NORMAL/AUTORUN arm returns to `sh_main` for `dos_exec`'s
+/// value `ret` (`gemshlib.c:681-684`): `(ret < 0) ? ret : 0`.
+///
+/// `ret` is a load error (negative GEMDOS code) or the child's exit code,
+/// zero-extended `0 … 65535` (`bdos/proc.c:601,616`; `Pterm(-1)` → 65535), so
+/// only a program that could **not** be started reaches [`sh_main_alert`] —
+/// a program's own exit code, whatever it is, never raises an alert
+/// (`docs/api/aes/shell-loop.md` §8, PROC05).
+pub fn sh_ldapp_result(ret: i32) -> i32 {
+    if ret < 0 {
+        ret
+    } else {
+        0
+    }
+}
+
 /// Copy `D.s_cmd` — the fully-qualified command of the program to run next —
 /// into `out` as a NUL-terminated string; returns its length.
 pub fn s_cmd(out: &mut [u8]) -> usize {

@@ -1515,6 +1515,7 @@ fn finish_terminate(
     //     restored; the resume function's epilogue restores its callee-saved
     //     registers from its own stack frame, and copying zeroes into `gpr`
     //     would clobber `x29` and crash the post-resume frame-pointer chain.
+    //     The exit code goes to `crate::launch::record_kernel_child_exit`.
     //
     // [`parent_frame_full`]: tos_api::bdos::process::Process::parent_frame_full
     // [`parent_frame_pexec`]: tos_api::bdos::process::Process::parent_frame_pexec
@@ -1536,6 +1537,11 @@ fn finish_terminate(
             // caller's pre-trap value doesn't shadow it.
             frame.gpr[0] = rc as i64 as u64;
         }
+    } else {
+        // The kernel-launch path: no caller register takes the exit code, so
+        // it is left for the resumed kernel function — the launcher returns
+        // it as `dos_exec`'s value to `sh_ldapp` (PROC05, DESK43 U9-0b).
+        crate::launch::record_kernel_child_exit(rc);
     }
     if full {
         // The park has been consumed by this resume; nothing is parked now.

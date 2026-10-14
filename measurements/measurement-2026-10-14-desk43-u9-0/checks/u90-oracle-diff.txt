@@ -1,0 +1,12 @@
+# DESK43 U9-0 oracle (G2, U9-0c acceptance): U8b trace/SVCSEQ-u8b.LOG vs trace/SVCSEQ-u90.LOG, same injector schedule (inj-desk-seq.py), same plain card
+## lines/bytes
+     688   23752 measurement-2026-10-14-desk43-u8b/trace/SVCSEQ-u8b.LOG
+     688   23752 measurement-2026-10-14-desk43-u9-0/trace/SVCSEQ-u90.LOG
+    1376   47504 total
+## diff SVCSEQ
+## diff sequence-all
+## diff sequence-desktop-K-noresults
+## diff sequence-desktop-K-novdi-shape
+## seq screendumps
+seq t20: identical
+seq t45: identical

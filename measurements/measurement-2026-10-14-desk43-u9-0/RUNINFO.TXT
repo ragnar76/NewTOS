@@ -1,0 +1,97 @@
+measurement-2026-10-14-desk43-u9-0 -- DESK43 U9 prerequisites U9-0a (registry), U9-0b (PROC05 exit code), U9-0c (shell child
+slot + desktop-up key), U9-0d (T10 injector arming by program identity), per docs/analysis/desk43-u9-prep-2026-10-14.md §6
+and the decisions in TASK/DESK43.md ("U9-Vorbereitung entschieden"), TASK/PROC05.md ("Korrektur 2026-10-14"), TASK/T10.md.
+Developer run, base HEAD 7708a653 (clean tree; product code = U8b d7c5efa2) + the uncommitted U9-0 change. Host macOS,
+QEMU raspi4b + qemu-virt. No SD card, no Pi, nothing committed. 2026-10-14.
+
+WHAT CHANGED (no visible change intended except the exit code in the shell's serial line):
+  U9-0a  tos-api/src/bdos/process/registry.rs: lookup() compares the name up to the first NUL on both sides, exactly (no
+         case folding, decision REG-a); an empty name matches nothing; register() doc. +2 host tests (prep §4 list).
+         Today no runtime effect: the registry is empty at boot (kernel/src/embedded.rs EMBEDDED = &[]; the two
+         selftest_pexec* modules that register b"C" are not called from any boot path). accs.rs:210 passes a NUL-padded
+         [u8; 32] "C:\ACC\NAME.NAC" -- has a drive prefix, can never hit a registry name, before or after.
+  U9-0b  kernel/src/launch.rs run_program_with_tail_rc returns the child's exit code (UWORD zero-extended 0..65535,
+         Pterm(-1) -> 65535; load errors stay negative); run_program_with_tail = "ran" (rc >= 0). The kernel-launch branch
+         of finish_terminate (kernel/src/arch/aarch64/exceptions.rs) hands rc to launch::record_kernel_child_exit
+         (zero-extended via tos_api::bdos::process::pterm::parent_exit_code, so Ctrl-C's -32 -> 65504 as EmuTOS
+         xterm(UWORD)). sh_ldapp/sh_main decisions moved verbatim into tos_api::aes::shell::{is_bios_error,
+         sh_main_alert, sh_ldapp_result} (host-testable); +4 host tests tos-api/tests/proc05_shell_exit_code.rs. Spec:
+         docs/api/aes/shell-loop.md §8 "NewTOS implementation notes -- the child's exit code". newtos-gem PANIC_EXIT doc
+         comment (same line count, NAP byte-identical).
+  U9-0c  launch::shell_child_slot() (static SHELL_CHILD_SLOT, set right before the drop to EL0, cleared on return);
+         shell_loop.rs observe_desktop_gem_call key = is_desktop_caller(): shell child present -> Space::User and
+         running_slot() == child (the EL0 NEWDESK of U9); none -> Space::Kernel (today's built-in desktop / desk=kernel).
+         Line text and kprintln anchor byte-identical.
+  U9-0d  tools/inject-arm.py (new, reusable): patches a scratch tree with an IKBD injector armed per script on
+         identity events -- `desktop` (the kernel's desktop-up line), `launch:NAME` (launcher publishes a shell child named
+         NAME), `up:NAME` (that child's first evnt_multi after appl_init). Replaces the RUN.is_null() heuristic for new
+         runs; no existing measurement script touched.
+
+RESULT: rpi4 series 15/15, views 8/8, seq 2/2, HELLOGEM 8/8 screendumps BYTE-IDENTICAL to U8b; qemu-virt end screen
+BYTE-IDENTICAL; oracle (G2) SVCSEQ 688 lines/23752 bytes, 0 differences to U8b; APITEST 106/0/5 all modes; the shell line
+shows rc=65535 for the panic build (#Z on/off/strict and F1 from the desktop), rc=0 for HELLOGEM, no alert in any case.
+
+1. BASELINES (method/checks.sh u90 -> checks/u90-*; SOURCE_DATE_EPOCH=1791979200; summary checks/u90-checks-summary.txt)
+                                                    expected            measured
+   host tests tos-api tos-types xtask               1360/0/1 + new      1366/0/1 (+2 registry unit, +4 proc05)
+   release warnings rpi4 / qemu-virt                tos-api 64, kernel 94   64 / 94 both boards, 0 errors
+   clippy kernel rpi4 / qemu-virt / +selftest-desk  76 / 125            76 / 125 all three
+   desk drift probe TOTAL / UNSAFE                  4 / <= 20           4 / 20
+   emutos-consts                                    green               total=464 matched=332 mismatched=2 documented=2
+                                                                        undocumented=0 stale=0 no-counterpart=130 (= U8b)
+   SDK host tests                                   20/0/0              20/0/0
+   build-programs rpi4 / qemu-virt                  rc 0                rc 0, 0 warnings; NAPs 5b4f283c.. / 5cd0ac13.. =
+                                                                        U8b byte for byte
+   programs clippy (hello-gem, newtos-gem, desktop x3) 0                0; desktop without board fails at compile_error!
+   cite list                                        --                  fns=476 cited=315 newtos=5 uncited=156 (= U8b)
+   Rebuilt after the last (comment-only) edit: kernel8.img and the qemu-virt flat image are byte-identical to
+   bin/kernel8-u90.img / bin/kernel-virt-u90.img.
+
+2. QEMU RASPI4B SERIES (method/series.sh + run-rpi4.sh + mode.sh + qmp_timed.py + shotcmp.py, U8b copies; summarize.sh
+   compares with U8b; checks/u90-series-summary.txt). Kernel bin/kernel8-u90.img = product build of checks.sh; cards =
+   /tmp/m5j/u5b/cards (plain f30f360a.., apitest 4c903c52.., teradesk 43a75ede.., qed b4ad4d58.., private copy per run).
+     screendumps u90 vs U8b: on 5/5, off 5/5, strict 5/5 BYTE-IDENTICAL; desktop t25 0e6f7704...324b
+     APITEST TOTAL 106/0/5 all modes; result lines vs U8b: 0 differing (126 each); 0 [EXC]/PANIC
+     serial logs (hex-normalised) vs U8b: desktop, apitest, teradesk, qed in on/off/strict -- 0 differing lines
+     (rpi4 kernel size line unchanged).
+
+3. INJECTOR VIEWS with the NEW ARMING (method/views-run.sh: tools/inject-arm.py --tag u7v desktop=views.script;
+   views.script = U8b inj-desk-views.py's SCRIPT byte for byte, 147 bytes). checks/u90-views-summary.txt
+     views-u90 vs views-u8b: 8/8 BYTE-IDENTICAL. Feed schedule (byte, +offset) identical to U8b's 147 lines.
+     U8b's cell-metrics print hook was not added (no injector part).
+
+4. ORACLE G2 (U9-0c acceptance; method/seq-run.sh + inj-desk-seq.py, U8b copies, svc-seq-trace; checks/u90-oracle-diff.txt)
+     SVCSEQ-u90.LOG vs SVCSEQ-u8b.LOG: 688 lines / 23752 bytes both, diff EMPTY; sequence-all / -K-noresults /
+     -K-novdi-shape diff EMPTY; seq t20/t45 screendumps identical.
+
+5. HELLOGEM + PANIC BUILD (method/build-hg.sh, series-hellogem.sh, run-u6a.sh, drive-u6a.py, seed-u6a.sh;
+   checks/u90-hellogem-summary.txt). NAPs as build-programs builds them: HELLOGEM.NAP 5b4f283c.. (= U8b),
+   HGPANIC.NAP (+panic-test) 24600de4... Kernels with tools/inject-arm.py (tag u6a):
+     kernel8-inj-z.img   launch:HELLOGEM=ret.script launch:HGPANIC=ret.script
+     kernel8-inj-f1.img  desktop=f1.script + the same two
+   (= U8b inj-u6a.py's A/B arming; B now names its program, A is a separate kernel instead of "A only if no program ran").
+     #Z HELLOGEM on/off/strict, F1 HELLOGEM on: app+end screendumps 8/8 BYTE-IDENTICAL to U8b; serial verdict lines
+       (sh_ldapp/[launch]/[HELLOGEM]/desktop up) 0 differing; "exited with rc=0".
+     #Z HGPANIC on/off/strict and F1 HGPANIC on: "*** Rust panic at hello-gem/src/lib.rs:316 ..." then
+       "[shell] sh_ldapp: 'C:\HGPANIC.NAP' exited with rc=65535" (was rc=0 before U9-0b, measurement-2026-10-14-desk43-u6a),
+       no alert, desktop up; app and end screendumps = the clean desktop 0e6f7704.. (no alert on screen).
+     Identity check: in every #Z run only the arm of the program on the card fired (HELLOGEM vs HGPANIC); `desktop` fired
+       only in the F1 kernel; `launch:` armed at "slot Some(0) name <NAME>".
+
+6. up:NAME ON AN EL0 SHELL CHILD (method/teradesk-up.sh, nop.script = one zero-motion mouse packet):
+     scratch kernel up:DESKTOP + launch:DESKTOP (TeraDesk C:\Apps\TERADESK\DESKTOP.NAP); log: launch:DESKTOP armed at
+     hz_200 3025, up:DESKTOP armed at 3037 (its first evnt_multi after appl_init), both slot Some(0) name DESKTOP;
+     t35 screendump BYTE-IDENTICAL to U8b's u8b-on-rpi4-teradesk-t35.png.
+
+7. QEMU-VIRT BOOT (method/run-virt.sh + drive.py): bin/kernel-virt-u90.img, "[desk] desktop up (0 drives)", 0 [EXC];
+   end screendump = U8b's u8b-on-virt-desktop-end.png BYTE-IDENTICAL; serial log differs only in "[mm] kernel" size
+   (2424832 -> 2428928 bytes).
+
+8. NOT DONE: real Pi (not asked); memprot=verify / asid=on; self-test series (selftest-desk) -- the shared
+   finish_terminate branch now also records the exit code for the boot-time selftest launches (no consumer reads it
+   there); the old a78 TeraDesk/desktop runs were not re-driven (U8b views and HELLOGEM runs were, with the same marks).
+   No program with Pterm(1)/Pterm(0x12345) or a non-ELF #Z was run: those values are covered by the host tests only.
+
+Scratch: /tmp/m5j/u90 (-> /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/u90): src/ (make-scratch copy), tree-views-u90/,
+tree-u90/ (seq), tree-inj-z/, tree-inj-f1/, tree-tera/, card-{z,f1,zpanic,f1panic}.img. Repo-root kernel8.img (gitignored)
+overwritten by checks.sh. bin/*.img gitignored, sha256 in bin/SHA256SUMS; bin/*.NAP kept (as U6a/U6b/U8b).
