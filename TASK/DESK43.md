@@ -127,7 +127,8 @@ der Schnitt steht und der Anwender ihn gesehen hat.
 | U6b Bindungen + Bau | **fertig** 2026-10-14 (`df11e429`) — `newtos-gem`, `build-programs`, Einbettung mit hartem Fehler |
 | U8b Desktop-Bibliothek | **fertig** 2026-10-14 (`d7c5efa2`) — `programs/desktop/`, Umgehung = Compilerfehler |
 | U9-0 Voraussetzungen | **fertig** 2026-10-14 (`c04e2a05`) — Registry, PROC05, Shell-Kind-Slot, Injektor |
-| U9-1 … U10 | siehe U9-Reihenfolge unten |
+| U9-1/2 NEWDESK | **fertig** 2026-10-14 (`de03a50f`) — EL0-Desktop eingebettet, per `#Z` lauffaehig |
+| U9-3 … U10 | siehe U9-Reihenfolge unten |
 
 ## Hardware-Abnahme U3/U4 (2026-09-28)
 
