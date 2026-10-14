@@ -23,6 +23,7 @@ use super::Aespb;
 use crate::uaccess::{Space, UserFault};
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicBool, Ordering};
+use tos_types::gemdos::{DGETPATH, DSETDRV, DSETPATH, FDELETE};
 
 /// `MAXPATHLEN` (`include/sysconf.h:51-55`: `LEN_ZPATH + LEN_ZFNAME + 1`) —
 /// the size EmuTOS gives every fully-qualified path scratch buffer, from
@@ -101,15 +102,12 @@ pub fn set_gl_shgem(on: bool) {
 
 /// FAT `FA_SUBDIR` attribute bit (a directory, not a deletable file).
 const FA_SUBDIR: u8 = 0x10;
-/// GEMDOS `Fdelete` function id and the GEMDOS trap number, for building the
-/// `TrapArgs` `scrp_clear` hands to [`crate::bdos::fs::file::fdelete`].
-const FDELETE: u16 = 0x41;
+/// The GEMDOS trap number, for building the `TrapArgs` `scrp_clear` hands to
+/// [`crate::bdos::fs::file::fdelete`] (function id `FDELETE`) and the shell's
+/// `set_drvdir`/`sh_curdrvdir` drive (`DSETDRV`/`DSETPATH`/`DGETPATH`:
+/// `dos_sdrv`/`dos_chdir`/`dos_gdir`, `aes/gemdos.h`). The function ids are
+/// the shared set `tos_types::gemdos` (DESK43 U6b).
 const TRAP_GEMDOS: u16 = 1;
-/// GEMDOS function ids the shell's `set_drvdir`/`sh_curdrvdir` drive
-/// (`dos_sdrv`/`dos_chdir`/`dos_gdir`, `aes/gemdos.h`).
-const DSETDRV: u16 = 0x0E;
-const DSETPATH: u16 = 0x3B;
-const DGETPATH: u16 = 0x47;
 
 /// The `SHELL sh` structure (`gemshlib.c:76-83`) plus the AES globals the
 /// shell manager owns: `D.s_cmd` (the command of the program to run next),

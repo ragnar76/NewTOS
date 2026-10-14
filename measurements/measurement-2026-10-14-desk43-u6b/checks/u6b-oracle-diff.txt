@@ -1,0 +1,23 @@
+# DESK43 U6b oracle (G2): U8a run's trace/SVCSEQ-u8a.LOG vs trace/SVCSEQ-u6b.LOG, same injector schedule, same plain card
+## lines/bytes
+     688   23752 measurement-2026-10-14-desk43-u8a/trace/SVCSEQ-u8a.LOG
+     688   23752 measurement-2026-10-14-desk43-u6b/trace/SVCSEQ-u6b.LOG
+    1376   47504 total
+## diff SVCSEQ-u8a.LOG SVCSEQ-u6b.LOG
+509c509
+< K   XBIOS  #14 fn=0x10           -> 0xffff000000348d08
+---
+> K   XBIOS  #14 fn=0x10           -> 0xffff00000034ad08
+## diff sequence-all
+384c384
+< K XBIOS 0x10 -> 0xffff000000348d08
+---
+> K XBIOS 0x10 -> 0xffff00000034ad08
+## diff sequence-desktop-K-noresults
+## diff sequence-desktop-K-novdi-shape
+75c75
+< XBIOS 0x10 -> 0xffff000000348d08
+---
+> XBIOS 0x10 -> 0xffff00000034ad08
+## seq screendumps
+seq-u6b-rpi4- vs seq-u8a-rpi4-: same=2 diff=0 missing=0

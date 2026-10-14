@@ -28,9 +28,10 @@ use core::fmt::Write;
 
 use newtos_gem::aes::{self, Grect};
 use newtos_gem::{gemdos, heap::HeapStats, vdi, FixedBuf, HEAP};
+use tos_types::error::ERROR;
 
 /// Window parts: a title bar with closer, movable.
-const KIND: i16 = (aes::NAME | aes::CLOSER | aes::MOVER) as i16;
+const KIND: u16 = aes::NAME | aes::CLOSER | aes::MOVER;
 /// The window title (the AES keeps the pointer, so it is static).
 const TITLE: &core::ffi::CStr = c" HELLOGEM (Rust, EL0) ";
 
@@ -194,18 +195,18 @@ impl App {
             }
             r = aes::wind_get_grect(self.win, aes::WF_NEXTXYWH);
         }
-        vdi::vs_clip(self.vh, None);
+        vdi::vs_clip(self.vh, 0, [0; 4]);
         aes::graf_mouse(aes::M_ON);
         aes::wind_update(aes::END_UPDATE);
     }
 
     fn paint(&self, work: Grect, clip: Grect) {
         let h = self.vh;
-        vdi::vs_clip(h, Some(clip));
+        vdi::vs_clip(h, 1, vdi::grect_to_pxy(clip));
         vdi::vswr_mode(h, vdi::MD_REPLACE);
         vdi::vsf_interior(h, vdi::FIS_SOLID);
         vdi::vsf_color(h, vdi::WHITE);
-        vdi::vr_recfl(h, work);
+        vdi::vr_recfl(h, vdi::grect_to_pxy(work));
         vdi::vst_color(h, vdi::BLACK);
         vdi::vst_alignment(h, 0, 5); // left, top line
         for (i, l) in self.lines.iter().enumerate() {
@@ -226,14 +227,14 @@ pub unsafe extern "C" fn main(basepage: usize) -> i32 {
 
     let ap_id = aes::appl_init();
     if ap_id < 0 {
-        gemdos::cconws(c"[HELLOGEM] appl_init failed\r\n");
-        return gemdos::ERROR;
+        gemdos::dos_conws(c"[HELLOGEM] appl_init failed\r\n");
+        return ERROR;
     }
     let gh = aes::graf_handle();
     let Some(ws) = vdi::v_opnvwk(gh.handle) else {
-        aes::form_alert(1, c"[3][HELLOGEM: no VDI workstation][ Quit ]");
+        aes::form_alert(1, c"[3][HELLOGEM: no VDI workstation][ Quit ]".as_ptr().cast());
         aes::appl_exit();
-        return gemdos::ERROR;
+        return ERROR;
     };
 
     let run = heap_exercise();
@@ -283,12 +284,12 @@ pub unsafe extern "C" fn main(basepage: usize) -> i32 {
 
     let win = aes::wind_create(KIND, desk);
     if win <= 0 {
-        aes::form_alert(1, c"[3][HELLOGEM: no window free][ Quit ]");
+        aes::form_alert(1, c"[3][HELLOGEM: no window free][ Quit ]".as_ptr().cast());
         vdi::v_clsvwk(ws.handle);
         aes::appl_exit();
-        return gemdos::ERROR;
+        return ERROR;
     }
-    aes::wind_set_name(win, TITLE);
+    aes::wind_set_ptr(win, aes::WF_NAME, TITLE.as_ptr() as u64);
     aes::wind_open(win, outer);
     aes::graf_mouse(aes::ARROW);
 
@@ -297,7 +298,14 @@ pub unsafe extern "C" fn main(basepage: usize) -> i32 {
     let mut msg = [0i16; 8];
     let mut redraws = 0u32;
     let reason: String = loop {
-        let ev = aes::evnt_multi(aes::MU_MESAG | aes::MU_KEYBD | aes::MU_BUTTON, 1, 1, 1, 0, &mut msg);
+        let p = aes::EvntMulti {
+            flags: aes::MU_MESAG | aes::MU_KEYBD | aes::MU_BUTTON,
+            bclicks: 1,
+            bmask: 1,
+            bstate: 1,
+            ..aes::EvntMulti::default()
+        };
+        let ev = aes::evnt_multi(&p, msg.as_mut_ptr());
         if ev.which & aes::MU_MESAG != 0 && msg[3] == win {
             let r = Grect { x: msg[4], y: msg[5], w: msg[6], h: msg[7] };
             match msg[0] {
@@ -309,7 +317,7 @@ pub unsafe extern "C" fn main(basepage: usize) -> i32 {
                     }
                 }
                 aes::WM_TOPPED => {
-                    aes::wind_set_top(win);
+                    aes::wind_set_int(win, aes::WF_TOP, 0);
                 }
                 aes::WM_MOVED => {
                     aes::wind_set_grect(win, aes::WF_CXYWH, r);
@@ -319,7 +327,7 @@ pub unsafe extern "C" fn main(basepage: usize) -> i32 {
             }
         }
         if ev.which & aes::MU_KEYBD != 0 {
-            break format!("key 0x{:04x}", ev.key as u16);
+            break format!("key 0x{:04x}", ev.kret as u16);
         }
         if ev.which & aes::MU_BUTTON != 0 {
             break format!("click at {},{}", ev.mx, ev.my);
@@ -354,7 +362,7 @@ pub unsafe extern "C" fn main(basepage: usize) -> i32 {
     );
     drop(reason);
     drop(app);
-    gemdos::cconws(m.as_cstr());
+    gemdos::dos_conws(m.as_cstr());
     if run.ok {
         0
     } else {

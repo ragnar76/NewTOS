@@ -17,7 +17,7 @@
 //! compiled out of every `desk/*.c`, `deskact.c:19`, `deskapp.c:20`; DESK43
 //! decision D4), so these lines are the only text the desktop ever writes, and
 //! they go where a test program's go: to the GEMDOS console, through the trap
-//! ([`super::dosbind::dos_conout`]). The console is the serial line and the
+//! ([`newtos_gem::gemdos::cconout`]). The console is the serial line and the
 //! framebuffer; on the screen the lines land over the desktop, which a
 //! self-test build accepts. There is no kernel path in here — no `crate::`,
 //! no `kprintln` — so the runner moves with the desktop when it becomes a
@@ -26,7 +26,7 @@
 
 use core::fmt::{self, Write};
 
-use super::dosbind::dos_conout;
+use newtos_gem::gemdos::cconout;
 
 /// The console as a [`fmt::Write`] sink: every byte through `Cconout`, `\n`
 /// expanded to `\r\n` (the console is a VT52 terminal).
@@ -37,9 +37,9 @@ impl Write for ConOut {
     fn write_str(&mut self, s: &str) -> fmt::Result {
         for b in s.bytes() {
             if b == b'\n' {
-                dos_conout(b'\r');
+                cconout(b'\r');
             }
-            dos_conout(b);
+            cconout(b);
         }
         Ok(())
     }
@@ -49,8 +49,8 @@ impl Write for ConOut {
 // NEWTOS: self-test output; EmuTOS's desktop has no self-tests.
 pub(super) fn line(args: fmt::Arguments) {
     let _ = ConOut.write_fmt(args);
-    dos_conout(b'\r');
-    dos_conout(b'\n');
+    cconout(b'\r');
+    cconout(b'\n');
 }
 
 /// `println!` for the self-tests — formats into [`line`].

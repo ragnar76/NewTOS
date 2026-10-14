@@ -22,8 +22,8 @@
 //! at EL1 and calls the AES/VDI directly (never through the `svc` path), so
 //! hooking the EL0 handler naturally traces only the app"*. **That has been
 //! false since DESK10.** The built-in desktop reaches the AES through
-//! [`crate::desk`]'s `gem_trap` (`svc #2`) and GEMDOS through
-//! [`crate::desk::dosbind`]'s `dos_trap` (`svc #1`) — the same two instructions
+//! `newtos_gem::aes` (`svc #2`) and GEMDOS through `newtos_gem::gemdos`
+//! (`svc #1`; DESK43 U6b, before that `crate::desk`) — the same two instructions
 //! an application uses; it was simply not recorded, because its `svc` is taken
 //! at EL1. The gate was widened for
 //! `docs/analysis/desktop-userspace-plan-v2.md` §5 U1, whose whole purpose is

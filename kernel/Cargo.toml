@@ -93,4 +93,12 @@ usb-diag = []
 [dependencies]
 tos-types = { path = "../tos-types" }
 tos-api   = { path = "../tos-api" }
+# The trap bindings (GEMDOS/AES/VDI/XBIOS) the built-in desktop calls the
+# system through -- the same crate native Rust programs link (DESK43 U6b,
+# docs/analysis/desk43-u5-u10-review-2026-10-14.md §3.2). A path dependency
+# into the separate `programs/` workspace (excluded from this one): cargo
+# builds it as a non-member path package with this workspace's profile and
+# target. Without its `rt` feature: the kernel keeps its own allocator and
+# panic handler.
+newtos-gem = { path = "../programs/newtos-gem", default-features = false }
 xhci = "0.9.2"

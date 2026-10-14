@@ -34,7 +34,7 @@ use tos_types::aes::{
     TOUCHEXIT,
 };
 
-use super::dosbind::{dos_gdrv, dos_sdrv};
+use newtos_gem::gemdos::{dos_gdrv, dos_sdrv};
 use super::global::{self, gl_hchar, gl_wchar, Anode, AF_ISEXEC, DROOT};
 use super::icons::{build_iconblk, icon_kind, ig_of, IconKind, BUILTIN_ICONS, IG_HARD};
 use super::inf::{disk_label, end_dialog, mk_root, start_dialog, BOX_SPEC, TED_COLOR};

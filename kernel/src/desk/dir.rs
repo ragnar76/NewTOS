@@ -5,7 +5,7 @@
 //!
 //! Reimplements EmuTOS `deskdir.c` (the recursive copy/move/delete/rename
 //! subtree walker) and the `deskfun.c` action layer in idiomatic `#![no_std]`
-//! Rust on top of the GEMDOS trap ([`super::dosbind`]).
+//! Rust on top of the GEMDOS trap ([`newtos_gem::gemdos`]).
 //!
 //! ## What is contract, what is free (`docs/COMPATIBILITY.md`)
 //!
@@ -56,7 +56,7 @@ use tos_types::aes::{
 };
 use tos_types::error::E_OK;
 
-use super::dosbind::{
+use newtos_gem::gemdos::{
     dos_close, dos_create, dos_delete, dos_gdrv, dos_mkdir, dos_open, dos_read, dos_rename,
     dos_rmdir, dos_sdta, dos_setdt, dos_sfirst, dos_snext, dos_write,
 };
@@ -202,8 +202,8 @@ fn scan_folder(dir: &str) -> Vec<RawEntry> {
     spec.push_str("*.*");
 
     // The DTA the search writes into. It is a kernel-stack buffer, and the
-    // trap keeps it in the process-less caller's DTA cell (`dosbind`'s module
-    // documentation, "What the trap changes"); `dos_sdta` must therefore be
+    // trap keeps it in the process-less caller's DTA cell (`newtos_gem::gemdos`'s
+    // module documentation, "What the trap changes"); `dos_sdta` must therefore be
     // re-issued for every scan, exactly as EmuTOS re-points `G.g_wdta`
     // (`deskdir.c:195-196`).
     let mut dta = [0u8; 44];

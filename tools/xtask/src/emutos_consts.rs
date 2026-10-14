@@ -32,8 +32,9 @@
 //!
 //! The AES/object constants the desktop uses (`G_*`, `ob_flags`/`ob_state`,
 //! `WF_*`, `WM_*`, `MU_*`, …) are no longer copied into the desktop: since
-//! DESK43 U5b they have one home, [`SHARED_SETS`] (`tos-types/src/aes.rs`),
-//! which the AES, the desktop and native programs import. The check scans
+//! DESK43 U5b they have one home, [`SHARED_SETS`] (`tos-types/src/aes.rs`;
+//! since U6b also the trap bindings in `programs/newtos-gem`), which the AES,
+//! the desktop and native programs import. The check scans
 //! those files together with the desktop, so moving a constant out of the
 //! desktop into the shared set does not take it out of the comparison.
 //!
@@ -53,7 +54,18 @@ pub const SNAPSHOT: &str = "tools/xtask/emutos-defines.snapshot";
 pub const DEVIATIONS: &str = "tools/xtask/emutos-consts-deviations.txt";
 /// The shared constant sets the desktop imports instead of declaring (DESK43
 /// U5b), relative to the workspace root; scanned together with the desktop.
-pub const SHARED_SETS: &[&str] = &["tos-types/src/aes.rs"];
+/// Since DESK43 U6b that includes the trap bindings' constants: the opcodes
+/// (`APPL_INIT`, `POLYLINE`, …), modes and colours the desktop's bindings
+/// declared moved with them to `programs/newtos-gem`, and the GEMDOS function
+/// numbers to `tos-types/src/gemdos.rs`.
+pub const SHARED_SETS: &[&str] = &[
+    "tos-types/src/aes.rs",
+    "tos-types/src/gemdos.rs",
+    "programs/newtos-gem/src/aes.rs",
+    "programs/newtos-gem/src/gemdos.rs",
+    "programs/newtos-gem/src/vdi.rs",
+    "programs/newtos-gem/src/xbios.rs",
+];
 /// The EmuTOS files the snapshot covers (directory, file suffix), relative to
 /// `references/emutos/`. Every header the desktop's citations name lives here
 /// (`include/sysconf.h`, `desk/desk_rsc.h`, `aes/*.h`, …) plus the `#define`s

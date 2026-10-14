@@ -16,9 +16,11 @@ programs/
 ├── .cargo/config.toml    target aarch64-unknown-none-softfloat,
 │                         -C relocation-model=pic, target-dir ../target/programs
 ├── build.sh              crt0.o + cargo staticlib + rust-lld -> <name>.NAP
-├── newtos-gem/           runtime crate: gemdos / aes / vdi trap bindings,
-│                         heap (GlobalAlloc over GEMDOS Malloc hunks),
-│                         panic handler (Cconws report, Pterm(-1))
+├── newtos-gem/           runtime crate: gemdos / aes / vdi / xbios trap
+│                         bindings (since U6b the only copy -- the kernel
+│                         desktop links them too), and with feature `rt`
+│                         (default) the heap (GlobalAlloc over GEMDOS Malloc
+│                         hunks) and the panic handler (Cconws, Pterm(-1))
 └── hello-gem/            HELLOGEM.NAP, the U6a spike (window, heap test,
                           stack measurement, `--features panic-test`)
 ```
@@ -26,6 +28,9 @@ programs/
 ## Build
 
 ```
+cargo xtask build-programs --board rpi4             # every program, board feature on,
+cargo xtask build-programs --board qemu-virt        #   -> target/programs/<board>/*.NAP
+cargo xtask build --board rpi4 [--release]          # build-programs first, then the kernel
 programs/build.sh                                   # -> target/programs/HELLOGEM.NAP
 programs/build.sh hello-gem /path/HELLOGEM.NAP
 programs/build.sh hello-gem /path/HGPANIC.NAP -- --features panic-test
@@ -39,10 +44,28 @@ flags; `cargo build -p <crate> --release` in `programs/` (release profile:
 -z max-page-size=0x1000 --build-id=none crt0.o lib<crate>.a`, the link line
 of `sdk/build.sh`.
 
-The kernel build never sees this directory (excluded from the root
-workspace; its artefacts go to the ignored `target/programs/`). Nothing is
-embedded in the kernel yet — the blob embedding and `xtask build-programs`
-with board pass-through are U6b.
+`cargo xtask build-programs --board <b>` (DESK43 U6b) runs `build.sh` for
+every program in its `PROGRAMS` table (`tools/xtask/src/main.rs`) with
+`-- --features board-<b>` and writes `target/programs/<b>/<NAME>.NAP`. The
+board feature is the X03 pass-through: the desktop's About-box machine line
+is a per-board build constant, so a separately built desktop needs the board
+as the kernel has it. **Every program declares `board-rpi4` and
+`board-qemu-virt`** (cargo refuses an unknown feature; the host test
+`programs_tests` checks the table and the features).
+
+The programs workspace is still separate (root `Cargo.toml`
+`exclude = ["programs"]`), but the kernel depends on `newtos-gem` by path
+(`default-features = false`: the bindings without `rt`): the kernel desktop
+calls the system through the same bindings a program does. Cargo builds it
+as a non-member path package with the kernel's profile and target.
+
+**Embedding (decision D3).** `cargo xtask build` builds the board's programs
+first; `kernel/build.rs` embeds the ones listed in `kernel/embed.rs` from
+`target/programs/<board>/` (one `include_bytes!` each, registered under their
+registry name at boot, `kernel/src/embedded.rs`) and **stops with a hard
+error** when a listed program has not been built. At U6b the list is empty —
+the desktop program (`NEWDESK`) arrives with U9; nothing is embedded and
+nothing changes at boot.
 
 ## Writing a program
 

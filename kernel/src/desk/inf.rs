@@ -35,12 +35,12 @@ use tos_types::aes::{
 use tos_types::error::EFILNF;
 use tos_types::Long;
 
-use super::dosbind::{dos_close, dos_create, dos_gdrv, dos_open, dos_read, dos_sdrv, dos_write};
+use newtos_gem::gemdos::{dos_close, dos_create, dos_gdrv, dos_open, dos_read, dos_sdrv, dos_write};
 use super::global::{self, gl_hchar, gl_wchar, Anode, DeskStatic, WSave, AF_ISEXEC, NUM_WNODES};
 use super::icons;
 use super::model::{AType, DateFmt, DateOrder, Sort, TimeFmt, View};
 
-// ── GEMDOS file access (through the trap, [`super::dosbind`]) ────────────
+// ── GEMDOS file access (through the trap, [`newtos_gem::gemdos`]) ────────
 
 /// The desktop configuration file, on the boot drive's root (EmuTOS keeps its
 /// own `EMUDESK.INF` here; NewTOS uses the Atari-classic `NEWDESK.INF` name the
@@ -3035,9 +3035,9 @@ pub(super) fn inf_disk(dr_id: u8) -> i16 {
         return 1; // `if (!more) { desk_busy_off(); return 1; }`
     };
     let drv = (dr_id - b'A' + 1) as i16; // `dos_space`/`dos_label` are 1-based
-    let (_total, avail) = super::dosbind::dos_space(drv);
+    let (_total, avail) = newtos_gem::gemdos::dos_space(drv);
     super::pro::desk_busy_off();
-    let label = super::dosbind::dos_label(drv).unwrap_or_default();
+    let label = newtos_gem::gemdos::dos_label(drv).unwrap_or_default();
 
     // ── strings: `ADDISKIN`'s own (`desk_rsc.c:711-768`) and the templates of
     //    `desk_rs_tedinfo[6..11]` (`:76-93`), character for character.
@@ -3357,7 +3357,7 @@ pub(super) fn inf_file_folder(ppath: &str, pf: &mut super::dir::FileInfo) -> i16
             if attr != pf.attr {
                 let mut src = String::from(ppath);
                 src.push_str(old_s);
-                super::dosbind::dos_chmod(&src, super::dosbind::F_SETMOD, attr);
+                newtos_gem::gemdos::dos_chmod(&src, newtos_gem::gemdos::F_SETMOD, attr);
                 pf.attr = attr;
                 changed = true;
             }
@@ -3458,7 +3458,7 @@ fn inf_what(tree: &mut [Object], ok: usize) -> i16 {
 /// and `Default` means "take the format from the `_IDT` cookie", which was out
 /// of the desktop's reach. DESK13 supplied all three — [`super::dir::dir_op`]'s
 /// confirmation box, `output_fname`'s name-conflict dialog, and the cookie read
-/// through GEMDOS `Ssystem` ([`super::dosbind::dos_getcookie`]) — so the fields
+/// through GEMDOS `Ssystem` ([`newtos_gem::gemdos::dos_getcookie`]) — so the fields
 /// are back, and no control in this box is dead.
 ///
 /// Note what is **not** needed any more: DESK02 had to pre-select through
@@ -4164,9 +4164,9 @@ pub(super) fn inf_conf() {
     {
         let mut work = [b' '; FREMEM_LEN - 1];
         let mut p = 0usize;
-        push_dec(&mut work, &mut p, (super::dosbind::dos_avail_stram() / 1024) as u64);
+        push_dec(&mut work, &mut p, (newtos_gem::gemdos::dos_avail_stram() / 1024) as u64);
         push_str(&mut work, &mut p, b" KB");
-        let alt = super::dosbind::dos_avail_altram();
+        let alt = newtos_gem::gemdos::dos_avail_altram();
         if alt > 0 {
             push_str(&mut work, &mut p, b" + ");
             push_dec(&mut work, &mut p, (alt / 1024) as u64);

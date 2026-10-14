@@ -66,8 +66,8 @@ pub(super) fn desk_busy_off() {
 pub(super) fn set_default_path(path: &str) -> tos_types::Long {
     desk_busy_on();
     let drive = path.as_bytes().first().copied().unwrap_or(0);
-    super::dosbind::dos_sdrv(drive as i16 - b'A' as i16);
-    let rc = super::dosbind::dos_chdir(path);
+    newtos_gem::gemdos::dos_sdrv(drive as i16 - b'A' as i16);
+    let rc = newtos_gem::gemdos::dos_chdir(path);
     desk_busy_off();
     rc
 }

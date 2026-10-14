@@ -1,0 +1,32 @@
+   Compiling proc-macro2 v1.0.106
+   Compiling unicode-ident v1.0.24
+   Compiling quote v1.0.46
+   Compiling syn v1.0.109
+   Compiling autocfg v1.5.1
+   Compiling paste v1.0.15
+   Compiling tos-api v0.5.0 (/Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/u6b/embed/tree-embed/tos-api)
+   Compiling tos-types v0.5.0 (/Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/u6b/embed/tree-embed/tos-types)
+   Compiling kernel v0.5.0 (/Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/u6b/embed/tree-embed/kernel)
+   Compiling accessor v0.3.3
+   Compiling bit_field v0.10.3
+   Compiling num-traits v0.2.19
+   Compiling newtos-gem v0.1.0 (/Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/u6b/embed/tree-embed/programs/newtos-gem)
+error: failed to run custom build command for `kernel v0.5.0 (/Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/u6b/embed/tree-embed/kernel)`
+
+Caused by:
+  process didn't exit successfully: `/Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/u6b/embed/tree-embed/target/release/build/kernel-7712db79899a8054/build-script-build` (exit status: 101)
+  --- stdout
+  cargo:rerun-if-changed=/Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/u6b/embed/tree-embed/kernel/src/arch/aarch64/link-rpi4.ld
+  cargo:rerun-if-changed=build.rs
+  cargo:rustc-link-arg=-T/Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/u6b/embed/tree-embed/kernel/src/arch/aarch64/link-rpi4.ld
+  cargo:rerun-if-changed=/Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/u6b/embed/tree-embed/kernel/embed.rs
+  cargo:rerun-if-changed=/Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/u6b/embed/tree-embed/target/programs/rpi4/HELLOGEM.NAP
+
+  --- stderr
+
+  thread 'main' (5464714) panicked at kernel/build.rs:47:21:
+  kernel build: the kernel image embeds programs that have not been built for board `rpi4`:
+    /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/u6b/embed/tree-embed/target/programs/rpi4/HELLOGEM.NAP
+  Build them first: `cargo xtask build-programs --board rpi4` (`cargo xtask build` does this itself).
+  note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+warning: build failed, waiting for other jobs to finish...

@@ -451,8 +451,8 @@ fn sync_handler(frame: &mut ExceptionFrame) {
     // tested `SPSR.M[3:0] == 0` until DESK43/U1, on the stated grounds that
     // "the desktop runs at EL1 and never reaches here"; those grounds have been
     // wrong since DESK10 — the built-in desktop issues the same two
-    // instructions an application does (`svc #2`, `crate::desk`'s `gem_trap`;
-    // `svc #1`, `crate::desk::dosbind`'s `dos_trap`), so an EL0-only gate silently
+    // instructions an application does (`svc #2` and `svc #1` through the
+    // `newtos_gem` bindings, DESK43 U6b), so an EL0-only gate silently
     // excluded the one caller whose call sequence has to be diffable against
     // `desk/deskmain.c` (`docs/analysis/desktop-userspace-plan-v2.md` §5 U1 and
     // measure 4 of §6.4). `pre_dispatch` flushes the RAM trace to C: at each

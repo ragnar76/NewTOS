@@ -1,6 +1,9 @@
-//! `desk::vdibind` — the VDI trap binding, the third and last of the
-//! desktop's system interfaces next to [`super`]'s aesbind (`svc #2`,
-//! selector 200) and [`super::dosbind`] (`svc #1`).
+//! `desk::vdibind` — the desktop's use of the VDI, the third of its system
+//! interfaces next to the AES (`svc #2`, selector 200) and GEMDOS (`svc #1`).
+//! The trap bindings themselves are [`newtos_gem::vdi`] (DESK43 U6b moved them
+//! out of this file); what stays here is desktop logic on top of them — the
+//! workstation handle the desktop learned, the small-font query, and the
+//! `gsx_*` drawing helpers EmuTOS's ROM desktop borrows from the AES.
 //!
 //! **Why the desktop needs the VDI at all.** Exactly one desktop gesture
 //! draws without going through an object tree: the drag outline
@@ -33,84 +36,19 @@
 
 use core::sync::atomic::{AtomicI16, Ordering};
 
+use newtos_gem::vdi;
+
 use super::global::Point;
 use tos_types::aes::Grect;
 
-// VDI opcodes (`tos-api/src/vdi/mod.rs` dispatch table).
-const OP_V_PLINE: i16 = 6;
-const OP_VST_HEIGHT: i16 = 12;
-const OP_VSL_COLOR: i16 = 17;
-const OP_VQT_ATTRIBUTES: i16 = 38;
-const OP_VQ_EXTND: i16 = 102;
-const OP_VSWR_MODE: i16 = 32;
-const OP_VSL_UDSTY: i16 = 113;
-const OP_VS_CLIP: i16 = 129;
-
-/// `MD_XOR` (`include/aesdefs.h`) = 3. `gsx_attr` passes the AES's `MD_*`
-/// number straight into the VDI's `SET_WRITING_MODE`
-/// (`aes/gemgraf.c:211-212`), and the VDI's `vswr_mode` numbering is the same
-/// one: 1 replace, 2 transparent, **3 XOR**, 4 reverse transparent
-/// (`tos-api/src/vdi/attributes.rs:32-42`).
-pub(super) const MD_XOR: i16 = 3;
-/// `BLACK` (`obdefs.h:44`) — the pen `gr_bwait` complements with.
-pub(super) const BLACK: i16 = 1;
 /// A solid 16-bit user line-style mask (`aes/gemgraf.c:162,421`).
-const SOLID_MASK: i16 = -1; // 0xffff
+const SOLID_MASK: u16 = 0xffff;
 
 /// The AES's workstation handle as the desktop learned it from
 /// `graf_handle` (`deskmain.c:1956`'s `gl_handle`), or 0 while it has not
 /// been asked yet. Set by [`set_handle`] at the start of every `deskmain`
 /// run and cleared by [`reset`] when the AES is restarted under us.
 static HANDLE: AtomicI16 = AtomicI16::new(0);
-
-/// Issue the VDI trap (`svc #2`): selector 115 in `x0`, the five-pointer VDI
-/// parameter block in `x1` (`kernel/src/arch/aarch64/exceptions.rs:382`).
-fn vdi_trap(vdipb: u64) {
-    // SAFETY: VDI trap; results are written back into the parameter block.
-    unsafe {
-        core::arch::asm!(
-            "svc #2",
-            inout("x0") 115u64 => _,
-            in("x1") vdipb,
-            options(nostack),
-        );
-    }
-}
-
-/// A reusable VDI parameter block. [`Vdi::call`] lays the four `CONTRL`
-/// words every VDI binding writes — opcode, `PTSIN` vertex count, `INTIN`
-/// word count, workstation handle — and traps.
-struct Vdi {
-    contrl: [i16; 12],
-    intin: [i16; 16],
-    ptsin: [i16; 4],
-    intout: [i16; 45],
-    ptsout: [i16; 12],
-}
-
-impl Vdi {
-    fn new() -> Self {
-        Self { contrl: [0; 12], intin: [0; 16], ptsin: [0; 4], intout: [0; 45], ptsout: [0; 12] }
-    }
-
-    /// `contrl[0] = opcode; contrl[1] = n_pts; contrl[3] = n_int;
-    /// contrl[6] = handle` — the VDI calling convention (`vdi_main.c`).
-    fn call(&mut self, op: i16, n_pts: i16, n_int: i16, handle: i16) {
-        self.contrl = [0; 12];
-        self.contrl[0] = op;
-        self.contrl[1] = n_pts;
-        self.contrl[3] = n_int;
-        self.contrl[6] = handle;
-        let block: [u64; 5] = [
-            self.contrl.as_ptr() as u64,
-            self.intin.as_ptr() as u64,
-            self.ptsin.as_ptr() as u64,
-            self.intout.as_ptr() as u64,
-            self.ptsout.as_ptr() as u64,
-        ];
-        vdi_trap(block.as_ptr() as u64);
-    }
-}
 
 /// The AES's workstation handle `gl_handle`, as [`set_handle`] recorded it
 /// from `deskmain`'s `graf_handle` (`deskmain.c:1956`).
@@ -166,26 +104,13 @@ pub(super) fn small_font_cell() -> (i16, i16) {
     if h <= 0 {
         return (0, 0);
     }
-    let mut v = Vdi::new();
-    v.intin[0] = 0;
-    v.call(OP_VQ_EXTND, 0, 1, h);
-    let ws_chminh = v.ptsout[1];
-
-    let mut v = Vdi::new();
-    v.call(OP_VQT_ATTRIBUTES, 0, 0, h);
-    let ws_chmaxh = v.ptsout[1];
-
-    let mut v = Vdi::new();
-    v.ptsin[0] = 0;
-    v.ptsin[1] = ws_chminh;
-    v.call(OP_VST_HEIGHT, 1, 0, h);
-    let cell = (v.ptsout[2], v.ptsout[3]);
-
-    let mut v = Vdi::new();
-    v.ptsin[0] = 0;
-    v.ptsin[1] = ws_chmaxh;
-    v.call(OP_VST_HEIGHT, 1, 0, h);
-    cell
+    // `work_out[46]` = `PTSOUT[1]` = `SIZ_TAB[1]`, the minimum char height.
+    let ws_chminh = vdi::vq_extnd(h, 0)[46];
+    // `attrib[7]` = `PTSOUT[1]`, the current char height.
+    let ws_chmaxh = vdi::vqt_attributes(h)[7];
+    let small = vdi::vst_height(h, ws_chminh);
+    vdi::vst_height(h, ws_chmaxh);
+    (small.cell_w, small.cell_h)
 }
 
 /// `gsx_sclip(pt)` (`aes/gemgraf.c:91-105`) — set the workstation clip
@@ -195,14 +120,8 @@ pub(super) fn gsx_sclip(r: Grect) {
     if h <= 0 {
         return;
     }
-    let mut v = Vdi::new();
     let on = r.w != 0 && r.h != 0;
-    v.intin[0] = i16::from(on);
-    v.ptsin[0] = r.x;
-    v.ptsin[1] = r.y;
-    v.ptsin[2] = r.x + r.w - 1;
-    v.ptsin[3] = r.y + r.h - 1;
-    v.call(OP_VS_CLIP, 2, 1, h);
+    vdi::vs_clip(h, i16::from(on), vdi::grect_to_pxy(r));
 }
 
 /// `gsx_attr(FALSE, mode, color)` (`aes/gemgraf.c:201-240`) — the writing
@@ -218,12 +137,8 @@ pub(super) fn gsx_attr_line(mode: i16, color: i16) {
     if h <= 0 {
         return;
     }
-    let mut v = Vdi::new();
-    v.intin[0] = mode;
-    v.call(OP_VSWR_MODE, 0, 1, h);
-    let mut v = Vdi::new();
-    v.intin[0] = color;
-    v.call(OP_VSL_COLOR, 0, 1, h);
+    vdi::vswr_mode(h, mode);
+    vdi::vsl_color(h, color);
 }
 
 /// `gsx_pline(offx, offy, cnt, pts)` (`aes/gemgraf.c:170-182`) — draw the
@@ -247,7 +162,6 @@ pub(super) fn gsx_pline(offx: i16, offy: i16, pts: &[Point]) {
     /// `verttbl` (`:143`) — phase by the x/y parity pair of a vertical one.
     const VERTTBL: [u16; 4] = [0x5555, 0xaaaa, 0xaaaa, 0x5555];
 
-    let mut v = Vdi::new();
     for seg in pts.windows(2) {
         let (x0, y0) = (offx + seg[0].x, offy + seg[0].y);
         let (x1, y1) = (offx + seg[1].x, offy + seg[1].y);
@@ -259,14 +173,8 @@ pub(super) fn gsx_pline(offx: i16, offy: i16, pts: &[Point]) {
             let ly = if x0 < x1 { y0 } else { y1 };
             HZTLTBL[(ly & 1) as usize]
         };
-        v.intin[0] = st as i16;
-        v.call(OP_VSL_UDSTY, 0, 1, h);
-        v.ptsin[0] = x0;
-        v.ptsin[1] = y0;
-        v.ptsin[2] = x1;
-        v.ptsin[3] = y1;
-        v.call(OP_V_PLINE, 2, 0, h);
+        vdi::vsl_udsty(h, st);
+        vdi::v_pline(h, &[x0, y0, x1, y1]);
     }
-    v.intin[0] = SOLID_MASK;
-    v.call(OP_VSL_UDSTY, 0, 1, h);
+    vdi::vsl_udsty(h, SOLID_MASK);
 }

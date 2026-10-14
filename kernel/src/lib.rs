@@ -63,6 +63,7 @@ pub mod selftest_etv_term;
 pub mod accs;
 pub mod aes_demo;
 pub mod desk;
+pub mod embedded;
 pub mod launch;
 pub mod shell_loop;
 pub mod selftest_gemtrap;
@@ -504,6 +505,11 @@ extern "C" fn kernel_main_rust(dtb_phys: usize, entry_el: u64) -> ! {
     // No-op until the boot drive has an \AUTO\ folder with programs; an
     // invalid/empty .PRG fails the load gracefully (no fault).
     launch::run_auto_folder();
+
+    // The programs the kernel image carries (DESK43 D3, `crate::embedded`):
+    // into the program registry before anything can `Pexec` them, as
+    // EmuTOS' ROM desktop is there before the AES starts. Empty until U9.
+    embedded::register();
 
     // The AES starts — EmuTOS `exec_os` after `autoexec` (`bios/bios.c:
     // 855-866`): from here on the kernel's `run` is the AES PD, the parent and

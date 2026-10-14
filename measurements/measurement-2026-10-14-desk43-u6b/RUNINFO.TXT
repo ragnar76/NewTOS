@@ -1,0 +1,105 @@
+measurement-2026-10-14-desk43-u6b -- DESK43 unit U6b "newtos-gem + build coupling" (docs/analysis/desk43-u5-u10-review-2026-10-14.md
+§3.2 row U6b, §5 toolchain T1 + load form E, §6 X03 row, §7.4/2; decision D3 in TASK/DESK43.md). Developer run, base HEAD cfb6a238
+(clean tree) + the uncommitted U6b change. Host macOS, QEMU raspi4b + qemu-virt. No SD card, no Pi, nothing committed. 2026-10-14.
+
+WHAT CHANGED (no change on screen intended): the kernel desktop's trap bindings live in programs/newtos-gem and the kernel desktop
+calls them from there (path dependency kernel -> programs/newtos-gem, default-features = false).
+  - newtos-gem: aes.rs = the aesbind of desk/mod.rs merged with the U6a calls (EmuTOS opcode names APPL_INIT.. from aesdefs.h, once;
+    each binding with the desktop's exact control[] counts -- graf_mouse now EmuTOS's (1,1,1), see 4); gemdos.rs = desk/dosbind.rs
+    (EmuTOS gemdos.h names; Cconout = cconout, Cconws = dos_conws, Mfree = dos_free; function ids tos_types::gemdos, errors
+    tos_types::error); vdi.rs = the trap half of desk/vdibind.rs + U6a (EmuTOS aes/funcdef.h names POLYLINE..); xbios.rs =
+    desk/xbiosbind.rs (keytbl). Feature `rt` (default) gates the global allocator + panic handler; the kernel links without it.
+  - kernel/src/desk: dosbind.rs and xbiosbind.rs deleted; mod.rs imports the AES bindings (call sites unchanged) and keeps only
+    desktop-shaped helpers; vdibind.rs keeps the desktop's gsx_* logic over newtos_gem::vdi.
+  - tos_types::gemdos (new): the GEMDOS function numbers, also used by tos-api/src/aes/shell.rs (its private copies gone).
+  - Build coupling: `cargo xtask build-programs --board <b>` (programs/build.sh per program, `--features board-<b>`, output
+    target/programs/<b>/); `cargo xtask build` runs it first. kernel/build.rs + kernel/embed.rs generate the embedded-program table
+    (include_bytes! per entry from target/programs/<board>/, hard build error when missing); kernel/src/embedded.rs registers it
+    at boot. The list is EMPTY at U6b (NEWDESK arrives with U9) -> nothing embedded, nothing registered.
+  - Host tests (new, 10): kernel/embed.rs tests (6, via xtask by path) and tools/xtask/src/programs_tests.rs (4: every program
+    is in PROGRAMS and declares both board features; the build command passes the board feature; desktop vs boot-screen
+    version/notice/machine strings agree; the string scanner).
+
+RESULT: 0 pixel change on every screen reached (rpi4 series 15/15, views 8/8, seq 2/2, qemu-virt 1/1 byte-identical to U8a); the
+call sequence is U8a's, the only difference the Keytbl return address (.bss moved, kernel +8 KiB); APITEST 106/0/5 in all modes;
+HELLOGEM runs as in U6a (same window image, same result line); clean-target builds byte-identical to the shared-tree builds;
+the embedding mechanism proven end to end on a scratch copy (hard error, then the NAP byte-for-byte in kernel8.img).
+
+1. BASELINES (method/checks.sh u6b -> checks/u6b-*; SOURCE_DATE_EPOCH=1791979200)
+                                                                   expected      measured
+   host tests tos-api tos-types xtask                              1347/0/1+new  1357/0/1 (+10 new, see above)
+   release warnings rpi4 / qemu-virt (tos-api/kernel)              64/94         64/94 both, 0 errors; per-file identical to U8a
+   clippy rpi4 / qemu-virt (tos-api/kernel)                        76/125        76/125 both; per-file identical to U8a
+                                                                                 (checks/u6b-clippy-distribution.txt); with
+                                                                                 selftest-desk also 76/125
+   newtos-gem as kernel dependency: 0 rustc warnings (no line in the build logs)
+   programs/ clippy --release (hello-gem + newtos-gem), newtos-gem --no-default-features: 0 / 0 warning lines
+   desk drift probe v2 TOTAL / UNSAFE                              4 / <=24      4 (A 0, B 0, C 4, D 0) / 20 (baseline lowered to 20)
+   cargo xtask emutos-consts (snapshot EmuTOS 1a7484ab)            green         total=464 matched=332 mismatched=2 documented=2
+                                                                                 undocumented=0 stale=0 no-counterpart=130
+                                                                                 (U8a: 448/281/2/2/0/0/165; the bindings' constants
+                                                                                 are scanned in their new homes, SHARED_SETS)
+   SDK host tests                                                  20/0/0        20/0/0
+   build-programs rpi4 / qemu-virt                                 --            rc 0 / 0, 0 warnings; NAP sha256 5b4f283c.. /
+                                                                                 5cd0ac13.. (bin/SHA256SUMS; differ only by
+                                                                                 feature-dependent symbol hashes)
+   desk-cite-list (u6b-cite-list.txt, u6b-cite-since-base.txt)     --            477/315/5/157; since cfb6a238 26/23/2/1
+
+2. QEMU RASPI4B SERIES (method/series.sh + run-rpi4.sh + mode.sh + qmp_timed.py + shotcmp.py, copied from U8a; summarize.sh
+   adapted to compare with U8a; checks/u6b-series-summary.txt). Kernel bin/kernel8-u6b.img; cards = private copies of
+   /tmp/m5j/u5b/cards (as U5b/U7/U8a), each run on a fresh copy. memprot on/off/strict x desktop t25, APITEST t25/t40,
+   TeraDesk t35, QED t30 = 12 runs, 0 [EXC]/PANIC.
+     screendumps u6b vs U8a run u8a-<mode>-rpi4-*: on 5/5, off 5/5, strict 5/5 BYTE-IDENTICAL; desktop t25 0e6f7704...324b
+     APITEST TOTAL 106/0/5 in all three modes; [OK]/[FAIL]/[SKIP] lines (126, modulo hex) u6b vs U8a: 0 differing
+     desktop serial log vs U8a (hex-normalised): one line per mode, "[mm] kernel ... (2465792 -> 2473984 bytes)"
+
+3. SCREENS THAT EXERCISE THE BINDINGS (method/views-run.sh + inj-desk-views.py, U8a copies; only the optional metrics-print anchor
+   follows graf_handle's struct). Alt-C, View -> icons, About, Set preferences, Set background, Desktop configuration, end.
+     views-u6b vs U8a views-u8a: 8/8 BYTE-IDENTICAL; metrics gl_handle=1 gl_wchar=8 gl_hchar=16 gl_wschar=6 gl_hschar=6 (= U8a)
+   The scratch tree is an rsync without target/: this build is also a clean-target build of the product path (programs first).
+
+4. ORACLE (guard G2; method/seq-run.sh + inj-desk-seq.py = U8a's; checks/u6b-oracle-diff.txt). Reference U8a trace/SVCSEQ-u8a.LOG.
+     688 lines / 23752 bytes both. Only difference: K XBIOS 0x10 (Keytbl) result 0x..348d08 -> 0x..34ad08 = KERNEL_AREA in .bss,
+     moved by the 8 KiB larger kernel (same call, same place; as U7 -> U8a). No call, order or result otherwise.
+     seq screendumps 2/2 identical to U8a (same C:\SVCSEQ.LOG size, so the info line agrees too).
+   Not visible in the trace and argued instead: graf_mouse declares naddrin 1 (EmuTOS gembind.c:650-654) instead of the desktop's
+   0, addr_in[0] = NULL; tos-api reads addr_in only for USER_DEF (graf.rs graf_mouse), and an undeclared addr_in slot reaches the
+   manager as 0 (aes/mod.rs Aespb::from_raw, zeroed local array) -> identical manager input. The AES global[] is now newtos-gem's
+   one static instead of a zeroed array per call: the AES writes it only in appl_init / rsrc_* (appl.rs:316, resource.rs), the
+   desktop calls no rsrc_*. The VDI frame is larger (intin 128, ptsin 16); the dispatcher reads only the declared counts.
+
+5. QEMU-VIRT BOOT (method/run-virt.sh + drive.py, U8a copies): bin/kernel-virt-u6b.img, "[desk] desktop up (0 drives)", 0 [EXC];
+   end screendump 1920x1080 2e0f487f... = U8a's u8a-on-virt-desktop-end.png BYTE-IDENTICAL.
+
+6. HELLOGEM STILL RUNS (method/series-hellogem.sh; run-u6a.sh + drive-u6a.py + seed-u6a.sh + newdesk-z.inf/newdesk-f1.inf from U6a,
+   inj-u6a.py with the U8a arming anchor; checks/u6b-hellogem-summary.txt). NAP = bin/HELLOGEM-rpi4.NAP (build-programs rpi4 of
+   this tree), fresh seeded cards; kernel bin/kernel8-inj.img (this tree + key injector).
+     #Z in on/off/strict and F1 from the desktop (the desktop's own launch path through the moved bindings):
+     "[HELLOGEM] ap_id=0 vwk=2 redraws=1 quit by key 0x1c0d; heap OK allocs=7726 Malloc=8 Mfree=7 peak_hunks=8 end: hunks=1
+     live=10; stack used 2464 of 65536 bytes; appl_exit=1" = U6a's line; window dump f7b266f5... = U6a's window in all 4 runs;
+     end dump = clean desktop 0e6f7704...; 0 [EXC]/PANIC.
+
+7. SELF-TESTS (method/selftest-run.sh + inj-selftest-return.py, U8a copies; the writer now uses newtos_gem::gemdos::cconout).
+     53 PASS / 1 FAIL (the pre-existing card-precondition FAIL of U8a); lines identical to U8a except one injector timing line
+     (checks/u6b-selftest-lines-vs-u8a.txt). Counter-check: product kernel, plain card 40 s, card sha256 UNCHANGED.
+
+8. BUILD COUPLING AND EMBEDDING (method/embed-proof.sh on scratch copies; checks/u6b-embed-proof.txt, u6b-clean-build-*.txt,
+   u6b-embed-missing.txt, u6b-embed-build.txt)
+   A  clean target dir (fresh copy, .git copied so the build stamp's rev is the same): `cargo xtask build --board rpi4|qemu-virt
+      --release` builds hello-gem first, then the kernel; 64/94 warnings; kernel8.img and the qemu-virt image are BYTE-IDENTICAL
+      to bin/kernel8-u6b.img / bin/kernel-virt-u6b.img (0 differing bytes).
+   B  embedding, on a scratch copy whose kernel/embed.rs lists HELLOGEM.NAP under the placeholder registry name HGEMBED (not
+      NEWDESK, nothing launches it): `cargo build -p kernel` without build-programs FAILS (rc 101) with the build script's message
+      naming target/programs/rpi4/HELLOGEM.NAP and `cargo xtask build-programs --board rpi4`; `cargo xtask build --board rpi4
+      --release` then succeeds, the generated table is (b"HGEMBED", include_bytes!(<abs path>)), and the 101088-byte NAP is found
+      byte-for-byte in kernel8.img (once, offset 0xd970c). The registration was not booted: see 9.
+
+9. NOT DONE / FOUND: real Pi (not asked); memprot=verify / asid=on (not asked); Read .INF restart path, drag/drop, copy/rename/
+   install dialogs not driven (as U8a). Booting an embedded program is not possible yet: sh_ldapp passes the whole 128-byte s_cmd
+   buffer to Pexec (shell_loop.rs:434 `&cmd`), and registry::lookup compares the full slice -- a registry name never matches from
+   the shell path. U9 must resolve that (lookup up to the NUL) before NEWDESK can start from the registry. The NAP is not
+   reproducible across checkout paths (crate-metadata symbol hashes differ; kernel images are) -- relevant once U9 embeds it.
+
+Scratch: /tmp/m5j/u6b (-> /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/u6b): tree-views-u6b/ tree-u6b/ tree-selftest/ (rsync
+copies + injectors), inj/tree (injector kernel), embed/tree-clean, embed/tree-embed, card-z.img/card-f1.img, s/. Repo-root
+kernel8.img (gitignored) overwritten by checks.sh. bin/*.img gitignored, sha256 in bin/SHA256SUMS; bin/*.NAP kept (as U6a).

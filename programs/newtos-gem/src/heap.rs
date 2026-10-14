@@ -359,7 +359,7 @@ impl State {
             }
             *pp = (*h).next;
             let size = (*h).size;
-            let rc = gemdos::mfree((*h).block);
+            let rc = gemdos::dos_free((*h).block);
             self.stats.mfrees += 1;
             if rc == 0 {
                 self.stats.hunks -= 1;

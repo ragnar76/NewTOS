@@ -241,8 +241,17 @@ checked**") is now closed for the **GEMDOS/BIOS half** of the call surface.
 
 | Layer | NewTOS file | Mechanism | EmuTOS counterpart |
 |---|---|---|---|
-| aesbind | `kernel/src/desk/mod.rs` | `svc #2`, selector 200 in `x0`, AESPB in `x1` | `desk/gembind.c` (`trap #2`, `d0 = 200`) |
-| dosbind | `kernel/src/desk/dosbind.rs` | `svc #1` (GEMDOS), function id in `x8`, arguments in `x0..x7` in TOS order | `include/gemdos.h` → `include/bdosbind.h` `trap1()` |
+| aesbind | `programs/newtos-gem/src/aes.rs` (until DESK43 U6b `kernel/src/desk/mod.rs`) | `svc #2`, selector 200 in `x0`, AESPB in `x1` | `desk/gembind.c` (`trap #2`, `d0 = 200`) |
+| dosbind | `programs/newtos-gem/src/gemdos.rs` (until U6b `kernel/src/desk/dosbind.rs`) | `svc #1` (GEMDOS), function id in `x8`, arguments in `x0..x7` in TOS order | `include/gemdos.h` → `include/bdosbind.h` `trap1()` |
+
+**DESK43 U6b (2026-10-14):** the bindings moved, unchanged in what they put
+into the trap, into the runtime crate `programs/newtos-gem` that native Rust
+programs link; the kernel desktop calls them from there (a path dependency of
+the kernel). Opcodes carry their EmuTOS names once (`APPL_INIT`, …,
+`aesdefs.h`; VDI `POLYLINE`, …, `aes/funcdef.h`), the GEMDOS function numbers
+are `tos_types::gemdos`. `Cconout` (the self-test writer) is `cconout`;
+`graf_rubberbox` is EmuTOS's `graf_rubbox`. The table below keeps the
+`dosbind` heading for the layer.
 
 Before DESK10 the desktop called the `tos_api::bdos::fs` **leaf functions**
 directly with a hand-built `TrapArgs` — mechanically a plain Rust call that
@@ -282,17 +291,18 @@ EmuTOS's desktop includes `biosbind.h`, but the two calls it takes from it are
 for the About-box Easter egg (`CONF_WITH_EASTER_EGG`), which NewTOS does not
 have.
 
-### The `svc #14` binding — `xbiosbind.rs` (DESK43 U4, 2026-09-26)
+### The `svc #14` binding — `xbiosbind.rs` (DESK43 U4, 2026-09-26; since U6b `programs/newtos-gem/src/xbios.rs`)
 
 EmuTOS's desktop takes **three** things from `xbiosbind.h`, not one:
 
 | EmuTOS call | Site | NewTOS |
 |---|---|---|
-| `Keytbl(-1,-1,-1)` | `deskmain.c:1144`, the Alt-letter drive shortcut | **built** — `kernel/src/desk/xbiosbind.rs`, `svc #14`, function id 16 |
+| `Keytbl(-1,-1,-1)` | `deskmain.c:1144`, the Alt-letter drive shortcut | **built** — `newtos_gem::xbios::keytbl` (until U6b `kernel/src/desk/xbiosbind.rs`), `svc #14`, function id 16 |
 | `Supexec(get_idt_cookie)` | `desksupp.c:219`, the `_IDT` cookie | replaced by `dos_getcookie` (`svc #1`), next section |
 | resolution change | `deskrez.c` | not present — the screen mode is fixed by the firmware |
 
-`keytbl_query()` is the whole binding: three `(UBYTE *)-1` sentinels in, the
+`keytbl(KEYTBL_KEEP, KEYTBL_KEEP, KEYTBL_KEEP)` (U4: `keytbl_query()`) is the
+whole call: three `(UBYTE *)-1` sentinels in, the
 address of the `struct keytbl` out. The desktop declares the first three
 pointers of that struct for itself, exactly as EmuTOS's `deskmain.c:64-69`
 does, and reads `shift[scancode]`. Until U4 that read went to

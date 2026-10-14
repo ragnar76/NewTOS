@@ -13,7 +13,8 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use super::dosbind::{dos_gdrv, dos_sdrv};
+use newtos_gem::gemdos::{dos_gdrv, dos_sdrv};
+use newtos_gem::xbios;
 use super::global::{self, Point, DROOT, MAX_DEPTH, NUM_WNODES, WINDOW_STYLE};
 use tos_types::aes::{
     Grect, DESKWH, G_ICON, MN_SELECTED, MU_BUTTON, MU_KEYBD, MU_MESAG, MU_TIMER, M_OFF, M_ON, NIL,
@@ -320,7 +321,7 @@ fn gr_isdown(out: bool, x: i16, y: i16, w: i16, h: i16) -> bool {
 /// erase, back in [`gr_drgplns`]'s loop body.
 fn gr_bwait(po: Grect, mx: i16, my: i16, xylnpts: &[Point], xyobpts: &[Point]) -> bool {
     super::vdibind::gsx_sclip(super::screen_rect());
-    super::vdibind::gsx_attr_line(super::vdibind::MD_XOR, super::vdibind::BLACK);
+    super::vdibind::gsx_attr_line(newtos_gem::vdi::MD_XOR, newtos_gem::vdi::BLACK);
     gr_plns(po.x, po.y, xylnpts, xyobpts); // draw old
     let down = gr_isdown(true, mx, my, 2, 2); // wait for change
     gr_plns(po.x, po.y, xylnpts, xyobpts); // erase old
@@ -503,7 +504,7 @@ fn act_bdown(handle: i16, root: i16, mx: i16, my: i16) -> bool {
 
     // Nothing under the press point → rubber-band select. `minw = minh =
     // i16::MIN` (EmuTOS `deskact.c:631` passes `SHRT_MIN`) requests a free
-    // 4-quadrant band: `graf_rubberbox` returns the *signed* `cursor - origin +
+    // 4-quadrant band: `graf_rubbox` returns the *signed* `cursor - origin +
     // 1` deltas (§70) instead of clamping a leftward/upward drag back to a 1×1
     // box — that clamp was the original #9 bug. The reconstruction below then
     // mirrors `deskact.c:632-642` (`l_mw < 0` → `l_mx += l_mw; l_mw = -l_mw`):
@@ -511,7 +512,7 @@ fn act_bdown(handle: i16, root: i16, mx: i16, my: i16) -> bool {
     // directions yield the same box `min(anchor, cursor)..max(anchor, cursor)`;
     // `.max(1)` keeps a degenerate zero-extent drag a 1 px selection band.
     if sobj == root {
-        let (w, h) = super::graf_rubberbox(mx, my, i16::MIN, i16::MIN);
+        let (w, h) = super::graf_rubbox(mx, my, i16::MIN, i16::MIN);
         let (rx, ry) = (mx.min(mx + w), my.min(my + h));
         let (rw, rh) = (w.abs().max(1), h.abs().max(1));
         if global::with(|g| g.act_allchg_rect(handle, root, rx, ry, rw, rh)).unwrap_or(false) {
@@ -1369,7 +1370,7 @@ struct Keytab {
 ///
 /// The shifted character of the scancode *is* the letter — there is no
 /// dedicated Alt table, in EmuTOS or here — and the desktop reads it through
-/// the XBIOS, not through a kernel symbol: [`super::xbiosbind::keytbl_query`].
+/// the XBIOS, not through a kernel symbol: [`newtos_gem::xbios::keytbl`].
 ///
 /// **This path is live** (re-established DESK13). An older note here, and the
 /// one DESK11 copied into its report, called it inert on the grounds that the
@@ -1396,14 +1397,14 @@ fn check_alt_letter_key(key: i16) -> bool {
     // dereferenced (`docs/api/xbios/10-keytbl.md`); EmuTOS cannot reach that
     // case, so there is no behaviour of its to match — the shortcut simply has
     // no letter to look up.
-    let p = super::xbiosbind::keytbl_query();
+    let p = xbios::keytbl(xbios::KEYTBL_KEEP, xbios::KEYTBL_KEEP, xbios::KEYTBL_KEEP);
     if p == 0 {
         return false;
     }
     // `drive = keytab->shift[HIBYTE(thechar)];` (`:1145`).
     // SAFETY: `p` is the `struct keytbl` image the XBIOS just wrote, at this
     // caller's own pointer width and in kernel-addressable memory (see
-    // [`Keytab`] and `keytbl_query`'s doc). `shift` points at that image's
+    // [`Keytab`] and `xbios::keytbl`'s doc). `shift` points at that image's
     // 128-byte `shft` table, and `sc` is a `u8` masked out of the key word,
     // i.e. < 128 for every scancode the IKBD produces — the two scancodes
     // ≥ 0x80 are key *releases*, which the AES never forwards as `EV_KRET`.
@@ -3061,7 +3062,7 @@ fn win_alloc_window(obid: i16) -> Option<(usize, i16)> {
     if global::with(|g| g.win_count() >= NUM_WNODES).unwrap_or(true) {
         return None;
     }
-    let handle = super::wind_create(WINDOW_STYLE as i16, g_desk());
+    let handle = super::wind_create(WINDOW_STYLE, g_desk());
     if handle < 1 {
         return None;
     }

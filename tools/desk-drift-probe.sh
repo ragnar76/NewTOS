@@ -48,7 +48,7 @@
 #
 # Not part of TOTAL, reported beside it: the number of code lines in the
 # desktop source containing `unsafe`. It is a **non-increasing** number: the
-# U5a baseline is UNSAFE_BASELINE below; a run that finds more prints a loud
+# baseline is UNSAFE_BASELINE below; a run that finds more prints a loud
 # error and exits 3 (after printing TOTAL). A unit that lowers it lowers the
 # baseline in the same change.
 #
@@ -102,9 +102,11 @@ usage() {
     exit 0
 }
 
-# U5a baseline of the `unsafe` count (2026-10-14, kernel/src/desk/). Lower it
-# when a unit removes `unsafe` lines; never raise it.
-UNSAFE_BASELINE=24
+# Baseline of the `unsafe` count (kernel/src/desk/). Lower it when a unit
+# removes `unsafe` lines; never raise it. U5a: 24. DESK43 U6b: 20 (the four
+# trap `asm!` blocks of the AES/GEMDOS/VDI/XBIOS bindings moved to
+# programs/newtos-gem).
+UNSAFE_BASELINE=20
 
 VERBOSE=0
 QUIET=0
@@ -462,7 +464,7 @@ if [ "$QUIET" -eq 0 ]; then
     else
         printf '%-58s %3s line(s)   (no desktop crate yet)\n\n' "D  desktop Cargo.toml -> deps other than newtos-gem/tos-types" "$D"
     fi
-    printf '%-58s %3s code line(s)   [not in TOTAL; U5a baseline %s, must not rise]\n' \
+    printf '%-58s %3s code line(s)   [not in TOTAL; baseline %s, must not rise]\n' \
         "unsafe  in $DESK_DIR/" "$UNSAFE" "$UNSAFE_BASELINE"
     if [ "$VERBOSE" -eq 1 ]; then
         # shellcheck disable=SC2086

@@ -1,0 +1,19 @@
+NewTOS desktop citation list — kernel/src/desk/ (fns touched since cfb6a238)
+
+file                                 fns  cited newtos  uncited
+kernel/src/desk/dir.rs                 1      0      0        1
+kernel/src/desk/inf.rs                 4      4      0        0
+kernel/src/desk/main.rs                4      4      0        0
+kernel/src/desk/mod.rs                 9      9      0        0
+kernel/src/desk/pro.rs                 1      1      0        0
+kernel/src/desk/redraw.rs              1      1      0        0
+kernel/src/desk/selftest.rs            2      0      2        0
+kernel/src/desk/vdibind.rs             4      4      0        0
+
+uncited:
+  kernel/src/desk/dir.rs:200  scan_folder
+newtos:
+  kernel/src/desk/selftest.rs:37  write_str
+  kernel/src/desk/selftest.rs:50  line
+
+DESK-CITE: fns=26 cited=23 newtos=2 uncited=1

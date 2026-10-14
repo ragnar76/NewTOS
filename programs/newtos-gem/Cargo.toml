@@ -1,7 +1,7 @@
 [package]
 name = "newtos-gem"
 version = "0.1.0"
-description = "Runtime for NewTOS native Rust programs: GEMDOS/AES/VDI trap bindings, a GlobalAlloc over GEMDOS Malloc hunks, the panic handler"
+description = "Runtime for NewTOS native Rust programs: GEMDOS/AES/VDI/XBIOS trap bindings, a GlobalAlloc over GEMDOS Malloc hunks, the panic handler"
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
@@ -9,6 +9,15 @@ authors.workspace = true
 [lib]
 test = false
 bench = false
+
+[features]
+default = ["rt"]
+# The program runtime proper: the `#[global_allocator]` (GEMDOS Malloc hunks,
+# src/heap.rs) and the `#[panic_handler]`. Every program needs it; the kernel
+# links this crate for the trap bindings only (its desktop, DESK43 U6b) and
+# has its own allocator and panic handler, so it depends with
+# `default-features = false`.
+rt = []
 
 [dependencies]
 # The shared GEM records and constants (Object/TedInfo/IconBlk/Grect, G_*, WF_*,

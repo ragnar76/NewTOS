@@ -14,7 +14,7 @@
 //!   deliberately dropped, per `_rebuild-plan.md` §3.
 //!
 //! The directory scan itself goes through the GEMDOS trap
-//! ([`super::dosbind`]) exactly like EmuTOS `pn_active()` drives
+//! ([`newtos_gem::gemdos`]) exactly like EmuTOS `pn_active()` drives
 //! `dos_sfirst`/`dos_snext`.
 
 use alloc::string::String;
@@ -24,7 +24,7 @@ use tos_types::aes::{IconBlk, NIL};
 use tos_types::error::{E_OK, EFILNF, ENMFIL};
 use tos_types::Long;
 
-use super::dosbind::{dos_sdta, dos_sfirst, dos_snext};
+use newtos_gem::gemdos::{dos_sdta, dos_sfirst, dos_snext};
 
 use super::win::LEN_ZPATH;
 
@@ -76,7 +76,7 @@ pub enum Sort {
 // 26-supexec.md`, "decision deferred"; `docs/api/bios/_cookie-jar.md` §Status
 // 2026-09-14, "There is no `Supexec` in the kernel"): the desktop reads the
 // cookie **by value** through the GEMDOS trap, `Ssystem(S_GETCOOKIE, '_IDT',
-// 0)` (`super::dosbind::dos_getcookie`), and keeps it in `G.g_idt`
+// 0)` (`newtos_gem::gemdos::dos_getcookie`), and keeps it in `G.g_idt`
 // ([`super::global::DeskState::g_idt`]) exactly as EmuTOS does.
 //
 // The resolution rule below is the **only** copy of "what does IDT mean here":

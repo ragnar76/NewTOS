@@ -1113,7 +1113,7 @@ is no `Supexec` in the kernel … the low-memory area an app wants is already in
 its own address space" (`docs/api/bios/_cookie-jar.md` §Status 2026-09-14).
 Der Desktop liest den Keks also **als Wert** ueber den GEMDOS-Trap:
 `Ssystem(S_GETCOOKIE, '_IDT', 0)` (`docs/api/gemdos/154-ssystem.md`), gebunden
-als `desk::dosbind::dos_getcookie`. Das dritte Argument ist 0, damit der Wert in
+als `desk::dosbind::dos_getcookie` (seit DESK43 U6b `newtos_gem::gemdos::dos_getcookie`). Das dritte Argument ist 0, damit der Wert in
 `x0` zurueckkommt und kein Zeiger durch den Trap geht — die Zeigerform schreibt
 mit einem unprivilegierten `sttr` und faellt auf einer Kernadresse.
 Gemessen und festgenagelt: `tos-api/tests/gemdos_ssystem_idt_cookie.rs`

@@ -16,6 +16,17 @@ bench = false
 # Deliberate panic after the window is up: the panic path test
 # (the program must end with the runtime's panic exit code, nothing else).
 panic-test = []
+# The board the program is built for (X03 pass-through, DESK43 U6b):
+# `cargo xtask build-programs --board <b>` builds every program in programs/
+# with `--features board-<b>`, one output per board, as the kernel is built
+# per board. Every program declares both (cargo refuses an unknown feature,
+# so a program without them fails the build instead of silently getting no
+# board). HELLOGEM has nothing board-specific; the desktop (U8b/U9) keys its
+# About-box machine line on them.
+board-rpi4 = []
+board-qemu-virt = []
 
 [dependencies]
 newtos-gem = { path = "../newtos-gem" }
+# GEMDOS error codes (`tos_types::error`).
+tos-types = { path = "../../tos-types" }

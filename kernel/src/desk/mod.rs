@@ -15,18 +15,21 @@
 //! (enable/disable/check — fixes D6), and window move/size/top/close wiring.
 //! File/INF ops and the drag/rubber-band selection machine are Task #9.
 //!
-//! This module root hosts the shared **aesbind** surface — the thin GEM-trap
-//! wrappers the desktop calls the AES through, exactly as EmuTOS `desk/` goes
-//! over `aesbind` — plus the desktop-background painter hook and the boot
-//! entry point [`run`]. Its GEMDOS/BIOS counterpart is [`dosbind`]: the
-//! desktop reaches the system **only** through traps, never by calling a
-//! `tos_api` function directly.
+//! The desktop reaches the system **only** through traps, never by calling a
+//! `tos_api` function directly. The trap bindings themselves are not here
+//! (DESK43 U6b): they are `newtos_gem` — [`newtos_gem::aes`] (EmuTOS
+//! `desk/gembind.c`), [`newtos_gem::gemdos`] (`include/gemdos.h`),
+//! [`newtos_gem::vdi`] and [`newtos_gem::xbios`] (`include/xbiosbind.h`) — the
+//! runtime crate every native Rust program links, so this desktop and a
+//! program call the AES the same way. This module root imports the AES
+//! bindings the desktop modules use (they keep calling `super::form_alert`,
+//! as EmuTOS's `desk/*.c` call the global `aesbind` functions), adds the few
+//! desktop-shaped helpers over them, and holds the boot entry point [`run`].
 
 pub mod act;
 pub mod app;
 pub mod dir;
 pub mod dlg;
-pub mod dosbind;
 pub mod ftype;
 pub mod global;
 pub mod icons;
@@ -41,7 +44,6 @@ pub mod redraw;
 pub mod selftest;
 pub mod vdibind;
 pub mod win;
-pub mod xbiosbind;
 
 // No diagnostic channel. EmuTOS's desktop has one only on paper — `KDEBUG`
 // (`bios/kprint.h`), left compiled out in every `desk/*.c`
@@ -53,59 +55,29 @@ pub mod xbiosbind;
 // console writer ([`selftest`]).
 
 use global::{MAX_DEPTH, WINDOW_STYLE};
+use newtos_gem::aes::{EvntMulti, Events};
 use tos_types::aes::{
-    Grect, BEG_UPDATE, DESKWH, END_UPDATE, FMD_FINISH, FMD_START, MU_BUTTON, MU_M1, WC_WORK,
-    WF_NEWDESK, WF_TOP, WF_WXYWH,
+    Grect, BEG_UPDATE, DESKWH, END_UPDATE, FMD_FINISH, FMD_START, MU_BUTTON, MU_M1, WC_WORK, WF_TOP,
+    WF_WXYWH,
 };
 
-// ── AES parameter-block client ("aesbind") ─────────────────────────────────
+// ── aesbind: the AES trap bindings (`newtos_gem::aes`) ─────────────────────
 //
 // The desktop is a client of the AES: it drives it through the GEM trap
 // (`svc #2`, selector 200) with a parameter block of six array pointers,
-// exactly like EmuTOS `desk/` calls the AES over `aesbind`. Every AES call the
-// desktop makes lives here as a thin `pub(super)` wrapper so `main`/`menu`
-// never touch the raw parameter block.
-
-// AES opcodes (`aes/mod.rs` dispatch table).
-const OP_APPL_INIT: i16 = 10;
-const OP_APPL_EXIT: i16 = 19;
-const OP_EVNT_BUTTON: i16 = 21;
-const OP_EVNT_MULTI: i16 = 25;
-const OP_EVNT_DCLICK: i16 = 26;
-const OP_MENU_BAR: i16 = 30;
-const OP_MENU_ICHECK: i16 = 31;
-const OP_MENU_IENABLE: i16 = 32;
-const OP_MENU_TNORMAL: i16 = 33;
-const OP_OBJC_ADD: i16 = 40;
-const OP_OBJC_DRAW: i16 = 42;
-const OP_OBJC_FIND: i16 = 43;
-const OP_OBJC_OFFSET: i16 = 44;
-const OP_FORM_DO: i16 = 50;
-const OP_FORM_DIAL: i16 = 51;
-const OP_FORM_ALERT: i16 = 52;
-const OP_FORM_CENTER: i16 = 54;
-const OP_GRAF_RUBBERBOX: i16 = 70;
-/// `GRAF_GROWBOX` (`aesdefs.h`) — the zoom outline `do_wopen` draws from the
-/// source icon out to the new window (`desk/desksupp.c:315`).
-const OP_GRAF_GROWBOX: i16 = 73;
-const OP_GRAF_HANDLE: i16 = 77;
-const OP_GRAF_MOUSE: i16 = 78;
-const OP_GRAF_MKSTATE: i16 = 79;
-const OP_FSEL_EXINPUT: i16 = 91;
-const OP_WIND_CREATE: i16 = 100;
-const OP_WIND_OPEN: i16 = 101;
-const OP_WIND_CLOSE: i16 = 102;
-const OP_WIND_DELETE: i16 = 103;
-const OP_WIND_GET: i16 = 104;
-const OP_WIND_SET: i16 = 105;
-const OP_WIND_FIND: i16 = 106;
-const OP_WIND_UPDATE: i16 = 107;
-const OP_WIND_CALC: i16 = 108;
-const OP_WIND_NEW: i16 = 109;
-const OP_SHEL_WRITE: i16 = 121;
-const OP_SHEL_GET: i16 = 122;
-const OP_SHEL_PUT: i16 = 123;
-const OP_SHEL_WDEF: i16 = 127;
+// exactly like EmuTOS `desk/` calls the AES over `aesbind`
+// (`desk/gembind.c`). The bindings are `newtos_gem::aes` (DESK43 U6b moved
+// them out of this file); importing them here keeps every desktop module's
+// `super::<call>` unchanged. Opcodes, `control[]` counts and argument layout
+// are documented there, per function.
+use newtos_gem::aes::{
+    appl_exit, appl_init, evnt_button, evnt_dclick, form_alert, form_center, form_dial, form_do,
+    fsel_exinput, graf_growbox, graf_handle, graf_mkstate, graf_mouse, graf_rubbox, menu_bar,
+    menu_icheck, menu_ienable, menu_tnormal, objc_add, objc_draw, objc_find, objc_offset, shel_get,
+    shel_put, shel_wdef, shel_write, wind_calc, wind_close, wind_create, wind_delete, wind_find,
+    wind_get_grect, wind_get_int, wind_new, wind_open, wind_set_grect, wind_set_int, wind_set_newdesk,
+    wind_set_ptr, wind_update,
+};
 
 // The AES constants (`WF_*`, `WC_*`, `MU_*`, `M_ON`/`M_OFF`, `ARROW`, …) are
 // `tos_types::aes` (one public set, DESK43 U5b). The two `graf_mouse` shapes
@@ -119,181 +91,14 @@ pub(super) const FLATHAND: i16 = 4;
 /// (`desk/desksupp.c:1840-1843`).
 pub(super) const HGLASS: i16 = 2;
 
-/// Issue the GEM trap (`svc #2`): selector 200 in `x0`, AESPB in `x1`.
-fn gem_trap(aespb: u64) {
-    // SAFETY: GEM trap; results are written back into the parameter block.
-    unsafe {
-        core::arch::asm!(
-            "svc #2",
-            inout("x0") 200u64 => _,
-            in("x1") aespb,
-            options(nostack),
-        );
-    }
-}
-
-/// A reusable AES parameter block. [`Aes::call`] zeroes `control`, sets the
-/// opcode + array lengths, and traps; results land in `intout`/`addrout`.
-struct Aes {
-    control: [i16; 8],
-    global: [i16; 32],
-    intin: [i16; 16],
-    intout: [i16; 16],
-    addrin: [i64; 4],
-    addrout: [i64; 4],
-}
-
-impl Aes {
-    fn new() -> Self {
-        Self {
-            control: [0; 8],
-            global: [0; 32],
-            intin: [0; 16],
-            intout: [0; 16],
-            addrin: [0; 4],
-            addrout: [0; 4],
-        }
-    }
-
-    /// Trap opcode `op` with `n_int` int-ins, `n_out` int-outs and `n_addr`
-    /// addr-ins — the four `control[]` words every AES binding lays
-    /// (`AES_CTRL_CODE(op, nintin, nintout, naddrin)`, EmuTOS
-    /// `desk/gembind.c:46-50`).
-    ///
-    /// `n_out` is `OUT_LEN`, and it is not decoration: the dispatcher copies
-    /// **exactly** `control[2]` words of its result back
-    /// (`aes/gemsuper.c:443-444`), so a call that under-declares gets nothing
-    /// — with `n_out == 0` not even `RET_CODE`. Every value passed below is
-    /// the `nintout` EmuTOS's own desktop binding uses for that function.
-    fn call(&mut self, op: i16, n_int: i16, n_out: i16, n_addr: i16) {
-        self.control = [0; 8];
-        self.control[0] = op;
-        self.control[1] = n_int;
-        self.control[2] = n_out;
-        self.control[3] = n_addr;
-        let block: [u64; 6] = [
-            self.control.as_ptr() as u64,
-            self.global.as_ptr() as u64,
-            self.intin.as_ptr() as u64,
-            self.intout.as_ptr() as u64,
-            self.addrin.as_ptr() as u64,
-            self.addrout.as_ptr() as u64,
-        ];
-        gem_trap(block.as_ptr() as u64);
-    }
-}
-
-// ── aesbind wrappers (application manager) ──────────────────────────────────
-
-/// `appl_init()` (10) — register the desktop as an AES application (EmuTOS
-/// `deskmain.c:1953`, `gl_apid = appl_init();`). On the trap side this runs
-/// `pd::open(current_pid())`, which for the desktop's kernel-boot context (null
-/// basepage) is pid 1: it allocates the AES process descriptor **and its FIFO
-/// message queue** for pid 1. Returns the assigned application id (`ap_id`, =
-/// pid), or −1 on failure.
-///
-/// This is the missing piece that made directory-window content vanish: without
-/// a descriptor for pid 1, `pd::by_pid(1)` is `None`, so every AES
-/// `send_redraw` → `post_msg(1, WM_REDRAW)` for a MOVE/SIZE/TOP/CLOSE/open is
-/// dropped, and window content only ever appeared on the direct-draw boot /
-/// view-switch paths. Uses the same GEM trap (`svc #2`, selector 200) as every
-/// other AES call the desktop makes.
-pub(super) fn appl_init() -> i16 {
-    let mut a = Aes::new();
-    a.call(OP_APPL_INIT, 0, 1, 0);
-    a.intout[0]
-}
-
-/// `appl_exit()` (19) — deregister the desktop from the AES, closing its process
-/// descriptor and message queue (EmuTOS `deskmain.c:2166`). The symmetric
-/// counterpart to [`appl_init`], run on the desktop's shutdown path.
-pub(super) fn appl_exit() {
-    let mut a = Aes::new();
-    a.call(OP_APPL_EXIT, 0, 1, 0);
-}
-
-// ── aesbind wrappers (window manager) ──────────────────────────────────────
-
-/// `objc_add(tree, parent, child)` (40) — link `child` as the last child of
-/// `parent` in the desktop's own object arena. EmuTOS `deskobj.c:145` (the
-/// structural window boxes under ROOT) and `:232` (`obj_ialloc`, every item
-/// object a window view allocates) both go through this binding
-/// (`desk/gembind.c:352-358`, `AES_CTRL_CODE(OBJC_ADD, 2, 1, 1)`) rather than
-/// writing `ob_head`/`ob_tail`/`ob_next` by hand.
-pub(super) fn objc_add(tree: u64, parent: i16, child: i16) {
-    let mut a = Aes::new();
-    a.addrin[0] = tree as i64;
-    a.intin[0] = parent;
-    a.intin[1] = child;
-    a.call(OP_OBJC_ADD, 2, 1, 1);
-}
-
-/// `objc_draw` (42) the subtree rooted at `root` of the desktop object arena
-/// `tree`, clipped to `clip`. Used by `do_wredraw` to paint a window's item
-/// tree **and** the desktop's own surface (`DROOT` background box + icons) — the
-/// "two paths, one tree" of EmuTOS `do_wredraw`.
-pub(super) fn objc_draw_tree(tree: u64, root: i16, clip: Grect) {
-    let mut a = Aes::new();
-    a.addrin[0] = tree as i64;
-    a.intin[0] = root;
-    a.intin[1] = MAX_DEPTH;
-    a.intin[2] = clip.x;
-    a.intin[3] = clip.y;
-    a.intin[4] = clip.w;
-    a.intin[5] = clip.h;
-    a.call(OP_OBJC_DRAW, 6, 1, 1);
-}
-
-/// `objc_find` (43) — deepest object of `tree` under `(mx, my)` within `depth`
-/// levels of `start`; [`NIL`] if none. Resolves the icon/text item a
-/// click landed on (the `hndl_button` hit-test).
-pub(super) fn objc_find(tree: u64, start: i16, depth: i16, mx: i16, my: i16) -> i16 {
-    let mut a = Aes::new();
-    a.addrin[0] = tree as i64;
-    a.intin[0] = start;
-    a.intin[1] = depth;
-    a.intin[2] = mx;
-    a.intin[3] = my;
-    a.call(OP_OBJC_FIND, 4, 1, 1);
-    a.intout[0]
-}
-
-/// `objc_offset` (44) — the absolute screen position of `obj` in `tree` (the
-/// sum of its ancestors' `ob_x`/`ob_y`). EmuTOS `draw_fld` uses it to turn an
-/// object's own rectangle into the clip rectangle `objc_draw` wants
-/// (`deskdir.c:137`).
-pub(super) fn objc_offset(tree: u64, obj: i16) -> (i16, i16) {
-    let mut a = Aes::new();
-    a.addrin[0] = tree as i64;
-    a.intin[0] = obj;
-    a.call(OP_OBJC_OFFSET, 1, 3, 1);
-    (a.intout[1], a.intout[2])
-}
-
-/// `wind_find` (106) — handle of the window under screen point `(mx, my)`;
-/// `0` (= [`DESKWH`]) for the desktop. The D3 fix: a click is routed to
-/// *whichever* window it fell in, not a single hard-coded one.
-pub(super) fn wind_find(mx: i16, my: i16) -> i16 {
-    let mut a = Aes::new();
-    a.intin[0] = mx;
-    a.intin[1] = my;
-    a.call(OP_WIND_FIND, 2, 1, 0);
-    a.intout[0]
-}
+// ── Desktop-shaped helpers over the bindings ───────────────────────────────
+//
+// Each is one binding call with the arguments this desktop always passes —
+// the shapes EmuTOS's `desk/*.c` write out at their call sites.
 
 /// `wind_get(handle, WF_WXYWH)` — the window's current work-area rectangle.
 pub(super) fn wind_get_work(handle: i16) -> Grect {
     wind_get_grect(handle, WF_WXYWH)
-}
-
-/// `wind_get(handle, field)` for a rectangle field (`WF_WXYWH`/`WF_CXYWH`/
-/// `WF_FXYWH`/`WF_FIRSTXYWH`/`WF_NEXTXYWH`) → the returned `GRECT`.
-pub(super) fn wind_get_grect(handle: i16, field: i16) -> Grect {
-    let mut a = Aes::new();
-    a.intin[0] = handle;
-    a.intin[1] = field;
-    a.call(OP_WIND_GET, 2, 5, 0);
-    Grect { x: a.intout[1], y: a.intout[2], w: a.intout[3], h: a.intout[4] }
 }
 
 /// `wind_get(handle, WF_FIRSTXYWH | WF_NEXTXYWH)` — one rectangle from the
@@ -307,404 +112,29 @@ pub(super) fn wind_get_rect(handle: i16, field: i16) -> Grect {
 }
 
 /// `wind_get(DESKWH, WF_TOP)` — the handle of the top-most open window, or
-/// [`DESKWH`] when only the desktop is showing.
+/// [`DESKWH`] when only the desktop is showing (EmuTOS
+/// `wind_get(DESKWH, WF_TOP, &wh, …)`, `deskmain.c:1049`; this desktop also
+/// answers `win_ontop` with it, see [`close_desktop_windows`]).
 pub(super) fn wind_get_top() -> i16 {
-    let mut a = Aes::new();
-    a.intin[0] = DESKWH;
-    a.intin[1] = WF_TOP;
-    a.call(OP_WIND_GET, 2, 5, 0);
-    a.intout[1]
+    wind_get_int(DESKWH, WF_TOP)
 }
 
-/// `wind_set(handle, field, x, y, w, h)` — a rectangle field (`WF_CXYWH`).
-pub(super) fn wind_set_grect(handle: i16, field: i16, r: Grect) {
-    let mut a = Aes::new();
-    a.intin[0] = handle;
-    a.intin[1] = field;
-    a.intin[2] = r.x;
-    a.intin[3] = r.y;
-    a.intin[4] = r.w;
-    a.intin[5] = r.h;
-    a.call(OP_WIND_SET, 6, 1, 0);
+/// `objc_draw` (42) the subtree rooted at `root` of the desktop object arena
+/// `tree`, clipped to `clip`, at the desktop's `MAX_DEPTH`. Used by
+/// `do_wredraw` to paint a window's item tree **and** the desktop's own
+/// surface (`DROOT` background box + icons) — the "two paths, one tree" of
+/// EmuTOS `do_wredraw` (`objc_draw(G.g_screen, root, MAX_DEPTH, …)`,
+/// `desksupp.c:227`).
+pub(super) fn objc_draw_tree(tree: u64, root: i16, clip: Grect) {
+    objc_draw(tree, root, MAX_DEPTH, clip);
 }
 
-/// `wind_set(handle, field, value)` — a scalar field (`WF_TOP` with no value,
-/// the slider size/position fields).
-pub(super) fn wind_set_int(handle: i16, field: i16, value: i16) {
-    let mut a = Aes::new();
-    a.intin[0] = handle;
-    a.intin[1] = field;
-    a.intin[2] = value;
-    a.call(OP_WIND_SET, 5, 1, 0);
-}
-
-/// `wind_set(handle, field, ptr)` — a pointer field (`WF_NAME`/`WF_INFO`).
-/// `ptr` must stay valid across the trap.
-pub(super) fn wind_set_ptr(handle: i16, field: i16, ptr: u64) {
-    let mut a = Aes::new();
-    a.addrin[0] = ptr as i64;
-    a.intin[0] = handle;
-    a.intin[1] = field;
-    a.call(OP_WIND_SET, 2, 1, 1);
-}
-
-/// `wind_set(DESKWH, WF_NEWDESK, tree, root)` — register (`tree != 0`) or
-/// un-register (`tree == 0`) the desktop's background object tree with the AES
-/// (EmuTOS `deskmain.c:2049`/`:2163`). Between registration and un-registration
-/// the AES's `w_drawdesk` draws `tree` from `root` (the desktop's `DROOT`, its
-/// background `G_BOX` + icon children) at `MAX_DEPTH` on every desktop redraw —
-/// the desktop no longer paints its own background. The tree pointer travels in
-/// `addr_in[0]`, the root in `int_in[2]` (the AES resolves either this native
-/// packing or the classic D-094 `int_in[2..4]` form). `tree` must stay valid for
-/// as long as it is registered (the desktop's `g_screen` arena is never freed).
-pub(super) fn wind_set_newdesk(tree: u64, root: i16) {
-    let mut a = Aes::new();
-    a.addrin[0] = tree as i64;
-    a.intin[0] = DESKWH;
-    a.intin[1] = WF_NEWDESK;
-    a.intin[2] = root;
-    a.call(OP_WIND_SET, 3, 1, 1);
-}
-
-/// `wind_create(kind, x, y, w, h)` — reserve a window of border `kind` and max
-/// extent `r`; returns the handle (`>= 1`) or a negative error.
-pub(super) fn wind_create(kind: i16, r: Grect) -> i16 {
-    let mut a = Aes::new();
-    a.intin[0] = kind;
-    a.intin[1] = r.x;
-    a.intin[2] = r.y;
-    a.intin[3] = r.w;
-    a.intin[4] = r.h;
-    a.call(OP_WIND_CREATE, 5, 1, 0);
-    a.intout[0]
-}
-
-/// `wind_open(handle, x, y, w, h)` — display window `handle` at `r`, topmost.
-pub(super) fn wind_open(handle: i16, r: Grect) {
-    let mut a = Aes::new();
-    a.intin[0] = handle;
-    a.intin[1] = r.x;
-    a.intin[2] = r.y;
-    a.intin[3] = r.w;
-    a.intin[4] = r.h;
-    a.call(OP_WIND_OPEN, 5, 1, 0);
-}
-
-/// `wind_close(handle)` — hide window `handle` (the handle stays valid).
-pub(super) fn wind_close(handle: i16) {
-    let mut a = Aes::new();
-    a.intin[0] = handle;
-    a.call(OP_WIND_CLOSE, 1, 1, 0);
-}
-
-/// `wind_delete(handle)` — free the AES window handle.
-pub(super) fn wind_delete(handle: i16) {
-    let mut a = Aes::new();
-    a.intin[0] = handle;
-    a.call(OP_WIND_DELETE, 1, 1, 0);
-}
-
-/// `wind_new()` (109) — close and delete **every** window this application
-/// still has open and drop its `wind_update` locks (`desk/gembind.c:827-831`,
-/// `AES_CTRL_CODE(WIND_NEW, 0, 1, 0)`; AES side `wm_new`,
-/// `gemwmlib.c:1875-1893`).
-///
-/// The desktop's one caller is [`deskmain`]'s restart tail (`deskmain.c:2168-
-/// 2169`, `if (rc == FALSE) wind_new();`): the *Read .INF file* path re-enters
-/// `deskmain` inside the same process, so the AES handles
-/// [`close_desktop_windows`] closed but did not delete have to be swept before
-/// the next `win_start`. On the normal exit the process ends and the AES does
-/// it (`gemshlib.c:676-677`).
-pub(super) fn wind_new() {
-    let mut a = Aes::new();
-    a.call(OP_WIND_NEW, 0, 1, 0);
-}
-
-/// The instantaneous mouse/keyboard state from `graf_mkstate` (79).
-pub(super) struct MouseState {
-    /// Mouse x.
-    pub mx: i16,
-    /// Mouse y.
-    pub my: i16,
-    /// Button mask (bit 0 = left).
-    pub buttons: i16,
-    /// Keyboard shift/ctrl/alt state (`K_*` bits).
-    pub kstate: i16,
-}
-
-/// `graf_mkstate` (79) — poll the mouse position, button mask, and keyboard
-/// shift state without waiting. `hndl_button` uses it after `act_bsclick` to
-/// decide whether the button is still held (a drag) or already released (a
-/// plain click) — EmuTOS `deskmain.c:968`.
-pub(super) fn graf_mkstate() -> MouseState {
-    let mut a = Aes::new();
-    a.call(OP_GRAF_MKSTATE, 0, 5, 0);
-    MouseState { mx: a.intout[1], my: a.intout[2], buttons: a.intout[3], kstate: a.intout[4] }
-}
-
-/// `graf_growbox_grect(from, to)` (73) — the AES zoom outline from the small
-/// rectangle `from` out to the big rectangle `to` (EmuTOS
-/// `desk/gembind.c:589-600`: `GR_I1..GR_I8` = from x/y/w/h, to x/y/w/h,
-/// `AES_CTRL_CODE(GRAF_GROWBOX, 8, 1, 0)`). Its one desktop caller is
-/// [`main`]'s `do_wopen` (`desk/desksupp.c:315`), which zooms from the icon a
-/// window or a program was opened from. Returns the AES's `int_out[0]`.
-pub(super) fn graf_growbox(from: Grect, to: Grect) -> i16 {
-    let mut a = Aes::new();
-    a.intin[0] = from.x;
-    a.intin[1] = from.y;
-    a.intin[2] = from.w;
-    a.intin[3] = from.h;
-    a.intin[4] = to.x;
-    a.intin[5] = to.y;
-    a.intin[6] = to.w;
-    a.intin[7] = to.h;
-    a.call(OP_GRAF_GROWBOX, 8, 1, 0);
-    a.intout[0]
-}
-
-/// `graf_rubberbox(x, y, minw, minh)` (70) — anchor a rubber-band box at
-/// `(x, y)`; the opposite corner tracks the mouse until the button is released.
-/// Returns the final `(w, h)` (EmuTOS `act_bdown`'s rubber-band branch).
-pub(super) fn graf_rubberbox(x: i16, y: i16, minw: i16, minh: i16) -> (i16, i16) {
-    let mut a = Aes::new();
-    a.intin[0] = x;
-    a.intin[1] = y;
-    a.intin[2] = minw;
-    a.intin[3] = minh;
-    a.call(OP_GRAF_RUBBERBOX, 4, 3, 0);
-    (a.intout[1], a.intout[2])
-}
-
-/// `evnt_button(clicks, mask, state)` (21) — wait until the button reaches
-/// `state` (masked). Used to drain the button-up after a double-click open, so
-/// the next `evnt_multi` does not re-see the same release (EmuTOS
-/// `deskmain.c:1004`).
-pub(super) fn evnt_button(clicks: i16, mask: i16, state: i16) {
-    let mut a = Aes::new();
-    a.intin[0] = clicks;
-    a.intin[1] = mask;
-    a.intin[2] = state;
-    a.call(OP_EVNT_BUTTON, 3, 5, 0);
-}
-
-/// `evnt_dclick(rate, setit)` (26) — the AES's double-click speed index
-/// (0 = slowest … 4 = fastest). With `setit == false` the `rate` argument is
-/// ignored and the current index is returned; with `setit == true` the index is
-/// stored and returned. EmuTOS's desktop uses both halves: `inf_pref` queries
-/// with `evnt_dclick(0, FALSE)` to pre-select the dialog's radio button
-/// (`deskinf.c:751`) and applies the user's choice with
-/// `evnt_dclick(new, TRUE)` (`:791`), and `cnx_get` pushes the value restored
-/// from the context back into the AES the same way (`deskmain.c:1460`).
-///
-/// The rate is the AES's state, not the desktop's: the desktop only stores it in
-/// its `NEWDESK.INF` `#E` line, and the AES itself re-reads that line at boot
-/// (`tos-api/src/aes/init.rs:451`, `process_inf2`'s `ev_dclick(env & 7, TRUE)`).
-pub(super) fn evnt_dclick(rate: i16, setit: bool) -> i16 {
-    let mut a = Aes::new();
-    a.intin[0] = rate;
-    a.intin[1] = setit as i16;
-    a.call(OP_EVNT_DCLICK, 2, 1, 0);
-    a.intout[0]
-}
-
-/// `graf_handle(&gl_wchar, &gl_hchar, &gl_wbox, &gl_hbox)` (77,
-/// `deskmain.c:1956`) — the AES's VDI workstation handle `gl_handle` and the
-/// system font's metrics, `intout[0..4]` (`aes/gemsuper.c:287-293`):
-/// `(gl_handle, gl_wchar, gl_hchar, gl_wbox, gl_hbox)`. [`deskmain`] asks once
-/// per run; the desktop draws its drag outline on that workstation
-/// ([`vdibind`]) and lays out every text cell with `gl_wchar`/`gl_hchar`
-/// ([`global::gl_wchar`]).
-pub(super) fn graf_handle() -> (i16, i16, i16, i16, i16) {
-    let mut a = Aes::new();
-    a.call(OP_GRAF_HANDLE, 0, 5, 0);
-    (a.intout[0], a.intout[1], a.intout[2], a.intout[3], a.intout[4])
-}
-
-/// `graf_mouse(number)` (78) — hide ([`M_OFF`]) or show ([`M_ON`]) the mouse
-/// cursor. `do_wredraw` brackets its paint with these so the cursor's
-/// save-under does not corrupt the blit (EmuTOS `desksupp.c:221`/`:231`).
-pub(super) fn graf_mouse(number: i16) {
-    let mut a = Aes::new();
-    a.intin[0] = number;
-    a.call(OP_GRAF_MOUSE, 1, 1, 0);
-}
-
-// ── aesbind wrappers (shell manager) ───────────────────────────────────────
-
-/// `shel_write(doex, isgr, iscr, pcmd, ptail)` (121) — tell the AES shell which
-/// program is to run after this one (`desk/gembind.c:907-915`,
-/// `AES_CTRL_CODE(SHEL_WRITE, 3, 1, 2)`). The desktop's only launch primitive:
-/// `pro_exec` calls it and the shell loop (`gemshlib.c` `sh_main`/`sh_ldapp`)
-/// acts on the state it leaves behind. `pcmd` and `ptail` are NUL-terminated /
-/// length-prefixed byte strings the AES copies out of the caller's memory.
-///
-/// # Safety
-///
-/// `pcmd` and `ptail` must stay readable for the duration of the trap.
-pub(super) fn shel_write(doex: i16, isgr: i16, iscr: i16, pcmd: *const u8, ptail: *const u8) -> i16 {
-    let mut a = Aes::new();
-    a.intin[0] = doex;
-    a.intin[1] = isgr;
-    a.intin[2] = iscr;
-    a.addrin[0] = pcmd as i64;
-    a.addrin[1] = ptail as i64;
-    a.call(OP_SHEL_WRITE, 3, 1, 2);
-    a.intout[0]
-}
-
-/// `shel_get(pbuffer, len)` (122) — copy the first `pbuffer.len()` bytes of the
-/// AES shell buffer into `pbuffer` (`desk/gembind.c:918-923`,
-/// `AES_CTRL_CODE(SHEL_GET, 1, 1, 1)`; AES side `sh_get`,
-/// `aes/gemshlib.c:203-206`).
-///
-/// The buffer is `SIZE_SHELBUF = 4192` bytes of **opaque** memory the AES only
-/// `memcpy`s (`docs/api/aes/scrap-shell.md` §2, `docs/api/aes/shell-loop.md`
-/// §10): every convention about what lives in it — the 128-byte control-panel
-/// prefix, the `.INF` text behind it — belongs to the desktop, not the server.
-/// [`inf::load_and_apply`] is the `app_start` reader (`deskapp.c:832`) and
-/// [`inf::app_save`] the `app_save` one (`:1123`).
-///
-/// EmuTOS's `len` is a `WORD`; a slice longer than `i16::MAX` cannot be
-/// expressed in the ABI, so it is bounded here. Both callers pass at most
-/// `SIZE_SHELBUF`.
-pub(super) fn shel_get(pbuffer: &mut [u8]) -> i16 {
-    let mut a = Aes::new();
-    a.intin[0] = pbuffer.len().min(i16::MAX as usize) as i16;
-    a.addrin[0] = pbuffer.as_mut_ptr() as i64;
-    a.call(OP_SHEL_GET, 1, 1, 1);
-    a.intout[0]
-}
-
-/// `shel_put(pdata, len)` (123) — write `pdata` into the front of the AES shell
-/// buffer (`desk/gembind.c:926-931`, `AES_CTRL_CODE(SHEL_PUT, 1, 1, 1)`; AES
-/// side `sh_put`, `aes/gemshlib.c:213-216`). The write half of the state
-/// channel [`shel_get`] reads back — [`inf::app_save`] (`deskapp.c:1293`).
-pub(super) fn shel_put(pdata: &[u8]) -> i16 {
-    let mut a = Aes::new();
-    a.intin[0] = pdata.len().min(i16::MAX as usize) as i16;
-    a.addrin[0] = pdata.as_ptr() as i64;
-    a.call(OP_SHEL_PUT, 1, 1, 1);
-    a.intout[0]
-}
-
-/// `shel_wdef(lpcmd, lpdir)` (127) — set the shell's default startup
-/// (program, directory) pair (`desk/gembind.c:963-968`,
-/// `AES_CTRL_CODE(SHEL_WDEF, 0, 1, 2)`). `#if CONF_WITH_PCGEM` in EmuTOS; the
-/// desktop uses it after `shel_write(SHW_EXEC, …, DEF_CONSOLE, …)` to tell
-/// `sh_chdef` which directory EmuCON is to start in (`deskmain.c:756-767`).
-///
-/// # Safety
-///
-/// `lpcmd` and `lpdir` must stay readable for the duration of the trap.
-pub(super) fn shel_wdef(lpcmd: *const u8, lpdir: *const u8) {
-    let mut a = Aes::new();
-    a.addrin[0] = lpcmd as i64;
-    a.addrin[1] = lpdir as i64;
-    a.call(OP_SHEL_WDEF, 0, 1, 2);
-}
-
-/// `wind_calc(WC_WORK, WINDOW_STYLE, desk)` — the work-area width of a
-/// maximum-size window, feeding `win_view`'s `g_icols`.
-pub(super) fn wind_calc_work_width(desk: Grect) -> i16 {
-    let mut a = Aes::new();
-    a.intin[0] = WC_WORK;
-    a.intin[1] = WINDOW_STYLE as i16;
-    a.intin[2] = desk.x;
-    a.intin[3] = desk.y;
-    a.intin[4] = desk.w;
-    a.intin[5] = desk.h;
-    a.call(OP_WIND_CALC, 6, 5, 0);
-    a.intout[3]
-}
-
-// ── aesbind wrappers (menu manager) ────────────────────────────────────────
-
-/// `menu_bar(tree, show)` (30) — install (`show = 1`) or remove the menu bar.
-pub(super) fn menu_bar(tree: u64, show: i16) {
-    let mut a = Aes::new();
-    a.addrin[0] = tree as i64;
-    a.intin[0] = show;
-    a.call(OP_MENU_BAR, 1, 1, 1);
-}
-
-/// `menu_icheck(tree, item, checked)` (31) — set/clear the `CHECKED` `ob_state`
-/// bit on menu item `item` (`desk/gembind.c:302-308`,
-/// `AES_CTRL_CODE(MENU_ICHECK, 2, 1, 1)`). The AES `do_chg` runs with
-/// `dodraw = FALSE` (`aes/gemsuper.c:172`), so a closed drop-down is *not*
-/// repainted — the state is simply recorded for when the box next opens.
-pub(super) fn menu_icheck(tree: u64, item: i16, checked: bool) {
-    let mut a = Aes::new();
-    a.addrin[0] = tree as i64;
-    a.intin[0] = item;
-    a.intin[1] = checked as i16;
-    a.call(OP_MENU_ICHECK, 2, 1, 1);
-}
-
-/// `menu_ienable(tree, item, enable)` (32) — set/clear the `DISABLED`
-/// `ob_state` bit on menu item `item` (`desk/gembind.c:311-317`). Bit 15 of the
-/// item word is the AES's redraw-now flag (`aes/gemsuper.c:175-176`); EmuTOS's
-/// `men_update`/`men_list` never set it, so neither does this wrapper and the
-/// call never paints.
-pub(super) fn menu_ienable(tree: u64, item: i16, enable: bool) {
-    let mut a = Aes::new();
-    a.addrin[0] = tree as i64;
-    a.intin[0] = item;
-    a.intin[1] = enable as i16;
-    a.call(OP_MENU_IENABLE, 2, 1, 1);
-}
-
-/// `menu_tnormal(tree, title, normal)` (33) — draw `title` normal (`normal =
-/// 1`) or highlighted (`0`).
-pub(super) fn menu_tnormal(tree: u64, title: i16, normal: bool) {
-    let mut a = Aes::new();
-    a.addrin[0] = tree as i64;
-    a.intin[0] = title;
-    a.intin[1] = normal as i16;
-    a.call(OP_MENU_TNORMAL, 2, 1, 1);
-}
-
-// ── aesbind wrappers (form manager + event manager) ────────────────────────
-
-/// `form_alert(default, text)` (52) — modal alert; `text` is a
-/// NUL-terminated `[icon][message][buttons]` string. Returns the 1-based
-/// button clicked. Used for the Desk-menu About/Info box.
-pub(super) fn form_alert(default: i16, text: *const u8) -> i16 {
-    let mut a = Aes::new();
-    a.addrin[0] = text as i64;
-    a.intin[0] = default;
-    a.call(OP_FORM_ALERT, 1, 1, 1);
-    a.intout[0]
-}
-
-/// `form_do(tree, start)` (50) — run a modal dialog on `tree` until an
-/// `EXIT`/`TOUCHEXIT` object (or Enter on the default button) is chosen; returns
-/// the object index that ended it. `start` is the editable field the cursor
-/// opens in (EmuTOS passes `ROOT` for most dialogs, a named field for
-/// `ins_app_dialog`'s `APARGS`). Editable `TEDINFO` fields are edited in place
-/// (the desktop's New-folder / Rename name boxes). `tree` must stay valid across
-/// the call.
-pub(super) fn form_do(tree: u64, start: i16) -> i16 {
-    let mut a = Aes::new();
-    a.addrin[0] = tree as i64;
-    a.intin[0] = start;
-    a.call(OP_FORM_DO, 1, 1, 1);
-    a.intout[0]
-}
-
-/// `form_center(tree, &x, &y, &w, &h)` (54) — centre `tree`'s ROOT on screen
-/// (the AES writes the new `ob_x`/`ob_y` straight into the ROOT record) and
-/// return the tree's **outer** rectangle, i.e. the ROOT box grown by any
-/// `OUTLINED` ring and `SHADOWED` drop shadow (EmuTOS `ob_center`,
-/// `gemobed.c:67-106`). That rectangle is what `form_dial`'s `FMD_START` /
-/// `FMD_FINISH` and the dialog's `objc_draw` are given.
-///
-/// The vertical centring is EmuTOS's: `gl_hbox + (gl_height - gl_hbox - hd)/2`,
-/// so a centred dialog never lands under the menu bar.
-pub(super) fn form_center(tree: u64) -> Grect {
-    let mut a = Aes::new();
-    a.addrin[0] = tree as i64;
-    a.call(OP_FORM_CENTER, 0, 5, 1);
-    Grect { x: a.intout[1], y: a.intout[2], w: a.intout[3], h: a.intout[4] }
+/// `objc_draw` (42) the whole tree `tree` from `ROOT` (0) — used to paint a
+/// self-built dialog, clipped to the rectangle `form_center` reported
+/// (EmuTOS `start_dialog`, `objc_draw(tree, ROOT, MAX_DEPTH, …)`,
+/// `deskinf.c:356`).
+pub(super) fn objc_draw_dialog(tree: u64, clip: Grect) {
+    objc_draw_tree(tree, 0, clip);
 }
 
 /// `form_dial(FMD_START, 0,0,0,0, x,y,w,h)` (51) — reserve the screen area
@@ -715,9 +145,11 @@ pub(super) fn form_center(tree: u64) -> Grect {
 /// (`gemfmlib.c:365-369` is a bare `break` with the comment "grab screen sync
 /// or some other mutual exclusion method"); the restore is a *repaint* driven
 /// by [`form_dial_finish`]. The call is still made — it is the Form Manager's
-/// documented ownership handshake and the AES is free to give it meaning.
+/// documented ownership handshake and the AES is free to give it meaning. The
+/// small rectangle is unused by `FMD_START`/`FMD_FINISH`; EmuTOS passes zeros,
+/// so we do too.
 pub(super) fn form_dial_start(r: Grect) {
-    form_dial(FMD_START, r);
+    form_dial(FMD_START, Grect::default(), r);
 }
 
 /// `form_dial(FMD_FINISH, 0,0,0,0, x,y,w,h)` (51) — release the screen area
@@ -731,125 +163,49 @@ pub(super) fn form_dial_start(r: Grect) {
 /// file viewer hands the screen back — and, with the dialog's own rectangle,
 /// the second half of `end_dialog` (`deskinf.c:363-369`).
 pub(super) fn form_dial_finish(r: Grect) {
-    form_dial(FMD_FINISH, r);
+    form_dial(FMD_FINISH, Grect::default(), r);
 }
 
-/// The shared `form_dial` (51) call. The small (`int_in[1..4]`) rectangle is
-/// unused by `FMD_START`/`FMD_FINISH`; EmuTOS passes zeros, so we do too.
-fn form_dial(fmd: i16, r: Grect) {
-    let mut a = Aes::new();
-    a.intin[0] = fmd;
-    // int_in[1..4]: the "little" rect — ignored by FMD_START/FMD_FINISH.
-    a.intin[5] = r.x;
-    a.intin[6] = r.y;
-    a.intin[7] = r.w;
-    a.intin[8] = r.h;
-    a.call(OP_FORM_DIAL, 9, 1, 0);
+/// `wind_calc(WC_WORK, WINDOW_STYLE, desk)` — the work-area width of a
+/// maximum-size window, feeding `win_view`'s `g_icols` (EmuTOS
+/// `wind_calc_grect(1, WINDOW_STYLE, &G.g_desk, &t)`, `deskwin.c:95`).
+pub(super) fn wind_calc_work_width(desk: Grect) -> i16 {
+    wind_calc(WC_WORK, WINDOW_STYLE, desk).w
 }
 
-/// `wind_update(mode)` (107) — take ([`BEG_UPDATE`]) or release
-/// ([`END_UPDATE`]) the AES window-tree lock, so a batch of window changes is
-/// applied without the AES redrawing between them. EmuTOS brackets `cnx_get`
-/// with it (`deskmain.c:2053-2057`).
-pub(super) fn wind_update(mode: i16) {
-    let mut a = Aes::new();
-    a.intin[0] = mode;
-    a.call(OP_WIND_UPDATE, 1, 1, 0);
-}
-
-/// `objc_draw` (42) the whole tree `tree` from `ROOT` (0) — used to paint a
-/// self-built dialog, clipped to the rectangle `form_center` reported.
-pub(super) fn objc_draw_dialog(tree: u64, clip: Grect) {
-    objc_draw_tree(tree, 0, clip);
-}
-
-/// The outputs of an [`evnt_multi`] wait the desktop consumes.
-pub(super) struct EvntOut {
-    /// Bitmask of the event classes that fired (`RET_CODE`).
-    pub which: u16,
-    /// Mouse x (`EV_MX`).
-    pub mx: i16,
-    /// Mouse y (`EV_MY`).
-    pub my: i16,
-    /// The key word `scancode << 8 | ascii` (`EV_KRET`).
-    pub kret: i16,
-    /// The click count (`EV_BRET`).
-    pub bret: i16,
-}
-
-/// `evnt_multi(flags, …)` (25) — block until any requested event fires and
-/// return which, plus the mouse / key / click state. The button parameters are
-/// the desktop's fixed `bclk = 2` (report up to a double click), `bmask = 1`
-/// (left button), `bstate = 1` (down) — the EmuTOS `deskmain.c:2078` values.
-/// The MOBLK and timer slots stay zero; a `flags` that includes [`MU_TIMER`]
-/// therefore returns immediately once no other event is pending (the
-/// message-drain "quick-out"), while the blocking outer loop omits it.
-pub(super) fn evnt_multi(flags: u16, msg: &mut [i16; 8]) -> EvntOut {
-    let mut a = Aes::new();
-    a.addrin[0] = msg.as_mut_ptr() as i64;
-    a.intin[0] = flags as i16;
-    a.intin[1] = 2; // bclk: report up to a double click
-    a.intin[2] = 1; // bmask: left button
-    a.intin[3] = 1; // bstate: down
-    a.call(OP_EVNT_MULTI, 16, 7, 1);
-    EvntOut {
-        which: a.intout[0] as u16,
-        mx: a.intout[1],
-        my: a.intout[2],
-        kret: a.intout[5],
-        bret: a.intout[6],
-    }
+/// `evnt_multi(flags, 0x02, 0x01, 0x01, 0,0,0,0,0, 0,0,0,0,0, msg, 0, …)` (25)
+/// — block until any requested event fires and return which, plus the mouse /
+/// key / click state. The button parameters are the desktop's fixed
+/// `bclk = 2` (report up to a double click), `bmask = 1` (left button),
+/// `bstate = 1` (down) — the EmuTOS `deskmain.c:2078` values. The MOBLK and
+/// timer slots stay zero; a `flags` that includes [`MU_TIMER`] therefore
+/// returns immediately once no other event is pending (the message-drain
+/// "quick-out"), while the blocking outer loop omits it.
+///
+/// [`MU_TIMER`]: tos_types::aes::MU_TIMER
+pub(super) fn evnt_multi(flags: u16, msg: &mut [i16; 8]) -> Events {
+    let p = EvntMulti { flags, bclicks: 2, bmask: 1, bstate: 1, ..EvntMulti::default() };
+    newtos_gem::aes::evnt_multi(&p, msg.as_mut_ptr())
 }
 
 /// `evnt_multi(MU_BUTTON | MU_M1, 0x01, 0xff, 0x00, out, x, y, w, h, …)` (25)
 /// — the single shape `gr_isdown` calls (`deskact.c:70-77`): return as soon as
 /// **all** buttons are up (`bmask = 0xff`, `bstate = 0x00`) or the pointer
-/// crosses the `w`×`h` rectangle at `(x, y)` in the direction `out` asks for.
+/// crosses the `w`×`h` rectangle at `(x, y)` in the direction `out` asks for
+/// (`m1flags`: leave = `TRUE`, enter = `FALSE`). No message buffer.
 ///
 /// Returns the `RET_CODE` event mask, which is all `gr_isdown` inspects.
-/// A separate wrapper from [`evnt_multi`] because that one bakes in the
-/// desktop main loop's button parameters (`bclk = 2`, `bmask = 1`,
-/// `bstate = 1`) and leaves both MOBLKs zero.
 pub(super) fn evnt_multi_m1(out: bool, x: i16, y: i16, w: i16, h: i16) -> u16 {
-    let mut a = Aes::new();
-    a.intin[0] = (MU_BUTTON | MU_M1) as i16;
-    a.intin[1] = 1; // bclk
-    a.intin[2] = 0xff; // bmask: any button
-    a.intin[3] = 0x00; // bstate: up
-    a.intin[4] = i16::from(out); // m1flags: leave (TRUE) / enter (FALSE)
-    a.intin[5] = x;
-    a.intin[6] = y;
-    a.intin[7] = w;
-    a.intin[8] = h;
-    a.call(OP_EVNT_MULTI, 16, 7, 1);
-    a.intout[0] as u16
-}
-
-// ── aesbind wrappers (file selector) ───────────────────────────────────────
-
-/// `fsel_exinput(pipath, pisel, &button, title)` (91) — the modal file
-/// selector with a caller-supplied caption (EmuTOS `desk/gembind.c:702-712`,
-/// `AES_CTRL_CODE(FSEL_EXINPUT, 0, 2, 3)`: no int-ins, two int-outs,
-/// **three** addr-ins).
-///
-/// `path` carries the initial directory-plus-wildcard in and the (possibly
-/// navigated-to) one out; `sel` the initial file name in and the chosen one
-/// out; `title` is the dialog caption (`FS_TITLE`). Returns
-/// `(rc, button)` — EmuTOS's `RET_CODE` and `FS_BUTTON`: `rc == 0` means the
-/// selector never ran, `button` is 1 for OK and 0 for Cancel.
-///
-/// Both buffers are written back by the AES and must be large enough for what
-/// it returns: up to 96 path bytes plus the NUL and up to 16 name bytes plus
-/// the NUL (`tos-api/src/aes/fsel.rs:135-136`, the `dir`/`sel` cells the
-/// selector edits in). [`inf::FSEL_PATH_LEN`]/[`inf::FSEL_NAME_LEN`] are sized
-/// from that.
-pub(super) fn fsel_exinput(path: &mut [u8], sel: &mut [u8], title: &[u8]) -> (i16, i16) {
-    let mut a = Aes::new();
-    a.addrin[0] = path.as_mut_ptr() as i64;
-    a.addrin[1] = sel.as_mut_ptr() as i64;
-    a.addrin[2] = title.as_ptr() as i64;
-    a.call(OP_FSEL_EXINPUT, 0, 2, 3);
-    (a.intout[0], a.intout[1])
+    let p = EvntMulti {
+        flags: MU_BUTTON | MU_M1,
+        bclicks: 1,
+        bmask: 0xff,
+        bstate: 0x00,
+        m1flags: i16::from(out),
+        m1: Grect { x, y, w, h },
+        ..EvntMulti::default()
+    };
+    newtos_gem::aes::evnt_multi(&p, core::ptr::null_mut()).which
 }
 
 // ── Screen geometry, from the AES only ─────────────────────────────────────
@@ -943,10 +299,10 @@ fn deskmain() -> bool {
     // (`deskapp.c:519-520`); here it is asked of that same workstation the way
     // the AES computes it (`gsx_start`, `aes/gemgraf.c:405-410`). Both before
     // `global::init`, so every layout below sees them.
-    let (gl_handle, gl_wchar, gl_hchar, _gl_wbox, _gl_hbox) = graf_handle();
-    vdibind::set_handle(gl_handle);
+    let gh = graf_handle();
+    vdibind::set_handle(gh.handle);
     let (gl_wschar, gl_hschar) = vdibind::small_font_cell();
-    global::set_cell_metrics(gl_wchar, gl_hchar, gl_wschar, gl_hschar);
+    global::set_cell_metrics(gh.wchar, gh.hchar, gl_wschar, gl_hschar);
 
     // `wind_get_grect(DESKWH, WF_WXYWH, &G.g_desk)` — the desktop work area,
     // straight after `appl_init` and `graf_handle` exactly as EmuTOS orders it

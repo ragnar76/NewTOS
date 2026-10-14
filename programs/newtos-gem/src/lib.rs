@@ -10,12 +10,18 @@
 //!
 //! This crate supplies what a Rust program needs on top of that:
 //!
-//! * [`gemdos`], [`aes`], [`vdi`] — trap bindings (`svc #1`, `svc #2`
-//!   selectors 200 / 115), in the pattern of the kernel desktop's
-//!   `kernel/src/desk/{dosbind,vdibind}.rs` and the AES part of
-//!   `desk/mod.rs` (moving those here is U6b);
-//! * [`heap`] — the global allocator, over GEMDOS `Malloc` hunks;
-//! * the panic handler — the program ends with [`PANIC_EXIT`].
+//! * [`gemdos`], [`aes`], [`vdi`], [`xbios`] — the trap bindings (`svc #1`,
+//!   `svc #2` selectors 200 / 115, `svc #14`). Since DESK43 U6b they are the
+//!   **only** copy: the kernel desktop (`kernel/src/desk/`, still EL1 until
+//!   U9) calls the system through them as well;
+//! * [`heap`] — the global allocator, over GEMDOS `Malloc` hunks (feature
+//!   `rt`);
+//! * the panic handler — the program ends with [`PANIC_EXIT`] (feature `rt`).
+//!
+//! **Feature `rt`** (default on) is the program runtime proper: the
+//! `#[global_allocator]` and the `#[panic_handler]`. A program needs both; the
+//! kernel, which links this crate for the bindings only, has its own and turns
+//! the feature off (`default-features = false` in `kernel/Cargo.toml`).
 //!
 //! Nothing here touches the kernel: every service is reached through the
 //! trap, as for any TOS program.
@@ -26,12 +32,15 @@ extern crate alloc;
 
 pub mod aes;
 pub mod gemdos;
+#[cfg(feature = "rt")]
 pub mod heap;
 pub mod vdi;
+pub mod xbios;
 
 use core::fmt::Write;
 
 /// The global allocator of every program built on this crate.
+#[cfg(feature = "rt")]
 #[global_allocator]
 pub static HEAP: heap::Heap = heap::Heap::new();
 
@@ -39,7 +48,7 @@ pub static HEAP: heap::Heap = heap::Heap::new();
 /// generic error. A panic is the program's own abort; the value is this
 /// runtime's choice (TOS reserves no code for it), picked so the shell's
 /// `[shell] sh_ldapp: ... exited with rc=-1` names it as a failure.
-pub const PANIC_EXIT: i16 = gemdos::ERROR as i16;
+pub const PANIC_EXIT: i16 = tos_types::error::ERROR as i16;
 
 /// A `core::fmt` sink into a fixed byte buffer that always keeps room for a
 /// terminating NUL; output beyond the buffer is dropped.
@@ -89,6 +98,7 @@ impl<const N: usize> Write for FixedBuf<N> {
 
 /// Set while the panic handler runs: a panic inside it ends the program at
 /// once.
+#[cfg(feature = "rt")]
 static PANICKING: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
 
 /// The panic handler: report the location and message on the console
@@ -97,6 +107,7 @@ static PANICKING: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBoo
 /// (`panic = "abort"`). Windows and AES state the program leaves behind are
 /// swept by the AES shell after the program ends (`sh_ldapp`, `wm_new`,
 /// the missing-`appl_exit` path) as for any program that terminates early.
+#[cfg(feature = "rt")]
 #[panic_handler]
 fn panic(info: &core::panic::PanicInfo) -> ! {
     if PANICKING.swap(true, core::sync::atomic::Ordering::Relaxed) {
@@ -108,6 +119,6 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
         let _ = write!(m, " at {}:{}", loc.file(), loc.line());
     }
     let _ = write!(m, ": {}\r\n", info.message());
-    gemdos::cconws(m.as_cstr());
+    gemdos::dos_conws(m.as_cstr());
     gemdos::pterm(PANIC_EXIT)
 }

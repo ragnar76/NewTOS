@@ -2,6 +2,7 @@
 //!
 //! Subcommands (PHASE-01 §D7):
 //!   xtask build --board {rpi4|qemu-virt} [--release]
+//!   xtask build-programs --board {rpi4|qemu-virt}   — programs/ (DESK43 U6b)
 //!   xtask run [--release]                 — qemu-virt in QEMU, serial → stdout
 //!   xtask test                             — host-side unit tests (tos-types, xtask)
 //!
@@ -59,6 +60,22 @@ mod kernel_clock_tags;
 /// checked-in snapshot of EmuTOS' `#define`s.
 mod emutos_consts;
 
+/// DESK43 U6b (decision D3) — the kernel image's embedded programs: the list,
+/// the per-board program directory and the generated table, shared with
+/// `kernel/build.rs` and compiled here by path. `build-programs` writes into
+/// [`kernel_embed::programs_dir`]; the module's own `#[cfg(test)]` tests (the
+/// hard error on a missing blob, the generated `include_bytes!`) run with the
+/// host suite.
+#[path = "../../../kernel/embed.rs"]
+#[allow(dead_code)]
+mod kernel_embed;
+
+/// DESK43 U6b — the programs `build-programs` builds, their board features
+/// (X03 pass-through) and the version/machine strings of the desktop vs the
+/// boot screen (review §6, X03 row).
+#[cfg(test)]
+mod programs_tests;
+
 /// ARCH03 E8b — the loader's ELF parser, compiled here by path (it is pure,
 /// `no_std`, dependency-free) so `xtask prgflags` reads the PRGFLAGS note
 /// exactly the way the kernel does.
@@ -81,6 +98,7 @@ fn main() -> ExitCode {
     let rest: Vec<String> = args.collect();
     let result = match cmd.as_str() {
         "build" => cmd_build(&rest),
+        "build-programs" => cmd_build_programs(&rest),
         "emutos-consts" => emutos_consts::cmd(&workspace_root(), &rest),
         "gen-font" => cmd_gen_font(),
         "gen-fsel-rsc" => cmd_gen_fsel_rsc(),
@@ -110,6 +128,13 @@ Usage: cargo xtask <command> [options]
 
 Commands:
   build --board {{rpi4|qemu-virt}} [--release] [--features a,b]
+                                 — the board's programs (build-programs),
+                                   then the kernel, which embeds them
+  build-programs --board {{rpi4|qemu-virt}}
+                                 — the native Rust programs in programs/
+                                   (programs/build.sh), built with the
+                                   board feature, into
+                                   target/programs/<board>/ (DESK43 U6b)
   emutos-consts [--update] [-v]  — compare the desktop's integer constants
                                    with EmuTOS' #defines of the same name
                                    (snapshot tools/xtask/emutos-defines.snapshot;
@@ -154,6 +179,17 @@ impl Board {
             Board::QemuVirt => "board-qemu-virt",
         }
     }
+    /// The board's name as the kernel spells it (`BOARD_NAME`, `lib.rs`) and
+    /// as its program directory is called (`kernel/embed.rs`).
+    fn name(self) -> &'static str {
+        match self {
+            Board::Rpi4 => "rpi4",
+            Board::QemuVirt => "qemu-virt",
+        }
+    }
+    /// Every board, for the checks that must hold for each.
+    #[cfg(test)]
+    const ALL: [Board; 2] = [Board::Rpi4, Board::QemuVirt];
     fn from_str(s: &str) -> Result<Self, String> {
         match s {
             "rpi4" => Ok(Board::Rpi4),
@@ -377,7 +413,59 @@ fn cmd_gen_fsel_rsc() -> Result<(), String> {
     run(c)
 }
 
+/// The native Rust programs in `programs/` (DESK43 U6a/U6b): the crate and
+/// the file `build-programs` writes it to in the board's directory. Every
+/// `staticlib` member of `programs/Cargo.toml` is listed here and declares the
+/// two board features (host test `programs_tests`).
+const PROGRAMS: &[(&str, &str)] = &[("hello-gem", "HELLOGEM.NAP")];
+
+fn cmd_build_programs(args: &[String]) -> Result<(), String> {
+    let opts = parse_board_and_profile(args)?;
+    let board = opts.board.ok_or("build-programs: --board {rpi4|qemu-virt} is required")?;
+    if opts.release || !opts.features.is_empty() {
+        return Err("build-programs: programs are always release builds; only --board is accepted".into());
+    }
+    build_programs(board)
+}
+
+/// Build every program of [`PROGRAMS`] for `board` with `programs/build.sh`
+/// (toolchain T1: `sdk/crt0.S` + the crate's `staticlib` + `sdk/newtos.ld`),
+/// passing the board feature through (X03: the desktop's About-box machine
+/// line is a per-board build constant, so a separately built desktop needs the
+/// board as the kernel has it). One output directory per board,
+/// `target/programs/<board>/` — the directory the kernel build embeds from
+/// (`kernel/embed.rs`).
+fn build_programs(board: Board) -> Result<(), String> {
+    let root = workspace_root();
+    let dir = kernel_embed::programs_dir(&root, board.name());
+    std::fs::create_dir_all(&dir).map_err(|e| format!("create {}: {e}", dir.display()))?;
+    for (krate, file) in PROGRAMS {
+        println!("xtask: building program {krate} for {} -> {}", board.name(), dir.join(file).display());
+        run(program_build_command(&root, board, krate, file))?;
+    }
+    Ok(())
+}
+
+/// `bash programs/build.sh <crate> target/programs/<board>/<file> --
+/// --features board-<board>` — one program for one board.
+fn program_build_command(root: &Path, board: Board, krate: &str, file: &str) -> Command {
+    let out = kernel_embed::programs_dir(root, board.name()).join(file);
+    let mut c = Command::new("bash");
+    c.current_dir(root)
+        .arg(root.join("programs").join("build.sh"))
+        .arg(krate)
+        .arg(out)
+        .arg("--")
+        .arg("--features")
+        .arg(board.feature());
+    c
+}
+
 fn build_kernel(board: Board, release: bool, extra: &[String]) -> Result<(), String> {
+    // The kernel build depends on the program build (DESK43 D3): the image
+    // embeds the board's programs (`kernel/embed.rs`), and `kernel/build.rs`
+    // stops with a hard error when one has not been built. Build them first.
+    build_programs(board)?;
     // The board feature is always present; `extra` appends optional ones
     // (e.g. `aes-trace`) to the same comma-separated `--features` list.
     let mut feats = board.feature().to_string();

@@ -13,6 +13,7 @@
 pub mod aes;
 pub mod basepage;
 pub mod error;
+pub mod gemdos;
 pub mod memory;
 
 pub use basepage::{

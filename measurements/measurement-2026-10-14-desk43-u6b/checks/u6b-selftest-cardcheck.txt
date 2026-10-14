@@ -1,0 +1,4 @@
+normal boot (kernel8-u6b.img, plain card copy, 40 s): card sha256 before f30f360a6dc1721cc960ea67da8a60b367d4b0ba61397f617f97d51e6f0d0740
+                                                       after  f30f360a6dc1721cc960ea67da8a60b367d4b0ba61397f617f97d51e6f0d0740
+UNCHANGED
+desk-selftest lines in the normal boot's serial log: 0

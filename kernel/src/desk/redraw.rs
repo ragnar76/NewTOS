@@ -39,7 +39,7 @@
 //! every open window. The AES rectangle list is used as-is
 //! (`tos_api::aes::window::compute_rlist`); this module builds no list of its own.
 
-use super::dosbind::dos_getcookie;
+use newtos_gem::gemdos::dos_getcookie;
 use super::global::{self, DROOT};
 use tos_types::aes::{Grect, DESKWH, M_OFF, M_ON, WF_FIRSTXYWH, WF_NEXTXYWH};
 
@@ -122,7 +122,7 @@ pub fn do_wredraw(handle: i16, clip: Grect) {
     // `G.g_idt = Supexec((LONG)get_idt_cookie);` (`desksupp.c:219`) — between
     // the root resolution and the cursor bracket, exactly where EmuTOS has it.
     // NewTOS's route to the cookie is a GEMDOS trap, not `Supexec`; see
-    // `super::dosbind::dos_getcookie`.
+    // `newtos_gem::gemdos::dos_getcookie`.
     refresh_idt();
     graf_mouse(M_OFF);
     do_wredraw_nocursor(handle, clip);
