@@ -17,9 +17,8 @@ use tos_types::aes::{
     Grect, IconBlk, DESKWH, G_BOX, G_ICON, G_STRING, NIL, SELECTED, WA_DNLINE, WA_DNPAGE,
     WA_LFLINE, WA_LFPAGE, WA_RTLINE, WA_RTPAGE, WA_UPLINE, WA_UPPAGE,
 };
-use tos_api::vdi::font::{CELL_H, CELL_W};
 
-use super::global::{min_wint, DeskState, DROOT, MIN_HINT, NUM_WNODES};
+use super::global::{gl_hchar, gl_wchar, min_wint, DeskState, DROOT, MIN_HINT, NUM_WNODES};
 use super::icons::{build_iconblk, IconKind};
 use super::model::{DateFmt, FNode, PNode, TimeFmt, View, LEN_LABEL};
 
@@ -297,9 +296,9 @@ impl DeskState {
                 // A whole text line + a leading gap for the rubber-band select
                 // margin (the '-1' byte-aligns the fast blit path in EmuTOS;
                 // reproduced for metric parity).
-                self.g_iwext = LEN_FNODE * CELL_W;
-                self.g_ihext = CELL_H;
-                self.g_iwint = 2 * CELL_W - 1;
+                self.g_iwext = LEN_FNODE * gl_wchar();
+                self.g_ihext = gl_hchar();
+                self.g_iwint = 2 * gl_wchar() - 1;
                 self.g_ihint = 2;
             }
             View::Icon => {

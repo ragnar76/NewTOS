@@ -1,0 +1,54 @@
+NewTOS desktop drift probe — /Volumes/Daten/Development/PiRusTOS @ 1775339d (11 modified file(s))
+desktop source: kernel/src/desk/ (kernel module, 20 .rs file(s), subdirectories included)
+
+A  kernel/src/desk/ -> tos_api::                             0 code line(s)
+
+B  kernel/src/desk/ -> crate:: (kernel internals)            7 code line(s)
+    crate::kprintln                                          5
+    crate::sync                                              2
+      kernel/src/desk/dir.rs:2561        use crate::kprintln;
+      kernel/src/desk/global.rs:18       use crate::sync::SpinMutex;
+      kernel/src/desk/inf.rs:37          use crate::sync::SpinMutex;
+      kernel/src/desk/inf.rs:4490        use crate::kprintln;
+      kernel/src/desk/inf.rs:4600        use crate::kprintln;
+      kernel/src/desk/ins.rs:1115        use crate::kprintln;
+      kernel/src/desk/mod.rs:69          use crate::kprintln;
+
+C  kernel/ -> desk module (outside kernel/src/desk/)         4 code line(s)
+    crate::desk                                              2
+    desk::reset                                              1
+    mod desk                                                 1
+      kernel/src/lib.rs:606              desk::reset();
+      kernel/src/lib.rs:65               pub mod desk;
+      kernel/src/shell_loop.rs:291       crate::desk::reset();
+      kernel/src/shell_loop.rs:292       crate::desk::run();
+
+D  desktop Cargo.toml -> deps other than newtos-gem/tos-types   0 line(s)   (no desktop crate yet)
+
+unsafe  in kernel/src/desk/                                 24 code line(s)   [not in TOTAL; U5a baseline 24, must not rise]
+      kernel/src/desk/dir.rs:353         let (ptext, len) = unsafe {
+      kernel/src/desk/dir.rs:359         let buf = unsafe { core::slice::from_raw_parts_mut(ptext, len + 1) };
+      kernel/src/desk/dir.rs:1607        let o = unsafe { &*(tree as *const Object).add(obj as usize) };
+      kernel/src/desk/dosbind.rs:128     unsafe {
+      kernel/src/desk/ins.rs:556         unsafe {
+      kernel/src/desk/ins.rs:849         unsafe {
+      kernel/src/desk/main.rs:1421       let letter = unsafe {
+      kernel/src/desk/menu.rs:451        unsafe impl Sync for MenuTree {}
+      kernel/src/desk/menu.rs:624        unsafe {
+      kernel/src/desk/menu.rs:831        let map = unsafe { &*MENU.title_obj.get() };
+      kernel/src/desk/menu.rs:839        let map = unsafe { &*MENU.item_obj.get() };
+      kernel/src/desk/menu.rs:851        let map = unsafe { &*MENU.obj_item.get() };
+      kernel/src/desk/menu.rs:890        let o = unsafe { &(*MENU.obj.get())[obj as usize] };
+      kernel/src/desk/menu.rs:927        unsafe { (*MENU.shortcuts.get()).get(n).copied().unwrap_or(0) }
+      kernel/src/desk/menu.rs:933        unsafe {
+      kernel/src/desk/menu.rs:943        unsafe { *MENU.shortcuts.get() }
+      kernel/src/desk/menu.rs:951        unsafe { *MENU.shortcuts.get() = v };
+      kernel/src/desk/menu.rs:974        let s = unsafe { &(*MENU.labels.get())[obj] };
+      kernel/src/desk/menu.rs:985        let w = unsafe { (*MENU.obj.get())[obj].ob_width };
+      kernel/src/desk/menu.rs:1015       let s = unsafe { &mut (*MENU.labels.get())[obj] };
+      kernel/src/desk/menu.rs:1038       let s = unsafe { &(*MENU.labels.get())[obj] };
+      kernel/src/desk/mod.rs:141         unsafe {
+      kernel/src/desk/vdibind.rs:70      unsafe {
+      kernel/src/desk/xbiosbind.rs:65    unsafe {
+
+DRIFT-PROBE TOTAL: 11

@@ -15,12 +15,10 @@
 
 use alloc::vec::Vec;
 
-use super::global::{DeskState, Point, DROOT};
+use super::global::{gl_wchar, DeskState, Point, DROOT};
 use tos_types::aes::{Grect, DESKWH, DISABLED, NIL, SELECTED};
 use super::model::{AType, View};
 use super::win::LEN_FNODE;
-
-use tos_api::vdi::font::CELL_W;
 
 /// The result an [`super::main`] click handler acts on: whether the selection
 /// changed (so it can repaint the affected window/desktop).
@@ -55,7 +53,7 @@ impl DeskState {
         match view {
             View::Text => {
                 // The whole text line width (LEN_FNODE chars), full item height.
-                let w = LEN_FNODE * CELL_W;
+                let w = LEN_FNODE * gl_wchar();
                 let h = self.g_screen[obid as usize].ob_height;
                 in_rect(mx, my, ox, oy, w, h)
             }
@@ -162,7 +160,7 @@ impl DeskState {
         let boxes: [(i16, i16, i16, i16); 2] = match view {
             View::Text => {
                 let h = self.g_screen[child as usize].ob_height;
-                [(ox, oy, LEN_FNODE * CELL_W, h), (0, 0, 0, 0)]
+                [(ox, oy, LEN_FNODE * gl_wchar(), h), (0, 0, 0, 0)]
             }
             View::Icon => {
                 let ib = &self.g_screeninfo[child as usize].block;

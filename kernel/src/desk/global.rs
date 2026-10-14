@@ -11,7 +11,7 @@
 
 use alloc::string::String;
 use alloc::vec::Vec;
-use core::sync::atomic::{AtomicU8, Ordering};
+use core::sync::atomic::{AtomicI16, AtomicU8, Ordering};
 
 use tos_types::aes::{Grect, Object, DESKWH, G_BOX, G_IBOX, LASTOB, NIL};
 
@@ -190,6 +190,58 @@ pub fn patcol_all() -> [u8; 6] {
         *o = slot.load(Ordering::Acquire);
     }
     out
+}
+
+// ── Character-cell metrics (`gl_wchar`/`gl_hchar`, `gl_wschar`/`gl_hschar`) ──
+//
+// EmuTOS keeps these as plain globals beside `G`, not inside it
+// (`include/gsxdefs.h:82-86`). The desktop fills the normal-font pair from
+// `graf_handle(&gl_wchar, &gl_hchar, &gl_wbox, &gl_hbox)` at the start of every
+// `deskmain` run (`deskmain.c:1956`). The small-font pair is an AES global the
+// ROM desktop reads directly (`deskapp.c:519-520,810-811,994-1002`); an
+// application has no AES call for it, so [`super::deskmain`] asks the VDI the
+// way the AES itself computes it (`gsx_start`, `aes/gemgraf.c:405-410`, via
+// [`super::vdibind::small_font_cell`]). Kept as atomics, like [`G_PATCOL`], so
+// code running inside [`with`] (e.g. `app_start`) can read them without
+// re-entering the [`DESK`] lock. Zero until the first `deskmain` sets them;
+// nothing in the desktop reads them before that.
+static GL_WCHAR: AtomicI16 = AtomicI16::new(0);
+static GL_HCHAR: AtomicI16 = AtomicI16::new(0);
+static GL_WSCHAR: AtomicI16 = AtomicI16::new(0);
+static GL_HSCHAR: AtomicI16 = AtomicI16::new(0);
+
+/// `gl_wchar` (`include/gsxdefs.h:82`) — the normal (IBM) font's character
+/// cell width, as `graf_handle` reported it (`deskmain.c:1956`).
+pub fn gl_wchar() -> i16 {
+    GL_WCHAR.load(Ordering::Relaxed)
+}
+
+/// `gl_hchar` (`include/gsxdefs.h:83`) — the normal (IBM) font's character
+/// cell height, as `graf_handle` reported it (`deskmain.c:1956`).
+pub fn gl_hchar() -> i16 {
+    GL_HCHAR.load(Ordering::Relaxed)
+}
+
+/// `gl_wschar` (`include/gsxdefs.h:85`) — the small font's character cell
+/// width, `vst_height(ws_chminh)`'s cell width (`aes/gemgraf.c:407`).
+pub fn gl_wschar() -> i16 {
+    GL_WSCHAR.load(Ordering::Relaxed)
+}
+
+/// `gl_hschar` (`include/gsxdefs.h:86`) — the small font's character cell
+/// height, `vst_height(ws_chminh)`'s cell height (`aes/gemgraf.c:407`).
+pub fn gl_hschar() -> i16 {
+    GL_HSCHAR.load(Ordering::Relaxed)
+}
+
+/// Store the four cell metrics `deskmain` learned at start-up
+/// (`deskmain.c:1956` for `gl_wchar`/`gl_hchar`; `aes/gemgraf.c:407` for
+/// `gl_wschar`/`gl_hschar`).
+pub fn set_cell_metrics(wchar: i16, hchar: i16, wschar: i16, hschar: i16) {
+    GL_WCHAR.store(wchar, Ordering::Relaxed);
+    GL_HCHAR.store(hchar, Ordering::Relaxed);
+    GL_WSCHAR.store(wschar, Ordering::Relaxed);
+    GL_HSCHAR.store(hschar, Ordering::Relaxed);
 }
 
 /// EmuTOS `WSAVE` (`deskapp.h:120-131`) — one window's saved context: its frame

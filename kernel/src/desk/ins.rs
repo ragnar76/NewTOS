@@ -33,10 +33,9 @@ use tos_types::aes::{
     G_BUTTON, G_FBOXTEXT, G_IBOX, G_ICON, G_STRING, LASTOB, NIL, RBUTTON, SELECTABLE, SELECTED,
     TOUCHEXIT,
 };
-use tos_api::vdi::font::{CELL_H, CELL_W};
 
 use super::dosbind::{dos_gdrv, dos_sdrv};
-use super::global::{self, Anode, AF_ISEXEC, DROOT};
+use super::global::{self, gl_hchar, gl_wchar, Anode, AF_ISEXEC, DROOT};
 use super::icons::{build_iconblk, icon_kind, ig_of, IconKind, BUILTIN_ICONS, IG_HARD};
 use super::inf::{disk_label, end_dialog, mk_root, start_dialog, BOX_SPEC, TED_COLOR};
 use super::model::AType;
@@ -409,20 +408,20 @@ fn install_desktop_icon(existing: Option<usize>) -> Change {
     const UPDN_W: i16 = 28;
     const UPDN_H: i16 = 20;
 
-    let lbl_w = 20 * CELL_W; // "Label: ____________" is the longest template
-    let type_w = 3 * (11 * CELL_W) + 2 * GAP;
+    let lbl_w = 20 * gl_wchar(); // "Label: ____________" is the longest template
+    let type_w = 3 * (11 * gl_wchar()) + 2 * GAP;
     let ibox_w = GAP + g_wicon + GAP + UPDN_W + GAP;
-    let dw = MARGIN + lbl_w.max(type_w).max(6 * CELL_W + ibox_w) + MARGIN;
+    let dw = MARGIN + lbl_w.max(type_w).max(6 * gl_wchar() + ibox_w) + MARGIN;
 
     let y_title = MARGIN;
-    let y_id = y_title + CELL_H + 12;
+    let y_id = y_title + gl_hchar() + 12;
     let y_label = y_id + FLD_H + GAP;
     let y_type = y_label + FLD_H + 16;
-    let y_radio = y_type + CELL_H + 6;
+    let y_radio = y_type + gl_hchar() + 6;
     let y_ibox = y_radio + BTN_H + 16;
     let y_btn = y_ibox + IBOX_H + 20;
     let dh = y_btn + 28 + MARGIN;
-    let gx = MARGIN + 6 * CELL_W; // left edge of the icon box ("Icon:" + blank)
+    let gx = MARGIN + 6 * gl_wchar(); // left edge of the icon box ("Icon:" + blank)
 
     static TITLE: &[u8] = b"INSTALL DESKTOP ICON\0";
     static TYPE_LBL: &[u8] = b"Item type:\0";
@@ -440,7 +439,7 @@ fn install_desktop_icon(existing: Option<usize>) -> Change {
     /// `STDRIVID` (`desk_rsc.c:2542`) — "a disk icon needs a drive letter".
     static STDRIVID: &[u8] = b"[1][No drive identifier.][ Retry ]\0";
 
-    let radio_w = 11 * CELL_W;
+    let radio_w = 11 * gl_wchar();
     // Each `RBUTTON` of `ADINSDSK` is `SELECTABLE | RBUTTON | FL3DIND`
     // (`desk_rsc.c:958` ff.).
     let rb = |spec: &'static [u8], x: i16, next: i16| {
@@ -452,13 +451,13 @@ fn install_desktop_icon(existing: Option<usize>) -> Change {
         // 0 ROOT
         mk_root(BOX_SPEC, dw, dh, ID_CNCL),
         // 1 title
-        mk(G_STRING, 0, TITLE.as_ptr() as u64, (dw - 20 * CELL_W) / 2, y_title, 20 * CELL_W, CELL_H, ID_ID, -1, -1),
+        mk(G_STRING, 0, TITLE.as_ptr() as u64, (dw - 20 * gl_wchar()) / 2, y_title, 20 * gl_wchar(), gl_hchar(), ID_ID, -1, -1),
         // 2 ID_ID — NOT EDITABLE, exactly as `desk_rsc.c:936-940` declares it.
-        mk(G_FBOXTEXT, FL3DBAK, &mut id_ted as *mut _ as u64, MARGIN, y_id, 15 * CELL_W + 8, FLD_H, ID_LABEL, -1, -1),
+        mk(G_FBOXTEXT, FL3DBAK, &mut id_ted as *mut _ as u64, MARGIN, y_id, 15 * gl_wchar() + 8, FLD_H, ID_LABEL, -1, -1),
         // 3 ID_LABEL
         mk(G_FBOXTEXT, EDITABLE | FL3DBAK, &mut label_ted as *mut _ as u64, MARGIN, y_label, lbl_w + 8, FLD_H, 4, -1, -1),
         // 4 "Item type:"                 5 its G_IBOX      6/7/8 the radios
-        mk(G_STRING, FL3DBAK, TYPE_LBL.as_ptr() as u64, MARGIN, y_type, 10 * CELL_W, CELL_H, 5, -1, -1),
+        mk(G_STRING, FL3DBAK, TYPE_LBL.as_ptr() as u64, MARGIN, y_type, 10 * gl_wchar(), gl_hchar(), 5, -1, -1),
         mk(G_IBOX, 0, 0, MARGIN, y_radio, type_w, BTN_H, ID_IBOX, ID_DRIVE, ID_DRIVE + 2),
         rb(DRIVE, 0, ID_DRIVE + 1),
         rb(TRASH, radio_w + GAP, ID_DRIVE + 2),
@@ -469,7 +468,7 @@ fn install_desktop_icon(existing: Option<usize>) -> Change {
         mk(G_BUTTON, SELECTABLE | TOUCHEXIT | FL3DACT, UP.as_ptr() as u64, GAP + g_wicon + GAP, 5, UPDN_W, UPDN_H, ID_DOWN, -1, -1),
         mk(G_BUTTON, SELECTABLE | TOUCHEXIT | FL3DACT, DOWN.as_ptr() as u64, GAP + g_wicon + GAP, IBOX_H - UPDN_H - 5, UPDN_W, UPDN_H, ID_IBOX, -1, -1),
         // 13 "Icon:"
-        mk(G_STRING, FL3DBAK, ICON_LBL.as_ptr() as u64, MARGIN, y_ibox + (IBOX_H - CELL_H) / 2, 5 * CELL_W, CELL_H, ID_OK, -1, -1),
+        mk(G_STRING, FL3DBAK, ICON_LBL.as_ptr() as u64, MARGIN, y_ibox + (IBOX_H - gl_hchar()) / 2, 5 * gl_wchar(), gl_hchar(), ID_OK, -1, -1),
         // 14/15/16 OK / Skip / Cancel (`FL3DACT`, `desk_rsc.c:1004` ff.)
         mk(G_BUTTON, SELECTABLE | DEFAULT | EXIT | FL3DACT, OK.as_ptr() as u64, MARGIN, y_btn, 90, 28, ID_SKIP, -1, -1),
         mk(G_BUTTON, SELECTABLE | EXIT | FL3DACT, SKIP.as_ptr() as u64, (dw - 90) / 2, y_btn, 90, 28, ID_CNCL, -1, -1),
@@ -711,22 +710,22 @@ fn install_window_icon(pf: Option<&WinFile>) -> Change {
     const UPDN_H: i16 = 20;
     const BTN_W: i16 = 100;
 
-    let fld_w = 19 * CELL_W + 8; // "Name: ________.___" plus the field border
-    let radio_w = 13 * CELL_W;
+    let fld_w = 19 * gl_wchar() + 8; // "Name: ________.___" plus the field border
+    let radio_w = 13 * gl_wchar();
     let type_w = 2 * radio_w + GAP;
     let ibox_w = GAP + g_wicon + GAP + UPDN_W + GAP;
     let btn_row_w = 2 * BTN_W + 3 * GAP;
-    let dw = MARGIN + fld_w.max(type_w).max(6 * CELL_W + ibox_w).max(btn_row_w) + MARGIN;
+    let dw = MARGIN + fld_w.max(type_w).max(6 * gl_wchar() + ibox_w).max(btn_row_w) + MARGIN;
 
     let y_title = MARGIN;
-    let y_name = y_title + CELL_H + 12;
+    let y_name = y_title + gl_hchar() + 12;
     let y_type = y_name + FLD_H + 16;
-    let y_radio = y_type + CELL_H + 6;
+    let y_radio = y_type + gl_hchar() + 6;
     let y_ibox = y_radio + BTN_H + 16;
     let y_btn1 = y_ibox + IBOX_H + 20;
     let y_btn2 = y_btn1 + 28 + GAP;
     let dh = y_btn2 + 28 + MARGIN;
-    let gx = MARGIN + 6 * CELL_W; // left edge of the icon box ("Icon:" + blank)
+    let gx = MARGIN + 6 * gl_wchar(); // left edge of the icon box ("Icon:" + blank)
     let btn_x2 = MARGIN + BTN_W + GAP;
 
     // Each radio of `ADINSWIN` is `SELECTABLE | RBUTTON | FL3DIND`
@@ -741,11 +740,11 @@ fn install_window_icon(pf: Option<&WinFile>) -> Change {
         // 0 ROOT
         mk_root(BOX_SPEC, dw, dh, IW_CNCL),
         // 1 title
-        mk(G_STRING, 0, TITLE.as_ptr() as u64, (dw - 19 * CELL_W) / 2, y_title, 19 * CELL_W, CELL_H, IW_NAME, -1, -1),
+        mk(G_STRING, 0, TITLE.as_ptr() as u64, (dw - 19 * gl_wchar()) / 2, y_title, 19 * gl_wchar(), gl_hchar(), IW_NAME, -1, -1),
         // 2 IW_NAME
         mk(G_FBOXTEXT, name_flags, &mut name_ted as *mut _ as u64, MARGIN, y_name, fld_w, FLD_H, 3, -1, -1),
         // 3 "Item type:"                 4 IW_RBOX          5/6 the radios
-        mk(G_STRING, FL3DBAK, TYPE_LBL.as_ptr() as u64, MARGIN, y_type, 10 * CELL_W, CELL_H, IW_RBOX, -1, -1),
+        mk(G_STRING, FL3DBAK, TYPE_LBL.as_ptr() as u64, MARGIN, y_type, 10 * gl_wchar(), gl_hchar(), IW_RBOX, -1, -1),
         mk(G_IBOX, 0, 0, MARGIN, y_radio, type_w, BTN_H, IW_IBOX, IW_FOLD, IW_FILE),
         rb(FOLDER, 0, IW_FILE),
         rb(FILE, radio_w + GAP, IW_RBOX),
@@ -755,7 +754,7 @@ fn install_window_icon(pf: Option<&WinFile>) -> Change {
         mk(G_BUTTON, SELECTABLE | TOUCHEXIT | FL3DACT, UP.as_ptr() as u64, GAP + g_wicon + GAP, 5, UPDN_W, UPDN_H, IW_DOWN, -1, -1),
         mk(G_BUTTON, SELECTABLE | TOUCHEXIT | FL3DACT, DOWN.as_ptr() as u64, GAP + g_wicon + GAP, IBOX_H - UPDN_H - 5, UPDN_W, UPDN_H, IW_IBOX, -1, -1),
         // 11 "Icon:"
-        mk(G_STRING, FL3DBAK, ICON_LBL.as_ptr() as u64, MARGIN, y_ibox + (IBOX_H - CELL_H) / 2, 5 * CELL_W, CELL_H, IW_INST, -1, -1),
+        mk(G_STRING, FL3DBAK, ICON_LBL.as_ptr() as u64, MARGIN, y_ibox + (IBOX_H - gl_hchar()) / 2, 5 * gl_wchar(), gl_hchar(), IW_INST, -1, -1),
         // 12/13 Install / Remove, 14/15 Skip / Cancel (`FL3DACT`, `:2112` ff.)
         mk(G_BUTTON, SELECTABLE | DEFAULT | EXIT | FL3DACT, INSTALL.as_ptr() as u64, MARGIN, y_btn1, BTN_W, 28, IW_REMV, -1, -1),
         mk(G_BUTTON, SELECTABLE | EXIT | FL3DACT, REMOVE.as_ptr() as u64, btn_x2, y_btn1, BTN_W, 28, IW_SKIP, -1, -1),

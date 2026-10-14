@@ -7,7 +7,7 @@
 //!
 //! * `g_wicon` × `g_hicon` — the size of **one icon cell** (bitmap + its
 //!   fixed-width label box). This is the D1 fix: the cell width is the
-//!   **fixed** [`icons::IB_WTEXT`] label box **plus `2 * IB_XTEXT`**, never
+//!   **fixed** [`icons::ib_wtext`] label box **plus `2 * IB_XTEXT`**, never
 //!   shrunk to the actual name length.
 //! * `g_icw` × `g_ich` — the **desktop's** grid pitch, computed by fitting as
 //!   many `g_wicon + MIN_WINT`-wide columns into `g_desk` as possible, then
@@ -16,11 +16,13 @@
 //!   which uses a plain fixed gap).
 
 use tos_types::aes::{IconBlk, G_ICON, NIL};
-use tos_api::vdi::font::{CELL_H, CELL_W, SMALL_CELL_H, SMALL_CELL_W};
 
-use super::global::{min_wint, DeskState, Point, AF_ISEXEC, DROOT, MIN_HINT};
+use super::global::{
+    gl_hchar, gl_hschar, gl_wchar, gl_wschar, min_wint, DeskState, Point, AF_ISEXEC, DROOT,
+    MIN_HINT,
+};
 use super::icons::{
-    build_iconblk, icon_kind, IconKind, IB_HICON, IB_WICON, IB_WTEXT, ICON_LABEL_SLACK,
+    build_iconblk, ib_wtext, icon_kind, IconKind, IB_HICON, IB_WICON, ICON_LABEL_SLACK,
     MAX_ICONTEXT_WIDTH,
 };
 
@@ -44,18 +46,18 @@ impl DeskState {
     /// ```
     ///
     /// `char_w`/`char_h` here are the **small** AES font
-    /// ([`SMALL_CELL_W`]/[`SMALL_CELL_H`] = 6×6, EmuTOS `gl_wschar`/
+    /// ([`gl_wschar()`]/[`gl_hschar()`] = 6×6, EmuTOS `gl_wschar`/
     /// `gl_hschar`), not the normal 8×16 one: `gr_gicon` draws an icon's
     /// label and its overlay character in the small font (`gemgraf.c:802,806`),
     /// so the label box must be measured in the same cell the renderer
     /// advances by — otherwise a 12-character 8.3 name does not fit its box.
     pub fn app_start(&mut self) {
         // Icon cell: fixed 12-char label box + 2*IB_XTEXT (the D1 root fix).
-        // `IB_WTEXT + 2*IB_XTEXT` is algebraically `MAX_ICONTEXT_WIDTH*gl_wschar
+        // `ib_wtext() + 2*IB_XTEXT` is algebraically `MAX_ICONTEXT_WIDTH*gl_wschar
         // + 2*ib_xtext`, the deskapp.c:810 formula, made explicit here.
-        debug_assert_eq!(IB_WTEXT, MAX_ICONTEXT_WIDTH * SMALL_CELL_W);
-        self.g_wicon = IB_WTEXT + 2 * super::icons::IB_XTEXT;
-        self.g_hicon = IB_HICON + SMALL_CELL_H + ICON_LABEL_SLACK;
+        debug_assert_eq!(ib_wtext(), MAX_ICONTEXT_WIDTH * gl_wschar());
+        self.g_wicon = ib_wtext() + 2 * super::icons::IB_XTEXT;
+        self.g_hicon = IB_HICON + gl_hschar() + ICON_LABEL_SLACK;
 
         // Desktop grid pitch: even redistribution over the fitting columns/rows
         // (deskapp.c:813-817). Integer division floors the count, then the
@@ -93,7 +95,7 @@ impl DeskState {
         // shipped icon bitmap width, which is `IB_WICON` for every icon in the
         // built-in set (`icons.rs`).
         let xcent = (self.g_wicon - IB_WICON) / 2;
-        let step = self.g_hicon - SMALL_CELL_H - 2; // `g_hicon-gl_hschar-2`
+        let step = self.g_hicon - gl_hschar() - 2; // `g_hicon-gl_hschar-2`
         let (w, h) = (self.g_wicon, self.g_hicon);
         self.g_xyicon = [
             Point { x: xcent, y: 0 },
@@ -110,8 +112,8 @@ impl DeskState {
         // `G.g_xytext[1].x = gl_wchar * DRAG_BOX_WIDTH;` etc. (`:1008-1011`) —
         // the other two vertices stay at the `bzero`'d origin, which closes the
         // rectangle.
-        let tw = CELL_W * DRAG_BOX_WIDTH;
-        let th = CELL_H;
+        let tw = gl_wchar() * DRAG_BOX_WIDTH;
+        let th = gl_hchar();
         self.g_xytext = [
             Point { x: 0, y: 0 },
             Point { x: tw, y: 0 },

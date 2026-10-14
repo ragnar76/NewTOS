@@ -1,0 +1,88 @@
+measurement-2026-10-14-desk43-u7 -- DESK43 unit U7 "G4/G5: the last VDI constants" (docs/analysis/desk43-u5-u10-review-2026-10-14.md
+§2.3 + §3.2 row U7; docs/analysis/desktop-userspace-plan-v2.md §5 U7, §2.2 B). Developer run, base HEAD 1775339d (clean tree;
+ac521aeb = U5b) + the uncommitted U7 change. Host macOS, QEMU raspi4b + qemu-virt. No SD card, no Pi, nothing committed. 2026-10-14.
+
+WHAT CHANGED (no behaviour change intended): the desktop no longer imports tos_api::vdi::font::{CELL_W, CELL_H, SMALL_CELL_W,
+SMALL_CELL_H}. deskmain asks graf_handle (AES 77) once per run, right after appl_init, as EmuTOS does (deskmain.c:1956), and keeps
+gl_handle + gl_wchar/gl_hchar; the small-font cell gl_wschar/gl_hschar is asked of the same (AES-shared) workstation with the
+AES's own gsx_start sequence (aes/gemgraf.c:404-410): vq_extnd(h,0) -> ws_chminh = PTSOUT[1], vqt_attributes -> current height,
+vst_height(ws_chminh) -> cell PTSOUT[2..3], vst_height(current) to restore. Stored in four AtomicI16 globals in desk/global.rs
+(EmuTOS keeps them as globals beside G, include/gsxdefs.h:82-86), read through gl_wchar()/gl_hchar()/gl_wschar()/gl_hschar().
+261 code uses on 151 lines converted (CELL_W 128, CELL_H 128, SMALL_CELL_W 2, SMALL_CELL_H 3; 8 files) + the 8 import lines
++ 4 doc mentions (the review's "270 + 9" counted doc/import lines too); const items that depended on them became lets/fns (dir.rs BTN_W/BTN_GAP/BTN_ROW_W, inf.rs ROW, ROW_H/DEF_W/LBL_W/FMTGRP_W/
+GROUP_W, menu.rs CHAR_W (deleted, = gl_wchar) / BAR_BOX_H -> bar_box_h() / ENTRY_H -> entry_h(), icons.rs IB_WTEXT/IB_HTEXT ->
+ib_wtext()/ib_htext()). vdibind's handle is now the one deskmain recorded (set_handle), not a lazy second graf_handle on the first
+drag. Details: TASK/DESK43-U7-STATUS-DONE.MD.
+
+RESULT: drift probe 19 -> 11 as planned; 0 pixel change on every screen reached (35 + 8 + 1 dumps byte-identical); the call
+sequence differs exactly by the five new init calls (+ one kernel address that moved with the larger .text).
+
+1. BASELINES (method/checks.sh u7 -> checks/u7-*; SOURCE_DATE_EPOCH=1791979200)     expected       measured
+   host tests tos-api tos-types xtask                                                1347/0/1       1347/0/1
+   release warnings rpi4 / qemu-virt (tos-api/kernel)                                64/94          64/94 both, 0 errors
+   clippy rpi4 / qemu-virt (tos-api/kernel)                                          76/125         76/125 both; per-file warning
+                                                                                                    counts identical to U5b (0 in desk/)
+   desk drift probe v2 TOTAL / UNSAFE                                                11 / <=24      11 / 24
+   cargo xtask emutos-consts                                                         green          total=448 matched=281 mismatched=2
+                                                                                                    documented=2 undocumented=0 stale=0
+                                                                                                    no-counterpart=165 (+3: the new
+                                                                                                    vdibind opcodes OP_VST_HEIGHT 12,
+                                                                                                    OP_VQT_ATTRIBUTES 38, OP_VQ_EXTND 102)
+   SDK host tests                                                                    20/0/0         20/0/0
+   programs/build.sh hello-gem (checks/u7-build-hellogem.txt)                        builds         builds; HELLOGEM.NAP sha256 3110e2e3...
+                                                                                                    = the U5b file (byte-identical)
+   desk-cite-list (checks/u7-cite-list.txt, u7-cite-since-base.txt)                   --             541/357/0/184; since 1775339d 39/34/0/5
+
+2. QEMU RASPI4B SERIES (method/series.sh + run-rpi4.sh + mode.sh + qmp_timed.py from the U5b run; summarize.sh adapted;
+   checks/u7-series-summary.txt, u7-series-driver.txt). Kernel bin/kernel8-u7.img (= the checks.sh rpi4 build), cards = the
+   U5b run's private copies of the MEM05 acceptance cards (/tmp/m5j/u5b/cards: plain, apitest, teradesk, qed; each run on a fresh
+   copy). memprot on / off / strict x desktop t25, APITEST t25/t40, TeraDesk t35, QED t30 = 12 runs, 0 [EXC]/PANIC.
+     screendumps u7 vs U5b run u5b-<mode>-rpi4-*: on 5/5, off 5/5, strict 5/5 BYTE-IDENTICAL
+     screendumps u7 vs U5b run base-<mode>-rpi4-*: on 5/5, off 5/5, strict 5/5 BYTE-IDENTICAL
+     desktop t25 sha256 0e6f7704...324b in all three modes (= U5a/U6a/U5b/MEM05 desktop)
+     APITEST TOTAL 106/0/5 in all three modes; [OK]/[FAIL]/[SKIP] lines (126, modulo hex) u7 vs U5b: 0 differing lines each mode
+
+3. SCREENS THAT USE THE METRICS (method/inj-desk-views.py, views-run.sh; checks/u7-views-compare.txt)
+   The U5a injector (arming at "[desk] desktop up", IKBD feed in host_env::pump_devices) with a longer script that also drives
+   the IKBD mouse (relative packets, kernel/src/ikbd.rs): Alt-C (C:\ window, text view per the card's NEWDESK.INF), View ->
+   Show as icons, Desk -> About, Options -> Set preferences, View -> Set background, Options -> Desktop configuration, each
+   dialog closed with Return. Built WITHOUT svc-seq-trace (nothing written to the card). Same script, same plain card copy,
+   kernels from /tmp/m5j/u7/headtree (git archive HEAD) and /tmp/m5j/u7/newtree (+ U7 change; verified identical to the shared
+   kernel/ by diff -r).
+     8 screendumps (1-text, 2-viewmenu, 3-icons, 4-about, 5-prefs, 6-background, 7-config, 8-end): views-u7 vs views-base
+     8/8 BYTE-IDENTICAL. Viewed: every phase reached as intended (text view, open View drop-down, icon view with 6x6 labels,
+     About box, SET PREFERENCES, Set Background, DESKTOP CONFIGURATION, icon view after). 0 [EXC]/PANIC.
+     The U7 tree's instrumented copy prints the stored values (serial/views-u7-rpi4-serial.log):
+       [u7v] cell metrics gl_handle=1 gl_wchar=8 gl_hchar=16 gl_wschar=6 gl_hschar=6
+
+4. ORACLE (guard G2; method/seq-run.sh = the U5b script, header only; injector inj-desk-seq.py unchanged; checks/u7-oracle-diff.txt)
+   base = /tmp/m5j/u7/headtree, u7 = /tmp/m5j/u7/newtree, each + injector, release rpi4 --features svc-seq-trace (96 warnings =
+   94 + the injector's 2, as in U5a/U5b), fresh copy of the plain card, screendumps 20/45 s.
+     bin/kernel8-seq-base.img sha256 50278e7e... = U5b run's bin/kernel8-seq-u5b.img (HEAD builds the U5b oracle kernel exactly)
+     trace/SVCSEQ-base.LOG = U5b run's SVCSEQ-u5b.LOG BYTE-IDENTICAL (684 lines, 551 calls)
+     trace/SVCSEQ-u7.LOG: 690 lines, 556 calls. Diff = exactly
+       + after "K AES op=10 appl_init -> 0", before "K AES op=104 wind_get" (deskmain.c:1953-1959 order):
+         K AES op=77 graf_handle -> 1   (handle=1 wchar=8 hchar=16 wbox=19 hbox=19)
+         K VDI op=102 (vq_extnd)   K VDI op=38 (vqt_attributes)   K VDI op=12 vst_height   K VDI op=12 vst_height
+       ~ K XBIOS #14 fn=0x10 (Keytbl) -> 0xffff000000349d08 / 0xffff00000034ad08: the returned pointer is
+         tos_api::xbios::keytbl::KERNEL_AREA (.bss); .text grew 866464 -> 871988 bytes (loads instead of immediates), .bss
+         start moved by one page (llvm-size/llvm-nm of both seq ELFs). Value, not call: same call at the same place.
+     No other call, argument shape or result differs; no graf_handle at drag time in either run (the injector does not drag).
+     Screendumps: seq-base t20 = t45 = U5b seq dumps (de782244...). seq-u7 t20/t45 differ from base in 62 pixels, bbox
+     (90,70)-(112,80) only (checks/u7-seq-screendump-diff.txt): the window info line reads "3423082 bytes used" (base) vs
+     "3423301 bytes used" (u7). 3423301 - 3423082 = 219 = 23828 - 23609 = the size of the six extra lines in C:\SVCSEQ.LOG,
+     the trace file itself (it lies in the window's directory). Not a product difference; section 3 shows the same window
+     without the tracer byte-identical.
+
+5. QEMU-VIRT BOOT (method/run-virt.sh + drive.py from the MEM05 run; -M virt, ramfb, until "[desk] desktop up" + 6 s)
+   bin/kernel-virt-u7.img and the U5b run's kernel-virt-u5b.img (reference, files prefixed ref-): both "[desk] desktop up
+   (0 drives, 0 window(s) from the context)", 0 [EXC]/PANIC; end screendumps 1920x1080 BYTE-IDENTICAL (2e0f487f...).
+
+NOT DONE: real Pi (not asked); memprot=verify / asid=on (not asked); machine-code equivalence (the code changes by design:
+261 constant uses became loads; the proof is behavioural, sections 2-5); TeraDesk->QED key-driven chain (needs the tdkeys
+injector kernel; TeraDesk and QED each started from the card's NEWDESK.INF, as in U5b); Install icon/application dialogs
+(ins.rs, 21 sites) and the copy/rename dialogs (dir.rs) were not driven (would need a selection + file operation on the card).
+
+Scratch: /tmp/m5j/u7 (-> /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/u7): headtree/ newtree/ (scratch trees), seq/ views/
+(instrumented build trees), s/ (QMP sockets). Cards from /tmp/m5j/u5b/cards (read, copied per run). Repo-root kernel8.img
+(gitignored) overwritten by checks.sh. bin/*.img gitignored, sha256 in bin/SHA256SUMS.

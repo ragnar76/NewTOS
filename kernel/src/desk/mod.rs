@@ -523,14 +523,17 @@ pub(super) fn evnt_dclick(rate: i16, setit: bool) -> i16 {
     a.intout[0]
 }
 
-/// `graf_handle()` (77) — the AES's VDI workstation handle `gl_handle`, plus
-/// the system font's cell metrics the desktop does not use here. The desktop
-/// draws its drag outline on that workstation ([`vdibind`]), as EmuTOS's
-/// `deskmain` keeps it in its own `gl_handle` (`deskmain.c:1956`).
-pub(super) fn graf_handle() -> i16 {
+/// `graf_handle(&gl_wchar, &gl_hchar, &gl_wbox, &gl_hbox)` (77,
+/// `deskmain.c:1956`) — the AES's VDI workstation handle `gl_handle` and the
+/// system font's metrics, `intout[0..4]` (`aes/gemsuper.c:287-293`):
+/// `(gl_handle, gl_wchar, gl_hchar, gl_wbox, gl_hbox)`. [`deskmain`] asks once
+/// per run; the desktop draws its drag outline on that workstation
+/// ([`vdibind`]) and lays out every text cell with `gl_wchar`/`gl_hchar`
+/// ([`global::gl_wchar`]).
+pub(super) fn graf_handle() -> (i16, i16, i16, i16, i16) {
     let mut a = Aes::new();
     a.call(OP_GRAF_HANDLE, 0, 5, 0);
-    a.intout[0]
+    (a.intout[0], a.intout[1], a.intout[2], a.intout[3], a.intout[4])
 }
 
 /// `graf_mouse(number)` (78) — hide ([`M_OFF`]) or show ([`M_ON`]) the mouse
@@ -950,8 +953,19 @@ fn deskmain() -> bool {
         kprintln!("[desk] appl_init failed — AES window redraws will be dropped");
     }
 
+    // `gl_handle = graf_handle(&gl_wchar, &gl_hchar, &gl_wbox, &gl_hbox);`
+    // (`deskmain.c:1956`) — the AES's workstation and the normal font's cell.
+    // The small font's cell is an AES global the ROM desktop reads directly
+    // (`deskapp.c:519-520`); here it is asked of that same workstation the way
+    // the AES computes it (`gsx_start`, `aes/gemgraf.c:405-410`). Both before
+    // `global::init`, so every layout below sees them.
+    let (gl_handle, gl_wchar, gl_hchar, _gl_wbox, _gl_hbox) = graf_handle();
+    vdibind::set_handle(gl_handle);
+    let (gl_wschar, gl_hschar) = vdibind::small_font_cell();
+    global::set_cell_metrics(gl_wchar, gl_hchar, gl_wschar, gl_hschar);
+
     // `wind_get_grect(DESKWH, WF_WXYWH, &G.g_desk)` — the desktop work area,
-    // straight after `appl_init` exactly as EmuTOS orders it
+    // straight after `appl_init` and `graf_handle` exactly as EmuTOS orders it
     // (`deskmain.c:1953-1959`). This is where the desktop learns the screen
     // geometry; it does not ask the framebuffer.
     let desk = wind_get_grect(DESKWH, WF_WXYWH);

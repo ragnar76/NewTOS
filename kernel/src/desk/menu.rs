@@ -28,18 +28,12 @@
 //! [`build_menu`], which is exactly where EmuTOS writes the bit by hand too
 //! (`deskmain.c:475-486`).
 
-use tos_api::vdi::font::{CELL_H, CELL_W};
-
-use super::global::{self, MENU_H};
+use super::global::{self, gl_hchar, gl_wchar, MENU_H};
 use super::model::{Sort, View};
 
 use core::cell::UnsafeCell;
 
 use tos_types::aes::{Object, DISABLED, G_BOX, G_IBOX, G_STRING, G_TITLE, LASTOB, NIL};
-
-/// Fixed system-font character width in pixels (NewTOS 8×16 font, EmuTOS
-/// `deskmain.h` `CHAR_WIDTH` assumption).
-const CHAR_W: i16 = CELL_W;
 
 /// Minimum width of the *Desk* drop-down in characters — EmuTOS
 /// `MIN_DESKMENU_WIDTH` (`deskmain.c:80`, "compatible with Atari TOS"):
@@ -56,22 +50,26 @@ const MIN_DESKMENU_WIDTH: i16 = 20;
 /// row `gl_hbox - 1` (`aes/gemmnlib.c:718-722`), the row `THEBAR` ends above.
 /// `THEACTIVE` and the titles stay `gl_hbox` tall (`769` = `gl_hchar + 3`,
 /// `desk_rsc.c:255-283`).
-const BAR_BOX_H: i16 = CELL_H + 2;
+fn bar_box_h() -> i16 {
+    gl_hchar() + 2
+}
 
 /// Height of one drop-down entry — the RSC's `{0, row, 20, 1}`
 /// (`desk_rsc.c:297-341`, and every other ADMENU box's items): `ob_y = row`,
 /// `ob_height = 1`, both **character cells**, which `rsrc_obfix` multiplies
 /// by `gl_hchar` (`fix_chpos` offsets 1 and 3, `aes/gemrslib.c:53-99`) =
-/// `CELL_H` = 16 px on the 8×16 font. The drop-down box itself is as many
+/// `gl_hchar()` = 16 px on the 8×16 font. The drop-down box itself is as many
 /// cells tall as it has entries (`{8, 0, 19, 16}` for the 16-entry *File*
-/// box, `desk_rsc.c:345-349`), i.e. `n · ENTRY_H`.
+/// box, `desk_rsc.c:345-349`), i.e. `n · entry_h()`.
 ///
 /// This is **not** `gl_hbox` (`MENU_H` = `gl_hchar + 3` = 19): the bar row is
 /// 19 px because `gl_hbox` is the gadget box height (`aes/gemgraf.c:412-415`),
 /// the drop-down rows are plain text cells. `adjust_menu` recomputes the
 /// *widths* (`deskmain.c:1608-1635`) and never touches a height, so the
 /// entries keep the RSC's.
-const ENTRY_H: i16 = CELL_H;
+fn entry_h() -> i16 {
+    gl_hchar()
+}
 
 /// `SHORTCUT_SIZE` (`deskmain.h:17`) — the characters every drop-down entry
 /// reserves at its right edge for `' ^X'`. `copy_menu_items` adds
@@ -516,7 +514,7 @@ struct MenuGeom {
 /// sub-pixel packing trick.
 fn adjust_menu(sw: i16) -> MenuGeom {
     let mut g = MenuGeom {
-        active_x: 2 * CHAR_W,
+        active_x: 2 * gl_wchar(),
         active_w: 0,
         title_x: [0; 4],
         title_w: [0; 4],
@@ -526,7 +524,7 @@ fn adjust_menu(sw: i16) -> MenuGeom {
     let mut tx = 0i16;
     for (ti, def) in MENUS.iter().enumerate() {
         // `title->ob_width = n` = `strlen(ob_spec)` cells (`deskmain.c:1531`).
-        let tw = label_len(def.label) * CHAR_W;
+        let tw = label_len(def.label) * gl_wchar();
         g.title_x[ti] = tx;
         g.title_w[ti] = tw;
         tx += tw;
@@ -565,7 +563,7 @@ fn adjust_menu(sw: i16) -> MenuGeom {
             .map(|e| label_len(entry_label(e)))
             .fold(0, i16::max);
         let m = seed.max(widest + SHORTCUT_SIZE) + 1;
-        g.box_w[ti] = m * CHAR_W;
+        g.box_w[ti] = m * gl_wchar();
     }
     // `mbar->ob_width = x` (`deskmain.c:1534`): THEACTIVE is exactly as wide
     // as its titles.
@@ -580,7 +578,7 @@ fn adjust_menu(sw: i16) -> MenuGeom {
     // "if the menu bar is too far to the right, move it to the left, but only
     // as far as char posn 1" (`deskmain.c:1584-1589`).
     if g.active_x + tx > sw {
-        g.active_x = CHAR_W;
+        g.active_x = gl_wchar();
     }
     // Drop-down x under its title — `dropbox->ob_x = mbar->ob_x + title->ob_x`
     // (`deskmain.c:1617`, THEACTIVE's origin plus the title's offset in it).
@@ -639,11 +637,11 @@ fn build_menu() -> *mut Object {
         let first_title = 3usize;
         let themenus = first_title + nt; // index of the THEMENUS box container
 
-        // ROOT / THEBAR / THEACTIVE. `THEBAR` is [`BAR_BOX_H`] (18) tall —
+        // ROOT / THEBAR / THEACTIVE. `THEBAR` is [`bar_box_h`] (18) tall —
         // the RSC's `{0, 0, 80, 513}` (`desk_rsc.c:249-253`) — one row above
         // the separator `mn_bar` draws on `gl_hbox - 1` (`gemmnlib.c:722`).
         o[0] = mk(G_IBOX, 0, 0, 0, 0, sw, sh, -1, 1, themenus as i16);
-        o[1] = mk(G_BOX, 0, 0, 0, 0, sw, BAR_BOX_H, themenus as i16, 2, 2);
+        o[1] = mk(G_BOX, 0, 0, 0, 0, sw, bar_box_h(), themenus as i16, 2, 2);
         // THEACTIVE: the RSC's `{2, 0, 28, 769}` (`desk_rsc.c:255-259`) with
         // `adjust_menu`'s width — `mbar->ob_width = x`, the titles' sum
         // (`deskmain.c:1534`). Its rectangle is what `menu_bar` hands the
@@ -678,8 +676,8 @@ fn build_menu() -> *mut Object {
             let n_items = def.entries.len();
             // The box is `n` character cells tall — the RSC's `{…, 0, 19, 16}`
             // for the 16-entry File box (`desk_rsc.c:345-349`), one
-            // [`ENTRY_H`] per entry.
-            let bh = n_items as i16 * ENTRY_H;
+            // [`entry_h`] per entry.
+            let bh = n_items as i16 * entry_h();
             let bi = k;
             last_box = bi;
             k += 1;
@@ -688,7 +686,7 @@ fn build_menu() -> *mut Object {
             // width in **character cells**, which is what `ob_width` carries
             // here in pixels — recovered with the same ceiling division
             // `install_shortcuts` uses (`:1845`).
-            let cells = ((iw + CHAR_W - 1) / CHAR_W).clamp(1, LABEL_CAP as i16 - 1) as usize;
+            let cells = ((iw + gl_wchar() - 1) / gl_wchar()).clamp(1, LABEL_CAP as i16 - 1) as usize;
             for (ii, entry) in def.entries.iter().enumerate() {
                 let last_item = ii == n_items - 1;
                 let last_overall = (ti == nt - 1) && last_item;
@@ -719,15 +717,15 @@ fn build_menu() -> *mut Object {
                 }
                 // `{0, row, 20, 1}` (`desk_rsc.c:297-341`) after `rsrc_obfix`:
                 // the entry spans the box's width at `row · gl_hchar`, one
-                // character cell tall ([`ENTRY_H`]).
+                // character cell tall ([`entry_h`]).
                 o[k] = mk(
                     G_STRING,
                     flags,
                     labels[k].as_ptr() as u64,
                     0,
-                    ii as i16 * ENTRY_H,
+                    ii as i16 * entry_h(),
                     iw,
-                    ENTRY_H,
+                    entry_h(),
                     if last_item { bi as i16 } else { (k + 1) as i16 },
                     -1,
                     -1,
@@ -985,7 +983,7 @@ pub(super) fn shortcut_item_text(n: usize, dst: &mut [u8]) {
 fn shortcut_offset(obj: usize) -> Option<usize> {
     // SAFETY: single-CPU; the tree is built by every caller's `item_obj`.
     let w = unsafe { (*MENU.obj.get())[obj].ob_width };
-    let cells = (w + CHAR_W - 1) / CHAR_W;
+    let cells = (w + gl_wchar() - 1) / gl_wchar();
     let off = cells - SHORTCUT_SIZE;
     // The string is `cells - 1` characters long, so `off` and `off + 1` are its
     // last two; a menu whose box was widened past its strings (the

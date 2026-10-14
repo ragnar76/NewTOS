@@ -54,14 +54,13 @@ use tos_types::aes::{
     Grect, Object, TedInfo, DEFAULT, DESKWH, EDITABLE, EXIT, FL3DACT, FL3DBAK, G_BUTTON,
     G_FBOXTEXT, G_STRING, LASTOB, NIL, SELECTABLE, SELECTED, TE_RIGHT, WF_WXYWH,
 };
-use tos_api::vdi::font::{CELL_H, CELL_W};
 use tos_types::error::E_OK;
 
 use super::dosbind::{
     dos_close, dos_create, dos_delete, dos_gdrv, dos_mkdir, dos_open, dos_read, dos_rename,
     dos_rmdir, dos_sdta, dos_setdt, dos_sfirst, dos_snext, dos_write,
 };
-use super::global::{self, DeskState, DROOT};
+use super::global::{self, gl_hchar, gl_wchar, DeskState, DROOT};
 use super::inf::{end_dialog, inf_gindex, mk, mk_root, start_dialog, BOX_SPEC, TED_COLOR};
 use super::model::{AType, FNode, FA_SUBDIR};
 
@@ -558,32 +557,31 @@ fn do_namecon(src: &[u8; LEN_ZFNAME], dst: &mut [u8; LEN_ZFNAME], ctx: &mut OpCt
     const MARGIN: i16 = 24;
     const GAP: i16 = 8;
     const FLD_H: i16 = 24;
-    /// `desk_rsc.c:1267` — `CAOK` is 10 characters wide.
-    const BTN_W: i16 = 10 * CELL_W;
-    /// The 2-character gap `desk_rsc.c:1263-1279`'s columns leave between them.
-    const BTN_GAP: i16 = 2 * CELL_W;
-    const BTN_ROW_W: i16 = 3 * BTN_W + 2 * BTN_GAP;
-    let fld_w = 27 * CELL_W + 8;
-    let dw = MARGIN + if fld_w > BTN_ROW_W { fld_w } else { BTN_ROW_W } + MARGIN;
+    // `desk_rsc.c:1267` — `CAOK` is 10 characters wide.
+    let btn_w = 10 * gl_wchar();
+    // The 2-character gap `desk_rsc.c:1263-1279`'s columns leave between them.
+    let btn_gap = 2 * gl_wchar();
+    let btn_row_w = 3 * btn_w + 2 * btn_gap;
+    let fld_w = 27 * gl_wchar() + 8;
+    let dw = MARGIN + if fld_w > btn_row_w { fld_w } else { btn_row_w } + MARGIN;
     let y_title = MARGIN;
-    let y_curr = y_title + CELL_H + 12;
+    let y_curr = y_title + gl_hchar() + 12;
     let y_copy = y_curr + FLD_H + GAP;
     let y_btn = y_copy + FLD_H + 20;
     let dh = y_btn + 28 + MARGIN;
-    let btn_w = BTN_W;
     // `align_title` (`deskmain.c:1731-1750`) centres object 1 in the root.
-    let title_w = (TITLE.len() as i16 - 1) * CELL_W;
+    let title_w = (TITLE.len() as i16 - 1) * gl_wchar();
 
     #[rustfmt::skip]
     let mut tree = [
         mk_root(BOX_SPEC, dw, dh, CASTOP),
-        mk(G_STRING, 0, TITLE.as_ptr() as u64, (dw - title_w) / 2, y_title, title_w, CELL_H, CACURRNA, -1, -1),
+        mk(G_STRING, 0, TITLE.as_ptr() as u64, (dw - title_w) / 2, y_title, title_w, gl_hchar(), CACURRNA, -1, -1),
         // `CACURRNA` is **not** EDITABLE (`desk_rsc.c:1251-1255`).
         mk(G_FBOXTEXT, FL3DBAK, &mut curr_ted as *mut _ as u64, MARGIN, y_curr, fld_w, FLD_H, CACOPYNA, -1, -1),
         mk(G_FBOXTEXT, EDITABLE | FL3DBAK, &mut copy_ted as *mut _ as u64, MARGIN, y_copy, fld_w, FLD_H, CAOK, -1, -1),
         mk(G_BUTTON, SELECTABLE | DEFAULT | EXIT | FL3DACT, OK.as_ptr() as u64, MARGIN, y_btn, btn_w, 28, CASKIP, -1, -1),
-        mk(G_BUTTON, SELECTABLE | EXIT | FL3DACT, SKIP.as_ptr() as u64, MARGIN + btn_w + BTN_GAP, y_btn, btn_w, 28, CASTOP, -1, -1),
-        mk(G_BUTTON, SELECTABLE | EXIT | LASTOB | FL3DACT, STOP.as_ptr() as u64, MARGIN + 2 * (btn_w + BTN_GAP), y_btn, btn_w, 28, 0, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | FL3DACT, SKIP.as_ptr() as u64, MARGIN + btn_w + btn_gap, y_btn, btn_w, 28, CASTOP, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | LASTOB | FL3DACT, STOP.as_ptr() as u64, MARGIN + 2 * (btn_w + btn_gap), y_btn, btn_w, 28, 0, -1, -1),
     ];
     let tree_ptr = tree.as_mut_ptr() as u64;
 
@@ -832,10 +830,10 @@ impl CpyDelBox {
         const MARGIN: i16 = 24;
         const GAP: i16 = 8;
         const FLD_H: i16 = 24;
-        let fld_w = 33 * CELL_W + 8; // the longer of the two templates
+        let fld_w = 33 * gl_wchar() + 8; // the longer of the two templates
         let dw = MARGIN + fld_w + MARGIN;
         let y_title = MARGIN;
-        let y_folds = y_title + CELL_H + 12;
+        let y_folds = y_title + gl_hchar() + 12;
         let y_files = y_folds + FLD_H + GAP;
         let y_btn = y_files + FLD_H + 20;
         let dh = y_btn + 28 + MARGIN;
@@ -847,7 +845,7 @@ impl CpyDelBox {
             // "if (op != OP_COPY) … obj->ob_spec = STMOVE" (`deskdir.c:941-945`)
             _ => STMOVE,
         };
-        let title_w = (title.len() as i16 - 1) * CELL_W;
+        let title_w = (title.len() as i16 - 1) * gl_wchar();
 
         // `Box`ed before the TEDINFOs are pointed at the buffers: the object
         // array holds the TEDINFO addresses and the TEDINFOs hold the buffer
@@ -891,7 +889,7 @@ impl CpyDelBox {
         b.tree = [
             mk_root(BOX_SPEC, dw, dh, CDOK + 1),
             // `align_title` centres the heading (`deskmain.c:1744-1747`).
-            mk(G_STRING, 0, title.as_ptr() as u64, (dw - title_w) / 2, y_title, title_w, CELL_H, CDFOLDS, -1, -1),
+            mk(G_STRING, 0, title.as_ptr() as u64, (dw - title_w) / 2, y_title, title_w, gl_hchar(), CDFOLDS, -1, -1),
             mk(G_FBOXTEXT, FL3DBAK, folds_ted, MARGIN, y_folds, fld_w, FLD_H, CDFILES, -1, -1),
             mk(G_FBOXTEXT, FL3DBAK, files_ted, MARGIN, y_files, fld_w, FLD_H, CDOK, -1, -1),
             mk(G_BUTTON, SELECTABLE | DEFAULT | EXIT | FL3DACT, OK.as_ptr() as u64, MARGIN, y_btn, btn_w, 28, CDOK + 1, -1, -1),

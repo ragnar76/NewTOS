@@ -31,14 +31,13 @@ use tos_types::aes::{
     FL3DIND, G_BOX, G_BUTTON, G_FBOXTEXT, G_FTEXT, G_IBOX, G_STRING, LASTOB, MU_MESAG, MU_TIMER,
     NIL, OUTLINED, RBUTTON, ROOT, SELECTABLE, SELECTED, TE_LEFT, TE_RIGHT, TOUCHEXIT,
 };
-use tos_api::vdi::font::{CELL_H, CELL_W};
 use tos_types::error::EFILNF;
 use tos_types::Long;
 
 use crate::sync::SpinMutex;
 
 use super::dosbind::{dos_close, dos_create, dos_gdrv, dos_open, dos_read, dos_sdrv, dos_write};
-use super::global::{self, Anode, WSave, AF_ISEXEC, NUM_WNODES};
+use super::global::{self, gl_hchar, gl_wchar, Anode, WSave, AF_ISEXEC, NUM_WNODES};
 use super::icons;
 use super::model::{AType, DateFmt, DateOrder, Sort, TimeFmt, View};
 
@@ -1216,10 +1215,10 @@ fn apply(data: &InfData) {
         g.g_cnxsave.cs_wnode = Default::default();
         for (slot, w) in data.windows.iter().take(NUM_WNODES).enumerate() {
             g.g_cnxsave.cs_wnode[slot] = WSave {
-                x_save: w.xc as i16 * CELL_W,
-                y_save: w.yc as i16 * CELL_H,
-                w_save: w.wc as i16 * CELL_W,
-                h_save: w.hc as i16 * CELL_H,
+                x_save: w.xc as i16 * gl_wchar(),
+                y_save: w.yc as i16 * gl_hchar(),
+                w_save: w.wc as i16 * gl_wchar(),
+                h_save: w.hc as i16 * gl_hchar(),
                 hsl_save: w.hsl as i16,
                 vsl_save: w.vsl as i16,
                 pth_save: w.path.clone(),
@@ -1574,10 +1573,10 @@ fn collect_open_windows() -> Vec<InfWindow> {
             .map(|ws| InfWindow {
                 hsl: ws.hsl_save.clamp(0, 255) as u8,
                 vsl: ws.vsl_save.clamp(0, 255) as u8,
-                xc: (ws.x_save / CELL_W).clamp(0, 255) as u8,
-                yc: (ws.y_save / CELL_H).clamp(0, 255) as u8,
-                wc: (ws.w_save / CELL_W).clamp(0, 255) as u8,
-                hc: (ws.h_save / CELL_H).clamp(0, 255) as u8,
+                xc: (ws.x_save / gl_wchar()).clamp(0, 255) as u8,
+                yc: (ws.y_save / gl_hchar()).clamp(0, 255) as u8,
+                wc: (ws.w_save / gl_wchar()).clamp(0, 255) as u8,
+                hc: (ws.h_save / gl_hchar()).clamp(0, 255) as u8,
                 path: ws.pth_save.clone(),
             })
             .collect()
@@ -2359,7 +2358,7 @@ impl Line {
     }
     /// The drawn width in pixels (the AES normal font is fixed-pitch).
     fn width(&self) -> i16 {
-        self.len as i16 * CELL_W
+        self.len as i16 * gl_wchar()
     }
 }
 
@@ -2443,7 +2442,7 @@ pub(super) fn do_aboutdesk() {
     // with DEVERSN (`desk_rsc.c:803-813`).
     const LABEL_COLS: i16 = 9;
     const MARGIN: i16 = 24;
-    const ROW: i16 = CELL_H + 4;
+    let row_pitch = gl_hchar() + 4;
 
     let title = Line::new("- NewTOS -");
     let ver_lbl = Line::new("Version");
@@ -2474,7 +2473,7 @@ pub(super) fn do_aboutdesk() {
     const OK_H: i16 = 28;
 
     // Pair block: label column + the wider of the two values.
-    let pair_w = LABEL_COLS * CELL_W + ver_val.width().max(mac_val.width());
+    let pair_w = LABEL_COLS * gl_wchar() + ver_val.width().max(mac_val.width());
     let text_w = pair_w
         .max(title.width())
         .max(note1.width())
@@ -2487,20 +2486,20 @@ pub(super) fn do_aboutdesk() {
         .max(lineo.width());
     let dw = text_w + 2 * MARGIN;
     let pair_x = (dw - pair_w) / 2;
-    let val_x = pair_x + LABEL_COLS * CELL_W;
+    let val_x = pair_x + LABEL_COLS * gl_wchar();
     let ctr = |l: &Line| (dw - l.width()) / 2;
 
     // Row grid, with `ADDINFO`'s blank rows at 1, 4, 7 and 10; row 15 stays
     // empty above the button.
     let y0 = MARGIN;
-    let row = |n: i16| y0 + n * ROW;
+    let row = |n: i16| y0 + n * row_pitch;
     let y_ok = row(16);
     let dh = y_ok + OK_H + MARGIN;
 
     /// Object index of the OK button — `ADDINFO`'s `DEOK` (`desk_rsc.h:91`);
     /// ours is 14, not 16, because this tree has no `G_IMAGE` logos.
     const DEOK: i16 = 14;
-    let str_obj = |l: &Line, x: i16, n: i16, next: i16| mk(G_STRING, 0, l.spec(), x, row(n), l.width(), CELL_H, next, -1, -1);
+    let str_obj = |l: &Line, x: i16, n: i16, next: i16| mk(G_STRING, 0, l.spec(), x, row(n), l.width(), gl_hchar(), next, -1, -1);
     let mut tree = [
         mk_root(ADDINFO_BOX_SPEC, dw, dh, DEOK),
         str_obj(&title, ctr(&title), 0, 2),
@@ -2960,8 +2959,8 @@ fn rsc_ted(text: &mut [u8], tmpl: &[u8], valid: &[u8], just: i16) -> TedInfo {
 fn align_title(tree: &mut [Object], title_chars: i16) {
     let root_w = tree[0].ob_width;
     let title = &mut tree[1];
-    if title.ob_type == G_STRING && title.ob_y == CELL_H {
-        let len = (title_chars * CELL_W).min(root_w);
+    if title.ob_type == G_STRING && title.ob_y == gl_hchar() {
+        let len = (title_chars * gl_wchar()).min(root_w);
         title.ob_x = (root_w - len) / 2;
     }
 }
@@ -3082,11 +3081,11 @@ pub(super) fn inf_disk(dr_id: u8) -> i16 {
     //    `LOBYTE * cell + (signed)HIBYTE`). The ROOT's packed height `2060` is
     //    `(8 << 8) | 12` = 12 rows + 8 px; the buttons' packed `2058` is row 10
     //    + 8 px. At 8 x 16 that is a 304 x 200 box.
-    let dw = 38 * CELL_W; // 304
-    let dh = 12 * CELL_H + 8; // 200
-    let y_btn = 10 * CELL_H + 8; // 168
-    let col = 3 * CELL_W; // char column 3
-    let field_w = 32 * CELL_W;
+    let dw = 38 * gl_wchar(); // 304
+    let dh = 12 * gl_hchar() + 8; // 200
+    let y_btn = 10 * gl_hchar() + 8; // 168
+    let col = 3 * gl_wchar(); // char column 3
+    let field_w = 32 * gl_wchar();
 
     // 3D roles follow `ADDISKIN` object for object and the table in DESK01b:
     // the ROOT is `FL3DBAK` + `OUTLINED`, the six fields are `FL3DBAK`,
@@ -3099,17 +3098,17 @@ pub(super) fn inf_disk(dr_id: u8) -> i16 {
         // 0 ROOT — `ob_spec` 69888 = `(1 << 16) | 0x1100` ([`BOX_SPEC`]).
         mk_root(BOX_SPEC, dw, dh, DICNCL),
         // 1 DITITLE — a `G_STRING` one row down, so `align_title` centres it.
-        mk(G_STRING, 0, TITLE.as_ptr() as u64, col, CELL_H, 16 * CELL_W, CELL_H, DIDRIVE, -1, -1),
+        mk(G_STRING, 0, TITLE.as_ptr() as u64, col, gl_hchar(), 16 * gl_wchar(), gl_hchar(), DIDRIVE, -1, -1),
         // 2..7 the six value fields, char rows 3..8.
-        mk(G_FBOXTEXT, FL3DBAK, &mut ted_drive as *mut _ as u64, col, 3 * CELL_H, field_w, CELL_H, DIVOLUME, -1, -1),
-        mk(G_FBOXTEXT, FL3DBAK, &mut ted_volume as *mut _ as u64, col, 4 * CELL_H, field_w, CELL_H, DINFOLDS, -1, -1),
-        mk(G_FBOXTEXT, FL3DBAK, &mut ted_folds as *mut _ as u64, col, 5 * CELL_H, field_w, CELL_H, DINFILES, -1, -1),
-        mk(G_FBOXTEXT, FL3DBAK, &mut ted_files as *mut _ as u64, col, 6 * CELL_H, field_w, CELL_H, DIUSED, -1, -1),
-        mk(G_FBOXTEXT, FL3DBAK, &mut ted_used as *mut _ as u64, col, 7 * CELL_H, field_w, CELL_H, DIAVAIL, -1, -1),
-        mk(G_FBOXTEXT, FL3DBAK, &mut ted_avail as *mut _ as u64, col, 8 * CELL_H, field_w, CELL_H, DIOK as i16, -1, -1),
+        mk(G_FBOXTEXT, FL3DBAK, &mut ted_drive as *mut _ as u64, col, 3 * gl_hchar(), field_w, gl_hchar(), DIVOLUME, -1, -1),
+        mk(G_FBOXTEXT, FL3DBAK, &mut ted_volume as *mut _ as u64, col, 4 * gl_hchar(), field_w, gl_hchar(), DINFOLDS, -1, -1),
+        mk(G_FBOXTEXT, FL3DBAK, &mut ted_folds as *mut _ as u64, col, 5 * gl_hchar(), field_w, gl_hchar(), DINFILES, -1, -1),
+        mk(G_FBOXTEXT, FL3DBAK, &mut ted_files as *mut _ as u64, col, 6 * gl_hchar(), field_w, gl_hchar(), DIUSED, -1, -1),
+        mk(G_FBOXTEXT, FL3DBAK, &mut ted_used as *mut _ as u64, col, 7 * gl_hchar(), field_w, gl_hchar(), DIAVAIL, -1, -1),
+        mk(G_FBOXTEXT, FL3DBAK, &mut ted_avail as *mut _ as u64, col, 8 * gl_hchar(), field_w, gl_hchar(), DIOK as i16, -1, -1),
         // 8/9 DIOK / DICNCL, nine cells wide at char columns 7 and 22.
-        mk(G_BUTTON, SELECTABLE | DEFAULT | EXIT | FL3DACT, OK.as_ptr() as u64, 7 * CELL_W, y_btn, 9 * CELL_W, CELL_H, DICNCL, -1, -1),
-        mk(G_BUTTON, SELECTABLE | EXIT | LASTOB | FL3DACT, CANCEL.as_ptr() as u64, 22 * CELL_W, y_btn, 9 * CELL_W, CELL_H, 0, -1, -1),
+        mk(G_BUTTON, SELECTABLE | DEFAULT | EXIT | FL3DACT, OK.as_ptr() as u64, 7 * gl_wchar(), y_btn, 9 * gl_wchar(), gl_hchar(), DICNCL, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | LASTOB | FL3DACT, CANCEL.as_ptr() as u64, 22 * gl_wchar(), y_btn, 9 * gl_wchar(), gl_hchar(), 0, -1, -1),
     ];
     align_title(&mut tree, TITLE.len() as i16 - 1);
 
@@ -3255,10 +3254,10 @@ pub(super) fn inf_file_folder(ppath: &str, pf: &mut super::dir::FileInfo) -> i16
     //    its blank rows at 2, 7, 10, 12 and 13. The three exit buttons are ten
     //    cells wide at columns 2, 15 and 28; the attribute pair sits inside a
     //    36-cell `G_IBOX` on row 11.
-    let dw = 40 * CELL_W; // 320
-    let dh = 16 * CELL_H; // 256
-    let col = 4 * CELL_W; // char column 4
-    let y_btn = 14 * CELL_H;
+    let dw = 40 * gl_wchar(); // 320
+    let dh = 16 * gl_hchar(); // 256
+    let col = 4 * gl_wchar(); // char column 4
+    let y_btn = 14 * gl_hchar();
     let title: &[u8] = if is_dir { STFOINFO } else { STFIINFO };
 
     // 3D roles follow `ADFFINFO` object for object and the DESK01b table:
@@ -3270,25 +3269,25 @@ pub(super) fn inf_file_folder(ppath: &str, pf: &mut super::dir::FileInfo) -> i16
         // 0 ROOT
         mk_root(BOX_SPEC, dw, dh, FFCNCL),
         // 1 FFTITLE — one row down, so `align_title` centres it.
-        mk(G_STRING, 0, title.as_ptr() as u64, 11 * CELL_W, CELL_H, CELL_W, CELL_H, FFNAME, -1, -1),
+        mk(G_STRING, 0, title.as_ptr() as u64, 11 * gl_wchar(), gl_hchar(), gl_wchar(), gl_hchar(), FFNAME, -1, -1),
         // 2 FFNAME — the one `EDITABLE` field of the box.
-        mk(G_FBOXTEXT, EDITABLE | FL3DBAK, &mut ted_name as *mut _ as u64, col, 3 * CELL_H, 26 * CELL_W, CELL_H, FFSIZE, -1, -1),
+        mk(G_FBOXTEXT, EDITABLE | FL3DBAK, &mut ted_name as *mut _ as u64, col, 3 * gl_hchar(), 26 * gl_wchar(), gl_hchar(), FFSIZE, -1, -1),
         // 3..5 FFSIZE / FFDATE / FFTIME, char rows 4..6.
-        mk(G_FBOXTEXT, FL3DBAK, &mut ted_size as *mut _ as u64, col, 4 * CELL_H, 26 * CELL_W, CELL_H, FFDATE, -1, -1),
-        mk(G_FBOXTEXT, FL3DBAK, &mut ted_date as *mut _ as u64, col, 5 * CELL_H, 26 * CELL_W, CELL_H, FFTIME, -1, -1),
-        mk(G_FBOXTEXT, FL3DBAK, &mut ted_time as *mut _ as u64, col, 6 * CELL_H, 26 * CELL_W, CELL_H, FFNUMFOL as i16, -1, -1),
+        mk(G_FBOXTEXT, FL3DBAK, &mut ted_size as *mut _ as u64, col, 4 * gl_hchar(), 26 * gl_wchar(), gl_hchar(), FFDATE, -1, -1),
+        mk(G_FBOXTEXT, FL3DBAK, &mut ted_date as *mut _ as u64, col, 5 * gl_hchar(), 26 * gl_wchar(), gl_hchar(), FFTIME, -1, -1),
+        mk(G_FBOXTEXT, FL3DBAK, &mut ted_time as *mut _ as u64, col, 6 * gl_hchar(), 26 * gl_wchar(), gl_hchar(), FFNUMFOL as i16, -1, -1),
         // 6/7 FFNUMFOL / FFNUMFIL, char rows 8 and 9, 32 cells wide.
-        mk(G_FBOXTEXT, FL3DBAK, &mut ted_numfol as *mut _ as u64, col, 8 * CELL_H, 32 * CELL_W, CELL_H, FFNUMFIL as i16, -1, -1),
-        mk(G_FBOXTEXT, FL3DBAK, &mut ted_numfil as *mut _ as u64, col, 9 * CELL_H, 32 * CELL_W, CELL_H, FFATTR, -1, -1),
+        mk(G_FBOXTEXT, FL3DBAK, &mut ted_numfol as *mut _ as u64, col, 8 * gl_hchar(), 32 * gl_wchar(), gl_hchar(), FFNUMFIL as i16, -1, -1),
+        mk(G_FBOXTEXT, FL3DBAK, &mut ted_numfil as *mut _ as u64, col, 9 * gl_hchar(), 32 * gl_wchar(), gl_hchar(), FFATTR, -1, -1),
         // 8 the attribute pair's `G_IBOX` (`ob_spec` 0, so nothing is drawn).
-        mk(G_IBOX, 0, 0, 2 * CELL_W, 11 * CELL_H, 36 * CELL_W, CELL_H, FFOK as i16, FFRWRITE as i16, FFRONLY as i16),
+        mk(G_IBOX, 0, 0, 2 * gl_wchar(), 11 * gl_hchar(), 36 * gl_wchar(), gl_hchar(), FFOK as i16, FFRWRITE as i16, FFRONLY as i16),
         // 9/10 FFRWRITE / FFRONLY, positioned inside the `G_IBOX`.
-        mk(G_BUTTON, SELECTABLE | RBUTTON | FL3DIND, RWRITE.as_ptr() as u64, 0, 0, 18 * CELL_W, CELL_H, FFRONLY as i16, -1, -1),
-        mk(G_BUTTON, SELECTABLE | RBUTTON | FL3DIND, RONLY.as_ptr() as u64, 19 * CELL_W, 0, 17 * CELL_W, CELL_H, FFATTR, -1, -1),
+        mk(G_BUTTON, SELECTABLE | RBUTTON | FL3DIND, RWRITE.as_ptr() as u64, 0, 0, 18 * gl_wchar(), gl_hchar(), FFRONLY as i16, -1, -1),
+        mk(G_BUTTON, SELECTABLE | RBUTTON | FL3DIND, RONLY.as_ptr() as u64, 19 * gl_wchar(), 0, 17 * gl_wchar(), gl_hchar(), FFATTR, -1, -1),
         // 11/12/13 FFOK / FFSKIP / FFCNCL.
-        mk(G_BUTTON, SELECTABLE | DEFAULT | EXIT | FL3DACT, OK.as_ptr() as u64, 2 * CELL_W, y_btn, 10 * CELL_W, CELL_H, FFSKIP as i16, -1, -1),
-        mk(G_BUTTON, SELECTABLE | EXIT | FL3DACT, SKIP.as_ptr() as u64, 15 * CELL_W, y_btn, 10 * CELL_W, CELL_H, FFCNCL, -1, -1),
-        mk(G_BUTTON, SELECTABLE | EXIT | LASTOB | FL3DACT, CANCEL.as_ptr() as u64, 28 * CELL_W, y_btn, 10 * CELL_W, CELL_H, 0, -1, -1),
+        mk(G_BUTTON, SELECTABLE | DEFAULT | EXIT | FL3DACT, OK.as_ptr() as u64, 2 * gl_wchar(), y_btn, 10 * gl_wchar(), gl_hchar(), FFSKIP as i16, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | FL3DACT, SKIP.as_ptr() as u64, 15 * gl_wchar(), y_btn, 10 * gl_wchar(), gl_hchar(), FFCNCL, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | LASTOB | FL3DACT, CANCEL.as_ptr() as u64, 28 * gl_wchar(), y_btn, 10 * gl_wchar(), gl_hchar(), 0, -1, -1),
     ];
     align_title(&mut tree, title.len() as i16 - 1);
     if !is_dir {
@@ -3515,36 +3514,36 @@ pub(super) fn inf_pref() -> bool {
     // layout is fidelity, not contract). The box therefore grows sideways to
     // fit the widest group instead of downwards.
     const MARGIN: i16 = 24;
-    /// `ADSETPRE`'s two-character row pitch (`desk_rsc.c:1386` ff.).
-    const ROW_H: i16 = 2 * CELL_H;
+    // `ADSETPRE`'s two-character row pitch (`desk_rsc.c:1386` ff.).
+    let row_h = 2 * gl_hchar();
     const BTN_H: i16 = 22;
     const YESNO_W: i16 = 52;
     const DC_W: i16 = 30;
     const FMT_W: i16 = 56;
-    /// " Default " — the widest label in either format group.
-    const DEF_W: i16 = 9 * CELL_W;
+    // " Default " — the widest label in either format group.
+    let def_w = 9 * gl_wchar();
     /// `ADSETPRE`'s inter-button gap (`desk_rsc.c:1462-1493`: pitch 23 px,
     /// width 15 px).
     const GAP: i16 = 8;
-    const LBL_W: i16 = 20 * CELL_W; // "Confirm overwrites:" + a blank
+    let lbl_w = 20 * gl_wchar(); // "Confirm overwrites:" + a blank
     /// The five speed buttons.
     const SPEED_W: i16 = 5 * DC_W + 4 * GAP;
-    /// `Default` + two format buttons — the widest group.
-    const FMTGRP_W: i16 = DEF_W + GAP + 2 * (FMT_W + GAP) - GAP;
-    const GROUP_W: i16 = if SPEED_W > FMTGRP_W { SPEED_W } else { FMTGRP_W };
-    let dw = MARGIN + LBL_W + GROUP_W + MARGIN;
-    let gx = MARGIN + LBL_W;
+    // `Default` + two format buttons — the widest group.
+    let fmtgrp_w = def_w + GAP + 2 * (FMT_W + GAP) - GAP;
+    let group_w = if SPEED_W > fmtgrp_w { SPEED_W } else { fmtgrp_w };
+    let dw = MARGIN + lbl_w + group_w + MARGIN;
+    let gx = MARGIN + lbl_w;
 
-    let y_del = MARGIN + ROW_H;
-    let y_ccpy = y_del + ROW_H;
-    let y_covw = y_ccpy + ROW_H;
-    let y_dc = y_covw + ROW_H;
-    let y_tf = y_dc + ROW_H;
-    let y_df = y_tf + ROW_H;
-    let y_btn = y_df + ROW_H + GAP;
+    let y_del = MARGIN + row_h;
+    let y_ccpy = y_del + row_h;
+    let y_covw = y_ccpy + row_h;
+    let y_dc = y_covw + row_h;
+    let y_tf = y_dc + row_h;
+    let y_df = y_tf + row_h;
+    let y_btn = y_df + row_h + GAP;
     let dh = y_btn + 28 + MARGIN;
-    // Vertical offset of a `BTN_H` button inside its `CELL_H` label row.
-    let boff = (CELL_H - BTN_H) / 2;
+    // Vertical offset of a `BTN_H` button inside its `gl_hchar()` label row.
+    let boff = (gl_hchar() - BTN_H) / 2;
 
     // ── object indices — `desk_rsc.h:164-184`, unchanged ────────────────
     /// `SPCDYES` — the *Confirm deletes* `Yes` button; `SPCDNO` follows it.
@@ -3582,24 +3581,24 @@ pub(super) fn inf_pref() -> bool {
         // 0 ROOT
         mk_root(BOX_SPEC, dw, dh, SPOK as i16 + 1),
         // 1 title
-        mk(G_STRING, 0, TITLE.as_ptr() as u64, MARGIN, MARGIN, dw - 2 * MARGIN, CELL_H, 2, -1, -1),
+        mk(G_STRING, 0, TITLE.as_ptr() as u64, MARGIN, MARGIN, dw - 2 * MARGIN, gl_hchar(), 2, -1, -1),
         // 2 "Confirm deletes:"          3 its G_IBOX      4/5 Yes/No
-        mk(G_STRING, 0, CONFDEL_LBL.as_ptr() as u64, MARGIN, y_del, LBL_W, CELL_H, 3, -1, -1),
+        mk(G_STRING, 0, CONFDEL_LBL.as_ptr() as u64, MARGIN, y_del, lbl_w, gl_hchar(), 3, -1, -1),
         yesno(y_del, 6, SPCDYES as i16),
         rb(YES, 0, YESNO_W, SPCDYES as i16 + 1),
         rb(NO, YESNO_W + GAP, YESNO_W, 3),
         // 6 "Confirm copies:"           7 its G_IBOX      8/9 Yes/No
-        mk(G_STRING, 0, CONFCPY_LBL.as_ptr() as u64, MARGIN, y_ccpy, LBL_W, CELL_H, 7, -1, -1),
+        mk(G_STRING, 0, CONFCPY_LBL.as_ptr() as u64, MARGIN, y_ccpy, lbl_w, gl_hchar(), 7, -1, -1),
         yesno(y_ccpy, 10, SPCCYES as i16),
         rb(YES, 0, YESNO_W, SPCCYES as i16 + 1),
         rb(NO, YESNO_W + GAP, YESNO_W, 7),
         // 10 "Confirm overwrites:"      11 its G_IBOX     12/13 Yes/No
-        mk(G_STRING, 0, CONFOVW_LBL.as_ptr() as u64, MARGIN, y_covw, LBL_W, CELL_H, 11, -1, -1),
+        mk(G_STRING, 0, CONFOVW_LBL.as_ptr() as u64, MARGIN, y_covw, lbl_w, gl_hchar(), 11, -1, -1),
         yesno(y_covw, 14, SPCOWYES as i16),
         rb(YES, 0, YESNO_W, SPCOWYES as i16 + 1),
         rb(NO, YESNO_W + GAP, YESNO_W, 11),
         // 14 "Double-click speed:"      15 its G_IBOX     16..20 the five speeds
-        mk(G_STRING, 0, DCLICK_LBL.as_ptr() as u64, MARGIN, y_dc, LBL_W, CELL_H, 15, -1, -1),
+        mk(G_STRING, 0, DCLICK_LBL.as_ptr() as u64, MARGIN, y_dc, lbl_w, gl_hchar(), 15, -1, -1),
         mk(G_IBOX, 0, 0, gx, y_dc + boff, SPEED_W, BTN_H, 21, SPDC1 as i16, SPDC1 as i16 + 4),
         rb(DC[0], 0, DC_W, SPDC1 as i16 + 1),
         rb(DC[1], DC_W + GAP, DC_W, SPDC1 as i16 + 2),
@@ -3607,17 +3606,17 @@ pub(super) fn inf_pref() -> bool {
         rb(DC[3], 3 * (DC_W + GAP), DC_W, SPDC1 as i16 + 4),
         rb(DC[4], 4 * (DC_W + GAP), DC_W, 15),
         // 21 "Time format:"             22 its G_IBOX     23/24/25 Default/12H/24H
-        mk(G_STRING, 0, TIME_LBL.as_ptr() as u64, MARGIN, y_tf, LBL_W, CELL_H, 22, -1, -1),
-        mk(G_IBOX, 0, 0, gx, y_tf + boff, FMTGRP_W, BTN_H, 26, SPTF_DEF as i16, SPTF_DEF as i16 + 2),
-        rb(DEFAULT_LBL, 0, DEF_W, SPTF_DEF as i16 + 1),
-        rb(H12, DEF_W + GAP, FMT_W, SPTF_DEF as i16 + 2),
-        rb(H24, DEF_W + GAP + FMT_W + GAP, FMT_W, 22),
+        mk(G_STRING, 0, TIME_LBL.as_ptr() as u64, MARGIN, y_tf, lbl_w, gl_hchar(), 22, -1, -1),
+        mk(G_IBOX, 0, 0, gx, y_tf + boff, fmtgrp_w, BTN_H, 26, SPTF_DEF as i16, SPTF_DEF as i16 + 2),
+        rb(DEFAULT_LBL, 0, def_w, SPTF_DEF as i16 + 1),
+        rb(H12, def_w + GAP, FMT_W, SPTF_DEF as i16 + 2),
+        rb(H24, def_w + GAP + FMT_W + GAP, FMT_W, 22),
         // 26 "Date format:"             27 its G_IBOX     28/29/30 Default/MDY/DMY
-        mk(G_STRING, 0, DATE_LBL.as_ptr() as u64, MARGIN, y_df, LBL_W, CELL_H, 27, -1, -1),
-        mk(G_IBOX, 0, 0, gx, y_df + boff, FMTGRP_W, BTN_H, SPOK as i16, SPDF_DEF as i16, SPDF_DEF as i16 + 2),
-        rb(DEFAULT_LBL, 0, DEF_W, SPDF_DEF as i16 + 1),
-        rb(MDY, DEF_W + GAP, FMT_W, SPDF_DEF as i16 + 2),
-        rb(DMY, DEF_W + GAP + FMT_W + GAP, FMT_W, 27),
+        mk(G_STRING, 0, DATE_LBL.as_ptr() as u64, MARGIN, y_df, lbl_w, gl_hchar(), 27, -1, -1),
+        mk(G_IBOX, 0, 0, gx, y_df + boff, fmtgrp_w, BTN_H, SPOK as i16, SPDF_DEF as i16, SPDF_DEF as i16 + 2),
+        rb(DEFAULT_LBL, 0, def_w, SPDF_DEF as i16 + 1),
+        rb(MDY, def_w + GAP, FMT_W, SPDF_DEF as i16 + 2),
+        rb(DMY, def_w + GAP + FMT_W + GAP, FMT_W, 27),
         // 31 OK                         32 Cancel  (`SPOK`/`SPCNCL`: FL3DACT)
         mk(G_BUTTON, SELECTABLE | DEFAULT | EXIT | FL3DACT, OK.as_ptr() as u64, dw / 2 - 100, y_btn, 90, 28, SPOK as i16 + 1, -1, -1),
         mk(G_BUTTON, SELECTABLE | EXIT | LASTOB | FL3DACT, CANCEL.as_ptr() as u64, dw / 2 + 10, y_btn, 90, 28, 0, -1, -1),
@@ -3986,21 +3985,21 @@ pub(super) fn inf_conf() {
     // gadget here is grown by `ADJ3DSTD` (2 px per side) and then laid out one
     // pixel of border wider still (`aes/gemoblib.c:504`, `sst_th` `G_BUTTON`
     // → `-1`), so the 8 px a blank cell is worth is nearly eaten by the growth.
-    let dw = 39 * CELL_W; // 312
-    let dh = 22 * CELL_H; // 352
-    let y_defdir = 3 * CELL_H; // 48
-    let y_parm = 5 * CELL_H; // 80
-    let y_fun_lbl = 7 * CELL_H; // 112
-    let y_fun_box = 8 * CELL_H + 6; // 134
-    let y_mnu_lbl = 11 * CELL_H + 8; // 184
-    let y_mnu_box = 12 * CELL_H + 14; // 206
-    let y_freemem = 17 * CELL_H + 8; // 280
-    let y_btn = 20 * CELL_H; // 320
+    let dw = 39 * gl_wchar(); // 312
+    let dh = 22 * gl_hchar(); // 352
+    let y_defdir = 3 * gl_hchar(); // 48
+    let y_parm = 5 * gl_hchar(); // 80
+    let y_fun_lbl = 7 * gl_hchar(); // 112
+    let y_fun_box = 8 * gl_hchar() + 6; // 134
+    let y_mnu_lbl = 11 * gl_hchar() + 8; // 184
+    let y_mnu_box = 12 * gl_hchar() + 14; // 206
+    let y_freemem = 17 * gl_hchar() + 8; // 280
+    let y_btn = 20 * gl_hchar(); // 320
     // `adjust_3d_positions` (`deskmain.c:1647-1656`): "avoid button overlap" —
     // the two `PRV` gadgets sit flush against their `NXT` neighbour in the
     // resource, so a 3D build moves them left by `3 * ADJ3DSTD`.
-    let x_prv = 30 * CELL_W - 3 * ADJ3DSTD; // 234
-    let x_nxt = 34 * CELL_W; // 272
+    let x_prv = 30 * gl_wchar() - 3 * ADJ3DSTD; // 234
+    let x_nxt = 34 * gl_wchar(); // 272
 
     // ── strings ─────────────────────────────────────────────────────────
     static TITLE: &[u8] = b"DESKTOP CONFIGURATION\0";
@@ -4092,7 +4091,7 @@ pub(super) fn inf_conf() {
         // 0 ROOT
         mk_root(BOX_SPEC, dw, dh, DC_CNCL),
         // 1 title — `align_title` centres it on the box (`deskmain.c:1739-1747`).
-        mk(G_STRING, 0, TITLE.as_ptr() as u64, (dw - 21 * CELL_W) / 2, CELL_H, 21 * CELL_W, CELL_H, 2, -1, -1),
+        mk(G_STRING, 0, TITLE.as_ptr() as u64, (dw - 21 * gl_wchar()) / 2, gl_hchar(), 21 * gl_wchar(), gl_hchar(), 2, -1, -1),
         // 2 "Default dir:"      3 DCDEFDIR (its `G_IBOX`)   4/5 the buttons
         //
         // `ADDESKCF` objects 2-5 verbatim (`desk_rsc.c:1615-1637`): the label
@@ -4100,10 +4099,10 @@ pub(super) fn inf_conf() {
         // `4352L` = `0x1100` and no 3D flag, and inside it *Application* at
         // (0,0) 12x1 and *Window* at (13,0) 9x1, both `SELECTABLE | RBUTTON |
         // FL3DIND`.
-        mk(G_STRING, 0, DEFDIR_LBL.as_ptr() as u64, CELL_W, y_defdir, 13 * CELL_W, CELL_H, DCDEFDIR, -1, -1),
-        mk(G_IBOX, 0, TED_COLOR as u64, 16 * CELL_W, y_defdir, 22 * CELL_W, CELL_H, 6, DCDEFAPP as i16, DCDEFAPP as i16 + 1),
-        mk(G_BUTTON, SELECTABLE | RBUTTON | FL3DIND, DEFAPP.as_ptr() as u64, 0, 0, 12 * CELL_W, CELL_H, DCDEFAPP as i16 + 1, -1, -1),
-        mk(G_BUTTON, SELECTABLE | RBUTTON | FL3DIND, DEFWIN.as_ptr() as u64, 13 * CELL_W, 0, 9 * CELL_W, CELL_H, DCDEFDIR, -1, -1),
+        mk(G_STRING, 0, DEFDIR_LBL.as_ptr() as u64, gl_wchar(), y_defdir, 13 * gl_wchar(), gl_hchar(), DCDEFDIR, -1, -1),
+        mk(G_IBOX, 0, TED_COLOR as u64, 16 * gl_wchar(), y_defdir, 22 * gl_wchar(), gl_hchar(), 6, DCDEFAPP as i16, DCDEFAPP as i16 + 1),
+        mk(G_BUTTON, SELECTABLE | RBUTTON | FL3DIND, DEFAPP.as_ptr() as u64, 0, 0, 12 * gl_wchar(), gl_hchar(), DCDEFAPP as i16 + 1, -1, -1),
+        mk(G_BUTTON, SELECTABLE | RBUTTON | FL3DIND, DEFWIN.as_ptr() as u64, 13 * gl_wchar(), 0, 9 * gl_wchar(), gl_hchar(), DCDEFDIR, -1, -1),
         // 6 "Parameter:"        7 DCPARM (its own `G_IBOX`)  8/9 the buttons
         //
         // `ADDESKCF` objects 6-9 verbatim (`desk_rsc.c:1641-1663`): the label
@@ -4111,37 +4110,37 @@ pub(super) fn inf_conf() {
         // `4352L` = `0x1100` and no 3D flag, and inside it *Full path* at
         // (0,0) 11x1 and *File name* at (12,0) 10x1, both `SELECTABLE |
         // RBUTTON | FL3DIND`.
-        mk(G_STRING, 0, PARM_LBL.as_ptr() as u64, CELL_W, y_parm, 13 * CELL_W, CELL_H, DCPARM, -1, -1),
-        mk(G_IBOX, 0, TED_COLOR as u64, 16 * CELL_W, y_parm, 22 * CELL_W, CELL_H, 10, DCPMFULL as i16, DCPMFULL as i16 + 1),
-        mk(G_BUTTON, SELECTABLE | RBUTTON | FL3DIND, PMFULL.as_ptr() as u64, 0, 0, 11 * CELL_W, CELL_H, DCPMFULL as i16 + 1, -1, -1),
-        mk(G_BUTTON, SELECTABLE | RBUTTON | FL3DIND, PMFILE.as_ptr() as u64, 12 * CELL_W, 0, 10 * CELL_W, CELL_H, DCPARM, -1, -1),
+        mk(G_STRING, 0, PARM_LBL.as_ptr() as u64, gl_wchar(), y_parm, 13 * gl_wchar(), gl_hchar(), DCPARM, -1, -1),
+        mk(G_IBOX, 0, TED_COLOR as u64, 16 * gl_wchar(), y_parm, 22 * gl_wchar(), gl_hchar(), 10, DCPMFULL as i16, DCPMFULL as i16 + 1),
+        mk(G_BUTTON, SELECTABLE | RBUTTON | FL3DIND, PMFULL.as_ptr() as u64, 0, 0, 11 * gl_wchar(), gl_hchar(), DCPMFULL as i16 + 1, -1, -1),
+        mk(G_BUTTON, SELECTABLE | RBUTTON | FL3DIND, PMFILE.as_ptr() as u64, 12 * gl_wchar(), 0, 10 * gl_wchar(), gl_hchar(), DCPARM, -1, -1),
         // 10 "Function keys:"
-        mk(G_STRING, 0, FUN_LBL.as_ptr() as u64, CELL_W, y_fun_lbl, 14 * CELL_W, CELL_H, DCFUNBOX, -1, -1),
+        mk(G_STRING, 0, FUN_LBL.as_ptr() as u64, gl_wchar(), y_fun_lbl, 14 * gl_wchar(), gl_hchar(), DCFUNBOX, -1, -1),
         // 11 DCFUNBOX           12..15 its children
-        mk(G_BOX, FL3DBAK, PANEL_SPEC, CELL_W, y_fun_box, 37 * CELL_W, CELL_H + 8, DCFUNPRV, DCFUNNUM, DCFUNRT),
-        mk(G_FTEXT, FL3DBAK, &mut ted_funnum as *mut _ as u64, 4, 4, 3 * CELL_W, CELL_H, DCFUNLT, -1, -1),
-        mk(G_BUTTON, TOUCHEXIT | FL3DACT, LEFT.as_ptr() as u64, 5 * CELL_W + 4, 4, 3 * CELL_W + 4, CELL_H, DCFUNPTH, -1, -1),
-        mk(G_FBOXTEXT, FL3DBAK, &mut ted_funpth as *mut _ as u64, 10 * CELL_W, 4, 22 * CELL_W, CELL_H, DCFUNRT, -1, -1),
-        mk(G_BUTTON, TOUCHEXIT | FL3DACT, RIGHT.as_ptr() as u64, 33 * CELL_W, 4, 3 * CELL_W + 4, CELL_H, DCFUNBOX, -1, -1),
+        mk(G_BOX, FL3DBAK, PANEL_SPEC, gl_wchar(), y_fun_box, 37 * gl_wchar(), gl_hchar() + 8, DCFUNPRV, DCFUNNUM, DCFUNRT),
+        mk(G_FTEXT, FL3DBAK, &mut ted_funnum as *mut _ as u64, 4, 4, 3 * gl_wchar(), gl_hchar(), DCFUNLT, -1, -1),
+        mk(G_BUTTON, TOUCHEXIT | FL3DACT, LEFT.as_ptr() as u64, 5 * gl_wchar() + 4, 4, 3 * gl_wchar() + 4, gl_hchar(), DCFUNPTH, -1, -1),
+        mk(G_FBOXTEXT, FL3DBAK, &mut ted_funpth as *mut _ as u64, 10 * gl_wchar(), 4, 22 * gl_wchar(), gl_hchar(), DCFUNRT, -1, -1),
+        mk(G_BUTTON, TOUCHEXIT | FL3DACT, RIGHT.as_ptr() as u64, 33 * gl_wchar(), 4, 3 * gl_wchar() + 4, gl_hchar(), DCFUNBOX, -1, -1),
         // 16/17 DCFUNPRV / DCFUNNXT
-        mk(G_BUTTON, TOUCHEXIT | FL3DACT, UP.as_ptr() as u64, x_prv, y_fun_lbl, 4 * CELL_W, CELL_H, DCFUNNXT, -1, -1),
-        mk(G_BUTTON, TOUCHEXIT | FL3DACT, DOWN.as_ptr() as u64, x_nxt, y_fun_lbl, 4 * CELL_W, CELL_H, 18, -1, -1),
+        mk(G_BUTTON, TOUCHEXIT | FL3DACT, UP.as_ptr() as u64, x_prv, y_fun_lbl, 4 * gl_wchar(), gl_hchar(), DCFUNNXT, -1, -1),
+        mk(G_BUTTON, TOUCHEXIT | FL3DACT, DOWN.as_ptr() as u64, x_nxt, y_fun_lbl, 4 * gl_wchar(), gl_hchar(), 18, -1, -1),
         // 18 "Menu shortcut keys:"
-        mk(G_STRING, 0, MNU_LBL.as_ptr() as u64, CELL_W, y_mnu_lbl, 19 * CELL_W, CELL_H, DCMNUBOX, -1, -1),
+        mk(G_STRING, 0, MNU_LBL.as_ptr() as u64, gl_wchar(), y_mnu_lbl, 19 * gl_wchar(), gl_hchar(), DCMNUBOX, -1, -1),
         // 19 DCMNUBOX           20..22 its children
-        mk(G_BOX, FL3DBAK, PANEL_SPEC, CELL_W, y_mnu_box, 37 * CELL_W, 3 * CELL_H + 4, DCMNUPRV, DCMNUKEY, DCMNUTXT),
-        mk(G_FTEXT, EDITABLE | FL3DBAK, &mut ted_mnukey as *mut _ as u64, 4, 2 * CELL_H, 15 * CELL_W, CELL_H, DCMNUCLR, -1, -1),
-        mk(G_BUTTON, TOUCHEXIT | FL3DACT, CLEAR_ALL.as_ptr() as u64, 17 * CELL_W + 4, 2 * CELL_H, 19 * CELL_W, CELL_H, DCMNUTXT, -1, -1),
-        mk(G_FBOXTEXT, 0, &mut ted_mnutxt as *mut _ as u64, 4, 4, 36 * CELL_W, CELL_H, DCMNUBOX, -1, -1),
+        mk(G_BOX, FL3DBAK, PANEL_SPEC, gl_wchar(), y_mnu_box, 37 * gl_wchar(), 3 * gl_hchar() + 4, DCMNUPRV, DCMNUKEY, DCMNUTXT),
+        mk(G_FTEXT, EDITABLE | FL3DBAK, &mut ted_mnukey as *mut _ as u64, 4, 2 * gl_hchar(), 15 * gl_wchar(), gl_hchar(), DCMNUCLR, -1, -1),
+        mk(G_BUTTON, TOUCHEXIT | FL3DACT, CLEAR_ALL.as_ptr() as u64, 17 * gl_wchar() + 4, 2 * gl_hchar(), 19 * gl_wchar(), gl_hchar(), DCMNUTXT, -1, -1),
+        mk(G_FBOXTEXT, 0, &mut ted_mnutxt as *mut _ as u64, 4, 4, 36 * gl_wchar(), gl_hchar(), DCMNUBOX, -1, -1),
         // 23/24 DCMNUPRV / DCMNUNXT
-        mk(G_BUTTON, TOUCHEXIT | FL3DACT, UP.as_ptr() as u64, x_prv, y_mnu_lbl, 4 * CELL_W, CELL_H, DCMNUNXT, -1, -1),
-        mk(G_BUTTON, TOUCHEXIT | FL3DACT, DOWN.as_ptr() as u64, x_nxt, y_mnu_lbl, 4 * CELL_W, CELL_H, DCFREMEM, -1, -1),
+        mk(G_BUTTON, TOUCHEXIT | FL3DACT, UP.as_ptr() as u64, x_prv, y_mnu_lbl, 4 * gl_wchar(), gl_hchar(), DCMNUNXT, -1, -1),
+        mk(G_BUTTON, TOUCHEXIT | FL3DACT, DOWN.as_ptr() as u64, x_nxt, y_mnu_lbl, 4 * gl_wchar(), gl_hchar(), DCFREMEM, -1, -1),
         // 25 DCFREMEM
-        mk(G_FTEXT, FL3DBAK, &mut ted_fremem as *mut _ as u64, CELL_W, y_freemem, 36 * CELL_W, CELL_H, DCOK, -1, -1),
+        mk(G_FTEXT, FL3DBAK, &mut ted_fremem as *mut _ as u64, gl_wchar(), y_freemem, 36 * gl_wchar(), gl_hchar(), DCOK, -1, -1),
         // 26/27 OK / Cancel (`DCOK` is `SELECTABLE|DEFAULT|EXIT|FL3DACT`,
         // `DC_CNCL` the same without `DEFAULT`, `desk_rsc.c:1759-1771`).
-        mk(G_BUTTON, SELECTABLE | DEFAULT | EXIT | FL3DACT, OK.as_ptr() as u64, 7 * CELL_W, y_btn, 9 * CELL_W, CELL_H, DC_CNCL, -1, -1),
-        mk(G_BUTTON, SELECTABLE | EXIT | LASTOB | FL3DACT, CANCEL.as_ptr() as u64, 23 * CELL_W, y_btn, 9 * CELL_W, CELL_H, 0, -1, -1),
+        mk(G_BUTTON, SELECTABLE | DEFAULT | EXIT | FL3DACT, OK.as_ptr() as u64, 7 * gl_wchar(), y_btn, 9 * gl_wchar(), gl_hchar(), DC_CNCL, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | LASTOB | FL3DACT, CANCEL.as_ptr() as u64, 23 * gl_wchar(), y_btn, 9 * gl_wchar(), gl_hchar(), 0, -1, -1),
     ];
     // `DCFUNBOX`/`DCMNUBOX` carry `OUTLINED` like the ROOT (`desk_rsc.c:1672,
     // 1720`), which on an `FL3DBAK` panel is EmuTOS's `draw_3d_outline`.
@@ -4439,10 +4438,10 @@ pub(super) fn opn_appl(papname: &str, ptail: &mut Vec<u8>) -> bool {
     let mut ted_parm = rsc_ted(&mut b_parm, T_PARM, V_ANY, TE_LEFT);
 
     // ── geometry: `ADOPENAP`'s own, cell for cell. 40 x (10 cells + 8 px).
-    let dw = 40 * CELL_W; // 320
-    let dh = 10 * CELL_H + 8; // 168
-    let col = CELL_W; // char column 1 — both fields and the label
-    let y_btn = 8 * CELL_H + 8; // 136
+    let dw = 40 * gl_wchar(); // 320
+    let dh = 10 * gl_hchar() + 8; // 168
+    let col = gl_wchar(); // char column 1 — both fields and the label
+    let y_btn = 8 * gl_hchar() + 8; // 136
 
     // 3D roles follow `ADOPENAP` object for object and the table in DESK01b:
     // the ROOT is `FL3DBAK` + `OUTLINED`, both fields are `FL3DBAK`,
@@ -4453,16 +4452,16 @@ pub(super) fn opn_appl(papname: &str, ptail: &mut Vec<u8>) -> bool {
         // 0 ROOT — `ob_spec` 69888 = `(1 << 16) | 0x1100` ([`BOX_SPEC`]).
         mk_root(BOX_SPEC, dw, dh, APPLCNCL),
         // 1 APPLOPEN — a `G_STRING` one row down, so `align_title` centres it.
-        mk(G_STRING, 0, TITLE.as_ptr() as u64, 11 * CELL_W, CELL_H, 16 * CELL_W, CELL_H, APPLNAME, -1, -1),
+        mk(G_STRING, 0, TITLE.as_ptr() as u64, 11 * gl_wchar(), gl_hchar(), 16 * gl_wchar(), gl_hchar(), APPLNAME, -1, -1),
         // 2 APPLNAME — the program's name, 21 cells wide on char row 3.
-        mk(G_FBOXTEXT, FL3DBAK, &mut ted_name as *mut _ as u64, col, 3 * CELL_H, 21 * CELL_W, CELL_H, APPLPLBL, -1, -1),
+        mk(G_FBOXTEXT, FL3DBAK, &mut ted_name as *mut _ as u64, col, 3 * gl_hchar(), 21 * gl_wchar(), gl_hchar(), APPLPLBL, -1, -1),
         // 3 the `Parameters:` label, char row 5.
-        mk(G_STRING, 0, PARAMS.as_ptr() as u64, col, 5 * CELL_H, 11 * CELL_W, CELL_H, APPLPARM, -1, -1),
+        mk(G_STRING, 0, PARAMS.as_ptr() as u64, col, 5 * gl_hchar(), 11 * gl_wchar(), gl_hchar(), APPLPARM, -1, -1),
         // 4 APPLPARM — the one `EDITABLE` field of the box, 38 cells on row 6.
-        mk(G_FBOXTEXT, EDITABLE | FL3DBAK, &mut ted_parm as *mut _ as u64, col, 6 * CELL_H, 38 * CELL_W, CELL_H, APPLOK as i16, -1, -1),
+        mk(G_FBOXTEXT, EDITABLE | FL3DBAK, &mut ted_parm as *mut _ as u64, col, 6 * gl_hchar(), 38 * gl_wchar(), gl_hchar(), APPLOK as i16, -1, -1),
         // 5/6 APPLOK / APPLCNCL, nine cells wide at char columns 7 and 24.
-        mk(G_BUTTON, SELECTABLE | DEFAULT | EXIT | FL3DACT, OK.as_ptr() as u64, 7 * CELL_W, y_btn, 9 * CELL_W, CELL_H, APPLCNCL, -1, -1),
-        mk(G_BUTTON, SELECTABLE | EXIT | LASTOB | FL3DACT, CANCEL.as_ptr() as u64, 24 * CELL_W, y_btn, 9 * CELL_W, CELL_H, 0, -1, -1),
+        mk(G_BUTTON, SELECTABLE | DEFAULT | EXIT | FL3DACT, OK.as_ptr() as u64, 7 * gl_wchar(), y_btn, 9 * gl_wchar(), gl_hchar(), APPLCNCL, -1, -1),
+        mk(G_BUTTON, SELECTABLE | EXIT | LASTOB | FL3DACT, CANCEL.as_ptr() as u64, 24 * gl_wchar(), y_btn, 9 * gl_wchar(), gl_hchar(), 0, -1, -1),
     ];
     align_title(&mut tree, TITLE.len() as i16 - 1);
 

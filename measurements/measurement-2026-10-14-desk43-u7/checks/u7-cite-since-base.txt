@@ -1,0 +1,24 @@
+NewTOS desktop citation list — kernel/src/desk/ (fns touched since 1775339d)
+
+file                                 fns  cited newtos  uncited
+kernel/src/desk/act.rs                 2      1      0        1
+kernel/src/desk/app.rs                 2      2      0        0
+kernel/src/desk/dir.rs                 2      1      0        1
+kernel/src/desk/global.rs              6      5      0        1
+kernel/src/desk/icons.rs               3      3      0        0
+kernel/src/desk/inf.rs                10      9      0        1
+kernel/src/desk/ins.rs                 2      2      0        0
+kernel/src/desk/menu.rs                5      4      0        1
+kernel/src/desk/mod.rs                 2      2      0        0
+kernel/src/desk/vdibind.rs             4      4      0        0
+kernel/src/desk/win.rs                 1      1      0        0
+
+uncited:
+  kernel/src/desk/act.rs:155  rect_hits_obj
+  kernel/src/desk/dir.rs:823  new
+  kernel/src/desk/global.rs:187  patcol_all
+  kernel/src/desk/inf.rs:2360  width
+  kernel/src/desk/menu.rs:622  build_menu
+newtos:
+
+DESK-CITE: fns=39 cited=34 newtos=0 uncited=5

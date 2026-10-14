@@ -1,0 +1,55 @@
++ set -euo pipefail
++++ dirname programs/build.sh
+++ cd programs
+++ pwd
++ PROG_DIR=/Volumes/Daten/Development/PiRusTOS/programs
+++ cd /Volumes/Daten/Development/PiRusTOS/programs/..
+++ pwd
++ WS=/Volumes/Daten/Development/PiRusTOS
++ SDK_DIR=/Volumes/Daten/Development/PiRusTOS/sdk
++ CRATE=hello-gem
++ OUT=
++ '[' 2 -gt 0 ']'
++ '[' hello-gem '!=' -- ']'
++ CRATE=hello-gem
++ shift
++ '[' 1 -gt 0 ']'
++ '[' /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/u7/HELLOGEM.NAP '!=' -- ']'
++ OUT=/Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/u7/HELLOGEM.NAP
++ shift
++ '[' 0 -gt 0 ']'
++ OUT=/Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/u7/HELLOGEM.NAP
++ TARGET=aarch64-unknown-none-softfloat
++ LIB=/Volumes/Daten/Development/PiRusTOS/target/programs/aarch64-unknown-none-softfloat/release/libhello_gem.a
++ CLANG=clang
++ command -v clang
+++ rustc --print sysroot
+++ rustc -vV
+++ sed -n 's/^host: //p'
++ LLD=/Users/ingouhlemann/.rustup/toolchains/nightly-2026-04-15-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/rust-lld
++ '[' -x /Users/ingouhlemann/.rustup/toolchains/nightly-2026-04-15-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/rust-lld ']'
+++ mktemp -d
++ WORK=/var/folders/16/2bcymjfs3n5gkx8_l66stqyc0000gn/T/tmp.9emjBU1Vqm
++ trap 'rm -rf "$WORK"' EXIT
++ CFLAGS=(-target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 -fno-stack-protector -fPIE -fno-builtin -Wall -Wextra "-I$SDK_DIR/include")
++ CRT0_DEFS=()
++ '[' -n '' ']'
++ echo '+ clang -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 -fno-stack-protector -fPIE -fno-builtin -Wall -Wextra -I/Volumes/Daten/Development/PiRusTOS/sdk/include  -c sdk/crt0.S'
++ clang -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 -fno-stack-protector -fPIE -fno-builtin -Wall -Wextra -I/Volumes/Daten/Development/PiRusTOS/sdk/include  -c sdk/crt0.S
++ clang -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 -fno-stack-protector -fPIE -fno-builtin -Wall -Wextra -I/Volumes/Daten/Development/PiRusTOS/sdk/include -c /Volumes/Daten/Development/PiRusTOS/sdk/crt0.S -o /var/folders/16/2bcymjfs3n5gkx8_l66stqyc0000gn/T/tmp.9emjBU1Vqm/crt0.o
++ echo '+ (cd programs && cargo build -p hello-gem --release )'
++ (cd programs && cargo build -p hello-gem --release )
++ cd /Volumes/Daten/Development/PiRusTOS/programs
++ cargo build -p hello-gem --release
+    Finished `release` profile [optimized] target(s) in 0.06s
+++ dirname /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/u7/HELLOGEM.NAP
++ mkdir -p /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/u7
+++ basename /Volumes/Daten/Development/PiRusTOS/target/programs/aarch64-unknown-none-softfloat/release/libhello_gem.a
++ echo '+ rust-lld -flavor gnu -T sdk/newtos.ld -pie --no-dynamic-linker -z text -z max-page-size=0x1000 --build-id=none crt0.o libhello_gem.a -o /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/u7/HELLOGEM.NAP'
++ rust-lld -flavor gnu -T sdk/newtos.ld -pie --no-dynamic-linker -z text -z max-page-size=0x1000 --build-id=none crt0.o libhello_gem.a -o /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/u7/HELLOGEM.NAP
++ /Users/ingouhlemann/.rustup/toolchains/nightly-2026-04-15-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/rust-lld -flavor gnu -T /Volumes/Daten/Development/PiRusTOS/sdk/newtos.ld -pie --no-dynamic-linker -z text -z max-page-size=0x1000 --build-id=none /var/folders/16/2bcymjfs3n5gkx8_l66stqyc0000gn/T/tmp.9emjBU1Vqm/crt0.o /Volumes/Daten/Development/PiRusTOS/target/programs/aarch64-unknown-none-softfloat/release/libhello_gem.a -o /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/u7/HELLOGEM.NAP
+++ wc -c
+++ tr -d ' '
++ echo 'wrote /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/u7/HELLOGEM.NAP (100232 bytes)'
+wrote /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/u7/HELLOGEM.NAP (100232 bytes)
++ rm -rf /var/folders/16/2bcymjfs3n5gkx8_l66stqyc0000gn/T/tmp.9emjBU1Vqm

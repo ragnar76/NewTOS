@@ -1,0 +1,28 @@
+u7-off-rpi4-apitest |  1 TOTAL 106 0 5 ; | exc/panic=0
+u7-off-rpi4-desktop |  1 desktop up (1 d; | exc/panic=0
+u7-off-rpi4-qed |  | exc/panic=0
+u7-off-rpi4-teradesk |  | exc/panic=0
+u7-on-rpi4-apitest |  1 TOTAL 106 0 5 ; | exc/panic=0
+u7-on-rpi4-desktop |  1 desktop up (1 d; | exc/panic=0
+u7-on-rpi4-qed |  | exc/panic=0
+u7-on-rpi4-teradesk |  | exc/panic=0
+u7-strict-rpi4-apitest |  1 TOTAL 106 0 5 ; | exc/panic=0
+u7-strict-rpi4-desktop |  1 desktop up (1 d; | exc/panic=0
+u7-strict-rpi4-qed |  | exc/panic=0
+u7-strict-rpi4-teradesk |  | exc/panic=0
+--- APITEST result lines (modulo hex)
+on: u7 vs u5b 0 differing lines (126 lines)
+off: u7 vs u5b 0 differing lines (126 lines)
+strict: u7 vs u5b 0 differing lines (126 lines)
+--- screendumps u7 vs U5b run u5b-*
+u7-on-rpi4- vs u5b-on-rpi4-: same=5 diff=0 missing=0
+u7-off-rpi4- vs u5b-off-rpi4-: same=5 diff=0 missing=0
+u7-strict-rpi4- vs u5b-strict-rpi4-: same=5 diff=0 missing=0
+--- screendumps u7 vs U5b run base-*
+u7-on-rpi4- vs base-on-rpi4-: same=5 diff=0 missing=0
+u7-off-rpi4- vs base-off-rpi4-: same=5 diff=0 missing=0
+u7-strict-rpi4- vs base-strict-rpi4-: same=5 diff=0 missing=0
+--- desktop t25 sha256
+0e6f770497da100b6707ff8ac1a79f24f30272a0e371bc368d9b10f56a2c324b  u7-off-rpi4-desktop-t25.png
+0e6f770497da100b6707ff8ac1a79f24f30272a0e371bc368d9b10f56a2c324b  u7-on-rpi4-desktop-t25.png
+0e6f770497da100b6707ff8ac1a79f24f30272a0e371bc368d9b10f56a2c324b  u7-strict-rpi4-desktop-t25.png

@@ -1,0 +1,54 @@
+# DESK43 U7 oracle (G2): trace/SVCSEQ-base.LOG (HEAD 1775339d, git archive) vs trace/SVCSEQ-u7.LOG, same injector inj-desk-seq.py
+## base vs U5b run's SVCSEQ-u5b.LOG
+BYTE-IDENTICAL
+## lines/bytes
+     684   23609 trace/SVCSEQ-base.LOG
+     690   23828 trace/SVCSEQ-u7.LOG
+    1374   47437 total
+## diff SVCSEQ-base.LOG SVCSEQ-u7.LOG
+426a427,432
+> K   AES    op=77  graf_handle  -> 1
+>     graf_handle: handle=1 wchar=8 hchar=16 wbox=19 hbox=19
+> K   VDI    op=102 ?           
+> K   VDI    op=38  ?           
+> K   VDI    op=12  vst_height  
+> K   VDI    op=12  vst_height  
+505c511
+< K   XBIOS  #14 fn=0x10           -> 0xffff000000349d08
+---
+> K   XBIOS  #14 fn=0x10           -> 0xffff00000034ad08
+## diff sequence-all
+306a307,311
+> K AES 77 graf_handle -> 1
+> K VDI 102 ?
+> K VDI 38 ?
+> K VDI 12 vst_height
+> K VDI 12 vst_height
+381c386
+< K XBIOS 0x10 -> 0xffff000000349d08
+---
+> K XBIOS 0x10 -> 0xffff00000034ad08
+## diff sequence-desktop-K-noresults
+306a307,311
+> K AES 77 graf_handle
+> K VDI 102 ?
+> K VDI 38 ?
+> K VDI 12 vst_height
+> K VDI 12 vst_height
+## diff sequence-desktop-K-novdi-shape
+1a2
+> AES 77 graf_handle -> 1
+76c77
+< XBIOS 0x10 -> 0xffff000000349d08
+---
+> XBIOS 0x10 -> 0xffff00000034ad08
+## context (base lines 420-428)
+K   VDI    op=39  vst_alignment
+K   VDI    op=22  vst_color   
+    vst_color -> 1 (out 1)
+K   VDI    op=8   v_gtext     
+    v_gtext at (320,416) len=63 chars=NewTOS i
+K   VDI    op=101 v_clsvwk    
+K   AES    op=10  appl_init    -> 0
+K   AES    op=104 wind_get     -> 1
+    wind_get(desk, WF_WORKXYWH): xywh=(0,19,640,461)

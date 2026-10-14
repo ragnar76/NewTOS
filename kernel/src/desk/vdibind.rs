@@ -13,6 +13,10 @@
 //! same calls are made where a GEM application makes them: over the VDI
 //! trap.
 //!
+//! The one other thing the desktop takes from the VDI is the small font's
+//! cell `gl_wschar`/`gl_hschar` ([`small_font_cell`]), once per `deskmain`
+//! run: the ROM desktop reads the AES's global, which an application cannot.
+//!
 //! **The workstation is the AES's own.** EmuTOS's desktop draws on the
 //! AES's workstation `gl_handle`, which it learns from `graf_handle`
 //! (`deskmain.c:1956`) — `gr_bwait` even carries the comment "Since the
@@ -34,7 +38,10 @@ use tos_types::aes::Grect;
 
 // VDI opcodes (`tos-api/src/vdi/mod.rs` dispatch table).
 const OP_V_PLINE: i16 = 6;
+const OP_VST_HEIGHT: i16 = 12;
 const OP_VSL_COLOR: i16 = 17;
+const OP_VQT_ATTRIBUTES: i16 = 38;
+const OP_VQ_EXTND: i16 = 102;
 const OP_VSWR_MODE: i16 = 32;
 const OP_VSL_UDSTY: i16 = 113;
 const OP_VS_CLIP: i16 = 129;
@@ -52,8 +59,8 @@ const SOLID_MASK: i16 = -1; // 0xffff
 
 /// The AES's workstation handle as the desktop learned it from
 /// `graf_handle` (`deskmain.c:1956`'s `gl_handle`), or 0 while it has not
-/// been asked yet. Asked lazily on first use (the first drag) and cleared by
-/// [`reset`] when the AES is restarted under us.
+/// been asked yet. Set by [`set_handle`] at the start of every `deskmain`
+/// run and cleared by [`reset`] when the AES is restarted under us.
 static HANDLE: AtomicI16 = AtomicI16::new(0);
 
 /// Issue the VDI trap (`svc #2`): selector 115 in `x0`, the five-pointer VDI
@@ -105,8 +112,8 @@ impl Vdi {
     }
 }
 
-/// The AES's workstation handle, asked for on first use — `graf_handle`
-/// (AES 77), as `deskmain` does at desktop start (`deskmain.c:1956`).
+/// The AES's workstation handle `gl_handle`, as [`set_handle`] recorded it
+/// from `deskmain`'s `graf_handle` (`deskmain.c:1956`).
 ///
 /// Returns 0 when the AES has no workstation (`gl_handle` still 0: no raster
 /// backend, so `gsx_init`'s `v_opnwk` never reached a handler), which every
@@ -114,23 +121,71 @@ impl Vdi {
 /// here: without a raster backend `sh_ldapp`'s `DESKTOP_APP` arm runs the
 /// console instead of the desktop, so no drag can start.
 fn handle() -> i16 {
-    let h = HANDLE.load(Ordering::Relaxed);
-    if h > 0 {
-        return h;
-    }
-    let nh = super::graf_handle();
-    if nh <= 0 {
-        return 0;
-    }
-    HANDLE.store(nh, Ordering::Relaxed);
-    nh
+    HANDLE.load(Ordering::Relaxed).max(0)
+}
+
+/// Record `gl_handle` from `deskmain`'s `graf_handle` (`deskmain.c:1956`).
+pub(super) fn set_handle(h: i16) {
+    HANDLE.store(h, Ordering::Relaxed);
 }
 
 /// Forget the workstation handle. Called from [`super::reset`] on the AES
 /// restart path (A106): the desktop is a program that restarts and asks
-/// `graf_handle` again (`deskmain.c:1956`), on the next drag.
+/// `graf_handle` again (`deskmain.c:1956`) at the start of its next run.
 pub(super) fn reset() {
     HANDLE.store(0, Ordering::Relaxed);
+}
+
+/// The small font's character cell `(gl_wschar, gl_hschar)`, asked of the
+/// AES's workstation exactly as the AES's `gsx_start` computes it
+/// (`aes/gemgraf.c:404-410`):
+///
+/// ```c
+/// gsx_textsize(&gl_wptschar, &gl_hptschar, &gl_wchar, &gl_hchar);
+/// gl_ws.ws_chmaxh = gl_hptschar;  /* save the IBM font size here */
+/// vst_height(gl_ws.ws_chminh, &gl_wsptschar, &gl_hsptschar, &gl_wschar, &gl_hschar);
+/// /* must restore the current font height */
+/// vst_height(gl_ws.ws_chmaxh, &dummy, &dummy, &dummy, &dummy);
+/// ```
+///
+/// The ROM desktop reads the result straight out of the AES's globals
+/// (`deskapp.c:519-520`); an application has no AES call for it, so it makes
+/// the same VDI calls on the workstation it shares with the AES
+/// (`deskact.c:212-215`). `ws_chminh` is `SIZ_TAB[1]`, which `v_opnwk`
+/// returned to the AES in `PTSOUT[1]` (`aes/gemgsxif.c:169-186`) and
+/// `vq_extnd(handle, 0)` returns again (`vdi/vdi_control.c:626-639`);
+/// `gsx_textsize` is `vqt_attributes` (`aes/gemgsxif.c:505-512`) and
+/// `vst_height` answers the cell in `PTSOUT[2..3]`
+/// (`aes/gemgsxif.c:590-600`). The second `vst_height` puts the
+/// workstation's text height back where it was, so the shared workstation
+/// ends in the state it started in.
+///
+/// `(0, 0)` without a workstation (see [`handle`]).
+pub(super) fn small_font_cell() -> (i16, i16) {
+    let h = handle();
+    if h <= 0 {
+        return (0, 0);
+    }
+    let mut v = Vdi::new();
+    v.intin[0] = 0;
+    v.call(OP_VQ_EXTND, 0, 1, h);
+    let ws_chminh = v.ptsout[1];
+
+    let mut v = Vdi::new();
+    v.call(OP_VQT_ATTRIBUTES, 0, 0, h);
+    let ws_chmaxh = v.ptsout[1];
+
+    let mut v = Vdi::new();
+    v.ptsin[0] = 0;
+    v.ptsin[1] = ws_chminh;
+    v.call(OP_VST_HEIGHT, 1, 0, h);
+    let cell = (v.ptsout[2], v.ptsout[3]);
+
+    let mut v = Vdi::new();
+    v.ptsin[0] = 0;
+    v.ptsin[1] = ws_chmaxh;
+    v.call(OP_VST_HEIGHT, 1, 0, h);
+    cell
 }
 
 /// `gsx_sclip(pt)` (`aes/gemgraf.c:91-105`) — set the workstation clip

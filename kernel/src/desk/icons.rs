@@ -17,7 +17,7 @@
 //! the neighbouring column.
 
 use tos_types::aes::IconBlk;
-use tos_api::vdi::font::{SMALL_CELL_H, SMALL_CELL_W};
+use super::global::{gl_hschar, gl_wschar};
 
 /// Maximum icon-label length in characters (EmuTOS `MAX_ICONTEXT_WIDTH`,
 /// `deskapp.c:74`). A 12-char 8.3 name (`NAME.EXT`) is the worst case.
@@ -46,14 +46,19 @@ pub const ICON_LABEL_SLACK: i16 = 2;
 /// The fixed label-box width in pixels: `MAX_ICONTEXT_WIDTH * gl_wschar`
 /// (EmuTOS `setup_iconblks`, `deskapp.c:519`) — the **small** AES font, which
 /// is what `gr_gicon` draws an icon label with (`gemgraf.c:806`). **Never**
-/// shrink-to-fit — this is the root D1 fix. 12 * 6 = 72, exactly the
-/// `ib_wtext` in EmuTOS's own `desk/icon.rsc` and in TeraDesk's `icons.rsc`.
-pub const IB_WTEXT: i16 = MAX_ICONTEXT_WIDTH * SMALL_CELL_W;
+/// shrink-to-fit — this is the root D1 fix. 12 * 6 = 72 with the 6×6 small
+/// font, exactly the `ib_wtext` in EmuTOS's own `desk/icon.rsc` and in
+/// TeraDesk's `icons.rsc`.
+pub fn ib_wtext() -> i16 {
+    MAX_ICONTEXT_WIDTH * gl_wschar()
+}
 
 /// The fixed label-box height in pixels: `gl_hschar + 2` (EmuTOS
-/// `setup_iconblks`, `deskapp.c:520`) = 8, again exactly the `ib_htext` both
-/// stock icon resources carry.
-pub const IB_HTEXT: i16 = SMALL_CELL_H + ICON_LABEL_SLACK;
+/// `setup_iconblks`, `deskapp.c:520`) = 8 with the 6×6 small font, again
+/// exactly the `ib_htext` both stock icon resources carry.
+pub fn ib_htext() -> i16 {
+    gl_hschar() + ICON_LABEL_SLACK
+}
 
 /// Which built-in icon a displayed object uses. The variant set is NewTOS's;
 /// the **numbering** that reaches `NEWDESK.INF` is EmuTOS's `IG_*`
@@ -329,7 +334,7 @@ const IB_CHAR_BASE: i16 = 0x1000;
 ///   (`ib_xicon = (g_wicon - ib_wicon) / 2`, the `app_blddesk` recentre,
 ///   `deskapp.c:1391`; on NewTOS's fixed font the window path's "as-authored"
 ///   value is identical, so both views centre consistently);
-/// * the **label box** is the fixed [`IB_WTEXT`] wide, inset by [`IB_XTEXT`]
+/// * the **label box** is the fixed [`ib_wtext`] wide, inset by [`IB_XTEXT`]
 ///   — **never** shrunk to the name (the D1 fix).
 pub fn build_iconblk(kind: IconKind, ptext: u64, letter: u8, g_wicon: i16) -> IconBlk {
     let (data, mask) = rasters(kind);
@@ -354,7 +359,7 @@ pub fn build_iconblk(kind: IconKind, ptext: u64, letter: u8, g_wicon: i16) -> Ic
         ib_hicon: IB_HICON,
         ib_xtext: IB_XTEXT,
         ib_ytext: IB_HICON,
-        ib_wtext: IB_WTEXT,
-        ib_htext: IB_HTEXT,
+        ib_wtext: ib_wtext(),
+        ib_htext: ib_htext(),
     }
 }

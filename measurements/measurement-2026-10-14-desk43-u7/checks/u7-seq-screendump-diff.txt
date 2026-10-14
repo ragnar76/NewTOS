@@ -1,0 +1,2 @@
+screendumps/seq-base-rpi4-t20.png vs screendumps/seq-u7-rpi4-t20.png: size (640, 480)/(640, 480), differing pixels 62, bbox (90, 70, 112, 80)
+screendumps/seq-base-rpi4-t45.png vs screendumps/seq-u7-rpi4-t45.png: size (640, 480)/(640, 480), differing pixels 62, bbox (90, 70, 112, 80)
