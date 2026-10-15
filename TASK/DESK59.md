@@ -1,6 +1,6 @@
 # DESK59 — `act_chg` prueft `ob_flags & DISABLED` statt `ob_state`
 
-Status: **OFFEN** · Prioritaet: **P3** · Typ: Konformitaet — Nebenfund DESK43 U5b (2026-10-14)
+Status: **ERLEDIGT** 2026-10-16 ([Quittung](DESK59-STATUS-DONE.MD)) · Prioritaet: **P3** · Typ: Konformitaet — Nebenfund DESK43 U5b (2026-10-14)
 
 `kernel/src/desk/act.rs:75` bricht ab, wenn `ob_flags & DISABLED` gesetzt ist.
 EmuTOS `act_chg` (`desk/deskact.c:428-430`) prueft `ob_state & DISABLED`.
