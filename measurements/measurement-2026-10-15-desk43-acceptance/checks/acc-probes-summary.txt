@@ -1,0 +1,41 @@
+off accfree: EXC/PANIC-in-log=0 | verdict: ACCFREE: PASS| | out-diff vs EL1: 0, vs mem05-ref: 0
+off e9mem: EXC/PANIC-in-log=0 | verdict: [E9MEM kid] E9MEM: PASS|[E9MEM] E9MEM: PASS| | out-diff vs EL1: 0, vs mem05-ref: 0
+off mdpar: EXC/PANIC-in-log=0 | verdict: MDPAR: PASS| | out-diff vs EL1: 0, vs mem05-ref: 0
+off port10: EXC/PANIC-in-log=0 | verdict: port10: PASS stat("C:\P10\LEGACY.PRG") st_mode & 0111 == 0 -- stat 0, st_mode 0100644|port10: PASS stat("c:\p10\legacy.prg") st_mode & 0111 == 0 -- stat 0, st_mode 0100644|port10: ALL PASS (44 checks)| | out-diff vs EL1: 0, vs mem05-ref: 0
+off pparent: EXC/PANIC-in-log=0 | verdict: PPARENT Z-KID: FAIL|  FAIL Pexec child (C:\PPZ.NAP) passed got=0xX want=0xX|PPARENT Z: FAIL| | out-diff vs EL1: 0, vs mem05-ref: 0
+off s2allm: EXC/PANIC-in-log=0 | verdict: OWN: PASS|VFORK: PASS|S2ALL: PASS| | out-diff vs EL1: 0, vs mem05-ref: 0
+off stderr-newcrt0: EXC/PANIC-in-log=0 | verdict: STDERRP[KID]: DONE|STDERRP[PAR]: DONE| | out-diff vs EL1: 0, vs mem05-ref: 0
+off stderr-oldcrt0: EXC/PANIC-in-log=0 | verdict: STDERRP[KID]: DONE|STDERRP[PAR]: DONE| | out-diff vs EL1: 0, vs mem05-ref: 0
+off stderra: EXC/PANIC-in-log=0 | verdict: STDERRA[KID]: DONE|STDERRA[PAR]: DONE| | out-diff vs EL1: 0, vs mem05-ref: 0
+off stdoutdb: EXC/PANIC-in-log=0 | verdict: DBG: DONE| | out-diff vs EL1: 0, vs mem05-ref: 0
+off ttya: EXC/PANIC-in-log=0 | verdict: TTYT2: PASS|TTYT3: PASS|TTYPROBE: PASS| | out-diff vs EL1: 0, vs mem05-ref: 0
+on-asid mdpar: EXC/PANIC-in-log=0 | verdict: MDPAR: PASS| | out-diff vs EL1: n/a, vs mem05-ref: 0
+on-asid mdstep: EXC/PANIC-in-log=0 | verdict: MDSTEP: DONE| | out-diff vs EL1: n/a, vs mem05-ref: 0
+on accfree: EXC/PANIC-in-log=0 | verdict: ACCFREE: PASS| | out-diff vs EL1: 0, vs mem05-ref: 0
+on e9mem: EXC/PANIC-in-log=0 | verdict: [E9MEM kid] E9MEM: PASS|[E9MEM] E9MEM: PASS| | out-diff vs EL1: 0, vs mem05-ref: 0
+on mdpar: EXC/PANIC-in-log=0 | verdict: MDPAR: PASS| | out-diff vs EL1: 0, vs mem05-ref: 0
+on mdstep: EXC/PANIC-in-log=0 | verdict: MDSTEP: DONE| | out-diff vs EL1: 0, vs mem05-ref: 0
+on port10: EXC/PANIC-in-log=0 | verdict: port10: PASS stat("C:\P10\LEGACY.PRG") st_mode & 0111 == 0 -- stat 0, st_mode 0100644|port10: PASS stat("c:\p10\legacy.prg") st_mode & 0111 == 0 -- stat 0, st_mode 0100644|port10: ALL PASS (44 checks)| | out-diff vs EL1: 0, vs mem05-ref: 0
+on pparent: EXC/PANIC-in-log=0 | verdict: PPARENT Z-KID: FAIL|  FAIL Pexec child (C:\PPZ.NAP) passed got=0xX want=0xX|PPARENT Z: FAIL| | out-diff vs EL1: 0, vs mem05-ref: 0
+on s2allm: EXC/PANIC-in-log=0 | verdict: OWN: PASS|VFORK: PASS|S2ALL: PASS| | out-diff vs EL1: 0, vs mem05-ref: 0
+on stderr-newcrt0: EXC/PANIC-in-log=0 | verdict: STDERRP[KID]: DONE|STDERRP[PAR]: DONE| | out-diff vs EL1: 0, vs mem05-ref: 0
+on stderr-oldcrt0: EXC/PANIC-in-log=0 | verdict: STDERRP[KID]: DONE|STDERRP[PAR]: DONE| | out-diff vs EL1: 0, vs mem05-ref: 0
+on stderra: EXC/PANIC-in-log=0 | verdict: STDERRA[KID]: DONE|STDERRA[PAR]: DONE| | out-diff vs EL1: 0, vs mem05-ref: 0
+on stdoutdb: EXC/PANIC-in-log=0 | verdict: DBG: DONE| | out-diff vs EL1: 0, vs mem05-ref: 0
+on ttya: EXC/PANIC-in-log=0 | verdict: TTYT2: PASS|TTYT3: PASS|TTYPROBE: PASS| | out-diff vs EL1: 0, vs mem05-ref: 0
+strict accfree: EXC/PANIC-in-log=0 | verdict: ACCFREE: PASS| | out-diff vs EL1: n/a, vs mem05-ref: 0
+strict e9mem: EXC/PANIC-in-log=0 | verdict: [E9MEM kid] E9MEM: PASS|[E9MEM] E9MEM: PASS| | out-diff vs EL1: n/a, vs mem05-ref: 0
+strict mdpar: EXC/PANIC-in-log=0 | verdict: MDPAR: PASS| | out-diff vs EL1: n/a, vs mem05-ref: 0
+strict port10: EXC/PANIC-in-log=0 | verdict: port10: PASS stat("C:\P10\LEGACY.PRG") st_mode & 0111 == 0 -- stat 0, st_mode 0100644|port10: PASS stat("c:\p10\legacy.prg") st_mode & 0111 == 0 -- stat 0, st_mode 0100644|port10: ALL PASS (44 checks)| | out-diff vs EL1: n/a, vs mem05-ref: 0
+strict pparent: EXC/PANIC-in-log=0 | verdict: PPARENT Z-KID: FAIL|  FAIL Pexec child (C:\PPZ.NAP) passed got=0xX want=0xX|PPARENT Z: FAIL| | out-diff vs EL1: n/a, vs mem05-ref: 0
+strict stderr-newcrt0: EXC/PANIC-in-log=0 | verdict: STDERRP[KID]: DONE|STDERRP[PAR]: DONE| | out-diff vs EL1: n/a, vs mem05-ref: 0
+strict stderr-oldcrt0: EXC/PANIC-in-log=0 | verdict: STDERRP[KID]: DONE|STDERRP[PAR]: DONE| | out-diff vs EL1: n/a, vs mem05-ref: 0
+strict stderra: EXC/PANIC-in-log=0 | verdict: STDERRA[KID]: DONE|STDERRA[PAR]: DONE| | out-diff vs EL1: n/a, vs mem05-ref: 0
+strict stdoutdb: EXC/PANIC-in-log=0 | verdict: DBG: DONE| | out-diff vs EL1: n/a, vs mem05-ref: 0
+strict ttya: EXC/PANIC-in-log=0 | verdict: TTYT2: PASS|TTYT3: PASS|TTYPROBE: PASS| | out-diff vs EL1: n/a, vs mem05-ref: 0
+verify accfree: EXC/PANIC-in-log=0 | verdict: [memprot] verify: 18 checks, 5096915 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 16 regions 49|ACCFREE: PASS|[memprot] verify: 30 checks, 8577156 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 27 regions 72| | out-diff vs EL1: n/a, vs mem05-ref: 0
+verify e9mem: EXC/PANIC-in-log=0 | verdict: [memprot] verify: 12 checks, 3491020 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 10 regions 31|[E9MEM] E9MEM: PASS|[memprot] verify: 14 checks, 3954158 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 11 regions 31| | out-diff vs EL1: n/a, vs mem05-ref: 0
+verify mdpar: EXC/PANIC-in-log=0 | verdict: [memprot] verify: 512 checks, 119870464 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 509 region|MDPAR: PASS|[memprot] verify: 518 checks, 121261926 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 514 region| | out-diff vs EL1: n/a, vs mem05-ref: 8
+verify s2allm: EXC/PANIC-in-log=0 | verdict: [memprot] verify: 176 checks, 48583600 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 152 regions|S2ALL: PASS|[memprot] verify: 178 checks, 49046738 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 153 regions| | out-diff vs EL1: n/a, vs mem05-ref: 0
+verify stdoutdb: EXC/PANIC-in-log=0 | verdict: DBG: DONE|[memprot] verify: 6 checks, 1619302 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 4 regions 1349| | out-diff vs EL1: n/a, vs mem05-ref: n/a
+verify ttya: EXC/PANIC-in-log=0 | verdict: TTYT3: PASS|TTYPROBE: PASS|[memprot] verify: 12 checks, 3471052 pages compared, 0 mismatches, 0 tolerated shortfalls; syncs 9 regions 314| | out-diff vs EL1: n/a, vs mem05-ref: n/a

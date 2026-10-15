@@ -1,0 +1,140 @@
+=== mode on
+  EL0 vs EL1 on desktop-t.png: BYTE-IDENTICAL 0 px  (0e6f770497da / 0e6f770497da) 
+  desktop: exc/panic/loadfail EL0=0 EL1=0; serial diff lines (hex-norm) 3
+< [shell] desktop: built-in kernel desktop (boot argument desk=kernel)
+> [shell] desktop: EL0 program NEWDESK (embedded; desk=kernel selects the built-in one)
+> [launch] EL0: slot 0 entry 0xX
+  EL0 vs EL1 on apitest-t-a.png: BYTE-IDENTICAL 0 px  (2c092b4a2ca6 / 2c092b4a2ca6) 
+  EL0 vs EL1 on apitest-t-b.png: BYTE-IDENTICAL 0 px  (2c092b4a2ca6 / 2c092b4a2ca6) 
+  apitest: exc/panic/loadfail EL0=0 EL1=0; serial diff lines (hex-norm) 2
+< [shell] desktop: built-in kernel desktop (boot argument desk=kernel)
+> [shell] desktop: EL0 program NEWDESK (embedded; desk=kernel selects the built-in one)
+  EL0 vs EL1 on teradesk-t.png: BYTE-IDENTICAL 0 px  (5148fde2f61b / 5148fde2f61b) 
+  teradesk: exc/panic/loadfail EL0=0 EL1=0; serial diff lines (hex-norm) 2
+< [shell] desktop: built-in kernel desktop (boot argument desk=kernel)
+> [shell] desktop: EL0 program NEWDESK (embedded; desk=kernel selects the built-in one)
+  EL0 vs EL1 on qed-t.png: BYTE-IDENTICAL 0 px  (ec79c00a999e / ec79c00a999e) 
+  qed: exc/panic/loadfail EL0=0 EL1=0; serial diff lines (hex-norm) 2
+< [shell] desktop: built-in kernel desktop (boot argument desk=kernel)
+> [shell] desktop: EL0 program NEWDESK (embedded; desk=kernel selects the built-in one)
+  APITEST result lines EL0 vs EL1: 0 differing of 126; TOTAL 106 0 5
+  el0 vs dev-ref on desktop-t: BYTE-IDENTICAL 0 px  (0e6f770497da / 0e6f770497da) 
+  el0 vs dev-ref on apitest-t-a: DIFF 45811 px bbox x=1..588 y=2..463  (5044101b2069 / 2c092b4a2ca6)   box x=1 y=2 w=452 h=462 px=44832 A[(0, 0, 0), (255, 255, 255)] B[(0, 0, 0), (255, 255, 255)]   box x=489 y=2 w=52 h=12 px=250 A[(0, 0, 0)] B[(255, 255, 255)]   box x=563 y=2 w=26 h=12 px=164 A[(0, 0, 0)] B[(255, 255, 255)]   box x=441 y=3 w=22 h=11 px=111 A[(0, 0, 0)] B[(255, 255, 255)]   box x=473 y=5 w=6 h=9 px=41 A[(0, 0, 0)] B[(255, 255, 255)]   box x=451 y=26 w=18 h=4 px=24 A[(0, 0, 0)] B[(255, 255, 255)]   box x=1 y=205 w=1 h=1 px=1 A[(0, 0, 0)] B[(255, 255, 255)]   box x=409 y=354 w=54 h=14 px=271 A[(255, 255, 255)] B[(0, 0, 0)]   box x=280 y=420 w=15 h=10 px=93 A[(0, 0, 0), (255, 255, 255)] B[(0, 0, 0), (255, 255, 255)]   box x=467 y=458 w=18 h=4 px=24 A[(0, 0, 0)] B[(255, 255, 255)] 
+  el0 vs dev-ref on apitest-t-b: BYTE-IDENTICAL 0 px  (2c092b4a2ca6 / 2c092b4a2ca6) 
+  el0 vs dev-ref on teradesk-t: BYTE-IDENTICAL 0 px  (5148fde2f61b / 5148fde2f61b) 
+  el0 vs dev-ref on qed-t: BYTE-IDENTICAL 0 px  (ec79c00a999e / ec79c00a999e) 
+  el1 vs dev-ref on desktop-t: BYTE-IDENTICAL 0 px  (0e6f770497da / 0e6f770497da) 
+  el1 vs dev-ref on apitest-t-a: DIFF 45811 px bbox x=1..588 y=2..463  (5044101b2069 / 2c092b4a2ca6)   box x=1 y=2 w=452 h=462 px=44832 A[(0, 0, 0), (255, 255, 255)] B[(0, 0, 0), (255, 255, 255)]   box x=489 y=2 w=52 h=12 px=250 A[(0, 0, 0)] B[(255, 255, 255)]   box x=563 y=2 w=26 h=12 px=164 A[(0, 0, 0)] B[(255, 255, 255)]   box x=441 y=3 w=22 h=11 px=111 A[(0, 0, 0)] B[(255, 255, 255)]   box x=473 y=5 w=6 h=9 px=41 A[(0, 0, 0)] B[(255, 255, 255)]   box x=451 y=26 w=18 h=4 px=24 A[(0, 0, 0)] B[(255, 255, 255)]   box x=1 y=205 w=1 h=1 px=1 A[(0, 0, 0)] B[(255, 255, 255)]   box x=409 y=354 w=54 h=14 px=271 A[(255, 255, 255)] B[(0, 0, 0)]   box x=280 y=420 w=15 h=10 px=93 A[(0, 0, 0), (255, 255, 255)] B[(0, 0, 0), (255, 255, 255)]   box x=467 y=458 w=18 h=4 px=24 A[(0, 0, 0)] B[(255, 255, 255)] 
+  el1 vs dev-ref on apitest-t-b: BYTE-IDENTICAL 0 px  (2c092b4a2ca6 / 2c092b4a2ca6) 
+  el1 vs dev-ref on teradesk-t: BYTE-IDENTICAL 0 px  (5148fde2f61b / 5148fde2f61b) 
+  el1 vs dev-ref on qed-t: BYTE-IDENTICAL 0 px  (ec79c00a999e / ec79c00a999e) 
+=== mode off
+  EL0 vs EL1 off desktop-t.png: BYTE-IDENTICAL 0 px  (0e6f770497da / 0e6f770497da) 
+  desktop: exc/panic/loadfail EL0=0 EL1=0; serial diff lines (hex-norm) 3
+< [shell] desktop: built-in kernel desktop (boot argument desk=kernel)
+> [shell] desktop: EL0 program NEWDESK (embedded; desk=kernel selects the built-in one)
+> [launch] EL0: slot 0 entry 0xX
+  EL0 vs EL1 off apitest-t-a.png: BYTE-IDENTICAL 0 px  (2c092b4a2ca6 / 2c092b4a2ca6) 
+  EL0 vs EL1 off apitest-t-b.png: BYTE-IDENTICAL 0 px  (2c092b4a2ca6 / 2c092b4a2ca6) 
+  apitest: exc/panic/loadfail EL0=0 EL1=0; serial diff lines (hex-norm) 2
+< [shell] desktop: built-in kernel desktop (boot argument desk=kernel)
+> [shell] desktop: EL0 program NEWDESK (embedded; desk=kernel selects the built-in one)
+  EL0 vs EL1 off teradesk-t.png: BYTE-IDENTICAL 0 px  (5148fde2f61b / 5148fde2f61b) 
+  teradesk: exc/panic/loadfail EL0=0 EL1=0; serial diff lines (hex-norm) 2
+< [shell] desktop: built-in kernel desktop (boot argument desk=kernel)
+> [shell] desktop: EL0 program NEWDESK (embedded; desk=kernel selects the built-in one)
+  EL0 vs EL1 off qed-t.png: BYTE-IDENTICAL 0 px  (ec79c00a999e / ec79c00a999e) 
+  qed: exc/panic/loadfail EL0=0 EL1=0; serial diff lines (hex-norm) 2
+< [shell] desktop: built-in kernel desktop (boot argument desk=kernel)
+> [shell] desktop: EL0 program NEWDESK (embedded; desk=kernel selects the built-in one)
+  APITEST result lines EL0 vs EL1: 0 differing of 126; TOTAL 106 0 5
+  el0 vs dev-ref off desktop-t: BYTE-IDENTICAL 0 px  (0e6f770497da / 0e6f770497da) 
+  el0 vs dev-ref off apitest-t-a: DIFF 45811 px bbox x=1..588 y=2..463  (5044101b2069 / 2c092b4a2ca6)   box x=1 y=2 w=452 h=462 px=44832 A[(0, 0, 0), (255, 255, 255)] B[(0, 0, 0), (255, 255, 255)]   box x=489 y=2 w=52 h=12 px=250 A[(0, 0, 0)] B[(255, 255, 255)]   box x=563 y=2 w=26 h=12 px=164 A[(0, 0, 0)] B[(255, 255, 255)]   box x=441 y=3 w=22 h=11 px=111 A[(0, 0, 0)] B[(255, 255, 255)]   box x=473 y=5 w=6 h=9 px=41 A[(0, 0, 0)] B[(255, 255, 255)]   box x=451 y=26 w=18 h=4 px=24 A[(0, 0, 0)] B[(255, 255, 255)]   box x=1 y=205 w=1 h=1 px=1 A[(0, 0, 0)] B[(255, 255, 255)]   box x=409 y=354 w=54 h=14 px=271 A[(255, 255, 255)] B[(0, 0, 0)]   box x=280 y=420 w=15 h=10 px=93 A[(0, 0, 0), (255, 255, 255)] B[(0, 0, 0), (255, 255, 255)]   box x=467 y=458 w=18 h=4 px=24 A[(0, 0, 0)] B[(255, 255, 255)] 
+  el0 vs dev-ref off apitest-t-b: BYTE-IDENTICAL 0 px  (2c092b4a2ca6 / 2c092b4a2ca6) 
+  el0 vs dev-ref off teradesk-t: BYTE-IDENTICAL 0 px  (5148fde2f61b / 5148fde2f61b) 
+  el0 vs dev-ref off qed-t: BYTE-IDENTICAL 0 px  (ec79c00a999e / ec79c00a999e) 
+  el1 vs dev-ref off desktop-t: BYTE-IDENTICAL 0 px  (0e6f770497da / 0e6f770497da) 
+  el1 vs dev-ref off apitest-t-a: DIFF 45811 px bbox x=1..588 y=2..463  (5044101b2069 / 2c092b4a2ca6)   box x=1 y=2 w=452 h=462 px=44832 A[(0, 0, 0), (255, 255, 255)] B[(0, 0, 0), (255, 255, 255)]   box x=489 y=2 w=52 h=12 px=250 A[(0, 0, 0)] B[(255, 255, 255)]   box x=563 y=2 w=26 h=12 px=164 A[(0, 0, 0)] B[(255, 255, 255)]   box x=441 y=3 w=22 h=11 px=111 A[(0, 0, 0)] B[(255, 255, 255)]   box x=473 y=5 w=6 h=9 px=41 A[(0, 0, 0)] B[(255, 255, 255)]   box x=451 y=26 w=18 h=4 px=24 A[(0, 0, 0)] B[(255, 255, 255)]   box x=1 y=205 w=1 h=1 px=1 A[(0, 0, 0)] B[(255, 255, 255)]   box x=409 y=354 w=54 h=14 px=271 A[(255, 255, 255)] B[(0, 0, 0)]   box x=280 y=420 w=15 h=10 px=93 A[(0, 0, 0), (255, 255, 255)] B[(0, 0, 0), (255, 255, 255)]   box x=467 y=458 w=18 h=4 px=24 A[(0, 0, 0)] B[(255, 255, 255)] 
+  el1 vs dev-ref off apitest-t-b: BYTE-IDENTICAL 0 px  (2c092b4a2ca6 / 2c092b4a2ca6) 
+  el1 vs dev-ref off teradesk-t: BYTE-IDENTICAL 0 px  (5148fde2f61b / 5148fde2f61b) 
+  el1 vs dev-ref off qed-t: BYTE-IDENTICAL 0 px  (ec79c00a999e / ec79c00a999e) 
+=== mode strict
+  EL0 vs EL1 strict desktop-t.png: BYTE-IDENTICAL 0 px  (0e6f770497da / 0e6f770497da) 
+  desktop: exc/panic/loadfail EL0=0 EL1=0; serial diff lines (hex-norm) 3
+< [shell] desktop: built-in kernel desktop (boot argument desk=kernel)
+> [shell] desktop: EL0 program NEWDESK (embedded; desk=kernel selects the built-in one)
+> [launch] EL0: slot 0 entry 0xX
+  EL0 vs EL1 strict apitest-t-a.png: BYTE-IDENTICAL 0 px  (2c092b4a2ca6 / 2c092b4a2ca6) 
+  EL0 vs EL1 strict apitest-t-b.png: BYTE-IDENTICAL 0 px  (2c092b4a2ca6 / 2c092b4a2ca6) 
+  apitest: exc/panic/loadfail EL0=0 EL1=0; serial diff lines (hex-norm) 2
+< [shell] desktop: built-in kernel desktop (boot argument desk=kernel)
+> [shell] desktop: EL0 program NEWDESK (embedded; desk=kernel selects the built-in one)
+  EL0 vs EL1 strict teradesk-t.png: BYTE-IDENTICAL 0 px  (5148fde2f61b / 5148fde2f61b) 
+  teradesk: exc/panic/loadfail EL0=0 EL1=0; serial diff lines (hex-norm) 2
+< [shell] desktop: built-in kernel desktop (boot argument desk=kernel)
+> [shell] desktop: EL0 program NEWDESK (embedded; desk=kernel selects the built-in one)
+  EL0 vs EL1 strict qed-t.png: BYTE-IDENTICAL 0 px  (ec79c00a999e / ec79c00a999e) 
+  qed: exc/panic/loadfail EL0=0 EL1=0; serial diff lines (hex-norm) 2
+< [shell] desktop: built-in kernel desktop (boot argument desk=kernel)
+> [shell] desktop: EL0 program NEWDESK (embedded; desk=kernel selects the built-in one)
+  APITEST result lines EL0 vs EL1: 0 differing of 126; TOTAL 106 0 5
+  el0 vs dev-ref strict desktop-t: BYTE-IDENTICAL 0 px  (0e6f770497da / 0e6f770497da) 
+  el0 vs dev-ref strict apitest-t-a: DIFF 45811 px bbox x=1..588 y=2..463  (5044101b2069 / 2c092b4a2ca6)   box x=1 y=2 w=452 h=462 px=44832 A[(0, 0, 0), (255, 255, 255)] B[(0, 0, 0), (255, 255, 255)]   box x=489 y=2 w=52 h=12 px=250 A[(0, 0, 0)] B[(255, 255, 255)]   box x=563 y=2 w=26 h=12 px=164 A[(0, 0, 0)] B[(255, 255, 255)]   box x=441 y=3 w=22 h=11 px=111 A[(0, 0, 0)] B[(255, 255, 255)]   box x=473 y=5 w=6 h=9 px=41 A[(0, 0, 0)] B[(255, 255, 255)]   box x=451 y=26 w=18 h=4 px=24 A[(0, 0, 0)] B[(255, 255, 255)]   box x=1 y=205 w=1 h=1 px=1 A[(0, 0, 0)] B[(255, 255, 255)]   box x=409 y=354 w=54 h=14 px=271 A[(255, 255, 255)] B[(0, 0, 0)]   box x=280 y=420 w=15 h=10 px=93 A[(0, 0, 0), (255, 255, 255)] B[(0, 0, 0), (255, 255, 255)]   box x=467 y=458 w=18 h=4 px=24 A[(0, 0, 0)] B[(255, 255, 255)] 
+  el0 vs dev-ref strict apitest-t-b: BYTE-IDENTICAL 0 px  (2c092b4a2ca6 / 2c092b4a2ca6) 
+  el0 vs dev-ref strict teradesk-t: BYTE-IDENTICAL 0 px  (5148fde2f61b / 5148fde2f61b) 
+  el0 vs dev-ref strict qed-t: BYTE-IDENTICAL 0 px  (ec79c00a999e / ec79c00a999e) 
+  el1 vs dev-ref strict desktop-t: BYTE-IDENTICAL 0 px  (0e6f770497da / 0e6f770497da) 
+  el1 vs dev-ref strict apitest-t-a: DIFF 45811 px bbox x=1..588 y=2..463  (5044101b2069 / 2c092b4a2ca6)   box x=1 y=2 w=452 h=462 px=44832 A[(0, 0, 0), (255, 255, 255)] B[(0, 0, 0), (255, 255, 255)]   box x=489 y=2 w=52 h=12 px=250 A[(0, 0, 0)] B[(255, 255, 255)]   box x=563 y=2 w=26 h=12 px=164 A[(0, 0, 0)] B[(255, 255, 255)]   box x=441 y=3 w=22 h=11 px=111 A[(0, 0, 0)] B[(255, 255, 255)]   box x=473 y=5 w=6 h=9 px=41 A[(0, 0, 0)] B[(255, 255, 255)]   box x=451 y=26 w=18 h=4 px=24 A[(0, 0, 0)] B[(255, 255, 255)]   box x=1 y=205 w=1 h=1 px=1 A[(0, 0, 0)] B[(255, 255, 255)]   box x=409 y=354 w=54 h=14 px=271 A[(255, 255, 255)] B[(0, 0, 0)]   box x=280 y=420 w=15 h=10 px=93 A[(0, 0, 0), (255, 255, 255)] B[(0, 0, 0), (255, 255, 255)]   box x=467 y=458 w=18 h=4 px=24 A[(0, 0, 0)] B[(255, 255, 255)] 
+  el1 vs dev-ref strict apitest-t-b: BYTE-IDENTICAL 0 px  (2c092b4a2ca6 / 2c092b4a2ca6) 
+  el1 vs dev-ref strict teradesk-t: BYTE-IDENTICAL 0 px  (5148fde2f61b / 5148fde2f61b) 
+  el1 vs dev-ref strict qed-t: BYTE-IDENTICAL 0 px  (ec79c00a999e / ec79c00a999e) 
+=== mode on-asid
+  EL0 vs EL1 on-asid desktop-t.png: BYTE-IDENTICAL 0 px  (0e6f770497da / 0e6f770497da) 
+  desktop: exc/panic/loadfail EL0=0 EL1=0; serial diff lines (hex-norm) 3
+< [shell] desktop: built-in kernel desktop (boot argument desk=kernel)
+> [shell] desktop: EL0 program NEWDESK (embedded; desk=kernel selects the built-in one)
+> [launch] EL0: slot 0 entry 0xX
+  EL0 vs EL1 on-asid apitest-t-a.png: BYTE-IDENTICAL 0 px  (2c092b4a2ca6 / 2c092b4a2ca6) 
+  EL0 vs EL1 on-asid apitest-t-b.png: BYTE-IDENTICAL 0 px  (2c092b4a2ca6 / 2c092b4a2ca6) 
+  apitest: exc/panic/loadfail EL0=0 EL1=0; serial diff lines (hex-norm) 2
+< [shell] desktop: built-in kernel desktop (boot argument desk=kernel)
+> [shell] desktop: EL0 program NEWDESK (embedded; desk=kernel selects the built-in one)
+  EL0 vs EL1 on-asid teradesk-t.png: BYTE-IDENTICAL 0 px  (5148fde2f61b / 5148fde2f61b) 
+  teradesk: exc/panic/loadfail EL0=0 EL1=0; serial diff lines (hex-norm) 2
+< [shell] desktop: built-in kernel desktop (boot argument desk=kernel)
+> [shell] desktop: EL0 program NEWDESK (embedded; desk=kernel selects the built-in one)
+  EL0 vs EL1 on-asid qed-t.png: BYTE-IDENTICAL 0 px  (ec79c00a999e / ec79c00a999e) 
+  qed: exc/panic/loadfail EL0=0 EL1=0; serial diff lines (hex-norm) 2
+< [shell] desktop: built-in kernel desktop (boot argument desk=kernel)
+> [shell] desktop: EL0 program NEWDESK (embedded; desk=kernel selects the built-in one)
+  APITEST result lines EL0 vs EL1: 0 differing of 126; TOTAL 106 0 5
+  el0 vs dev-ref on-asid desktop-t: BYTE-IDENTICAL 0 px  (0e6f770497da / 0e6f770497da) 
+  el0 vs dev-ref on-asid apitest-t-a: DIFF 45811 px bbox x=1..588 y=2..463  (5044101b2069 / 2c092b4a2ca6)   box x=1 y=2 w=452 h=462 px=44832 A[(0, 0, 0), (255, 255, 255)] B[(0, 0, 0), (255, 255, 255)]   box x=489 y=2 w=52 h=12 px=250 A[(0, 0, 0)] B[(255, 255, 255)]   box x=563 y=2 w=26 h=12 px=164 A[(0, 0, 0)] B[(255, 255, 255)]   box x=441 y=3 w=22 h=11 px=111 A[(0, 0, 0)] B[(255, 255, 255)]   box x=473 y=5 w=6 h=9 px=41 A[(0, 0, 0)] B[(255, 255, 255)]   box x=451 y=26 w=18 h=4 px=24 A[(0, 0, 0)] B[(255, 255, 255)]   box x=1 y=205 w=1 h=1 px=1 A[(0, 0, 0)] B[(255, 255, 255)]   box x=409 y=354 w=54 h=14 px=271 A[(255, 255, 255)] B[(0, 0, 0)]   box x=280 y=420 w=15 h=10 px=93 A[(0, 0, 0), (255, 255, 255)] B[(0, 0, 0), (255, 255, 255)]   box x=467 y=458 w=18 h=4 px=24 A[(0, 0, 0)] B[(255, 255, 255)] 
+  el0 vs dev-ref on-asid apitest-t-b: BYTE-IDENTICAL 0 px  (2c092b4a2ca6 / 2c092b4a2ca6) 
+  el0 vs dev-ref on-asid teradesk-t: BYTE-IDENTICAL 0 px  (5148fde2f61b / 5148fde2f61b) 
+  el0 vs dev-ref on-asid qed-t: BYTE-IDENTICAL 0 px  (ec79c00a999e / ec79c00a999e) 
+  el1 vs dev-ref on-asid desktop-t: BYTE-IDENTICAL 0 px  (0e6f770497da / 0e6f770497da) 
+  el1 vs dev-ref on-asid apitest-t-a: DIFF 45811 px bbox x=1..588 y=2..463  (5044101b2069 / 2c092b4a2ca6)   box x=1 y=2 w=452 h=462 px=44832 A[(0, 0, 0), (255, 255, 255)] B[(0, 0, 0), (255, 255, 255)]   box x=489 y=2 w=52 h=12 px=250 A[(0, 0, 0)] B[(255, 255, 255)]   box x=563 y=2 w=26 h=12 px=164 A[(0, 0, 0)] B[(255, 255, 255)]   box x=441 y=3 w=22 h=11 px=111 A[(0, 0, 0)] B[(255, 255, 255)]   box x=473 y=5 w=6 h=9 px=41 A[(0, 0, 0)] B[(255, 255, 255)]   box x=451 y=26 w=18 h=4 px=24 A[(0, 0, 0)] B[(255, 255, 255)]   box x=1 y=205 w=1 h=1 px=1 A[(0, 0, 0)] B[(255, 255, 255)]   box x=409 y=354 w=54 h=14 px=271 A[(255, 255, 255)] B[(0, 0, 0)]   box x=280 y=420 w=15 h=10 px=93 A[(0, 0, 0), (255, 255, 255)] B[(0, 0, 0), (255, 255, 255)]   box x=467 y=458 w=18 h=4 px=24 A[(0, 0, 0)] B[(255, 255, 255)] 
+  el1 vs dev-ref on-asid apitest-t-b: BYTE-IDENTICAL 0 px  (2c092b4a2ca6 / 2c092b4a2ca6) 
+  el1 vs dev-ref on-asid teradesk-t: BYTE-IDENTICAL 0 px  (5148fde2f61b / 5148fde2f61b) 
+  el1 vs dev-ref on-asid qed-t: BYTE-IDENTICAL 0 px  (ec79c00a999e / ec79c00a999e) 
+=== mode verify
+  EL0 vs EL1 verify desktop-t.png: BYTE-IDENTICAL 0 px  (0e6f770497da / 0e6f770497da) 
+  desktop: exc/panic/loadfail EL0=0 EL1=0; serial diff lines (hex-norm) 3
+< [shell] desktop: built-in kernel desktop (boot argument desk=kernel)
+> [shell] desktop: EL0 program NEWDESK (embedded; desk=kernel selects the built-in one)
+> [launch] EL0: slot 0 entry 0xX
+  EL0 vs EL1 verify apitest-t-a.png: BYTE-IDENTICAL 0 px  (2c092b4a2ca6 / 2c092b4a2ca6) 
+  EL0 vs EL1 verify apitest-t-b.png: BYTE-IDENTICAL 0 px  (2c092b4a2ca6 / 2c092b4a2ca6) 
+  apitest: exc/panic/loadfail EL0=0 EL1=0; serial diff lines (hex-norm) 2
+< [shell] desktop: built-in kernel desktop (boot argument desk=kernel)
+> [shell] desktop: EL0 program NEWDESK (embedded; desk=kernel selects the built-in one)
+  EL0 vs EL1 verify teradesk-t.png: BYTE-IDENTICAL 0 px  (5148fde2f61b / 5148fde2f61b) 
+  teradesk: exc/panic/loadfail EL0=0 EL1=0; serial diff lines (hex-norm) 2
+< [shell] desktop: built-in kernel desktop (boot argument desk=kernel)
+> [shell] desktop: EL0 program NEWDESK (embedded; desk=kernel selects the built-in one)
+  EL0 vs EL1 verify qed-t.png: BYTE-IDENTICAL 0 px  (ec79c00a999e / ec79c00a999e) 
+  qed: exc/panic/loadfail EL0=0 EL1=0; serial diff lines (hex-norm) 2
+< [shell] desktop: built-in kernel desktop (boot argument desk=kernel)
+> [shell] desktop: EL0 program NEWDESK (embedded; desk=kernel selects the built-in one)
+  APITEST result lines EL0 vs EL1: 0 differing of 126; TOTAL 106 0 5

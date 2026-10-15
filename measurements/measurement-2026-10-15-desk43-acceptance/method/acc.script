@@ -1,0 +1,10 @@
+# acc.script -- DESK43 U9-5: open the first desk accessory from the Desk menu with the mouse: pointer to the
+# top-left corner, to the Desk title (20,9), down 50 px to item 3 (y 59 = 19 + 2*16 + 8: "Desktop info...",
+# separator, first accessory), left click (AC_OPEN). Return 4 s later (closes the accessory's alert/dialog, if any).
+200 0xF8 0x80 0x80 0xF8 0x80 0x80 0xF8 0x80 0x80 0xF8 0x80 0x80
+210 0xF8 0x14 0x09
+300 0xF8 0x00 0x32
+500 0xFA 0x00 0x00
+510 0xF8 0x00 0x00
+1300 0x1C
+1310 0x9C

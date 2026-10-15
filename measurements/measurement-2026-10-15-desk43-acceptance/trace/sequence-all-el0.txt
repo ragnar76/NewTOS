@@ -1,0 +1,559 @@
+K VDI 100 v_opnvwk
+K VDI 3 v_clrwk
+K VDI 17 ?
+K VDI 6 v_pline
+K VDI 6 v_pline
+K VDI 6 v_pline
+K VDI 6 v_pline
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 39 vst_alignment
+K VDI 22 vst_color
+K VDI 8 v_gtext
+K VDI 17 ?
+K VDI 6 v_pline
+K VDI 39 vst_alignment
+K VDI 22 vst_color
+K VDI 8 v_gtext
+K VDI 39 vst_alignment
+K VDI 22 vst_color
+K VDI 8 v_gtext
+K VDI 39 vst_alignment
+K VDI 22 vst_color
+K VDI 8 v_gtext
+K VDI 39 vst_alignment
+K VDI 22 vst_color
+K VDI 8 v_gtext
+K VDI 39 vst_alignment
+K VDI 22 vst_color
+K VDI 8 v_gtext
+K VDI 39 vst_alignment
+K VDI 22 vst_color
+K VDI 8 v_gtext
+K VDI 39 vst_alignment
+K VDI 22 vst_color
+K VDI 8 v_gtext
+K VDI 39 vst_alignment
+K VDI 22 vst_color
+K VDI 8 v_gtext
+K VDI 39 vst_alignment
+K VDI 22 vst_color
+K VDI 8 v_gtext
+K VDI 39 vst_alignment
+K VDI 22 vst_color
+K VDI 8 v_gtext
+K VDI 39 vst_alignment
+K VDI 22 vst_color
+K VDI 8 v_gtext
+K VDI 39 vst_alignment
+K VDI 22 vst_color
+K VDI 8 v_gtext
+K VDI 39 vst_alignment
+K VDI 22 vst_color
+K VDI 8 v_gtext
+K VDI 39 vst_alignment
+K VDI 22 vst_color
+K VDI 8 v_gtext
+K VDI 39 vst_alignment
+K VDI 22 vst_color
+K VDI 8 v_gtext
+K VDI 39 vst_alignment
+K VDI 22 vst_color
+K VDI 8 v_gtext
+K VDI 17 ?
+K VDI 6 v_pline
+K VDI 39 vst_alignment
+K VDI 22 vst_color
+K VDI 8 v_gtext
+K VDI 25 ?
+K VDI 23 ?
+K VDI 114 vr_recfl
+K VDI 39 vst_alignment
+K VDI 22 vst_color
+K VDI 32 vswr_mode
+K VDI 8 v_gtext
+K VDI 32 vswr_mode
+K VDI 39 vst_alignment
+K VDI 22 vst_color
+K VDI 8 v_gtext
+K VDI 101 v_clsvwk
+U0 GEMDOS 0x4a Mshrink -> 0
+U0 AES 10 appl_init -> 0
+U0 AES 77 graf_handle -> 1
+U0 VDI 102 ?
+U0 VDI 38 ?
+U0 VDI 12 vst_height
+U0 VDI 12 vst_height
+U0 AES 104 wind_get -> 1
+U0 GEMDOS 0x48 Malloc -> 27578368
+U0 GEMDOS 0x48 Malloc -> 27586560
+U0 GEMDOS 0x48 Malloc -> 27676672
+U0 AES 40 objc_add -> 1
+U0 AES 40 objc_add -> 1
+U0 AES 40 objc_add -> 1
+U0 AES 40 objc_add -> 1
+U0 AES 40 objc_add -> 1
+U0 AES 40 objc_add -> 1
+U0 AES 40 objc_add -> 1
+U0 AES 40 objc_add -> 1
+U0 GEMDOS 0x154 ? -> 4399
+U0 AES 108 wind_calc -> 1
+U0 AES 122 ? -> 1
+U0 GEMDOS 0x3d Fopen -> 6
+U0 GEMDOS 0x3f Fread -> 374
+U0 GEMDOS 0x3e Fclose -> 0
+U0 AES 40 objc_add -> 1
+U0 AES 40 objc_add -> 1
+U0 AES 40 objc_add -> 1
+U0 AES 40 objc_add -> 1
+U0 AES 40 objc_add -> 1
+U0 AES 40 objc_add -> 1
+U0 AES 105 wind_set -> 1
+U0 AES 30 menu_bar -> 1
+U0 AES 107 wind_update -> 1
+U0 AES 26 evnt_dclick -> 3
+U0 AES 107 wind_update -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 31 menu_icheck -> 1
+U0 AES 31 menu_icheck -> 1
+U0 AES 31 menu_icheck -> 1
+U0 AES 31 menu_icheck -> 1
+U0 AES 31 menu_icheck -> 1
+U0 AES 31 menu_icheck -> 1
+U0 AES 31 menu_icheck -> 1
+U0 AES 31 menu_icheck -> 1
+U0 AES 78 graf_mouse -> 1
+U0 AES 51 form_dial -> 1
+U0 AES 30 menu_bar -> 1
+U0 AES 78 graf_mouse -> 1
+U0 AES 78 graf_mouse -> 1
+U0 >> evnt_multi
+U0 AES 25 evnt_multi -> 1
+U0 XBIOS 0x10 -> 0x768
+U0 GEMDOS 0x19 Dgetdrv -> 2
+U0 GEMDOS 0x0e Dsetdrv -> 4
+U0 GEMDOS 0x19 Dgetdrv -> 2
+U0 GEMDOS 0x0e Dsetdrv -> 4
+U0 AES 100 wind_create -> 1
+U0 AES 78 graf_mouse -> 1
+U0 GEMDOS 0x1a Fsetdta -> 0
+U0 GEMDOS 0x4e Fsfirst -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x48 Malloc -> 27971584
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> 0
+U0 GEMDOS 0x4f Fsnext -> -49
+U0 AES 105 wind_set -> 1
+U0 AES 105 wind_set -> 1
+U0 AES 73 ? -> 1
+U0 AES 101 wind_open -> 1
+U0 AES 104 wind_get -> 1
+U0 AES 40 objc_add -> 1
+U0 AES 40 objc_add -> 1
+U0 AES 40 objc_add -> 1
+U0 AES 40 objc_add -> 1
+U0 AES 40 objc_add -> 1
+U0 AES 40 objc_add -> 1
+U0 AES 40 objc_add -> 1
+U0 AES 40 objc_add -> 1
+U0 AES 40 objc_add -> 1
+U0 AES 40 objc_add -> 1
+U0 AES 40 objc_add -> 1
+U0 AES 40 objc_add -> 1
+U0 AES 40 objc_add -> 1
+U0 AES 40 objc_add -> 1
+U0 AES 40 objc_add -> 1
+U0 AES 40 objc_add -> 1
+U0 AES 40 objc_add -> 1
+U0 AES 40 objc_add -> 1
+U0 AES 40 objc_add -> 1
+U0 AES 105 wind_set -> 1
+U0 AES 105 wind_set -> 1
+U0 AES 105 wind_set -> 1
+U0 AES 105 wind_set -> 1
+U0 AES 78 graf_mouse -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 32 menu_ienable -> 1
+U0 AES 31 menu_icheck -> 1
+U0 AES 31 menu_icheck -> 1
+U0 AES 31 menu_icheck -> 1
+U0 AES 31 menu_icheck -> 1
+U0 AES 31 menu_icheck -> 1
+U0 AES 31 menu_icheck -> 1
+U0 AES 31 menu_icheck -> 1
+U0 AES 31 menu_icheck -> 1
+U0 >> evnt_multi
+U0 AES 25 evnt_multi -> 16
+U0 GEMDOS 0x154 ? -> 4399
+U0 AES 78 graf_mouse -> 1
+U0 AES 104 wind_get -> 1
+U0 AES 42 objc_draw -> 1
+U0 AES 104 wind_get -> 1
+U0 AES 78 graf_mouse -> 1
+U0 >> evnt_multi
+U0 AES 25 evnt_multi -> 32
+U0 >> evnt_multi

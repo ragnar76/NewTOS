@@ -1,0 +1,40 @@
+on el0 desktop-t vs mem05: BYTE-IDENTICAL 0 px  (0e6f770497da / 0e6f770497da) 
+on el0 apitest-t-b vs mem05: BYTE-IDENTICAL 0 px  (2c092b4a2ca6 / 2c092b4a2ca6) 
+on el0 teradesk-t vs mem05: BYTE-IDENTICAL 0 px  (5148fde2f61b / 5148fde2f61b) 
+on el0 qed-t vs mem05: BYTE-IDENTICAL 0 px  (ec79c00a999e / ec79c00a999e) 
+on el1 desktop-t vs mem05: BYTE-IDENTICAL 0 px  (0e6f770497da / 0e6f770497da) 
+on el1 apitest-t-b vs mem05: BYTE-IDENTICAL 0 px  (2c092b4a2ca6 / 2c092b4a2ca6) 
+on el1 teradesk-t vs mem05: BYTE-IDENTICAL 0 px  (5148fde2f61b / 5148fde2f61b) 
+on el1 qed-t vs mem05: BYTE-IDENTICAL 0 px  (ec79c00a999e / ec79c00a999e) 
+off el0 desktop-t vs mem05: BYTE-IDENTICAL 0 px  (0e6f770497da / 0e6f770497da) 
+off el0 apitest-t-b vs mem05: BYTE-IDENTICAL 0 px  (2c092b4a2ca6 / 2c092b4a2ca6) 
+off el0 teradesk-t vs mem05: BYTE-IDENTICAL 0 px  (5148fde2f61b / 5148fde2f61b) 
+off el0 qed-t vs mem05: BYTE-IDENTICAL 0 px  (ec79c00a999e / ec79c00a999e) 
+off el1 desktop-t vs mem05: BYTE-IDENTICAL 0 px  (0e6f770497da / 0e6f770497da) 
+off el1 apitest-t-b vs mem05: BYTE-IDENTICAL 0 px  (2c092b4a2ca6 / 2c092b4a2ca6) 
+off el1 teradesk-t vs mem05: BYTE-IDENTICAL 0 px  (5148fde2f61b / 5148fde2f61b) 
+off el1 qed-t vs mem05: BYTE-IDENTICAL 0 px  (ec79c00a999e / ec79c00a999e) 
+strict el0 desktop-t vs mem05: BYTE-IDENTICAL 0 px  (0e6f770497da / 0e6f770497da) 
+strict el0 apitest-t-b vs mem05: BYTE-IDENTICAL 0 px  (2c092b4a2ca6 / 2c092b4a2ca6) 
+strict el0 teradesk-t vs mem05: BYTE-IDENTICAL 0 px  (5148fde2f61b / 5148fde2f61b) 
+strict el0 qed-t vs mem05: BYTE-IDENTICAL 0 px  (ec79c00a999e / ec79c00a999e) 
+strict el1 desktop-t vs mem05: BYTE-IDENTICAL 0 px  (0e6f770497da / 0e6f770497da) 
+strict el1 apitest-t-b vs mem05: BYTE-IDENTICAL 0 px  (2c092b4a2ca6 / 2c092b4a2ca6) 
+strict el1 teradesk-t vs mem05: BYTE-IDENTICAL 0 px  (5148fde2f61b / 5148fde2f61b) 
+strict el1 qed-t vs mem05: BYTE-IDENTICAL 0 px  (ec79c00a999e / ec79c00a999e) 
+on-asid el0 desktop-t vs mem05: BYTE-IDENTICAL 0 px  (0e6f770497da / 0e6f770497da) 
+on-asid el0 apitest-t-b vs mem05: BYTE-IDENTICAL 0 px  (2c092b4a2ca6 / 2c092b4a2ca6) 
+on-asid el0 teradesk-t: no mem05 reference
+on-asid el0 qed-t: no mem05 reference
+on-asid el1 desktop-t vs mem05: BYTE-IDENTICAL 0 px  (0e6f770497da / 0e6f770497da) 
+on-asid el1 apitest-t-b vs mem05: BYTE-IDENTICAL 0 px  (2c092b4a2ca6 / 2c092b4a2ca6) 
+on-asid el1 teradesk-t: no mem05 reference
+on-asid el1 qed-t: no mem05 reference
+verify el0 desktop-t vs mem05: BYTE-IDENTICAL 0 px  (0e6f770497da / 0e6f770497da) 
+verify el0 apitest-t-b vs mem05: BYTE-IDENTICAL 0 px  (2c092b4a2ca6 / 2c092b4a2ca6) 
+verify el0 teradesk-t: no mem05 reference
+verify el0 qed-t: no mem05 reference
+verify el1 desktop-t vs mem05: BYTE-IDENTICAL 0 px  (0e6f770497da / 0e6f770497da) 
+verify el1 apitest-t-b vs mem05: BYTE-IDENTICAL 0 px  (2c092b4a2ca6 / 2c092b4a2ca6) 
+verify el1 teradesk-t: no mem05 reference
+verify el1 qed-t: no mem05 reference

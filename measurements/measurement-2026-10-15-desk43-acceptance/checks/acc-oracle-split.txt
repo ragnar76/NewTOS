@@ -1,0 +1,25 @@
+el1 lines      554; el0 K lines 305, U0 lines 254; other callers el0: 0
+(a) kernel-context part, el1[1..305] vs el0 K:
+    identical
+(b) desktop part, el1[306..] (K) vs el0 U0, '<' = EL1 only, '>' = EL0 only:
+0a1
+> GEMDOS 0x4a Mshrink -> 0
+7a9,11
+> GEMDOS 0x48 Malloc -> 27578368
+> GEMDOS 0x48 Malloc -> 27586560
+> GEMDOS 0x48 Malloc -> 27676672
+79c83
+< XBIOS 0x10 -> 0xffff00000039bd08
+---
+> XBIOS 0x10 -> 0x768
+151a156
+> GEMDOS 0x48 Malloc -> 27971584
+(b') the same without results:
+0a1
+> GEMDOS 0x4a Mshrink
+7a9,11
+> GEMDOS 0x48 Malloc
+> GEMDOS 0x48 Malloc
+> GEMDOS 0x48 Malloc
+151a156
+> GEMDOS 0x48 Malloc

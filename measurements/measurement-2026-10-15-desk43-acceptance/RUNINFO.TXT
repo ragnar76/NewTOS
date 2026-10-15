@@ -1,0 +1,155 @@
+measurement-2026-10-15-desk43-acceptance -- Tester acceptance of DESK43 U5a ... U9-5 (the desktop boots as the EL0 program NEWDESK,
+embedded in the kernel; boot argument desk=kernel selects the built-in EL1 desktop). HEAD dab1fe62 (main, clean tree; only this
+directory is new). Host macOS, QEMU raspi4b + qemu-virt. No SD card, no Pi. Test only: no product code changed, nothing committed,
+no git checkout/restore/clean/stash/reset. Scratch in /tmp/m5j/a15 (= /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/a15).
+Date 2026-10-15. Scripts: method/ (copies of measurement-2026-10-14-desk43-u9-3-5/method with u935 -> acc, plus the new ones below).
+
+RESULT: PASS for every item that was run, both desktop paths (EL0 default, desk=kernel), all modes run. No regression found.
+Not run: see section 10 (real Pi, S2ALL under strict needs the crash kernel, EL1 of the on-asid/verify probes, asid=tiny).
+
+0. METHOD, AND WHY THERE ARE void/ RUNS
+  First attempt (wall-clock screendumps, qmp_timed.py, seconds from QEMU start): the Mac is a laptop and went to sleep/woke repeatedly
+  (pmset: 840 sleep/wakes since boot; battery 16 %, no AC), so 11 dumps came out minutes late (t=199 ... 2549 s instead of 25..40 s) and
+  one cycle run produced black dumps. Everything of that attempt is in void/wallclock/ (acc-*/acck-* series, serial + screens) and
+  void/cyc-* (first cycle run; its serial log showed 20 cycles). NOT used for any verdict below.
+  Second attempt (this RUNINFO): AC power (checked with pmset -g batt after every run, line "battery:" in each "run ..." output; always
+  'AC Power'), caffeinate -dimsu for the session, ONE QEMU at a time, screendumps keyed to serial markers:
+    method/mrun.sh + mdrive.py: a dump is taken N seconds after the n-th match of a regex in the guest serial log (e.g.
+    "[desk] desktop up", "starting C:\HELLOGEM", "TOTAL +106", "Press any key", "[tag] desktop feed" = the n-th injected byte of the
+    injector script, n from method/fx.py). Marker missing within 150 s -> *.MISSING.png and rc 3 (happened only in the two runs listed
+    under void/el1-twin-misskey, a mistake in my step list: desk=kernel never prints "falling back").
+  Comparison by pixels (method/pixdiff.py; PNG files are never byte-equal because of the PNG header), serial by hex-normalised diff.
+  Other void/ directories: probes-badtag (probes2.sh clobbered its path variable with mode.sh's P -> tags p--on...; rerun after the fix),
+  el1-twin-misskey (see above, rerun), kc-app-timing (kc/km "app" dump 5 s after launch landed at the program's end on the EL1 twin; rerun
+  with 3 s, identical), tdqed-f1-lost (TeraDesk -> QED: F1 5 s after launch was lost; at 15 s it works; dumps timed after the Ctrl-Q
+  were mine, see 6), tdqed-aq-timing (after-qed dump 5 s late for EL0 only; rerun with 3 s, identical).
+  Generic lesson: the desktop processes injected input several seconds after the injector's "feed" serial line (first Alt-C/directory
+  read), so dumps right after a feed line can show an earlier state; script groups were spaced out where a state had to be shown.
+
+1. BASELINES on HEAD (method/checks.sh acc -> checks/acc-*): all as expected
+     host tests tos-api tos-types xtask      1370 / 0 / 1
+     release warnings rpi4 / qemu-virt       tos-api 64, kernel 94 both, 0 errors
+     clippy kernel rpi4 / qemu-virt / +selftest-desk   76 / 125 each
+     clippy programs, desktop (3 variants), newdesk (3), newtos-gem (no rt, pwk)   0
+     desk drift probe TOTAL / UNSAFE         4 / 20
+     emutos-consts                           466 / 332 mismatched 2 documented 2 undocumented 0 stale 0 no-counterpart 132
+     SDK host tests                          20 / 0 / 0
+     build-programs rpi4 / qemu-virt         rc 0, 0 warnings; NAP sha256 HELLOGEM 97f14224.. / f686f6ba.., NEWDESK dca37fe1.. / 2bab28be..
+     cite list                               fns=476 cited=315 newtos=5 uncited=156
+     images                                  rpi4 1528712 B, qemu-virt flat 1491024 B (rpi4 vs the developers' kernel8-u935.img: 16 bytes = git stamp)
+     path reproducibility (method/clean-build.sh: fresh copy /tmp/m5j/a15/clean/tree-clean, EMPTY target, .git copied):
+       rpi4 image 0 differing bytes, qemu-virt image 0, NEWDESK.NAP + HELLOGEM.NAP both boards 0  (checks/acc-clean-build-*.txt)
+  Caveat: checks.sh cleans only -p kernel tos-api desktop newtos-gem before its release builds, host tests are not from a clean target;
+  the clean-target evidence is the second-path build.
+
+2. SERIES, ONE KERNEL bin/kernel8-acc.img (method/series2.sh; desktop plain card, APITEST, TeraDesk, QED; EL0 default and desk=kernel;
+   modes on / off / strict / on-asid / verify; 40 runs; checks/acc-series-compare.txt)
+   EL0 vs desk=kernel: every dump pixel-identical in all 5 modes (desktop, APITEST x2, TeraDesk, QED = 25 pairs, 0 differ);
+     APITEST result lines (126) 0 differing, TOTAL 106 / 0 / 5 in every mode and path; 0 [EXC]/PANIC/load failed in all logs; serial
+     differs only in "[shell] desktop: ..." line and "[launch] EL0: slot 0 entry .." (EL0 start of NEWDESK).
+   vs the developers' u9-3-5 references (on, off, strict, on-asid; both paths): identical, except apitest-t-a: my dump is taken after the
+     summary appeared, theirs at 25 s wall (mid-run text page); my apitest-t-b = their t40 in all modes. Not a difference of the product.
+   vs the MEM05 acceptance references (measurement-2026-10-13-mem05-acceptance, kernel before DESK43; checks/acc-vs-mem05.txt):
+     desktop-t25, apitest-t40, teradesk-t35, qed-t30: 32/32 pixel-identical (on/off/strict EL0+EL1, on-asid + verify desktop/APITEST);
+     teradesk/qed have no mem05 reference for on-asid/verify.
+   memprot=verify, default EL0 (and desk=kernel): desktop + APITEST + TeraDesk + QED identical, APITEST 106/0/5, serial
+     "[memprot] verify: 11 checks, 3239483 pages compared, 0 mismatches, 0 tolerated shortfalls" (EL0 and EL1 identical).
+
+3. EIGHT VIEWS + input=aes (method/views2.sh; kernel kv = injector views.script; dumps after each script group)
+   modes on / off / strict / verify (EL0 vs desk=kernel) and input=aes (EXTRA_APPEND, tag views-ia, mode on): 8 of 10 dumps pixel-identical in
+   every set; the dumps 8-g and 9-config differ in ONE box x=357 y=355 w=30 h=12 (137 px on/strict/verify/input=aes, 122 px off):
+   "Free RAM: 10240 KB + 915432 KB" (EL1) vs "+ 914748 KB" (EL0), i.e. -684 KB = NEWDESK's TPA + heap, as the developers measured.
+   Viewed: views-el0-on-9-config.png / views-el1-on-9-config.png.
+
+4. PROGRAMS UNDER THE EL0 DESKTOP (method/apps3.sh, kernel kf2 = inject-arm-u935.py; cards /tmp/m5j/a15/cards = the developers' f1*, sha256 equal to
+   their checks/u935-cards-sha256.txt; EL0 vs desk=kernel; cmp2.sh)
+   HELLOGEM on/off/strict: app + end dumps identical, rc=0, desktop back ("desktop 'NEWDESK' exited with rc=0" then program, then NEWDESK again).
+   HGPANIC (Rust panic) on/off/strict: identical, rc=65535, desktop back, 5 panic-text matches in both paths.
+   CRCHILD (write fault, crash report + key) on/off/strict: identical, rc=65535, 1 EXC, desktop back.
+   CRASHTST (6 crash reports): end identical, "6 EXC" both, rc=0; the "app" dump 20 s after launch shows the same report at a different
+     scroll position (guest timing, viewed both) -- not a difference.
+   QED, TeraDesk (F1 from the desktop), APITEST via #F (106/0/5): identical.  Doom: runs in both (viewed, "picture 640x480 VERIFIED via
+     EdDI+scale+vro_cpyfm" both), frames differ (demo timing) as before.
+   Accessory SYSACC (method/acc2.sh, kernel ka, Desk menu -> accessory): the System Information dialog (viewed) and the dump after
+     closing: identical EL0 vs EL1 on/off/strict.
+   EmuCON typed commands (method/emucon2.sh, kernel kxe: Ctrl-Z, "run hello2.ncp", "run oldexec.ncp", "exit"): on/off/strict, all 4 dumps
+     identical EL0 vs EL1; viewed: "Hello from a C program built with clang!", "[program exited]", "Cannot run program (error 66).", back on the desktop.
+   Crash with OPEN WINDOWS (method/crchw2.sh: card f1crchw = the card saved by "Save desktop" (INF holds the open C:\ window) + F1 -> CRCHILD): on/off/strict,
+     report and end dumps identical EL0 vs EL1; viewed the end dump: the C:\ window is intact after the crash, rc=65535.
+   TeraDesk -> QED chain and TeraDesk exit (method/tdqed2.sh, kernel kxtd = launch:DESKTOP arm; card tdqed, TeraDesk autostarted, F1 -> QED): TeraDesk up ->
+     QED started from TeraDesk (menu bar "qed Datei .."; "[exec] preparing program (slot 1)") -> Ctrl-Q -> TeraDesk back -> Ctrl-Q -> TeraDesk's
+     "Quit / Shutdown Options" box -> click Quit -> "TERADESK ... exited with rc=0" -> the EL0 NEWDESK desktop is up again (EL1: the built-in one); all four
+     dumps identical EL0 vs EL1 (viewed EL0).
+   "Read .INF file" (method/readinf3.sh, kernel kxri3; card = the card saved by Save desktop, INF with C:\ window): A window open at start, B window closed
+     (close box), Options > Read .INF file... + Return -> C window back at the same place; EL0 = EL1 pixel-identical (A, B, C). (readinf2.sh,
+     which first saves, had lag problems and is kept only as a record; its final dump agrees.)
+   Save desktop (method/save2.sh, kernel ksave, mode on): NEWDESK.INF written by EL0 and by desk=kernel BYTE-IDENTICAL (672 B; original 374 B), = the developers' file
+     (cmp equal) (checks/save2-*).
+   20 program start/exit cycles (method/cycles2.sh, kernel kxcy, card f1hg, mode on; 20 x F1 HELLOGEM + Return, then Options > Desktop configuration):
+     EL0: 20 "quit by key", 20 x "desktop 'NEWDESK' exited with rc=0", 20 x "MEM05 after program" lines ALL IDENTICAL (MDs in_use=3, pages held 2/512,
+     heap used=8224 free=8380384); EL1 the same 20 cycles, kernel heap used 394928 after the first, 395200 after each of the next 19 (one-time +272 B, no growth).
+     Free RAM in the configuration dialog after 20 cycles = after 0 cycles (kernel kxcy0, same dialog without cycles): pixel-identical in EL0 and in EL1;
+     value EL0 "914764 KB", EL1 "915432 KB" (-668 KB on this card). No leak, no slot growth.
+   Both-path serials: 0 [EXC]/PANIC outside the intended crash programs.
+
+5. DESKTOP CRASH POLICY D6 (method/crash2.sh; kernels kp, kc, km built from HEAD by method/build-kernels.sh, same recipe as the developers')
+   kp (scratch NEWDESK with panic!() before desktop::run(), injector Return 8 s after the first launch), on/off/strict: panic message + "*** Press any
+     key to continue ***" at the first prompt; after the key "desktop 'NEWDESK' exited with rc=65535" (once), NEWDESK started again, panics again, prompt
+     again and WAITS: 2 launches, 2 prompts, same screen 25 s later (no loop). desk=kernel control: built-in desktop up.
+   kc (embedded blob with zeroed ELF header): 1 "load failed: LoadFailed(Parse(BadMagic))", "could not be loaded (rc=-66) -- not retried; falling back to the
+     built-in kernel desktop", built-in desktop up, F1 -> HELLOGEM -> rc=0 -> "starting NEWDESK" -> built-in desktop again, still exactly 1 "load failed".
+   km (no registry entry NEWDESK): the same with "load failed: NotFound", rc=-33. Screens (app, end) identical to the desk=kernel twin for kc and km.
+
+6. ORACLE G2 (method/seq2.sh + oracle-split.sh, kernel ks = inj-desk-seq.py + svc-seq-trace; checks/acc-oracle-split.txt, trace/)
+   EL1 log 554 lines; EL0 log 305 K lines + 254 U0 lines, no other caller. Kernel-context part identical; desktop part identical except
+   + Mshrink (crt0), + 4 x Malloc (heap hunks), XBIOS 0x10 Keytbl 0xffff00000039bd08 (EL1) vs 0x768 (EL0) -- exactly the developers' finding.
+
+7. SELFTESTS (method/selftest2.sh, kernel kt = --features selftest-desk, default boot = EL0 NEWDESK with the self-tests): 53 PASS / 1 FAIL
+   ("ins_devices on a complete desktop reports no change", pre-existing since U8b); PASS/FAIL lines identical to the developers' list
+   (checks/acc-selftest-el0-lines.txt).
+
+8. SDK PROBE PROGRAMS (method/probes2.sh via run-rpi4-drive.sh/drive.py, serial marker end; cards /tmp/m5j/acc/cards = MEM05 acceptance; checks/acc-probes-summary.txt)
+   accfree, S2ALLM (S2ALL/OWN/VFORK), E9MEM, STDOUTDB, STDERRP (new + old crt0), STDERRA, TTYA (TTYPROBE), PORT10 (ALL PASS 44 checks), PPARENT
+   (Z / Z-KID FAIL = the known stale probe, identical to MEM05), MDPAR (mdlimit 64: 61/63/61), MDSTEP (mdlimit 128, "MDSTEP: DONE"):
+     EL0 modes on/off/strict: program output (kernel-prefixed lines removed, hex-normalised) identical to the MEM05 acceptance serial logs (diff 0) for
+       every run; S2ALL under strict skipped (needs the crash kernel).
+     desk=kernel (EL1) modes on/off: identical to EL0 (diff 0) for all of them.
+     on-asid (EL0): MDPAR PASS, MDSTEP DONE, output = MEM05 reference (diff 0).
+     verify (EL0): ACCFREE, S2ALL, E9MEM, MDPAR (61/63/61), STDOUTDB, TTYA all PASS/DONE, every "[memprot] verify" line "0 mismatches, 0 tolerated
+       shortfalls"; MDPAR vs the MEM05 verify run differs only in numbers (MEM05 ran mdlimit=400 there, I used the default 64).
+   0 [EXC]/PANIC in all of them.
+
+9. QEMU-VIRT (method/virt.sh = u935 virt.sh with label acc, virt3.sh for on-asid; flat image bin/kernel-virt-acc.img; drive.py ends 6 s after "desktop up")
+   on / off / strict / on-asid x EL0 / desk=kernel: desktop up, 0 EXC, end screen pixel-identical in all 8 runs and = the developers' u912-on-virt-desktop-end.png
+   (checks: tag acc-<mode>-virt-desktop, acck-...); "ASIDs ON: 16-bit" in the on-asid runs.
+
+10. NOT RUN / OPEN
+   Real Pi 4 (U9-6): everything cache/HDMI/USB/input hardware related. S2ALL under memprot=strict (crash kernel not built); the probe programs under desk=kernel for
+   strict/on-asid/verify (EL0 only there); asid=tiny; the latency / stack high-water instruments of U9-1 (no instruments in these kernels); deep-directory stack depth;
+   the pointer movement during desktop compute phases (needs real mouse input; QEMU raspi4b has none, qemu-virt has no card); MDPROBE/MDBUD long probes.
+
+11. OBSERVATIONS (not chased)
+   * The shell log prints "sh_ldapp: starting DESKTOP.NAP, sh_nextapp=3" when the desktop is restarted after a #Z-started TeraDesk ended (both desktop paths,
+     identical); the screen proves the NEWDESK / built-in desktop is what comes up -- cosmetic log text (D.s_cmd of the previous program).
+   * tools/inject-arm.py still has the T16 launch: bug (used the corrected copy inject-arm-u935.py); the injector's "feed" serial line is not the moment the
+     desktop acts on the input (several seconds of lag after the first directory open) -- scripts need spacing when a dump has to show a specific state.
+   * The injector arm for TeraDesk's F1 only works once TeraDesk has finished starting (F1 5 s after launch was lost, 15 s works).
+
+12. HW CHECKLIST FOR U9-6 (real Pi 4), cleaned
+   1. Boot without desk=kernel: "[shell] desktop: EL0 program NEWDESK", "[launch] EL0: slot", "desktop up"; menus, Alt-C, views, dialogs, drag, windows by mouse.
+   2. Boot with desk=kernel in cmdline.txt: built-in desktop, log line names the path; behaves as before (QEMU: byte-identical to the EL0 screens except Free RAM).
+   3. Program start/exit from the desktop (HELLOGEM, QED, TeraDesk, EmuCON via Ctrl-Z, Doom): the desktop comes back; measure start-after-exit latency with the U9-1
+      instruments (QEMU estimate ~41 ms vs 6 ms EL1); 20 cycles: Free RAM stable (QEMU: identical after 20 cycles).
+   4. Crash prompt on real hardware (keyboard in exception context, never run on a Pi): CRCHILD via F1 -> report -> key -> desktop back; also with the C:\ window open (QEMU: window intact).
+   5. Scratch image with the panic-NEWDESK blob: prompt, one key, exactly one restart, prompt again and waits (no loop).
+   6. Scratch image with a corrupt/missing blob: fallback line, built-in desktop, no flicker, no second load attempt after a program ends.
+   7. Free RAM in the configuration dialog ~ -670..-690 KB against desk=kernel; stable after >= 20 cycles.
+   8. Stack high water of NEWDESK (U9-1 instrument) with a deep directory copy.
+   9. Mouse pointer moves during desktop compute phases (large directory open); also with input=aes.
+   10. SYSACC open/close under the EL0 desktop; Save desktop -> reboot reads the INF (window comes back); Options > Read .INF file restores the window.
+   11. TeraDesk -> QED from TeraDesk and TeraDesk Quit back to the EL0 desktop (cache-coherence and fresh-slot reuse are real-HW-only classes: QUIRK-001, NC framebuffer).
+   12. memprot=verify on the Pi (slow) with the desktop up and an APITEST run.
+
+Files: RUNINFO.TXT, method/ (all scripts, incl. mrun.sh, mdrive.py, fx.py, series2.sh, views2.sh, apps3.sh, acc2.sh, crash2.sh, emucon2.sh, cycles2.sh, save2.sh, seq2.sh,
+selftest2.sh, probes2.sh, readinf3.sh, crchw2.sh, tdqed2.sh, cmp-series.sh, cmp2.sh, cmpprobes.sh, refcmp.sh, build-kernels.sh, queue*.sh), bin/ (kernels + NAPs, SHA256SUMS; images
+gitignored), checks/, serial/ (203), screendumps/ (390), trace/, void/.
