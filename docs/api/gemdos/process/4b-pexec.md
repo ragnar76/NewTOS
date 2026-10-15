@@ -145,7 +145,10 @@ failure before launch returns a negative GEMDOS error.
 - **Native (AArch64) ABI:** ID `0x4B` in `x8`; args in `x0..x3`. Result in
   `x0`, LONG. **Mixed result shapes:** for modes 3/5/7 the result is a
   **basepage pointer** (full 64-bit `x0`, not sign-extended); for modes 0/4/6
-  it is the child's **exit code** (a WORD **sign-extended** into `x0`); any
+  it is the child's **exit code** (a UWORD **zero-extended** into `x0`, always
+  `0..=0xFFFF`, never negative — `Pterm(-1)` arrives as 65535, Ctrl-C `-32` as
+  65504; corrected 2026-10-16, PROC06, was "WORD sign-extended"; see
+  [`4c-pterm.md`](4c-pterm.md) "Exit-code matrix"); any
   pre-launch failure is a negative LONG error, sign-extended.
 
   | m68k stack | AArch64 reg | Name   | Type / size |

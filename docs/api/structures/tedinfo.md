@@ -45,6 +45,14 @@ typedef struct {
 > order and meaning (COMPATIBILITY "Native vs m68k struct variants").
 > `te_junk1`/`te_junk2` are reserved padding words in the original layout,
 > preserved for m68k struct compatibility.
+>
+> Native offsets (source: `tos-types/src/aes.rs:524-535` assertions,
+> `repr(C)` struct `:63-90`): **40 bytes**, 8-byte aligned; `te_ptext` 0x00,
+> `te_ptmplt` 0x08, `te_pvalid` 0x10, `te_font` 0x18, `te_junk1` 0x1A,
+> `te_just` 0x1C, `te_color` 0x1E, `te_junk2` 0x20, `te_thickness` 0x22,
+> `te_txtlen` 0x24, `te_tmplen` 0x26. The m68k table above agrees with
+> `include/obdefs.h:170-183` (28 bytes). (SPEC01 cross-check 2026-10-16: no
+> earlier native number in this file; added.)
 
 ## Field semantics
 

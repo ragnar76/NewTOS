@@ -135,6 +135,12 @@ code/data. It is passed straight to `xsetblk`; **the shrink result is ignored**
 
 ---
 
+> **Exit code seen by the `Pexec` caller (PROC06, 2026-10-16):** `rc & 0xFFFF`,
+> zero-extended, never negative (`Ptermres(n,-2)` -> 65534). Full matrix, NewTOS
+> divergences and host-test list: [`4c-pterm.md`](4c-pterm.md) "Exit-code matrix".
+> NewTOS: `handle_pterm` reads `rc` from `x1` and masks it
+> (`kernel/src/arch/aarch64/exceptions.rs:1273`) - conforming.
+
 ## Error conditions
 
 `Ptermres` has **no error return** — it does not return at all, and it discards

@@ -42,6 +42,15 @@ typedef struct {
 
 > **Native (AArch64) variant.** The three leading pointers are 64-bit; WORD
 > fields keep order/meaning (COMPATIBILITY "Native vs m68k struct variants").
+> Native offsets (source: `tos-types/src/aes.rs:537-551` assertions,
+> `repr(C)` struct `:92-128`): **48 bytes**, 8-byte aligned; `ib_pmask` 0x00,
+> `ib_pdata` 0x08, `ib_ptext` 0x10, `ib_char` 0x18, `ib_xchar` 0x1A,
+> `ib_ychar` 0x1C, `ib_xicon` 0x1E, `ib_yicon` 0x20, `ib_wicon` 0x22,
+> `ib_hicon` 0x24, `ib_xtext` 0x26, `ib_ytext` 0x28, `ib_wtext` 0x2A,
+> `ib_htext` 0x2C, then 2 bytes tail padding to 48. The m68k table above agrees
+> with `include/obdefs.h:185-201` (34 bytes). (SPEC01 cross-check 2026-10-16:
+> no earlier native number in this file; added.)
+>
 > `ib_char` packs the drawn character in the low byte and foreground/
 > background colour indices in the high nibbles (per the icon-draw
 > convention); a NewTOS renderer decodes it in `gr_gicon`.

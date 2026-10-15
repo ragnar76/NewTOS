@@ -216,6 +216,119 @@ return and has no error code.
 
 ---
 
+## Exit-code matrix: what the `Pexec` caller receives (PROC06, 2026-10-16)
+
+Re-validated against EmuTOS `1a7484ab`. **Read:** `xterm(UWORD rc)`
+(`bdos/proc.c:601`), `run->p_dreg[0] = rc` (`:616`) with `LONG p_dreg[1]`
+(`include/bdosdefs.h:93`, offset `0x68`), then `termuser` (`bdos/rwa.S:265-267`
+`move.l _run,a5; jra ggusr`), which at `bdos/rwa.S:253` reloads
+`movem.l P_REGSAVE(a5),d0/a3-a6` (`P_REGSAVE = P_D0SAVE = 0x68`,
+`include/asmpd.h:25,27`) — the parent's `d0` is the full 32-bit `p_dreg[0]`.
+The dispatcher hands the argument over as `pw[1]` (a `short`,
+`bdos/bdosmain.c:674` `(*f->fncall.w)(pw[1])`), and `xterm` narrows it to
+`UWORD`, so only the **low 16 bits** of whatever the caller pushed matter.
+No other code touches `p_dreg[0]` between `:616` and the parent's resume
+(`gouser` is *not* used here, because it would overwrite it with the current
+`d0`, comment `bdos/proc.c:611-615`; `bdos/rwa.S:261-267`).
+Result: the parent's `Pexec` (modes 0/4/6) receives `rc & 0xFFFF`,
+**zero-extended** to 32 bits — **never negative**, never sign-extended.
+
+| Child ends with | EmuTOS `xterm` argument | Parent `Pexec` D0 | Source |
+|-----------------|-------------------------|-------------------|--------|
+| `Pterm(0)` / `Pterm0` | 0 | `0x00000000` | `bdos/proc.c:588-591` (`x0term` → `xterm(0)`) |
+| `Pterm(1)` | 1 | `0x00000001` | `:601,616` |
+| `Pterm(0x7FFF)` | 0x7FFF | `0x00007FFF` | `:601,616` |
+| `Pterm(0x8000)` (rc > 0x7FFF) | 0x8000 | `0x00008000` = 32768 | `:601,616` |
+| `Pterm(-1)` | 0xFFFF | `0x0000FFFF` = 65535 | `:601,616` |
+| `Pterm(-32)` | 0xFFE0 | `0x0000FFE0` = 65504 | `:601,616` |
+| `Ptermres(blkln, rc)` | `rc` (WORD) | `rc & 0xFFFF`, same as `Pterm` | `bdos/proc.c:624-634` (`xterm(rc)` at `:633`) |
+| trap #2 with `d0.w == 0` (CP/M-68K relic) | 0 (`clr -(sp)`) | `0` | `bdos/rwa.S:145-155` |
+| Ctrl-C at console input | `xterm(-32)` | `0x0000FFE0` = 65504 | `bdos/console.c:101` (`#define terminate() xterm(-32)`) |
+| Crash (exception → `dopanic`) | `kill_program` pushes `move.w #-1` then `Pterm` (`trap #1`) | `0x0000FFFF` = 65535 | `bios/panicasm.S:96-99`, `bios/kprint.c:594` |
+
+For a `PE_GO`/`PE_GOTHENFREE` child the same: `proc_go` (`bdos/proc.c:535-578`)
+sets `p->p_parent = run`, so `xterm`'s `run = run->p_parent` selects the
+`Pexec` caller whose `p_dreg[0]` is written. For `PE_LOADGO` (`:358`) likewise.
+The "should not return" `return (long)p` at `:248` is not reached.
+
+Inferred (not read as a single statement): the m68k caller of `Pterm` pushes a
+WORD; a value outside 16 bits cannot be expressed by an m68k program, so the
+`0x12345 → 0x2345` row of the host tests below is a *native* (AArch64) ABI
+consequence of the `UWORD` narrowing, not an observed EmuTOS run.
+
+### NewTOS state and divergences (checked 2026-10-16, `main` @ `fbc86f32`)
+
+Conforming (all deliver `rc & 0xFFFF` zero-extended):
+- Explicit `Pterm`/`Pterm0`/`Ptermres` traps: `handle_pterm` masks —
+  `0x31 => (frame.gpr[1] & 0xFFFF)`, `_ => (frame.gpr[0] & 0xFFFF)`,
+  `0x00 => 0` (`kernel/src/arch/aarch64/exceptions.rs:1271-1275`); the masked
+  value goes to `finish_terminate`, which writes it to the `Pexec` caller's
+  `x0` (`:1538`). The `etv_term` upcall path carries the already-masked `rc`
+  (`:1319`, `:1757-1768`).
+- Crash: `kill_program` sets `x0 = -1` and calls `handle_pterm(.., 0x4C)`
+  (`:1445-1452`), so the mask applies -> 65535. `uaccess_fault_tail` ends in
+  `kill_program` (`:1433`).
+- Kernel-launched children (the AES shell, PROC05):
+  `launch::record_kernel_child_exit` -> `pterm::parent_exit_code`
+  (`kernel/src/launch.rs:88`, `tos-api/src/bdos/process/pterm.rs:99`).
+
+**Divergences (to fix):**
+1. **Ctrl-C (`-32`) to a real `Pexec` caller is NOT masked.**
+   `tos-api/src/gemdos/console.rs:205` `CTRLC_RC = -32` ->
+   `request_terminate` -> `complete_call_tail` (`exceptions.rs:680-681`) ->
+   `terminate_and_redirect(frame, rc)` (`:1347`) -> `finish_terminate(frame, rc, ..)`
+   -> `frame.gpr[0] = rc as i64 as u64` (`:1538`): the caller's `x0` becomes
+   `0xFFFF_FFFF_FFFF_FFE0`, i.e. **-32 as LONG**. EmuTOS: 65504. This is the
+   case in TASK/PROC06.
+2. **Upcall-nesting overflow (`-998`)** takes the same unmasked path
+   (`exceptions.rs:1641`) -> caller sees -998; masked it would be 64538. EmuTOS
+   has no equivalent (NewTOS-specific code, `-998` is not an EmuTOS value);
+   apply the same mask for consistency (the kernel-launch branch already does,
+   `launch.rs:88`).
+3. Documentation only: the earlier `4b-pexec.md` "WORD **sign-extended** into
+   `x0`" statement (Native ABI paragraph) contradicted this spec and the
+   source; corrected 2026-10-16 (see `4b-pexec.md`).
+
+Root cause: only the `Pterm` trap entry masks, not the common tail.
+Fix (Developer, not done here): mask once in `finish_terminate`
+(`pterm::parent_exit_code(rc)` at `:1538`/`:1544`) or in
+`terminate_and_redirect`; every path then yields the EmuTOS value. The mask
+at `handle_pterm` stays harmless.
+
+### Proposed host tests (PROC06)
+
+Pure-function level (`tos-api/tests/`, next to `proc05_shell_exit_code.rs`):
+1. `parent_exit_code`: 0->0, 1->1, 0x7FFF->0x7FFF, 0x8000->32768,
+   -1->65535, -32->65504, -998->64538, 0x12345->0x2345, i32::MIN->0,
+   result always in `0..=0xFFFF`.
+2. Ctrl-C constant: `parent_exit_code(CTRLC_RC) == 65504` (requires
+   `CTRLC_RC` visible to the test or an equivalent literal).
+
+Frame level (needs the tail logic factored so that it is host-testable — e.g.
+a pure `exit_code_for_caller(rc: i32) -> u64` used at `exceptions.rs:1538`;
+otherwise only a QEMU selftest can observe it):
+3. `exit_code_for_caller(-32) == 65504u64` and `(-1) == 65535`, `(-998) == 64538`;
+   upper 48 bits of the u64 are always 0.
+
+On target (QEMU selftest / APITEST child set):
+4. Child `Pterm(-1)` -> parent `Pexec(0,..)` == 65535 (positive).
+5. Child `Pterm(0x8000)` -> 32768; child `Pterm0` -> 0.
+6. Child `Ptermres(n, -2)` -> 65534.
+7. Crashing child (e.g. `sdk/examples/crchild.c`/`crashtst.c`, which already
+   document 0x0000FFFF) -> 65535.
+8. Ctrl-C injected into a child blocked in `Cconin` (the `selftest_console`
+   scenario, `kernel/src/selftest_console.rs:202` only checks the pending
+   `-32`, not what the parent gets) -> parent `Pexec` == 65504.
+
+APITEST (`sdk/apps/apitest/apitest.c`): no existing check changes. The only
+`Pexec` check, T29 (`:1433-1460`), runs `DTACHILD.NCP` (normal exit) and uses
+`prc < 0` as "child did not run" — unaffected unless a child terminates by
+Ctrl-C/overflow, where today it would be misread as a load error. New case
+proposal: T-new "Pexec returns zero-extended child rc", using a child that
+`Pterm(-1)` and asserting `prc == 65535`.
+
+---
+
 ## Dependencies
 
 ### Requires (must be initialized / functional)

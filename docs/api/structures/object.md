@@ -45,11 +45,41 @@ typedef struct {
 ```
 
 > **Native (AArch64) variant.** `ob_spec` is a 64-bit pointer/value, so the
-> native `OBJECT` is **32 bytes** with `ob_spec` at offset 0x0C occupying 8
-> bytes and the `ob_x`..`ob_height` block shifting to 0x14 (COMPATIBILITY
-> "Native vs m68k struct variants"). Same fields, same meaning. Coordinates
-> `ob_x`..`ob_height` are **in pixels** after `rs_obfix()` converts a
-> resource from character to pixel units (the alert builder does this at
+> native `OBJECT` is **32 bytes** (8-byte aligned). The first six WORDs are
+> unchanged; `ob_spec` is padded up to its natural alignment, so it sits at
+> **0x10** (not 0x0C: bytes 0x0C..0x0F are padding) and occupies 8 bytes, and
+> the `ob_x`..`ob_height` block follows at **0x18** (COMPATIBILITY
+> "Native vs m68k struct variants"). Same fields, same meaning.
+>
+> | Offset | Field | Size |
+> |-------:|-------|-----:|
+> | 0x00 | `ob_next` | 2 |
+> | 0x02 | `ob_head` | 2 |
+> | 0x04 | `ob_tail` | 2 |
+> | 0x06 | `ob_type` | 2 |
+> | 0x08 | `ob_flags` | 2 |
+> | 0x0A | `ob_state` | 2 |
+> | 0x0C | (padding) | 4 |
+> | 0x10 | `ob_spec` (u64) | 8 |
+> | 0x18 | `ob_x` | 2 |
+> | 0x1A | `ob_y` | 2 |
+> | 0x1C | `ob_width` | 2 |
+> | 0x1E | `ob_height` | 2 |
+> | 0x20 | end (32 bytes) | |
+>
+> **Source of the native offsets:** the compile-time assertions in
+> `tos-types/src/aes.rs:509-522` (`size_of::<Object>() == 32`,
+> `align_of == 8`, `offset_of!(ob_spec) == 16`, `offset_of!(ob_x) == 24`, ...)
+> and the `#[repr(C)]` struct at `tos-types/src/aes.rs:33-60`. This is a
+> NewTOS layout (not in EmuTOS); the m68k table above is checked against
+> `include/obdefs.h:141-154` (24 bytes, unchanged). **Correction 2026-10-16
+> (SPEC01):** the earlier text put native `ob_spec` at 0x0C and `ob_x` at 0x14,
+> which is only true if `ob_spec` were unaligned and contradicts both the
+> `repr(C)` layout and the assertions. In the native struct `ob_spec` is a
+> `u64`; for box types it holds `(thickness << 16) | colour-word`
+> (`tos-types/src/aes.rs` field doc), i.e. the same value the m68k LONG holds.
+> Coordinates `ob_x`..`ob_height` are **in pixels** after `rs_obfix()` converts
+> a resource from character to pixel units (the alert builder does this at
 > `gemfmalt.c:298-301`).
 
 ## `ob_type` — the `G_*` graphic types (`obdefs.h:65-80`)
