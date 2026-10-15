@@ -1,0 +1,24 @@
+host tests (pass fail ignored): 1370 0 1
+build rpi4: rc=0 kernel=94 tos-api=64  0 errors; desktop crate compiled: 2
+build qemu-virt: rc=0 kernel=94 tos-api=64  0 errors; desktop crate compiled: 2
+clippy rpi4: tos-api=76 kernel=125 
+clippy qemu-virt: tos-api=76 kernel=125 
+drift: DRIFT-PROBE TOTAL: 4
+unsafe: DRIFT-PROBE UNSAFE: 20
+emutos-consts: EMUTOS-CONSTS: total=466 matched=332 mismatched=2 documented=2 undocumented=0 stale=0 no-counterpart=132
+sdk host: host tests: 20 passed, 0 failed, 0 skipped
+build-programs rpi4: rc=0 0 warning/error lines
+build-programs qemu-virt: rc=0 0 warning/error lines
+clippy programs (hello-gem+newtos-gem): 0 / newtos-gem no rt: 0 warning/error lines
+clippy desktop-rpi4: 0 warning/error lines (1 x 'Checking')
+clippy desktop-qemu-virt: 0 warning/error lines (1 x 'Checking')
+clippy desktop-rpi4-selftest-desk: 0 warning/error lines (1 x 'Checking')
+clippy newdesk-rpi4: 0 warning/error lines (3 x 'Checking')
+clippy newdesk-qemu-virt: 0 warning/error lines (3 x 'Checking')
+clippy newdesk-rpi4-selftest-desk: 0 warning/error lines (3 x 'Checking')
+clippy newtos-gem-pwk: 0 warning/error lines (1 x 'Checking')
+clippy desktop without board (must fail at the compile_error!): 2 hit(s)
+clippy rpi4 selftest-desk: tos-api=76 kernel=125 
+deptree desktop:  1 desktop v; 1 newtos-gem v; 2 tos-types v;
+cite: DESK-CITE: fns=477 cited=316 newtos=5 uncited=156
+naps: 97f14224460f f686f6ba620b 5c2af2b9d990 690ddab8134a 

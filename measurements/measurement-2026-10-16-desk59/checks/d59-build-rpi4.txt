@@ -1,0 +1,1507 @@
+    Finished `dev` profile [optimized + debuginfo] target(s) in 0.01s
+     Running `target/debug/xtask build --board rpi4 --release`
+xtask: building program hello-gem for rpi4 -> /Volumes/Daten/Development/PiRusTOS/target/programs/rpi4/HELLOGEM.NAP
++ clang -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 -fno-stack-protector -fPIE -fno-builtin -Wall -Wextra -I/Volumes/Daten/Development/PiRusTOS/sdk/include  -c sdk/crt0.S
++ (cd programs && cargo build -p hello-gem --release --features board-rpi4)
+   Compiling newtos-gem v0.1.0 (/Volumes/Daten/Development/PiRusTOS/programs/newtos-gem)
+   Compiling hello-gem v0.1.0 (/Volumes/Daten/Development/PiRusTOS/programs/hello-gem)
+    Finished `release` profile [optimized] target(s) in 0.72s
++ rust-lld -flavor gnu -T sdk/newtos.ld -pie --no-dynamic-linker -z text -z max-page-size=0x1000 --build-id=none crt0.o libhello_gem.a -o /Volumes/Daten/Development/PiRusTOS/target/programs/rpi4/HELLOGEM.NAP
+wrote /Volumes/Daten/Development/PiRusTOS/target/programs/rpi4/HELLOGEM.NAP (101088 bytes)
+xtask: building program newdesk for rpi4 -> /Volumes/Daten/Development/PiRusTOS/target/programs/rpi4/NEWDESK.NAP
++ clang -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 -fno-stack-protector -fPIE -fno-builtin -Wall -Wextra -I/Volumes/Daten/Development/PiRusTOS/sdk/include  -c sdk/crt0.S
++ (cd programs && cargo build -p newdesk --release --features board-rpi4)
+   Compiling newtos-gem v0.1.0 (/Volumes/Daten/Development/PiRusTOS/programs/newtos-gem)
+   Compiling desktop v0.1.0 (/Volumes/Daten/Development/PiRusTOS/programs/desktop)
+   Compiling newdesk v0.1.0 (/Volumes/Daten/Development/PiRusTOS/programs/newdesk)
+    Finished `release` profile [optimized] target(s) in 3.34s
++ rust-lld -flavor gnu -T sdk/newtos.ld -pie --no-dynamic-linker -z text -z max-page-size=0x1000 --build-id=none crt0.o libnewdesk.a -o /Volumes/Daten/Development/PiRusTOS/target/programs/rpi4/NEWDESK.NAP
+wrote /Volumes/Daten/Development/PiRusTOS/target/programs/rpi4/NEWDESK.NAP (344344 bytes)
+xtask: building kernel for board-rpi4 (release)
+   Compiling tos-api v0.5.0 (/Volumes/Daten/Development/PiRusTOS/tos-api)
+   Compiling newtos-gem v0.1.0 (/Volumes/Daten/Development/PiRusTOS/programs/newtos-gem)
+   Compiling kernel v0.5.0 (/Volumes/Daten/Development/PiRusTOS/kernel)
+   Compiling desktop v0.1.0 (/Volumes/Daten/Development/PiRusTOS/programs/desktop)
+warning: value assigned to `tree` is never read
+   --> tos-api/src/aes/form.rs:319:9
+    |
+319 |         tree[idx].ob_state |= SELECTED;
+    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+    = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: value assigned to `top` is never read
+    --> tos-api/src/aes/window.rs:2915:9
+     |
+2915 |         top += gl_hbox();
+     |         ^^^^^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: type `Aespb` is more private than the item `form_alert`
+   --> tos-api/src/aes/form.rs:122:1
+    |
+122 | pub fn form_alert(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `form_alert` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:210:1
+    |
+210 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+    = note: `#[warn(private_interfaces)]` on by default
+
+warning: type `Aespb` is more private than the item `form_do`
+   --> tos-api/src/aes/form.rs:525:1
+    |
+525 | pub fn form_do(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^ function `form_do` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:210:1
+    |
+210 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `form_error`
+   --> tos-api/src/aes/form.rs:824:1
+    |
+824 | pub fn form_error(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `form_error` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:210:1
+    |
+210 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `form_center`
+   --> tos-api/src/aes/form.rs:962:1
+    |
+962 | pub fn form_center(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `form_center` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:210:1
+    |
+210 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `form_dial`
+    --> tos-api/src/aes/form.rs:1017:1
+     |
+1017 | pub fn form_dial(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `form_dial` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:210:1
+     |
+ 210 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `form_button`
+    --> tos-api/src/aes/form.rs:1083:1
+     |
+1083 | pub fn form_button(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `form_button` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:210:1
+     |
+ 210 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `form_keybd`
+    --> tos-api/src/aes/form.rs:1106:1
+     |
+1106 | pub fn form_keybd(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `form_keybd` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:210:1
+     |
+ 210 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `fsel_input`
+   --> tos-api/src/aes/fsel.rs:511:1
+    |
+511 | pub fn fsel_input(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `fsel_input` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:210:1
+    |
+210 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `fsel_exinput`
+   --> tos-api/src/aes/fsel.rs:518:1
+    |
+518 | pub fn fsel_exinput(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `fsel_exinput` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:210:1
+    |
+210 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `menu_bar`
+   --> tos-api/src/aes/menu.rs:322:1
+    |
+322 | pub fn menu_bar(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `menu_bar` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:210:1
+    |
+210 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `menu_icheck`
+    --> tos-api/src/aes/menu.rs:1036:1
+     |
+1036 | pub fn menu_icheck(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `menu_icheck` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:210:1
+     |
+ 210 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `menu_ienable`
+    --> tos-api/src/aes/menu.rs:1045:1
+     |
+1045 | pub fn menu_ienable(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `menu_ienable` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:210:1
+     |
+ 210 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `menu_tnormal`
+    --> tos-api/src/aes/menu.rs:1057:1
+     |
+1057 | pub fn menu_tnormal(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `menu_tnormal` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:210:1
+     |
+ 210 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `menu_text`
+    --> tos-api/src/aes/menu.rs:1067:1
+     |
+1067 | pub fn menu_text(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `menu_text` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:210:1
+     |
+ 210 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `menu_register`
+    --> tos-api/src/aes/menu.rs:1622:1
+     |
+1622 | pub fn menu_register(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `menu_register` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:210:1
+     |
+ 210 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `menu_popup`
+    --> tos-api/src/aes/menu.rs:1799:1
+     |
+1799 | pub fn menu_popup(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `menu_popup` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:210:1
+     |
+ 210 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `menu_settings`
+    --> tos-api/src/aes/menu.rs:2129:1
+     |
+2129 | pub fn menu_settings(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `menu_settings` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:210:1
+     |
+ 210 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `menu_attach`
+    --> tos-api/src/aes/menu.rs:2410:1
+     |
+2410 | pub fn menu_attach(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `menu_attach` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:210:1
+     |
+ 210 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `menu_istart`
+    --> tos-api/src/aes/menu.rs:2459:1
+     |
+2459 | pub fn menu_istart(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `menu_istart` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:210:1
+     |
+ 210 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `objc_draw`
+    --> tos-api/src/aes/object.rs:1118:1
+     |
+1118 | pub fn objc_draw(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `objc_draw` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:210:1
+     |
+ 210 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `objc_offset`
+    --> tos-api/src/aes/object.rs:1320:1
+     |
+1320 | pub fn objc_offset(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `objc_offset` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:210:1
+     |
+ 210 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `objc_add`
+    --> tos-api/src/aes/object.rs:1344:1
+     |
+1344 | pub fn objc_add(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `objc_add` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:210:1
+     |
+ 210 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `objc_delete`
+    --> tos-api/src/aes/object.rs:1356:1
+     |
+1356 | pub fn objc_delete(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `objc_delete` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:210:1
+     |
+ 210 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `objc_order`
+    --> tos-api/src/aes/object.rs:1370:1
+     |
+1370 | pub fn objc_order(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `objc_order` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:210:1
+     |
+ 210 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `objc_change`
+    --> tos-api/src/aes/object.rs:1515:1
+     |
+1515 | pub fn objc_change(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `objc_change` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:210:1
+     |
+ 210 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `objc_sysvar`
+    --> tos-api/src/aes/object.rs:1587:1
+     |
+1587 | pub fn objc_sysvar(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `objc_sysvar` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:210:1
+     |
+ 210 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `objc_edit`
+    --> tos-api/src/aes/object.rs:1785:1
+     |
+1785 | pub fn objc_edit(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `objc_edit` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:210:1
+     |
+ 210 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `objc_find`
+    --> tos-api/src/aes/object.rs:2223:1
+     |
+2223 | pub fn objc_find(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `objc_find` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:210:1
+     |
+ 210 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `rsrc_load`
+    --> tos-api/src/aes/resource.rs:2191:1
+     |
+2191 | pub fn rsrc_load(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `rsrc_load` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:210:1
+     |
+ 210 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `rsrc_free`
+    --> tos-api/src/aes/resource.rs:2521:1
+     |
+2521 | pub fn rsrc_free(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `rsrc_free` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:210:1
+     |
+ 210 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `rsrc_gaddr`
+    --> tos-api/src/aes/resource.rs:2843:1
+     |
+2843 | pub fn rsrc_gaddr(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `rsrc_gaddr` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:210:1
+     |
+ 210 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `rsrc_saddr`
+    --> tos-api/src/aes/resource.rs:2874:1
+     |
+2874 | pub fn rsrc_saddr(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `rsrc_saddr` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:210:1
+     |
+ 210 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `rsrc_obfix`
+    --> tos-api/src/aes/resource.rs:2917:1
+     |
+2917 | pub fn rsrc_obfix(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `rsrc_obfix` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:210:1
+     |
+ 210 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `scrp_read`
+   --> tos-api/src/aes/shell.rs:217:1
+    |
+217 | pub fn scrp_read(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `scrp_read` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:210:1
+    |
+210 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `scrp_write`
+   --> tos-api/src/aes/shell.rs:228:1
+    |
+228 | pub fn scrp_write(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `scrp_write` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:210:1
+    |
+210 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `scrp_clear`
+   --> tos-api/src/aes/shell.rs:261:1
+    |
+261 | pub fn scrp_clear(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `scrp_clear` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:210:1
+    |
+210 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `shel_read`
+   --> tos-api/src/aes/shell.rs:357:1
+    |
+357 | pub fn shel_read(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `shel_read` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:210:1
+    |
+210 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `shel_write`
+   --> tos-api/src/aes/shell.rs:469:1
+    |
+469 | pub fn shel_write(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `shel_write` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:210:1
+    |
+210 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `shel_get`
+   --> tos-api/src/aes/shell.rs:956:1
+    |
+956 | pub fn shel_get(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `shel_get` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:210:1
+    |
+210 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `shel_put`
+   --> tos-api/src/aes/shell.rs:973:1
+    |
+973 | pub fn shel_put(pb: &Aespb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `shel_put` is reachable at visibility `pub`
+    |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/aes/mod.rs:210:1
+    |
+210 | pub(crate) struct Aespb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `shel_find`
+    --> tos-api/src/aes/shell.rs:1021:1
+     |
+1021 | pub fn shel_find(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `shel_find` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:210:1
+     |
+ 210 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `shel_envrn`
+    --> tos-api/src/aes/shell.rs:1133:1
+     |
+1133 | pub fn shel_envrn(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `shel_envrn` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:210:1
+     |
+ 210 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `shel_rdef`
+    --> tos-api/src/aes/shell.rs:1205:1
+     |
+1205 | pub fn shel_rdef(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `shel_rdef` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:210:1
+     |
+ 210 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `shel_wdef`
+    --> tos-api/src/aes/shell.rs:1224:1
+     |
+1224 | pub fn shel_wdef(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `shel_wdef` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:210:1
+     |
+ 210 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `wind_create`
+    --> tos-api/src/aes/window.rs:3384:1
+     |
+3384 | pub fn wind_create(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `wind_create` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:210:1
+     |
+ 210 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `wind_open`
+    --> tos-api/src/aes/window.rs:3452:1
+     |
+3452 | pub fn wind_open(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `wind_open` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:210:1
+     |
+ 210 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `wind_close`
+    --> tos-api/src/aes/window.rs:3577:1
+     |
+3577 | pub fn wind_close(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `wind_close` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:210:1
+     |
+ 210 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `wind_delete`
+    --> tos-api/src/aes/window.rs:3749:1
+     |
+3749 | pub fn wind_delete(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `wind_delete` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:210:1
+     |
+ 210 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `wind_get`
+    --> tos-api/src/aes/window.rs:3762:1
+     |
+3762 | pub fn wind_get(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `wind_get` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:210:1
+     |
+ 210 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `wind_set`
+    --> tos-api/src/aes/window.rs:3988:1
+     |
+3988 | pub fn wind_set(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `wind_set` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:210:1
+     |
+ 210 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `wind_find`
+    --> tos-api/src/aes/window.rs:4205:1
+     |
+4205 | pub fn wind_find(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `wind_find` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:210:1
+     |
+ 210 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `wind_update`
+    --> tos-api/src/aes/window.rs:4219:1
+     |
+4219 | pub fn wind_update(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `wind_update` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:210:1
+     |
+ 210 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `wind_calc`
+    --> tos-api/src/aes/window.rs:4345:1
+     |
+4345 | pub fn wind_calc(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `wind_calc` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:210:1
+     |
+ 210 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Aespb` is more private than the item `wind_new`
+    --> tos-api/src/aes/window.rs:4362:1
+     |
+4362 | pub fn wind_new(pb: &Aespb) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `wind_new` is reachable at visibility `pub`
+     |
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+    --> tos-api/src/aes/mod.rs:210:1
+     |
+ 210 | pub(crate) struct Aespb {
+     | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Vdipb` is more private than the item `vsc_form`
+   --> tos-api/src/vdi/mouse.rs:772:1
+    |
+772 | pub fn vsc_form(pb: &Vdipb, backend: &dyn RasterBackend) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `vsc_form` is reachable at visibility `pub`
+    |
+note: but type `Vdipb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/vdi/mod.rs:97:1
+    |
+ 97 | pub(crate) struct Vdipb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Vdipb` is more private than the item `v_show_c`
+   --> tos-api/src/vdi/mouse.rs:815:1
+    |
+815 | pub fn v_show_c(pb: &Vdipb, backend: &dyn RasterBackend) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `v_show_c` is reachable at visibility `pub`
+    |
+note: but type `Vdipb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/vdi/mod.rs:97:1
+    |
+ 97 | pub(crate) struct Vdipb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Vdipb` is more private than the item `vq_mouse`
+   --> tos-api/src/vdi/mouse.rs:898:1
+    |
+898 | pub fn vq_mouse(pb: &Vdipb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `vq_mouse` is reachable at visibility `pub`
+    |
+note: but type `Vdipb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/vdi/mod.rs:97:1
+    |
+ 97 | pub(crate) struct Vdipb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Vdipb` is more private than the item `vex_butv`
+   --> tos-api/src/vdi/mouse.rs:937:1
+    |
+937 | pub fn vex_butv(pb: &Vdipb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `vex_butv` is reachable at visibility `pub`
+    |
+note: but type `Vdipb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/vdi/mod.rs:97:1
+    |
+ 97 | pub(crate) struct Vdipb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Vdipb` is more private than the item `vex_motv`
+   --> tos-api/src/vdi/mouse.rs:941:1
+    |
+941 | pub fn vex_motv(pb: &Vdipb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `vex_motv` is reachable at visibility `pub`
+    |
+note: but type `Vdipb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/vdi/mod.rs:97:1
+    |
+ 97 | pub(crate) struct Vdipb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Vdipb` is more private than the item `vex_curv`
+   --> tos-api/src/vdi/mouse.rs:945:1
+    |
+945 | pub fn vex_curv(pb: &Vdipb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `vex_curv` is reachable at visibility `pub`
+    |
+note: but type `Vdipb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/vdi/mod.rs:97:1
+    |
+ 97 | pub(crate) struct Vdipb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Vdipb` is more private than the item `vex_wheelv`
+   --> tos-api/src/vdi/mouse.rs:967:1
+    |
+967 | pub fn vex_wheelv(pb: &Vdipb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `vex_wheelv` is reachable at visibility `pub`
+    |
+note: but type `Vdipb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/vdi/mod.rs:97:1
+    |
+ 97 | pub(crate) struct Vdipb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: type `Vdipb` is more private than the item `vex_timv`
+   --> tos-api/src/vdi/mouse.rs:992:1
+    |
+992 | pub fn vex_timv(pb: &Vdipb) {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ function `vex_timv` is reachable at visibility `pub`
+    |
+note: but type `Vdipb` is only usable at visibility `pub(crate)`
+   --> tos-api/src/vdi/mod.rs:97:1
+    |
+ 97 | pub(crate) struct Vdipb {
+    | ^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: value assigned to `control` is never read
+  --> kernel/src/selftest_objc.rs:79:5
+   |
+79 |     control[3] = 1; // one addrin
+   |     ^^^^^^^^^^^^^^
+   |
+   = help: maybe it is overwritten before being read?
+   = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: value assigned to `intin` is never read
+  --> kernel/src/selftest_objc.rs:86:5
+   |
+86 |     intin[5] = 480; // clip = full screen
+   |     ^^^^^^^^^^^^^^
+   |
+   = help: maybe it is overwritten before being read?
+
+warning: value assigned to `addrin` is never read
+  --> kernel/src/selftest_objc.rs:80:5
+   |
+80 |     addrin[0] = tree.as_ptr() as i64;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: maybe it is overwritten before being read?
+
+warning: value assigned to `control` is never read
+   --> kernel/src/selftest_objc.rs:119:5
+    |
+119 |     control[3] = 1; // one addrin
+    |     ^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `intin` is never read
+   --> kernel/src/selftest_objc.rs:120:5
+    |
+120 |     intin[0] = 1; // default button = 1 (OK)
+    |     ^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `addrin` is never read
+   --> kernel/src/selftest_objc.rs:121:5
+    |
+121 |     addrin[0] = ALERT.as_ptr() as i64;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `control` is never read
+   --> kernel/src/selftest_objc.rs:190:5
+    |
+190 |     control[3] = 1;
+    |     ^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `intin` is never read
+   --> kernel/src/selftest_objc.rs:194:49
+    |
+194 |     intin[2] = 0; intin[3] = 0; intin[4] = 640; intin[5] = 480;
+    |                                                 ^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `addrin` is never read
+   --> kernel/src/selftest_objc.rs:191:5
+    |
+191 |     addrin[0] = tree.as_ptr() as i64;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `control` is never read
+   --> kernel/src/selftest_objc.rs:243:38
+    |
+243 |     control[0] = 42; control[2] = 1; control[3] = 1;
+    |                                      ^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `intin` is never read
+   --> kernel/src/selftest_objc.rs:246:49
+    |
+246 |     intin[2] = 0; intin[3] = 0; intin[4] = 640; intin[5] = 480;
+    |                                                 ^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `addrin` is never read
+   --> kernel/src/selftest_objc.rs:244:5
+    |
+244 |     addrin[0] = tree.as_ptr() as i64;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `control` is never read
+   --> kernel/src/selftest_objc.rs:285:38
+    |
+285 |     control[0] = 42; control[2] = 1; control[3] = 1;
+    |                                      ^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `control` is never read
+   --> kernel/src/selftest_objc.rs:292:54
+    |
+292 |     control[0] = 50; control[2] = 1; control[1] = 1; control[3] = 1;
+    |                                                      ^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `intin` is never read
+   --> kernel/src/selftest_objc.rs:293:5
+    |
+293 |     intin[0] = 0; // start object
+    |     ^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `addrin` is never read
+   --> kernel/src/selftest_objc.rs:294:5
+    |
+294 |     addrin[0] = tree.as_ptr() as i64;
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `control` is never read
+   --> kernel/src/selftest_objc.rs:335:38
+    |
+335 |     control[0] = 42; control[2] = 1; control[3] = 1;
+    |                                      ^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `control` is never read
+   --> kernel/src/selftest_objc.rs:341:56
+    |
+341 |     control = [0; 8]; control[0] = 46; control[2] = 2; control[3] = 1;
+    |                                                        ^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `control` is never read
+   --> kernel/src/selftest_objc.rs:349:60
+    |
+349 |         control = [0; 8]; control[0] = 46; control[2] = 2; control[3] = 1;
+    |                                                            ^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `control` is never read
+   --> kernel/src/selftest_objc.rs:397:38
+    |
+397 |     control[0] = 42; control[2] = 1; control[3] = 1; // objc_draw
+    |                                      ^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `control` is never read
+   --> kernel/src/selftest_objc.rs:402:72
+    |
+402 |     control = [0; 8]; control[0] = 50; control[2] = 1; control[1] = 1; control[3] = 1; // form_do
+    |                                                                        ^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `intin` is never read
+   --> kernel/src/selftest_objc.rs:403:5
+    |
+403 |     intin[0] = 0; addrin[0] = tree.as_ptr() as i64;
+    |     ^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `addrin` is never read
+   --> kernel/src/selftest_objc.rs:403:19
+    |
+403 |     intin[0] = 0; addrin[0] = tree.as_ptr() as i64;
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `control` is never read
+   --> kernel/src/selftest_objc.rs:425:38
+    |
+425 |     control[0] = 53; control[2] = 1; control[1] = 1; // form_error
+    |                                      ^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `intin` is never read
+   --> kernel/src/selftest_objc.rs:426:5
+    |
+426 |     intin[0] = -33; // EFILNF
+    |     ^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `control` is never read
+   --> kernel/src/selftest_objc.rs:467:54
+    |
+467 |     control[0] = 30; control[2] = 1; control[1] = 1; control[3] = 1;
+    |                                                      ^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `control` is never read
+   --> kernel/src/selftest_objc.rs:472:72
+    |
+472 |     control = [0; 8]; control[0] = 33; control[2] = 1; control[1] = 2; control[3] = 1;
+    |                                                                        ^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `intin` is never read
+   --> kernel/src/selftest_objc.rs:473:19
+    |
+473 |     intin[0] = 3; intin[1] = 0; addrin[0] = tree.as_ptr() as i64;
+    |                   ^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `addrin` is never read
+   --> kernel/src/selftest_objc.rs:473:33
+    |
+473 |     intin[0] = 3; intin[1] = 0; addrin[0] = tree.as_ptr() as i64;
+    |                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `control` is never read
+   --> kernel/src/selftest_objc.rs:535:54
+    |
+535 |     control[0] = 30; control[2] = 1; control[1] = 1; control[3] = 1;
+    |                                                      ^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `intin` is never read
+   --> kernel/src/selftest_objc.rs:536:5
+    |
+536 |     intin[0] = 1; addrin[0] = tree.as_ptr() as i64;
+    |     ^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `addrin` is never read
+   --> kernel/src/selftest_objc.rs:536:19
+    |
+536 |     intin[0] = 1; addrin[0] = tree.as_ptr() as i64;
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `control` is never read
+   --> kernel/src/selftest_objc.rs:565:55
+    |
+565 |     control[0] = 100; control[2] = 1; control[1] = 5; control[3] = 0;
+    |                                                       ^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `control` is never read
+   --> kernel/src/selftest_objc.rs:571:73
+    |
+571 |     control = [0; 8]; control[0] = 105; control[2] = 1; control[1] = 2; control[3] = 1;
+    |                                                                         ^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `control` is never read
+   --> kernel/src/selftest_objc.rs:575:73
+    |
+575 |     control = [0; 8]; control[0] = 105; control[2] = 1; control[1] = 2; control[3] = 1;
+    |                                                                         ^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `control` is never read
+   --> kernel/src/selftest_objc.rs:580:73
+    |
+580 |     control = [0; 8]; control[0] = 101; control[2] = 1; control[1] = 5; control[3] = 0;
+    |                                                                         ^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `intin` is never read
+   --> kernel/src/selftest_objc.rs:581:70
+    |
+581 |     intin[0] = handle; intin[1] = 80; intin[2] = 60; intin[3] = 440; intin[4] = 320;
+    |                                                                      ^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `addrin` is never read
+   --> kernel/src/selftest_objc.rs:576:38
+    |
+576 |     intin[0] = handle; intin[1] = 3; addrin[0] = INFO.as_ptr() as i64;
+    |                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `control` is never read
+   --> kernel/src/selftest_objc.rs:609:22
+    |
+609 |     control[0] = 77; control[2] = 5;
+    |                      ^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `control` is never read
+   --> kernel/src/selftest_objc.rs:614:40
+    |
+614 |     control = [0; 8]; control[0] = 79; control[2] = 5;
+    |                                        ^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `control` is never read
+   --> kernel/src/selftest_objc.rs:656:57
+    |
+656 |     control = [0; 8]; control[0] = 104; control[2] = 5; control[1] = 2;
+    |                                                         ^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `control` is never read
+   --> kernel/src/selftest_objc.rs:664:61
+    |
+664 |         control = [0; 8]; control[0] = 104; control[2] = 5; control[1] = 2;
+    |                                                             ^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `control` is never read
+   --> kernel/src/selftest_objc.rs:965:39
+    |
+965 |     control[0] = 112; control[2] = 1; control[1] = 2;
+    |                                       ^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `control` is never read
+   --> kernel/src/selftest_objc.rs:972:56
+    |
+972 |     control = [0; 8]; control[0] = 42; control[2] = 1; control[3] = 1;
+    |                                                        ^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `control` is never read
+   --> kernel/src/selftest_objc.rs:978:41
+    |
+978 |     control = [0; 8]; control[0] = 111; control[2] = 1;
+    |                                         ^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `intin` is never read
+   --> kernel/src/selftest_objc.rs:974:77
+    |
+974 |     intin[0] = 0; intin[1] = 8; intin[2] = 0; intin[3] = 0; intin[4] = 640; intin[5] = 480;
+    |                                                                             ^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `addrin` is never read
+   --> kernel/src/selftest_objc.rs:973:5
+    |
+973 |     addrin[0] = tree;
+    |     ^^^^^^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: value assigned to `control` is never read
+    --> kernel/src/selftest_objc.rs:1001:39
+     |
+1001 |     control[0] = 110; control[2] = 1; control[3] = 1;
+     |                                       ^^^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `control` is never read
+    --> kernel/src/selftest_objc.rs:1010:57
+     |
+1010 |     control = [0; 8]; control[0] = 112; control[2] = 1; control[1] = 2;
+     |                                                         ^^^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `control` is never read
+    --> kernel/src/selftest_objc.rs:1015:56
+     |
+1015 |     control = [0; 8]; control[0] = 42; control[2] = 1; control[3] = 1;
+     |                                                        ^^^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `intin` is never read
+    --> kernel/src/selftest_objc.rs:1017:77
+     |
+1017 |     intin[0] = 0; intin[1] = 8; intin[2] = 0; intin[3] = 0; intin[4] = 640; intin[5] = 480;
+     |                                                                             ^^^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `addrin` is never read
+    --> kernel/src/selftest_objc.rs:1016:5
+     |
+1016 |     addrin[0] = tree;
+     |     ^^^^^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `control` is never read
+    --> kernel/src/selftest_objc.rs:1038:39
+     |
+1038 |     control[0] = 110; control[2] = 1; control[3] = 1;
+     |                                       ^^^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `control` is never read
+    --> kernel/src/selftest_objc.rs:1043:57
+     |
+1043 |     control = [0; 8]; control[0] = 112; control[2] = 1; control[1] = 2;
+     |                                                         ^^^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `control` is never read
+    --> kernel/src/selftest_objc.rs:1047:56
+     |
+1047 |     control = [0; 8]; control[0] = 42; control[2] = 1; control[3] = 1;
+     |                                                        ^^^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `intin` is never read
+    --> kernel/src/selftest_objc.rs:1049:78
+     |
+1049 |     intin[0] = 0; intin[1] = 16; intin[2] = 0; intin[3] = 0; intin[4] = 640; intin[5] = 480;
+     |                                                                              ^^^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `addrin` is never read
+    --> kernel/src/selftest_objc.rs:1048:5
+     |
+1048 |     addrin[0] = tree;
+     |     ^^^^^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `control` is never read
+    --> kernel/src/selftest_objc.rs:1073:38
+     |
+1073 |     control[0] = 90; control[2] = 2; control[3] = 2; // fsel_input
+     |                                      ^^^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `addrin` is never read
+    --> kernel/src/selftest_objc.rs:1075:5
+     |
+1075 |     addrin[1] = sel.as_mut_ptr() as i64;
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `control` is never read
+    --> kernel/src/selftest_objc.rs:1101:51
+     |
+1101 |     control = [0;8]; control[0]=80; control[2]=1; control[3]=1; addrin[0]=buf.as_mut_ptr() as i64;
+     |                                                   ^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `control` is never read
+    --> kernel/src/selftest_objc.rs:1107:49
+     |
+1107 |     control=[0;8]; control[0]=81; control[2]=1; control[3]=1; addrin[0]=p.as_mut_ptr() as i64;
+     |                                                 ^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `control` is never read
+    --> kernel/src/selftest_objc.rs:1109:61
+     |
+1109 |     buf=[0;64]; control=[0;8]; control[0]=80; control[2]=1; control[3]=1; addrin[0]=buf.as_mut_ptr() as i64;
+     |                                                             ^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `control` is never read
+    --> kernel/src/selftest_objc.rs:1115:64
+     |
+1115 |     control=[0;8]; control[0]=123; control[2]=1; control[1]=1; control[3]=1; intin[0]=7; addrin[0]=data.as_mut_ptr() as i64;
+     |                                                                ^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `control` is never read
+    --> kernel/src/selftest_objc.rs:1117:76
+     |
+1117 |     buf=[0;64]; control=[0;8]; control[0]=122; control[2]=1; control[1]=1; control[3]=1; intin[0]=7; addrin[0]=buf.as_mut_ptr() as...
+     |                                                                            ^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `control` is never read
+    --> kernel/src/selftest_objc.rs:1123:50
+     |
+1123 |     control=[0;8]; control[0]=124; control[2]=1; control[3]=1; addrin[0]=f1.as_mut_ptr() as i64;
+     |                                                  ^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `control` is never read
+    --> kernel/src/selftest_objc.rs:1127:50
+     |
+1127 |     control=[0;8]; control[0]=124; control[2]=1; control[3]=1; addrin[0]=f2.as_mut_ptr() as i64;
+     |                                                  ^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `control` is never read
+    --> kernel/src/selftest_objc.rs:1134:50
+     |
+1134 |     control=[0;8]; control[0]=125; control[2]=1; control[3]=2;
+     |                                                  ^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `intin` is never read
+    --> kernel/src/selftest_objc.rs:1117:90
+     |
+1117 |     buf=[0;64]; control=[0;8]; control[0]=122; control[2]=1; control[1]=1; control[3]=1; intin[0]=7; addrin[0]=buf.as_mut_ptr() as...
+     |                                                                                          ^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `addrin` is never read
+    --> kernel/src/selftest_objc.rs:1135:44
+     |
+1135 |     addrin[0]=&mut val as *mut u64 as i64; addrin[1]=needle.as_mut_ptr() as i64;
+     |                                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `control` is never read
+    --> kernel/src/selftest_objc.rs:1251:38
+     |
+1251 |     control[0] = 42; control[2] = 1; control[3] = 1;
+     |                                      ^^^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `intin` is never read
+    --> kernel/src/selftest_objc.rs:1253:77
+     |
+1253 |     intin[0] = 0; intin[1] = 8; intin[2] = 0; intin[3] = 0; intin[4] = 640; intin[5] = 480;
+     |                                                                             ^^^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: value assigned to `addrin` is never read
+    --> kernel/src/selftest_objc.rs:1252:5
+     |
+1252 |     addrin[0] = tree.as_ptr() as i64;
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+
+warning: function `boot_l0_phys` is never used
+  --> kernel/src/arch/aarch64/user_entry.rs:71:4
+   |
+71 | fn boot_l0_phys() -> u64 {
+   |    ^^^^^^^^^^^^
+   |
+   = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: constant `CYCLES_AFTER_KEY` is never used
+   --> kernel/src/dbg_qedtrace.rs:202:7
+    |
+202 | const CYCLES_AFTER_KEY: u32 = 4;
+    |       ^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> kernel/src/arch/aarch64/dtb.rs:316:5
+    |
+316 |     pub pcie_addr: u64,
+    |     ^^^^^^^^^^^^^^^^^^
+    |
+note: the lint level is defined here
+   --> kernel/src/lib.rs:9:9
+    |
+  9 | #![warn(missing_docs)]
+    |         ^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> kernel/src/arch/aarch64/dtb.rs:317:5
+    |
+317 |     pub cpu_addr: u64,
+    |     ^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> kernel/src/arch/aarch64/dtb.rs:318:5
+    |
+318 |     pub size: u64,
+    |     ^^^^^^^^^^^^^
+
+warning: missing documentation for a variant
+   --> kernel/src/drivers/usb/mod.rs:184:5
+    |
+184 |     Control,
+    |     ^^^^^^^
+
+warning: missing documentation for a variant
+   --> kernel/src/drivers/usb/mod.rs:185:5
+    |
+185 |     Isochronous,
+    |     ^^^^^^^^^^^
+
+warning: missing documentation for a variant
+   --> kernel/src/drivers/usb/mod.rs:186:5
+    |
+186 |     Bulk,
+    |     ^^^^
+
+warning: missing documentation for a variant
+   --> kernel/src/drivers/usb/mod.rs:187:5
+    |
+187 |     Interrupt,
+    |     ^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> kernel/src/drivers/usb/mod.rs:200:5
+    |
+200 |     pub ep_type: EndpointType,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> kernel/src/drivers/usb/mod.rs:209:5
+    |
+209 |     pub request_type: u8,
+    |     ^^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> kernel/src/drivers/usb/mod.rs:210:5
+    |
+210 |     pub request: u8,
+    |     ^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> kernel/src/drivers/usb/mod.rs:211:5
+    |
+211 |     pub value: u16,
+    |     ^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> kernel/src/drivers/usb/mod.rs:212:5
+    |
+212 |     pub index: u16,
+    |     ^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> kernel/src/drivers/usb/mod.rs:213:5
+    |
+213 |     pub length: u16,
+    |     ^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> kernel/src/drivers/usb/mod.rs:235:5
+    |
+235 |     pub connected: bool,
+    |     ^^^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> kernel/src/drivers/usb/mod.rs:236:5
+    |
+236 |     pub enabled: bool,
+    |     ^^^^^^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> kernel/src/drivers/usb/xhci/mod.rs:216:5
+    |
+216 |     pub port: u8,
+    |     ^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> kernel/src/drivers/usb/xhci/mod.rs:219:5
+    |
+219 |     pub vid: u16,
+    |     ^^^^^^^^^^^^
+
+warning: missing documentation for a struct field
+   --> kernel/src/drivers/usb/xhci/mod.rs:220:5
+    |
+220 |     pub pid: u16,
+    |     ^^^^^^^^^^^^
+
+warning: missing documentation for a struct
+   --> kernel/src/drivers/usb/xhci/mod.rs:340:1
+    |
+340 | pub struct Xhci {
+    | ^^^^^^^^^^^^^^^
+
+warning: missing documentation for a method
+   --> kernel/src/drivers/usb/xhci/mod.rs:642:5
+    |
+642 |     pub fn protocol(&self, di: usize) -> u8 {
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: `kernel` (lib) generated 94 warnings
+warning: `tos-api` (lib) generated 64 warnings
+    Finished `release` profile [optimized + debuginfo] target(s) in 9.16s
+xtask: objcopy → /Volumes/Daten/Development/PiRusTOS/kernel8.img

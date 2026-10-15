@@ -1,0 +1,50 @@
+measurement-2026-10-16-desk59 -- DESK59: act_chg tests ob_flags & DISABLED, EmuTOS tests ob_state & DISABLED (deskact.c:428-430).
+Base HEAD 4d1919b3 (main). Changed in the shared tree (uncommitted): programs/desktop/src/act.rs (act_chg guard + new selftest()),
+programs/desktop/src/selftest.rs (run_once calls act::selftest first; doc). Host macOS, QEMU raspi4b only. No SD card, no Pi.
+Scratch: /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/d59 (scratch trees, build logs, card copies). Date 2026-10-16.
+Scripts: method/ = copies of measurement-2026-10-15-desk43-acceptance/method (mrun.sh now runs QEMU with cwd = the run's scratch dir and a
+RELATIVE QMP socket; card copies in the scratch dir), plus build-d59.sh, all-d59.sh, cmp-acc.sh. Injector: method/inject-arm-u935.py
+(the corrected copy; tools/inject-arm.py has the T16 bug). SOURCE_DATE_EPOCH=1791979200. One QEMU at a time, host on battery
+(caffeinate -dimsu), screendumps keyed to serial markers (mdrive.py).
+
+RESULT: defect fixed; red -> green in QEMU; no visible change (all views/series dumps byte-identical to the 2026-10-15 acceptance).
+
+1. DEFECT. programs/desktop/src/act.rs act_chg: `if g_screen[obid].ob_flags & DISABLED != 0 { return false }`.
+   EmuTOS desk/deskact.c:428-430: `old_state = curr_state = tree[obj].ob_state; if (curr_state & DISABLED) return FALSE;`.
+   obdefs.h:104 DISABLED 0x0008 is a state bit; obdefs.h:86 EDITABLE 0x0008 is the flag bit with the same value.
+   Grep of programs/desktop/src for every ob_state bit (SELECTED, DISABLED, CHECKED, CROSSED, OUTLINED, SHADOWED, WHITEBAK, DRAW3D)
+   used with ob_flags/flags and every ob_flags bit (HIDETREE, EDITABLE, EXIT, DEFAULT, SELECTABLE, TOUCHEXIT, RBUTTON, LASTOB, INDIRECT,
+   FL3D*, SUBMENU) used with ob_state/state, plus numeric masks on either word: act.rs:73 is the only hit.
+
+2. RED TEST FIRST. The desktop crate is no_std with `test = false`, so the test is a desktop self-test (selftest-desk build, QEMU):
+   act::selftest() on the first DROOT icon, handle DESKWH (no FNODE), restores ob_flags/ob_state afterwards:
+     (1) ob_flags |= EDITABLE, state clean -> act_chg(set) must return TRUE and set SELECTED
+     (2) ob_state = DISABLED -> act_chg(set) must return FALSE, state unchanged
+     (3) ob_state = DISABLED|SELECTED -> act_chg(clear) must return FALSE, state unchanged
+   kernel8-kt-red.img (test in, fix not in; method/build-d59.sh with SUFFIX=-red), selftest2.sh kt-red:
+     3 x FAIL, "[desk-act] act_chg self-test: 0 passed, 3 failed"  (checks/selftest-kt-red-lines.txt, serial/st-kt-red-el0-on-serial.log)
+   kernel8-kt.img (with the fix), selftest2.sh kt:
+     3 x PASS, "3 passed, 0 failed"; all self-tests 56 PASS / 1 FAIL (= acceptance 53/1 + 3 new); every other PASS/FAIL line identical to
+     measurement-2026-10-15-desk43-acceptance/checks/acc-selftest-el0-lines.txt (the 1 FAIL is the pre-existing ins_devices line).
+
+3. VISIBLE EFFECT: none expected and none found. No object of the desktop's g_screen ever carries EDITABLE in ob_flags (obj_init /
+   obj_ialloc write 0 or LASTOB) or DISABLED in ob_state (no writer), so the guard never fires in either version; EmuTOS's desktop
+   does not set DISABLED on G.g_screen objects either (grep desk/*.c: DISABLED writes are dialog trees only).
+   method/all-d59.sh: 8 views (kernel kv, views.script, tag u7v) and the series (kernel d59 = checks.sh product build: desktop, APITEST,
+   TeraDesk, QED), EL0 default desktop, modes on/off/strict -> 45 dumps, cmp-acc.sh against the acceptance dumps of the same name:
+   45/45 BYTE-IDENTICAL (checks/d59-vs-acceptance.txt). APITEST TOTAL 106/0/5 in all three modes; 0 [EXC]/PANIC/load failed in all logs.
+
+4. BASELINES (method/checks.sh d59, checks/d59-*):
+   host tests tos-api tos-types xtask 1370/0/1 (no host test added: the desktop crate has none, see 2)
+   release warnings rpi4 / qemu-virt: tos-api 64, kernel 94 both, 0 errors
+   clippy kernel rpi4 / qemu-virt / rpi4+selftest-desk: 76/125 each; programs clippy (desktop x3 incl. selftest-desk, newdesk x3,
+   newtos-gem, hello-gem, newtos-gem pwk) 0; build-programs both boards 0 warnings
+   drift TOTAL 4, UNSAFE 20; emutos-consts 466/332 mismatched 2 documented 2 undocumented 0 stale 0 no-counterpart 132
+   SDK 20/0/0; cite fns=477 cited=316 newtos=5 uncited=156 (before 476/315/5/156: +1 cited = act::selftest)
+   desk-cite-list --since 4d1919b3: act.rs act_chg cited, act.rs selftest cited, selftest.rs run_once NEWTOS (existing marker),
+   act.rs rects_overlap listed uncited only because the appended block touches its hunk (unchanged pre-existing helper).
+   NAPs: rpi4/qemu-virt HELLOGEM unchanged (97f14224.. / f686f6ba..), NEWDESK 5c2af2b9.. / 690ddab8.. (changed, the fix).
+
+5. NOT RUN: real Pi 4; desk=kernel path (same desktop crate, the fix is in shared code); qemu-virt boot; on-asid/verify.
+
+Files: method/, bin/SHA256SUMS (images gitignored), checks/, serial/, screendumps/.

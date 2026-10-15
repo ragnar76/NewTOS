@@ -5,9 +5,10 @@
 //! [`super::ins::selftest`] (Install devices / Remove icon on the model),
 //! [`super::dir::selftest`] (the file-operation backend on `C:\DESKT9\`),
 //! [`super::inf::selftest`] (`NEWDESK.INF` save→read round trip) and
-//! [`super::inf::selftest_install`] (Install-application association) — and
-//! they are always compiled, so a signature break fails the build. They are
-//! **run** only in a build with the kernel feature `selftest-desk`:
+//! [`super::inf::selftest_install`] (Install-application association) —
+//! plus the `act_chg` `DISABLED`-guard check [`super::act::selftest`]
+//! (DESK59, state only, nothing on `C:`) — and they are always compiled, so
+//! a signature break fails the build. They are **run** only in a build with the kernel feature `selftest-desk`:
 //! [`super::deskmain`] calls [`run_once`] once, after its prolog, where the
 //! desktop state, the cell metrics and the `NEWDESK.INF` model exist (DESK43
 //! U7 open point 4: before `deskmain` every metric is 0). Three of the four
@@ -65,8 +66,9 @@ pub(super) use tprintln;
 /// in this boot (a desktop that restarts after a program, or after *Read .INF
 /// file*, does not repeat them: they rewrite `C:\NEWDESK.INF`).
 ///
-/// Order: the model test first (it needs the untouched `G.g_ahead` it restores
-/// afterwards), then the file backend, then the two `NEWDESK.INF` tests (they
+/// Order: the `act_chg` guard check first (it changes one icon's
+/// `ob_flags`/`ob_state` and puts them back), then the model test (it needs
+/// the untouched `G.g_ahead` it restores afterwards), then the file backend, then the two `NEWDESK.INF` tests (they
 /// replace the session model). The last line, `[desk-selftest] done`, marks
 /// the end for a harness.
 // NEWTOS: self-test runner (DESK45); EmuTOS's desktop has no self-tests.
@@ -78,6 +80,7 @@ pub(super) fn run_once() {
         return;
     }
     tprintln!("[desk-selftest] begin (selftest-desk build; mutates C:)");
+    super::act::selftest();
     super::ins::selftest();
     super::dir::selftest();
     super::inf::selftest();

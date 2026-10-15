@@ -67,10 +67,13 @@ impl DeskState {
     }
 
     /// `act_chg` — set/clear `obid`'s [`SELECTED`] bit and its backing
-    /// `f_selected` (EmuTOS `deskact.c:419`). Refuses a disabled object.
+    /// `f_selected` (EmuTOS `deskact.c:419`). Refuses a disabled object:
+    /// `DISABLED` is an `ob_state` bit (`deskact.c:428-430`, `old_state =
+    /// curr_state = tree[obj].ob_state; if (curr_state & DISABLED) return
+    /// FALSE;`) — the same `0x0008` in `ob_flags` is `EDITABLE` (DESK59).
     /// Returns whether the state actually changed.
     pub fn act_chg(&mut self, handle: i16, obid: i16, set: bool) -> bool {
-        if self.g_screen[obid as usize].ob_flags & DISABLED != 0 {
+        if self.g_screen[obid as usize].ob_state & DISABLED != 0 {
             return false;
         }
         let was = self.g_screen[obid as usize].ob_state & SELECTED != 0;
@@ -305,4 +308,82 @@ fn in_rect(px: i16, py: i16, x: i16, y: i16, w: i16, h: i16) -> bool {
 #[allow(clippy::too_many_arguments)]
 fn rects_overlap(ax: i16, ay: i16, aw: i16, ah: i16, bx: i16, by: i16, bw: i16, bh: i16) -> bool {
     ax < bx + bw && bx < ax + aw && ay < by + bh && by < ay + ah
+}
+
+// ── Headless self-test (run only in a `selftest-desk` build) ────────────────
+
+/// `act_chg` disabled-guard self-test (DESK59): EmuTOS refuses a change when
+/// the object's **state** carries `DISABLED` (`deskact.c:428-430`,
+/// `old_state = curr_state = tree[obj].ob_state; if (curr_state & DISABLED)
+/// return FALSE;`). `DISABLED` is `0x0008` in the state word
+/// (`obdefs.h:104`); the same bit in the flag word is `EDITABLE`
+/// (`obdefs.h:86`) and must not block a selection. Drives
+/// [`DeskState::act_chg`] on the first desktop icon (`DESKWH`, so no `FNODE`
+/// is involved) and restores the icon's `ob_flags`/`ob_state` afterwards.
+/// Printed one line per case on the console ([`super::selftest`]); run by
+/// [`super::selftest::run_once`] in a `selftest-desk` build only.
+pub fn selftest() {
+    use super::global;
+    use super::selftest::tprintln;
+    use tos_types::aes::EDITABLE;
+
+    tprintln!("[desk-act] act_chg DISABLED-guard self-test");
+    let mut pass = 0u32;
+    let mut fail = 0u32;
+    let mut check = |name: &str, cond: bool| {
+        if cond {
+            pass += 1;
+            tprintln!("[desk-act]  PASS {}", name);
+        } else {
+            fail += 1;
+            tprintln!("[desk-act]  FAIL {}", name);
+        }
+    };
+
+    let obj = global::with(|g| g.g_screen.get(DROOT as usize).map(|o| o.ob_head).unwrap_or(NIL)).unwrap_or(NIL);
+    if obj < 0 {
+        check("the desktop had an icon to change", false);
+        tprintln!("[desk-act] act_chg self-test: {} passed, {} failed", pass, fail);
+        return;
+    }
+    let o = obj as usize;
+    let Some((flags0, state0)) = global::with(|g| (g.g_screen[o].ob_flags, g.g_screen[o].ob_state)) else {
+        return;
+    };
+
+    // (1) EDITABLE in ob_flags is not DISABLED: the selection goes through.
+    let (r, st) = global::with(|g| {
+        g.g_screen[o].ob_flags = flags0 | EDITABLE;
+        g.g_screen[o].ob_state = state0 & !(SELECTED | DISABLED);
+        let r = g.act_chg(DESKWH, obj, true);
+        (r, g.g_screen[o].ob_state)
+    })
+    .unwrap_or((false, 0));
+    check("act_chg selects an object whose ob_flags carry EDITABLE", r && st & SELECTED != 0);
+
+    // (2) DISABLED in ob_state: no selection, state untouched, FALSE.
+    let (r, st) = global::with(|g| {
+        g.g_screen[o].ob_flags = flags0 & !EDITABLE;
+        g.g_screen[o].ob_state = DISABLED;
+        let r = g.act_chg(DESKWH, obj, true);
+        (r, g.g_screen[o].ob_state)
+    })
+    .unwrap_or((true, 0));
+    check("act_chg refuses to select an object whose ob_state is DISABLED", !r && st == DISABLED);
+
+    // (3) DISABLED|SELECTED in ob_state: no deselection either.
+    let (r, st) = global::with(|g| {
+        g.g_screen[o].ob_state = DISABLED | SELECTED;
+        let r = g.act_chg(DESKWH, obj, false);
+        (r, g.g_screen[o].ob_state)
+    })
+    .unwrap_or((true, 0));
+    check("act_chg refuses to deselect an object whose ob_state is DISABLED", !r && st == DISABLED | SELECTED);
+
+    // Put the icon back the way it was.
+    global::with(|g| {
+        g.g_screen[o].ob_flags = flags0;
+        g.g_screen[o].ob_state = state0;
+    });
+    tprintln!("[desk-act] act_chg self-test: {} passed, {} failed", pass, fail);
 }

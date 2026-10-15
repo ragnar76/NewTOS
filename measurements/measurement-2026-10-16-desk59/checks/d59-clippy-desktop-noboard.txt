@@ -1,0 +1,11 @@
+    Checking desktop v0.1.0 (/Volumes/Daten/Development/PiRusTOS/programs/desktop)
+error: desktop::inf: no About-box machine line for this board feature; add a `MACHINE_NAME` for it next to the existing ones (TASK/X03).
+    --> desktop/src/inf.rs:2613:1
+     |
+2613 | / compile_error!(
+2614 | |     "desktop::inf: no About-box machine line for this board feature; add a \
+2615 | |      `MACHINE_NAME` for it next to the existing ones (TASK/X03)."
+2616 | | );
+     | |_^
+
+error: could not compile `desktop` (lib) due to 1 previous error

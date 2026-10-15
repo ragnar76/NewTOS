@@ -1,0 +1,60 @@
+[desk-act] act_chg DISABLED-guard self-test
+[desk-act]  PASS act_chg selects an object whose ob_flags carry EDITABLE
+[desk-act]  PASS act_chg refuses to select an object whose ob_state is DISABLED
+[desk-act]  PASS act_chg refuses to deselect an object whose ob_state is DISABLED
+[desk-act] act_chg self-test: 3 passed, 0 failed
+[desk-ins]  FAIL ins_devices on a complete desktop reports no change
+[desk-ins]  PASS every drive had an icon to remove
+[desk-ins]  PASS ins_devices reports a change after the icons were removed
+[desk-ins]  PASS one icon per drive in the map
+[desk-ins]  PASS every installed icon names a drive that exists
+[desk-ins]  PASS a hard disk gets IG_HARD, a floppy IG_FLOPPY
+[desk-ins]  PASS no two icons share a grid cell
+[desk-ins]  PASS ins_devices reports a change for a vanished drive
+[desk-ins]  PASS the icon of the vanished drive is gone
+[desk-ins]  PASS Trash and Printer survive Install devices
+[desk-ins]  PASS rmv_icon removed one icon
+[desk-ins]  PASS the list is one shorter
+[desk-ins]  PASS the stepper offers no icon NewTOS has no raster for
+[desk-ins]  PASS the floppy icon is offered exactly when a floppy drive exists
+[desk-dir]  PASS Dcreate C:\DESKT9
+[desk-dir]  PASS   rescan sees DESKT9
+[desk-dir]  PASS Fcreate+Fwrite A.TXT
+[desk-dir]  PASS   rescan sees A.TXT sized
+[desk-dir]  PASS Copy A.TXT -> B.TXT
+[desk-dir]  PASS   rescan sees B.TXT same size
+[desk-dir]  PASS Rename A.TXT -> R.TXT
+[desk-dir]  PASS   rescan: R.TXT present, A.TXT gone
+[desk-dir]  PASS dir_op(Delete) SUB subtree
+[desk-dir]  PASS   rescan: SUB gone
+[desk-dir]  PASS Count reports 2 files
+[desk-dir]  PASS cleanup: DESKT9 removed
+[desk-inf]  PASS in-memory: #E view/sort/appdir/fullpath
+[desk-inf]  PASS in-memory: #E preferences
+[desk-inf]  PASS in-memory: #Q background
+[desk-inf]  PASS in-memory: #W geometry
+[desk-inf]  PASS in-memory: ANODE positions
+[desk-inf]  PASS in-memory: full equality
+[desk-inf]  PASS disk: write NEWDESK.INF
+[desk-inf]  PASS disk: #E view/sort/appdir/fullpath
+[desk-inf]  PASS disk: #E preferences
+[desk-inf]  PASS disk: #Q background
+[desk-inf]  PASS disk: #W geometry
+[desk-inf]  PASS disk: ANODE positions
+[desk-inf]  PASS disk: full equality
+[desk-ins]  PASS mem: README.TXT resolves
+[desk-ins]  PASS mem: full-path flag set
+[desk-ins]  PASS mem: HELLO.BIN has no association
+[desk-ins]  PASS mem: funkey 7 stored
+[desk-ins]  PASS mem: funkey 7 is taken by another app
+[desk-ins]  PASS mem: funkey 7 is not taken by its owner
+[desk-ins]  PASS disk: write NEWDESK.INF
+[desk-ins]  PASS disk: README.TXT resolves to HELLO.NCP
+[desk-ins]  PASS disk: full-path flag survived
+[desk-ins]  PASS disk: contains the #F HELLO.NCP line
+[desk-ins]  PASS disk: funkey 7 survived
+[desk-ins]  PASS disk: INSIDE.TXT (any dir) resolves
+[desk-ins]  PASS disk: HELLO.NCP is not its own document
+[desk-ins]  PASS model: remove HELLO.NCP association
+[desk-ins]  PASS model: README.TXT no longer resolves
+[desk-selftest] done
