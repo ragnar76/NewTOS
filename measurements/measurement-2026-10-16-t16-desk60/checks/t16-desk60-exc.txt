@@ -1,0 +1,4 @@
+serial/t16-kf-el0-on-serial.log: exc/panic 0
+serial/t16-kfred-el0-on-serial.log: exc/panic 0
+serial/tdqed-el0-on-serial.log: exc/panic 0
+serial/tdqed-el1-on-serial.log: exc/panic 0

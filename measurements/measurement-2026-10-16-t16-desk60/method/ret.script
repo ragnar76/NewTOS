@@ -1,0 +1,5 @@
+# (T16+DESK60: copied unchanged from the run named in the next line(s) / measurement-2026-10-16-desk58 for views.script.)
+# ret.script -- DESK43 U9-0: SCRIPT_B of measurement-2026-10-14-desk43-u8b/method/inj-u6a.py:
+# Return make/break 1600/1610 ticks (8 s) after the program's start -- the key HELLOGEM waits for.
+1600 0x1C
+1610 0x9C

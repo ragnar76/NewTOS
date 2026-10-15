@@ -1,0 +1,19 @@
+== host_env.rs
+721,722c721,724
+<     /// The launcher published a shell child in `slot` (scratch hook in
+<     /// launch.rs, right after the publication; also the poll's fallback).
+---
+>     /// The launcher published a shell child in `slot` -- the launch event
+>     /// (hook in launch.rs right after the publication, T16; also the poll's
+>     /// fallback in `track_child`). A child reusing the previous one's slot is
+>     /// a new child all the same.
+772c774
+<                 // SAFETY: single CPU; see `track_child`.
+---
+>                 // SAFETY: single CPU; see `launched`.
+790c792
+<                     // SAFETY: single CPU; see `track_child`.
+---
+>                     // SAFETY: single CPU; see `launched`.
+== launch.rs
+== shell_loop.rs

@@ -1,0 +1,13 @@
+tdqed-el0-on-after-qed.png vs acceptance: BYTE-IDENTICAL BYTE-IDENTICAL 0 px  (5148fde2f61b / 5148fde2f61b) 
+tdqed-el0-on-after-td.png vs acceptance: BYTE-IDENTICAL BYTE-IDENTICAL 0 px  (53ece89a12a1 / 53ece89a12a1) 
+tdqed-el0-on-qed.png vs acceptance: BYTE-IDENTICAL BYTE-IDENTICAL 0 px  (ec79c00a999e / ec79c00a999e) 
+tdqed-el0-on-td.png vs acceptance: BYTE-IDENTICAL BYTE-IDENTICAL 0 px  (5148fde2f61b / 5148fde2f61b) 
+tdqed-el1-on-after-qed.png vs acceptance: BYTE-IDENTICAL BYTE-IDENTICAL 0 px  (5148fde2f61b / 5148fde2f61b) 
+tdqed-el1-on-after-td.png vs acceptance: BYTE-IDENTICAL BYTE-IDENTICAL 0 px  (53ece89a12a1 / 53ece89a12a1) 
+tdqed-el1-on-qed.png vs acceptance: BYTE-IDENTICAL BYTE-IDENTICAL 0 px  (ec79c00a999e / ec79c00a999e) 
+tdqed-el1-on-td.png vs acceptance: BYTE-IDENTICAL BYTE-IDENTICAL 0 px  (5148fde2f61b / 5148fde2f61b) 
+el0 vs el1 td: BYTE-IDENTICAL
+el0 vs el1 qed: BYTE-IDENTICAL
+el0 vs el1 after-qed: BYTE-IDENTICAL
+el0 vs el1 after-td: BYTE-IDENTICAL
+t16 app kf vs kf-red: BYTE-IDENTICAL

@@ -15,8 +15,10 @@ usage:
                   the launched shell child, or the built-in desktop while there
                   is none). Only the first such event arms it.
   launch:NAME     ... the launcher published a shell child (kernel/src/launch.rs,
-                  `launch::shell_child_slot()`, set right before the drop to
-                  EL0) whose name is NAME. Only the first such child arms it.
+                  the `SHELL_CHILD_SLOT` store right before the drop to EL0)
+                  whose name is NAME. Every publication is a launch event, also
+                  when the child reuses the slot of the one that just ended
+                  (T16, see below). Only the first such child arms it.
   up:NAME         ... the shell child named NAME reached its first `evnt_multi`
                   after its `appl_init` (the same criterion as "desktop up", for
                   an application). Only the first time.
@@ -25,9 +27,19 @@ usage:
   launch command `D.s_cmd` (aes/gempd.c:77-86): the part after the last `\`
   or `:`, up to the first `.`, at most 8 characters, compared exactly
   (`C:\HELLOGEM.NAP` -> `HELLOGEM`, the embedded `NEWDESK` -> `NEWDESK`). The
-  name is read from `D.s_cmd` (`tos_api::aes::shell::s_cmd`) when the injector
-  first sees the child's slot -- the launcher writes it just before it
-  publishes the slot (`set_launch_info`).
+  name is read from `D.s_cmd` (`tos_api::aes::shell::s_cmd`) at the launch
+  event -- the launcher writes it just before it publishes the slot
+  (`set_launch_info`).
+
+  LAUNCH EVENT, NOT SLOT CHANGE (T16, measurement-2026-10-14-desk43-u9-3-5
+  RUNINFO §6). The launch event is a call from the launcher itself, a hook
+  inserted right after the slot publication in kernel/src/launch.rs. Polling
+  `launch::shell_child_slot()` once per injector tick for a *changed* slot is
+  not enough: with the EL0 desktop, NEWDESK (slot 0) ends after its
+  `shel_write` and the program it asked for is published in the SAME slot 0
+  within one tick, so the poll never sees a gap -- `launch:HELLOGEM` never
+  fired and the program waited for its key forever. The tick-side poll stays
+  as a fallback and only clears the state when no child is published.
 
   Script file: one step per line, `<ticks> <byte> [<byte> ...]` -- the bytes
   (hex `0x..` or decimal) are fed to `crate::ikbd::feed` in order once
@@ -53,6 +65,9 @@ It patches a SCRATCH copy of the tree only (never the shared tree):
                               after the USB poll in `pump_devices` -- the site
                               and order of the earlier injectors, so a run
                               armed the same way feeds at the same ticks;
+  kernel/src/launch.rs      the launch event: one line right after
+                              `SHELL_CHILD_SLOT.store(child.slot, ..)`
+                              (always, whatever the arms);
   kernel/src/shell_loop.rs  `desktop`: one line before the desktop-up
                               `kprintln!` (the anchor the U8a/U8b injectors
                               assert); `up:`: one line at the top of
@@ -207,16 +222,24 @@ pub mod inj_arm {{
                 }}
             }}
             Some(slot) if slot != seen => {{
-                SEEN_SLOT.store(slot, Ordering::Relaxed);
-                CHILD_INIT.store(false, Ordering::Relaxed);
-                let name = child_name();
-                // SAFETY: single CPU; written only here, read by `event`.
-                unsafe {{ SEEN_NAME = name }};
-                event(1, &name);
+                launched(slot);
             }}
             Some(_) => {{}}
         }}
         cur
+    }}
+
+    /// The launcher published a shell child in `slot` -- the launch event
+    /// (hook in launch.rs right after the publication, T16; also the poll's
+    /// fallback in `track_child`). A child reusing the previous one's slot is
+    /// a new child all the same.
+    pub fn launched(slot: usize) {{
+        SEEN_SLOT.store(slot, Ordering::Relaxed);
+        CHILD_INIT.store(false, Ordering::Relaxed);
+        let name = child_name();
+        // SAFETY: single CPU; written only here, read by `event`.
+        unsafe {{ SEEN_NAME = name }};
+        event(1, &name);
     }}
 
     /// An identity event of `kind` for the program `name`: every waiting arm
@@ -259,7 +282,7 @@ pub mod inj_arm {{
         match op {{
             10 => CHILD_INIT.store(true, Ordering::Relaxed),
             25 if CHILD_INIT.swap(false, Ordering::Relaxed) => {{
-                // SAFETY: single CPU; see `track_child`.
+                // SAFETY: single CPU; see `launched`.
                 let name = unsafe {{ SEEN_NAME }};
                 event(2, &name);
             }}
@@ -277,7 +300,7 @@ pub mod inj_arm {{
                     T0[i].store(now.max(1), Ordering::Relaxed);
                     STATE[i].store(2, Ordering::Release);
                     let slot = crate::launch::shell_child_slot();
-                    // SAFETY: single CPU; see `track_child`.
+                    // SAFETY: single CPU; see `launched`.
                     let name = unsafe {{ SEEN_NAME }};
                     crate::kprintln!(
                         "[{tag}] {{}} armed at hz_200 {{}} (slot {{:?}} name {{}})",
@@ -328,6 +351,15 @@ pub mod inj_arm {{
             die("shell_loop.rs: observe_desktop_gem_call anchor not found exactly once")
         t = t.replace(old, old + f"    crate::host_env::inj_arm::gem_call(args); // {MARK}\n")
     sl.write_text(t)
+
+    # 4. the launch event (T16): the launcher's slot publication.
+    la = tree / "kernel/src/launch.rs"
+    t = la.read_text()
+    old = "    SHELL_CHILD_SLOT.store(child.slot, Ordering::Release);\n"
+    if t.count(old) != 1:
+        die("launch.rs: slot publication anchor not found exactly once")
+    t = t.replace(old, old + f"    crate::host_env::inj_arm::launched(child.slot); // {MARK}\n")
+    la.write_text(t)
     print(f"inject-arm.py: {tree}: tag [{tag}], " + ", ".join(
         f"{trig} ({len(steps)} bytes)" for trig, _, _, steps in arms))
 

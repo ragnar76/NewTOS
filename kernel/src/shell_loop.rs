@@ -411,15 +411,26 @@ fn sh_ldapp() -> i32 {
     shell::s_cmd(&mut cmd);
     let nextapp = shell::sh_nextapp();
 
-    kprintln!(
-        "[shell] sh_ldapp: starting {}, sh_nextapp={}, sh_isgem={}",
-        as_str(&cmd),
-        nextapp,
-        i32::from(shell::sh_isgem()),
-    );
-
     // ── Arm 1 — DESKTOP_APP (`:600-612`) ─────────────────────────────────
     if nextapp == DESKTOP_APP {
+        // EmuTOS's `KDEBUG` here prints `D.s_cmd` (`:597-598`), but the arm
+        // does not start what `D.s_cmd` names: it starts *the* desktop
+        // (`deskstart`, `:606`), and `D.s_cmd` only names its descriptor
+        // (`p_nameit`, `:604`). The two differ after a `#Z` program that
+        // called `shel_write(SHW_NOEXEC)` (TeraDesk does, after each program
+        // it `Pexec`s, `startprg.c:386`): `sh_nextapp` is then `DESKTOP_APP`,
+        // so the AUTORUN return (`:662-666`) skips `set_default_desktop` and
+        // `sh_chdef` rebuilds `D.s_cmd` from the `#Z` program's `sh_desk`
+        // (`:551-565`) — e.g. `DESKTOP.NAP` after TeraDesk; EmuTOS behaves
+        // identically (DESK60). So the line names the desktop that runs and
+        // shows `D.s_cmd` separately.
+        kprintln!(
+            "[shell] sh_ldapp: starting desktop {} (D.s_cmd {}), sh_nextapp={}, sh_isgem={}",
+            desktop_label(),
+            as_str(&cmd),
+            nextapp,
+            i32::from(shell::sh_isgem()),
+        );
         if !shell::gl_shgem() {
             // The machine has no screen, so the built-in desktop is not the
             // main UI this boot — `endrom.c:28-35`'s choice, made at runtime.
@@ -468,9 +479,21 @@ fn sh_ldapp() -> i32 {
             run_kernel_desktop();
             return 0;
         }
-        kprintln!("[shell] sh_ldapp: desktop '{}' exited with rc={}", as_str(&cmd), rc);
+        kprintln!(
+            "[shell] sh_ldapp: desktop {} (D.s_cmd {}) exited with rc={}",
+            as_str(shell::DEF_DESKTOP),
+            as_str(&cmd),
+            rc
+        );
         return 0;
     }
+
+    kprintln!(
+        "[shell] sh_ldapp: starting {}, sh_nextapp={}, sh_isgem={}",
+        as_str(&cmd),
+        nextapp,
+        i32::from(shell::sh_isgem()),
+    );
 
     // ── Arm 2 — CONSOLE_APP (`:614-622`, `#if WITH_CLI`) ─────────────────
     if nextapp == CONSOLE_APP {
@@ -573,6 +596,20 @@ fn run_kernel_desktop() {
     desktop::run();
     DESKTOP_ACTIVE.store(false, Ordering::Release);
     DESKTOP_UP_ARMED.store(false, Ordering::Release);
+}
+
+/// The desktop the DESKTOP arm of [`sh_ldapp`] is about to run, for its log
+/// line: none on a machine without a screen (the arm falls through to the
+/// console), the built-in kernel desktop, or the embedded program
+/// [`shell::DEF_DESKTOP`].
+fn desktop_label() -> &'static str {
+    if !shell::gl_shgem() {
+        "(none: no screen)"
+    } else if kernel_desktop_in_use() {
+        "(built-in)"
+    } else {
+        as_str(shell::DEF_DESKTOP)
+    }
 }
 
 /// The `CONSOLE_APP` arm body (`gemshlib.c:614-622`):

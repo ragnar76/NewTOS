@@ -1,0 +1,73 @@
+measurement-2026-10-16-t16-desk60 -- T16 (tools/inject-arm.py: launch: arm missed a child reusing the same slot) and DESK60 (shell log
+"starting DESKTOP.NAP" after a #Z-started TeraDesk).
+Base HEAD e77761af (main). Changed in the shared tree (uncommitted): tools/inject-arm.py (T16), kernel/src/shell_loop.rs (DESK60, log text only),
+tos-api/tests/aes_shell_desk60_autorun_noexec.rs (new host test, DESK60). Host macOS, QEMU raspi4b only. No SD card, no Pi.
+Scratch: /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/t16d60 (scratch trees, build logs, card copies). Date 2026-10-16.
+Scripts: method/ = copies of measurement-2026-10-16-desk58/method (scratch t16d60, kernel id t16d60; cmp-acc.sh compares against DESK58) plus
+f1.script/ret.script (measurement-2026-10-14-desk43-u9-3-5), tdf1.script (measurement-2026-10-15-desk43-acceptance), build.sh, t16.sh, desk60.sh,
+all.sh, inject-arm-pre-t16.py (= git show e77761af:tools/inject-arm.py, red control only). Injector for every other kernel: tools/inject-arm.py of
+the shared tree. SOURCE_DATE_EPOCH=1791979200. One QEMU at a time, screendumps keyed to serial markers (mdrive.py), QMP socket relative to
+the run's scratch dir.
+
+RESULT: T16 fixed (red -> green in QEMU); DESK60 = log text only (EmuTOS behaves the same), fixed + host test; 45/45 views/series dumps
+byte-identical to measurement-2026-10-16-desk58.
+
+1. T16 -- tools/inject-arm.py
+   Change = the corrected logic of measurement-2026-10-14-desk43-u9-3-5/method/inject-arm-u935.py (identical copies in the 10-15 acceptance,
+   desk58, desk59 method dirs, sha1 4b2c6c44): the launch event is a hook the tool inserts into kernel/src/launch.rs right after
+   `SHELL_CHILD_SLOT.store(child.slot, ..)` (`inj_arm::launched(slot)`); the tick-side slot poll stays as a fallback. CLI unchanged.
+   Docstring documents the launch event, the reason, and the new launch.rs anchor.
+   Generated code vs the u935 copy (same arms, checks/gen-tool-vs-u935-copy-kf.txt): host_env.rs differs only in 3 comments; launch.rs and
+   shell_loop.rs identical.
+   Proof (method/t16.sh; card f1hg = C:\HELLOGEM.NAP on F1, sha256 checks/cards-sha256.txt; EL0 default desktop, mode on; arms
+   desktop=f1.script launch:HELLOGEM=ret.script, tag u6a):
+     kf-red (pre-T16 tool, kernel8-kf-red.img): NEWDESK exits after F1, HELLOGEM published in slot 0 again; no "[u6a] launch:HELLOGEM armed"
+       line, no Return fed, HELLOGEM waits; the 2nd "[desk] desktop up" never comes (marker missing after 60 s, rc=3) -- the end dump
+       t16-kfred-el0-on-end.png.MISSING.png shows the HELLOGEM window "Press a key or click to quit."  = the U9-3-5 failure, reproduced.
+     kf (T16 tool, kernel8-kf.img): "[u6a] launch:HELLOGEM armed at hz_200 3227 (slot Some(0) name HELLOGEM)", Return fed at +1600,
+       "[HELLOGEM] ... quit by key 0x1c0d", rc=0, "desktop NEWDESK ... exited"/"starting desktop NEWDESK", 2nd "[desk] desktop up";
+       end dump = the desktop. App dumps kf vs kf-red byte-identical (checks/desk60-t16-dumps.txt). 0 EXC/PANIC (checks/t16-desk60-exc.txt).
+
+2. DESK60 -- the "starting DESKTOP.NAP" line
+   EmuTOS (references/emutos/aes/gemshlib.c): sh_wdef (geminit.c:455) stores the #Z pair in sh_desk/sh_cdir; sh_chdef (:551-565) rebuilds
+   D.s_cmd every pass, for DESKTOP_APP as `D.s_cmd = sh_desk` (directory only for AUTORUN_APP); sh_write SHW_NOEXEC (:161-166) sets
+   D.s_cmd = DEF_DESKTOP and sh_nextapp = DESKTOP_APP but leaves sh_desk alone; sh_ldapp's AUTORUN return (:662-666) calls
+   set_default_desktop (the only reset of sh_desk besides boot/console/sh_find failure) only if sh_nextapp is still AUTORUN_APP.
+   TeraDesk calls shel_write(SHW_NOEXEC, 1, 0, "", "\0\0") after each program it Pexecs (sdk/apps/teradesk/startprg.c:386) -- in the tdqed
+   run after QED. So on TeraDesk's exit sh_nextapp = DESKTOP_APP, set_default_desktop is skipped, and the next sh_chdef gives
+   D.s_cmd = "DESKTOP.NAP". The DESKTOP arm still starts *the* desktop (deskstart, :606); D.s_cmd only feeds sh_draw, p_nameit (:604 ->
+   descriptor name "DESKTOP") and p_setappdir, and shel_read answers "DESKTOP.NAP" during that desktop run (:104).
+   NewTOS does exactly the same (tos_api::aes::shell: sh_wdef/sh_chdef/shel_write/set_default_desktop; kernel shell_loop: the AUTORUN
+   return reads sh_nextapp live; launch::run_desktop_program names the descriptor from cmd). => behaviour = EmuTOS; appl_find("NEWDESK")
+   would miss the desktop in that state as EmuTOS's appl_find("EMUDESK") would (derived from the code, not measured). Only the kernel's log
+   line was misleading: it printed D.s_cmd as if it were the program started.
+   Fix (kernel/src/shell_loop.rs sh_ldapp): the DESKTOP arm logs
+     "[shell] sh_ldapp: starting desktop <NEWDESK|(built-in)|(none: no screen)> (D.s_cmd <s_cmd>), sh_nextapp=3, sh_isgem=1"
+   and "desktop NEWDESK (D.s_cmd <s_cmd>) exited with rc=N"; the CONSOLE/NORMAL/AUTORUN arms keep the old line (prefix
+   "[shell] sh_ldapp: starting " unchanged for every arm). No behaviour change.
+   Host test tos-api/tests/aes_shell_desk60_autorun_noexec.rs (2 tests, green): #Z boot -> s_cmd "C:\Apps\TERADESK\DESKTOP.NAP";
+   shel_write(SHW_NOEXEC) -> s_cmd NEWDESK, nextapp 3; AUTORUN return skipped; sh_chdef -> s_cmd "DESKTOP.NAP", sh_name -> "DESKTOP.NAP",
+   shel_read -> "DESKTOP.NAP"; contrast: #Z program quitting without shel_write -> set_default_desktop -> s_cmd NEWDESK. (Pins the
+   EmuTOS sequence; it passes before and after the log fix, since the logic was already right.)
+   QEMU (method/desk60.sh = tdqed2.sh of the acceptance, kernel kxtd = tools/inject-arm.py launch:DESKTOP=tdf1.script, card tdqed, mode on,
+   EL0 + desk=kernel): after TeraDesk's exit
+     EL0: "[shell] sh_ldapp: starting desktop NEWDESK (D.s_cmd DESKTOP.NAP), sh_nextapp=3, sh_isgem=1" -> "[desk] desktop up"
+     EL1: "[shell] sh_ldapp: starting desktop (built-in) (D.s_cmd DESKTOP.NAP), sh_nextapp=3, sh_isgem=1" -> "[desk] desktop up"
+   All 8 dumps (td, qed, after-qed, after-td x EL0/EL1) byte-identical to the same-named dumps of measurement-2026-10-15-desk43-acceptance
+   and EL0 = EL1 (checks/desk60-t16-dumps.txt). This run also exercises the T16 tool's launch: arm on a first-in-slot child (TeraDesk).
+
+3. NO-REGRESSION (method/all.sh: 8 views on kv (tools/inject-arm.py desktop=views.script, tag u7v) + series on t16d60 (checks.sh product
+   build: desktop, APITEST, TeraDesk, QED), EL0 default desktop, on/off/strict = 45 dumps; method/cmp-acc.sh vs measurement-2026-10-16-desk58):
+   45/45 BYTE-IDENTICAL (checks/t16d60-vs-desk58.txt). APITEST TOTAL 106/0/5 in all three modes; 0 [EXC]/PANIC/load failed in all logs.
+
+4. BASELINES (method/checks.sh t16d60, checks/t16d60-*, summary checks/t16d60-checks-summary.txt):
+   host tests tos-api tos-types xtask 1372/0/1 (= 1370/0/1 + the 2 DESK60 tests); release warnings rpi4 / qemu-virt: tos-api 64, kernel 94
+   both, 0 errors; clippy kernel rpi4 / qemu-virt / rpi4+selftest-desk: 76/125 each (0 hits in shell_loop.rs); programs build + clippy 0;
+   drift TOTAL 4, UNSAFE 20; emutos-consts total=466 matched=333 mismatched=1 documented=1 undocumented=0 stale=0 no-counterpart=132;
+   SDK 20/0/0; cite fns=479 cited=318 newtos=5 uncited=156 (unchanged; no desktop code touched); NAPs unchanged vs DESK58
+   (HELLOGEM 97f14224.. / f686f6ba.., NEWDESK 38fa2c4f.. / ef99f9e1..).
+
+5. NOT RUN: real Pi 4; qemu-virt boot; on-asid/verify; the selftest-desk kernel (kt); a probe of appl_find/shel_read from inside the
+   desktop after a #Z program (covered by the host test on the state side only).
+
+Files: method/, bin/SHA256SUMS (images gitignored), checks/, serial/, screendumps/.
