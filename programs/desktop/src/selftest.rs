@@ -7,7 +7,8 @@
 //! [`super::inf::selftest`] (`NEWDESK.INF` save→read round trip) and
 //! [`super::inf::selftest_install`] (Install-application association) —
 //! plus the `act_chg` `DISABLED`-guard check [`super::act::selftest`]
-//! (DESK59, state only, nothing on `C:`) — and they are always compiled, so
+//! (DESK59, state only, nothing on `C:`) and the `valid_drive` range check
+//! [`super::main::selftest`] (DESK58, pure, synthetic drive maps) — and they are always compiled, so
 //! a signature break fails the build. They are **run** only in a build with the kernel feature `selftest-desk`:
 //! [`super::deskmain`] calls [`run_once`] once, after its prolog, where the
 //! desktop state, the cell metrics and the `NEWDESK.INF` model exist (DESK43
@@ -67,7 +68,8 @@ pub(super) use tprintln;
 /// file*, does not repeat them: they rewrite `C:\NEWDESK.INF`).
 ///
 /// Order: the `act_chg` guard check first (it changes one icon's
-/// `ob_flags`/`ob_state` and puts them back), then the model test (it needs
+/// `ob_flags`/`ob_state` and puts them back), the pure `valid_drive` range
+/// check, then the model test (it needs
 /// the untouched `G.g_ahead` it restores afterwards), then the file backend, then the two `NEWDESK.INF` tests (they
 /// replace the session model). The last line, `[desk-selftest] done`, marks
 /// the end for a harness.
@@ -81,6 +83,7 @@ pub(super) fn run_once() {
     }
     tprintln!("[desk-selftest] begin (selftest-desk build; mutates C:)");
     super::act::selftest();
+    super::main::selftest();
     super::ins::selftest();
     super::dir::selftest();
     super::inf::selftest();

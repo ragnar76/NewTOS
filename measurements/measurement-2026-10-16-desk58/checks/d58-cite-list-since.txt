@@ -1,0 +1,11 @@
+NewTOS desktop citation list — programs/desktop/src/ (fns touched since 77363d0f)
+
+file                                 fns  cited newtos  uncited
+programs/desktop/src/main.rs           3      3      0        0
+programs/desktop/src/selftest.rs       1      0      1        0
+
+uncited:
+newtos:
+  programs/desktop/src/selftest.rs:78  run_once
+
+DESK-CITE: fns=4 cited=3 newtos=1 uncited=0

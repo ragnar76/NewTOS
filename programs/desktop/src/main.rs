@@ -1460,10 +1460,7 @@ fn check_alt_letter_key(key: i16) -> bool {
 /// valid_drive() will issue an (ugly) error message" (`deskmain.c:1147-1152`),
 /// and that filtering is a separate piece of work from DESK38.
 pub(super) fn valid_drive(drive: u8) -> bool {
-    /// `BLKDEVNUM` (`bdosdefs.h`) — the GEMDOS drive-map width.
-    const BLKDEVNUM: u32 = 16;
-    let drv = drive.wrapping_sub(b'A') as u32;
-    if drv < BLKDEVNUM && dos_sdrv(dos_gdrv()) & (1 << drv) != 0 {
+    if drive_in_map(drive, dos_sdrv(dos_gdrv())) {
         return true;
     }
     // `fun_alert_merge(1, STNODRIV, drvstr)` — the `%s` is the bare letter.
@@ -1473,6 +1470,57 @@ pub(super) fn valid_drive(drive: u8) -> bool {
     text.extend_from_slice(b": does not exist.][ Cancel ]\0");
     super::form_alert(1, text.as_ptr());
     false
+}
+
+/// The test of [`valid_drive`] (EmuTOS `desksupp.c:1818-1819`) on a given
+/// GEMDOS drive map: `drv = drive - 'A'` lies in `0..BLKDEVNUM` and its bit is
+/// set in `drivemap` (the `Dsetdrv` answer).
+///
+/// ```c
+/// if ((drv >= 0) && (drv < BLKDEVNUM))
+///     if (dos_sdrv(dos_gdrv()) & (1L << drv))
+/// ```
+fn drive_in_map(drive: u8, drivemap: i32) -> bool {
+    /// `BLKDEVNUM` (`include/sysconf.h:43`, "number of block devices
+    /// supported: A: ... Z:") — 26 drive letters (DESK58).
+    const BLKDEVNUM: u32 = 26;
+    let drv = drive.wrapping_sub(b'A') as u32;
+    drv < BLKDEVNUM && drivemap & (1 << drv) != 0
+}
+
+/// `valid_drive` range self-test (DESK58): EmuTOS accepts every drive letter
+/// `A:`..`Z:` whose bit is in the drive map — `drv < BLKDEVNUM`
+/// (`desksupp.c:1818`) with `BLKDEVNUM = 26` (`include/sysconf.h:43`,
+/// "A: ... Z:") — and nothing outside. Drives [`drive_in_map`], the pure part
+/// of [`valid_drive`], on synthetic maps (the running system's map is not
+/// used: NewTOS' BIOS reports at most `A:`..`P:`), so no alert is raised.
+/// Printed one line per case on the console ([`super::selftest`]); run by
+/// [`super::selftest::run_once`] in a `selftest-desk` build only.
+pub fn selftest() {
+    use super::selftest::tprintln;
+
+    tprintln!("[desk-drv] valid_drive range self-test");
+    let mut pass = 0u32;
+    let mut fail = 0u32;
+    let mut check = |name: &str, cond: bool| {
+        if cond {
+            pass += 1;
+            tprintln!("[desk-drv]  PASS {}", name);
+        } else {
+            fail += 1;
+            tprintln!("[desk-drv]  FAIL {}", name);
+        }
+    };
+
+    check("C: with bit 2 set is present", drive_in_map(b'C', 1 << 2));
+    check("C: without bit 2 is absent", !drive_in_map(b'C', !(1 << 2)));
+    check("P: (drive 15) with bit 15 set is present", drive_in_map(b'P', 1 << 15));
+    check("Q: (drive 16) with bit 16 set is present", drive_in_map(b'Q', 1 << 16));
+    check("Z: (drive 25) with bit 25 set is present", drive_in_map(b'Z', 1 << 25));
+    check("Z: without bit 25 is absent", !drive_in_map(b'Z', !(1 << 25)));
+    check("'[' (drive 26) is outside BLKDEVNUM even with every bit set", !drive_in_map(b'[', -1));
+    check("'@' (drive -1) is outside the range even with every bit set", !drive_in_map(b'@', -1));
+    tprintln!("[desk-drv] valid_drive self-test: {} passed, {} failed", pass, fail);
 }
 
 // ── Menu dispatch (D6 wiring) ──────────────────────────────────────────────

@@ -1,0 +1,52 @@
+measurement-2026-10-16-desk58 -- DESK58: the desktop's BLKDEVNUM was 16 (citing bdosdefs.h), EmuTOS has 26 (include/sysconf.h:43, A:..Z:).
+Base HEAD 77363d0f (main). Changed in the shared tree (uncommitted): programs/desktop/src/main.rs (valid_drive's test split into
+drive_in_map with BLKDEVNUM = 26; new selftest()), programs/desktop/src/selftest.rs (run_once calls main::selftest; doc),
+tools/xtask/emutos-consts-deviations.txt (BLKDEVNUM defect entry removed). Host macOS, QEMU raspi4b only. No SD card, no Pi.
+Scratch: /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/d58 (scratch trees, build logs, card copies). Date 2026-10-16.
+Scripts: method/ = copies of measurement-2026-10-16-desk59/method (scratch d58, kernel id d58; cmp-acc.sh now compares against the
+DESK59 run and prints cmp byte-equality; the unused cmp-series/views-cmp/viewcmp dropped). Injector: method/inject-arm-u935.py (the
+corrected copy; tools/inject-arm.py has the T16 bug). SOURCE_DATE_EPOCH=1791979200. One QEMU at a time, screendumps keyed to serial
+markers (mdrive.py), QMP socket relative to the run's scratch dir.
+
+RESULT: defect fixed; red -> green in QEMU; no visible change (45/45 views/series dumps byte-identical to measurement-2026-10-16-desk59).
+
+1. USES OF BLKDEVNUM.
+   EmuTOS desk/*.c (grep): deskapp.c:715 (default-desktop build, drive icons from the drive map), deskins.c:313/328 (ins_devices:
+   remove icons of vanished drives / install icons of new ones), desksupp.c:1818 (valid_drive range check). sysconf.h:43 = 26.
+   NewTOS desktop: inf.rs build_desk_icons `for drive in 0..26u32` (literal, already 26), ins.rs `const BLKDEVNUM: u32 = 26`
+   (ins_devices, already 26), main.rs valid_drive `const BLKDEVNUM: u32 = 16` (the defect). check_alt_letter_key filters 'A'..'Z'
+   first and tests the map inline (deskmain.c:1147-1152). So only valid_drive -- callers do_dopen (desksupp.c:1041) and the drive
+   Show-info path (inf.rs, `if (!valid_drive(dr_id)) return 1;`) -- rejected Q:..Z: by range instead of by drive map.
+
+2. DOES NEWTOS REPORT DRIVES ABOVE P:?  No. tos-api/src/bios/drive.rs MAX_DRIVES = 16: the partition table and drvbits() (the Drvmap
+   value, the Dsetdrv answer, $4C2 _drvbits, fsel) never carry a bit above 15. tos-api/src/bdos/fs/drive.rs Dsetdrv also bounds with
+   its own BLKDEVNUM = 16 (docs/api/gemdos/drive/0e-dsetdrv.md says 26) -- kernel side, not changed here (out of scope).
+   Hence: before, valid_drive('Q'..'Z') = alert by range; after = alert because the map bit is clear. Same answer, same alert.
+
+3. RED TEST FIRST. The desktop crate is no_std with `test = false`, so the test is a desktop self-test (selftest-desk build):
+   main::selftest() on the pure part drive_in_map(letter, map) with synthetic maps (the live map cannot carry bits >= 16, see 2):
+   C: bit set / clear, P: bit 15, Q: bit 16, Z: bit 25, Z: clear, '[' (drive 26) with map -1, '@' (drive -1) with map -1.
+   kernel8-kt-red.img (test + split, BLKDEVNUM still 16; build-d58.sh SUFFIX=-red), selftest2.sh kt-red:
+     "[desk-drv] valid_drive self-test: 6 passed, 2 failed" -- the two FAILs are exactly Q: and Z: (checks/selftest-kt-red-lines.txt).
+   kernel8-kt.img (BLKDEVNUM = 26), selftest2.sh kt: 8 passed, 0 failed; all self-tests 64 PASS / 1 FAIL (= DESK59's 56/1 + 8);
+   every other PASS/FAIL line identical to measurement-2026-10-16-desk59/checks/selftest-kt-lines.txt (the 1 FAIL is the
+   pre-existing ins_devices line).
+
+4. VISIBLE EFFECT: none expected (2) and none found. method/all-d58.sh: 8 views (kernel kv, views.script, tag u7v) and the series
+   (kernel d58 = checks.sh product build: desktop, APITEST, TeraDesk, QED), EL0 default desktop, modes on/off/strict -> 45 dumps;
+   cmp-acc.sh vs measurement-2026-10-16-desk59: 45/45 BYTE-IDENTICAL (checks/d58-vs-desk59.txt). APITEST TOTAL 106/0/5 in all three
+   modes; 0 [EXC]/PANIC/load failed in all logs.
+
+5. BASELINES (method/checks.sh d58, checks/d58-*):
+   host tests tos-api tos-types xtask 1370/0/1 (incl. emutos_consts::tests::desk_consts_match_emutos_snapshot, green without the
+   BLKDEVNUM entry); release warnings rpi4 / qemu-virt: tos-api 64, kernel 94 both, 0 errors; clippy kernel rpi4 / qemu-virt /
+   rpi4+selftest-desk: 76/125 each; programs clippy (desktop x3 incl. selftest-desk, newdesk x3, newtos-gem, hello-gem, newtos-gem
+   pwk) 0; build-programs both boards 0 warnings; drift TOTAL 4, UNSAFE 20;
+   emutos-consts total=466 matched=333 mismatched=1 documented=1 undocumented=0 stale=0 no-counterpart=132 (before 332/2/2);
+   SDK 20/0/0; cite fns=479 cited=318 newtos=5 uncited=156 (before 477/316/5/156: +2 cited = drive_in_map, main::selftest);
+   desk-cite-list --since 77363d0f: main.rs 3 fns cited, selftest.rs run_once NEWTOS (existing marker), 0 uncited.
+   NAPs: HELLOGEM unchanged (97f14224.. / f686f6ba..), NEWDESK 38fa2c4f.. / ef99f9e1.. (changed, the fix).
+
+6. NOT RUN: real Pi 4; desk=kernel path; qemu-virt boot; on-asid/verify.
+
+Files: method/, bin/SHA256SUMS (images gitignored), checks/, serial/, screendumps/.

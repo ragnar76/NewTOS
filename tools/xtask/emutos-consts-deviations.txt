@@ -11,4 +11,3 @@
 #
 # name<TAB>our value<TAB>kind<TAB>reason
 DEOK	14	intended	ADDINFO OK-button index: About box without the authorship line, user decision 2026-10-09 (commit 5f819b96 "fix(desk): drop the authorship line from the About box"); EmuTOS desk/desk_rsc.h:91 = 16
-BLKDEVNUM	16	defect	programs/desktop/src/main.rs: EmuTOS include/sysconf.h:43 = 26 (A:..Z:); the doc comment cites bdosdefs.h, which only uses it (bdosdefs.h:62). Found by the G3 prototype, docs/analysis/desk43-u5-u10-review-2026-10-14.md §4.3/§8; not fixed in U5a
