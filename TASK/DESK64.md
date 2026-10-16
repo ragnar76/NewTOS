@@ -28,3 +28,7 @@ Ob das eine Abweichung ist, ist **nicht** belegt — erst die Quelle lesen.
 Quellen: `docs/api/desktop/`, `docs/analysis/`, EmuTOS unter `references/`.
 
 [Gemeinsame Regeln](README.md) gelten.
+
+## Ergebnis (2026-10-16, Researcher)
+
+**Abweichung: ja.** EmuTOS hat `BGSAMPLE` (`desk_rsc.c:2334`) und zeichnet es pro Auswahl per `draw_fld` neu (`deskinf.c:866-891`). NewTOS baut einen eigenen Stepper-Dialog ohne Vorschau, Swatches und Window-Umschalter (`programs/desktop/src/inf.rs:3699-3808`). Ursache im Desktop, nicht in AES/VDI. Kein Bildbeleg erzeugt (nur Quelle). Details und Fix-Vorschlag: `docs/analysis/desk64-background-preview-2026-10-16.md`.
