@@ -14,7 +14,7 @@ Fensterhintergrund wirksam. Sofortiges Speichern bleibt (Anwender 2026-10-17, DE
 | Fensterboxen | `G_BOX`, `set_background` `deskapp.c:1306-1331` | `obj_init` `G_BOX`, `DeskState::set_background`; `win_bldview` erzwingt kein Weiss mehr |
 | Rueckgabe | TRUE nur bei Fensteraenderung → `BACKGROUND_HAS_CHANGED` | `do_viewmenu` → `BACKGROUND_CHANGED` → `desk_all` |
 | Speichern | erst bei *Save desktop* | sofort `cnx_put(); app_save(true)` — benannte Abweichung |
-| `set_aes_background` | `:904` | fehlt (AES-intern) — offen |
+| `set_aes_background` | `:904` | fehlt (AES-intern) — [DESK66](DESK66.md) |
 
 ## Belege (`measurements/measurement-2026-10-17-desk64/RUNINFO.TXT`)
 
@@ -28,7 +28,7 @@ Fensterhintergrund wirksam. Sofortiges Speichern bleibt (Anwender 2026-10-17, DE
 
 ## Offen
 
-* Abnahme auf echter Pi 4.
+* ~~Abnahme auf echter Pi 4~~ — erledigt 2026-10-17, Kern `c93d89e0`, Anwender bestaetigt.
 * `set_aes_background(curdesk & 0xff)` — der Hintergrund, den die AES beim Programmstart malt, folgt erst nach Neustart
   (AES liest `#Q` beim Start). Braucht eine Entscheidung (Lead).
-* Nebenfund: `tos-api/src/aes/object.rs` `IP_PATTERNS[6]` ≠ EmuTOS (Hatari zeigt Zeilen FFFF/AAAA).
+* Nebenfund: `tos-api/src/aes/object.rs` `IP_PATTERNS[6]` ≠ EmuTOS (Hatari zeigt Zeilen FFFF/AAAA) — vom Anwender geparkt 2026-10-17.

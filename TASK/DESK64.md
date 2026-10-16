@@ -1,6 +1,6 @@
 # DESK64 — Hintergrund-Dialog: zeigt EmuTOS eine Vorschau von Farbe und Muster?
 
-Status: **ERLEDIGT (QEMU), Pi-Abnahme offen** · Prioritaet: **P3** · Typ: Konformitaetsfrage — Befund des Anwenders auf echter Pi 4 (2026-10-16)
+Status: **ERLEDIGT** 2026-10-17, auf echter Pi 4 abgenommen · Prioritaet: **P3** · Typ: Konformitaetsfrage — Befund des Anwenders auf echter Pi 4 (2026-10-16)
 
 ## Beobachtung
 
@@ -55,3 +55,10 @@ Quittung: [DESK64-STATUS-DONE.MD](DESK64-STATUS-DONE.MD); Belege
   EmuTOS (Hatari zeigt andere Zeilen): **geparkt** — Anwender: *„ist doch
   egal welche Füllmuster. Ich denke die meisten nehmen eh nur diese 25%
   einfärbung“*. Kein Ticket.
+
+## Pi-Abnahme (2026-10-17)
+
+Kern aus `c93d89e0` (sha256 `715462e5…`). Anwender auf echter Pi 4: Dialog wie
+EmuTOS, Vorschau folgt Muster- und Farbklick, Desktop- und Fensterhintergrund
+nach OK gesetzt (auch fuer neu geoeffnete Fenster), nach Neustart erhalten —
+*„alles funktioniert wie gewünscht“*.
