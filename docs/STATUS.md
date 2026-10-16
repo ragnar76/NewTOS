@@ -68,7 +68,7 @@ Driftprobe 4 = die vier Kernel→Desktop-Aufrufe, die U10 entfernt.
 - P1: **DESK43** (Desktop in EL0): U5a … U9-5 erledigt und in QEMU abgenommen; offen **U9-6 Pi-Abnahme**, dann U10.
 - P2: **MEM02** (`Mxalloc` ignoriert `MX_PREFTTRAM`),
   **PROC03** (Desktop/AES als EL0-Prozess), **FS06**, **ARCH02**, **DESK48**,
-  **DESK57**, PORT02 (zView-Bewertung).
+  **DESK57**, **DESK62** (Sanduhr nach Drop auf Desktop-Verknuepfung), PORT02 (zView-Bewertung).
 - P3 / Erweiterungen: ARCH03 Stufe 2b, **SND01/SND02** (Ton), SDL01, RTC01,
   BALL01, FS05, REF03, T15, DESK49, DESK51–DESK56, **CON01** (Spaltenzaehler/Typeahead), **CON02** (`Cconws` folgt Umlenkung nicht), FS12 (26 Laufwerke), FS13, LIBC-IOCTL, LIBC-BUF, DESK61, MEM07–MEM10, MEM06 (Idee),
   IO01 (Idee: AUX/MIDI/PRN-Treiber).
