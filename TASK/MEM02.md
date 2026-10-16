@@ -1,6 +1,6 @@
 # MEM02 — `Mxalloc` mit `MX_PREFTTRAM` liefert ST-RAM
 
-Status: **OFFEN** · Prioritaet: **P2** · Typ: Belegter Defekt — Pi-Lauf 2026-09-28
+Status: **ERLEDIGT 2026-10-17** ([Statusdatei](MEM02-STATUS-DONE.MD); behoben durch ARCH03 Stufe 1 `a9279fe9`) · Prioritaet: **P2** · Typ: Belegter Defekt — Pi-Lauf 2026-09-28
 
 Abhaengigkeiten: — · **Vorbedingung fuer [PORT06](PORT06.md) §3** (Dooms Speicherentwurf)
 

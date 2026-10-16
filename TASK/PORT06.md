@@ -144,6 +144,17 @@ Der Weg dorthin ist `Malloc`/`Mxalloc` mit TT-RAM-Praeferenz; dass ein solcher
 Block in den EL0-Raum der Anwendung eingeblendet werden muss, ist bei uns
 bekannt und gebaut ([[el0-app-memory-must-be-mapped]]).
 
+**Berichtigung 2026-10-17 ([MEM02](MEM02.md)):** Die Voraussetzung dieses
+Abschnitts galt, entgegen der Lesart von MEM02 („`MX_PREFTTRAM` liefert
+ST-RAM“, „10-MB-Wand“). `Mxalloc` hat die TT-RAM-Praeferenz schon damals aus
+dem TT-Pool bedient; der ST-Pool blieb unberuehrt. Was die Ball-Demo am
+2026-09-28 als „ST“ las, war die ADR-021-Fenster-VA ab 4 MiB, numerisch unter
+`phystop`. Seit ARCH03 Stufe 1 (`a9279fe9`, VA = PA) ist der zurueckgegebene
+Wert der Poolblock selbst
+(`docs/analysis/mem02-mxalloc-pools-2026-10-17.md` §1–2,
+`measurements/measurement-2026-10-17-mem02/RUNINFO.TXT`). Hosttests aller
+vier Modi und die Sonde `MXPROBE` halten das fest.
+
 ## 3a. Der Farbweg — entschieden 2026-09-28, mit Begruendung
 
 **Die Engine bleibt 8-Bit-indiziert. Umgerechnet wird einmal am Ende, beim
