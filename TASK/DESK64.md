@@ -47,3 +47,11 @@ in [DESK65](DESK65.md)). Offen: `set_aes_background` (AES-intern, kein Aufruf
 fuer das Programm NEWDESK); Muster 6 der AES weicht von EmuTOS ab (Nebenfund).
 Quittung: [DESK64-STATUS-DONE.MD](DESK64-STATUS-DONE.MD); Belege
 `measurements/measurement-2026-10-17-desk64/RUNINFO.TXT`.
+
+## Anwenderentscheidungen zu den Restpunkten (2026-10-17)
+
+- `set_aes_background` (`deskinf.c:904`): eigener Weg, Ticket [DESK66](DESK66.md).
+- Nebenfund `IP_PATTERNS[6]` (`tos-api/src/aes/object.rs`) passt nicht zu
+  EmuTOS (Hatari zeigt andere Zeilen): **geparkt** — Anwender: *„ist doch
+  egal welche Füllmuster. Ich denke die meisten nehmen eh nur diese 25%
+  einfärbung“*. Kein Ticket.
