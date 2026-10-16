@@ -1,0 +1,5 @@
+# qed-quit.script -- armed on launch:QED: Ctrl-Q (QED's Quit) 15 s after QED's launch.
+3000 0x1D
+3010 0x10
+3020 0x90
+3030 0x9D

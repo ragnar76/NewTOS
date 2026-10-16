@@ -1,0 +1,62 @@
+measurement-2026-10-16-desk62 -- DESK62 phase 1: reproduce "hourglass stays after dropping a file on a desktop shortcut" in QEMU and
+establish the call path. Analysis: docs/analysis/desk62-hourglass-after-drop-on-shortcut-2026-10-16.md.
+
+Base: main 02288f2d, shared tree clean; nothing in the product changed. Host macOS, QEMU -M raspi4b, -append serial=on, -display none,
+QMP screendumps keyed to serial markers (method/mdrive.py, copied unchanged from measurement-2026-10-16-desk43-u10-test). One QEMU at a time.
+No SD card, no Pi, nothing under /Volumes/BOOT* or NEWTOS*. Scratch (tree copy, base card, per-run clones) in the session scratchpad
+.../scratchpad/d62, never /tmp; per-run cards = APFS clones (cp -c) of one base image, deleted after each run; base + tree deleted at the end.
+
+1. METHOD
+   seed.sh        base card: 64 MiB MBR+FAT16 (private mount point), C:\QED.NAP + C:\qed.rsc (sdk/apps/qed/build, sha256 d0f28b8b.. / 30ac6bf2..),
+                  C:\README.TXT (18 bytes), method/NEWDESK.INF (sha256 c665d97e..): one window C:\*.* (text view), drive C, trash, and a desktop
+                  shortcut "#X 01 00 06 FF   C:\QED.NAP@ QED.NAP@" (= the user's set-up), plus the native #G *.NAP / #F *.NCP / #P *.NTP type lines
+                  in the order of programs/desktop/src/inf.rs default_type_anodes.
+   build.sh       scratch kernel: make-scratch.sh (rsync of the shared tree), d62-trace.py, tools/inject-arm.py --tag <id> desktop=<script>
+                  [launch:QED=qed-quit.script]; cargo xtask build --board rpi4 --release. Images in bin/ (gitignored).
+   d62-trace.py   D62-TEMP instrument in the scratch copy only: kernel/src/shell_loop.rs observe_desktop_gem_call (the svc hook for every GEM trap,
+                  before the dispatch) prints "[d62] slot=.. desk=<1 = the desktop program> aes op=<opcode> in0=<int_in[0]> in1=<int_in[1]>" on the UART.
+                  D62_ALL=1: every AES opcode, else 10/19/78/121. Reads only control[0] and int_in[0..2] with the caller's rights.
+                  graf_mouse numbers: 0 ARROW, 2 HGLASS, 4 FLATHAND, 256 M_OFF, 257 M_ON. shel_write in0=1 = SHW_EXEC.
+   cal.script     calibration: park bottom-left (moves left/down only, the pointer never crosses the menu bar), +100/-100 -> cal-park.png:
+                  pointer at (100,379), i.e. relative packets move 1:1; geometry of window rows and shortcut icon read off this dump.
+   drop-shortcut.script  BUG PATH: select README.TXT (275,138), press-hold, drag 5 steps to the shortcut (130,38), release; +20 s move to
+                  (330,318) and click; +25 s back to the shortcut and double-click it.
+   drop-window.script    CONTROL: same selection, drag 3 steps onto the QED NAP row (275,102) of the same window, release.
+   qed-quit.script       armed on launch:QED: Ctrl-Q 15 s after QED's launch.
+   run.sh         one run: clone, QEMU, mdrive.py, delete clone.
+
+   Kernels (sha256): kcal aa180b4d.., kds b06f9d76.. (D62_ALL=1), kdw 86fd74b3.. (D62_ALL=1). (kdsa 4b281f95.. = void/ first attempt.)
+
+2. RESULT -- REPRODUCED. Bug in programs/desktop (fun_drag/fun_file2desk drop the launch result), not in the AES.
+
+   CONTROL dw (drop on QED.NAP in the window) -- serial/dw-serial.log:
+     FLATHAND (78/4) ... ARROW (78/0); HGLASS/ARROW (set_default_path); HGLASS (78/2) + shel_write(SHW_EXEC) (121/1); graf_growbox (73);
+     wind_get, shel_get/put, menu_bar(0), appl_exit (19); "[shell] sh_ldapp: desktop NEWDESK (D.s_cmd NEWDESK) exited with rc=0";
+     "starting C:\QED.NAP". dw-2-qed-before-quit.png: QED with window C:\README.TXT ("DESK62 test card") = the file was passed.
+     After Ctrl-Q: desktop restarts, graf_mouse(2) ... graf_mouse(0) (deskmain start-up desk_busy_off); dw-4-desktop-back.png: arrow.
+
+   BUG PATH ds (drop on the desktop shortcut) -- serial/ds-serial.log:
+     the same sequence up to shel_write(SHW_EXEC) and graf_growbox (the "launch animation"), then wind_set x2, men_update, evnt_multi (25):
+     the desktop is back in its event loop. No appl_exit, no shell line. ds-3-drop-15s.png: hourglass on the shortcut 15 s after the drop.
+     The click at +20 s (wind_find 330,318 ...) changes nothing: ds-4-after-click.png still the hourglass. QED does NOT start.
+     The double-click at +25 s takes the normal launch path (shel_write, growbox, appl_exit 19), QED starts WITHOUT a file
+     (ds-5-after-dclick.png, arrow = QED's own graf_mouse(0)); after its Ctrl-Q the restarting desktop sets graf_mouse(0) and the
+     hourglass is gone (ds-8-desktop-back.png). ds-6-desktop-restarting.png: the dump keyed to QED's first Ctrl-Q byte landed after
+     QED had already quit (Q followed 50 ms later) -- it shows the desktop's start-up growbox and start-up hourglass, not QED (renamed).
+
+   Deviation from the user's account: in QEMU QED does not start after the drop (the AES only holds the pending SHW_EXEC). The growbox
+   from pro_run's do_wopen looks like a program start. Not verifiable here whether QED ran on the Pi.
+
+3. VOID (void/, kept for honesty, not evidence for the result)
+   First attempt with a NEWDESK.INF without the native *.NAP type lines: the bug path ds/dsa reproduced the same (the shortcut's own #X node has
+   a_aicon 06), and dsa (kdsa, all opcodes) first showed the shel_write -> growbox -> evnt_multi sequence; but the control dw dropped onto a
+   QED.NAP that no ANODE marked as an application, so the desktop answered with the COPY FILE(S) dialog (void/dw-1-after-drop.png) and the
+   launch:QED marker never came (dw-2 .MISSING). Fixed by adding the three native type lines; all of section 2 is from the second card.
+   void/ds-2-dragging.png: dump 0.3 s after the last drag step already shows the hourglass (release 0.35 s later -- timing, not a finding).
+
+4. NOT DONE
+   Real Pi 4; fun_desk2win launch (desktop icon dropped on a program in a window) -- same discarded return in the code, not driven here;
+   fun_desk2desk with a program shortcut as target (missing branch, see analysis). No fix applied (phase 2).
+
+Files: RUNINFO.TXT, method/ (seed.sh, NEWDESK.INF, build.sh, run.sh, d62-trace.py, make-scratch.sh, mdrive.py, *.script),
+serial/ (cal, ds, dw), screendumps/ (cal-*, ds-*, dw-*), void/. bin/*.img gitignored (hashes above).
