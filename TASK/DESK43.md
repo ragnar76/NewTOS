@@ -129,7 +129,27 @@ der Schnitt steht und der Anwender ihn gesehen hat.
 | U9-0 Voraussetzungen | **fertig** 2026-10-14 (`c04e2a05`) — Registry, PROC05, Shell-Kind-Slot, Injektor |
 | U9-1/2 NEWDESK | **fertig** 2026-10-14 (`de03a50f`) — EL0-Desktop eingebettet, per `#Z` lauffaehig |
 | U9-3..5 Umstieg | **fertig** 2026-10-15 (`b3b1fc54`) — Standard EL0-NEWDESK, `desk=kernel` als Rueckfall |
-| U9-6 Pi-Abnahme, U10 | offen |
+| U9-6 Pi-Abnahme | **fertig** 2026-10-16 — echte Pi 4, Kern `f73bb075` (sha256 `2a90feda…`), Anwender: alles ohne Fehler; Nebenfund [DESK62](DESK62.md) (alt) |
+| U10 | offen |
+
+## Hardware-Abnahme U9-6 (2026-10-16)
+
+Karte: Release-Kern aus `f73bb075` (`kernel8.img`, sha256 beginnt
+`2a90feda`), alle libc-Programme neu gelinkt (TeraDesk, QED, Doom, CoreMark,
+zView samt Codecs, Ball, Present). Pruefliste = RUNINFO §12 der
+`measurements/measurement-2026-10-15-desk43-acceptance/`, gekuerzt auf das ohne
+Zusatzprogramme Fahrbare: Boot und EL0-Desktop, Menues, Tastenkuerzel,
+Fenster, Programmstart/-ende (QED, Doom, zView, Ball, Present, CoreMark,
+EmuCON, TeraDesk → QED → zurueck), SYSACC, Desktop sichern / `.INF` lesen,
+libc-Stichproben (Umlenkung, Ctrl-C), Gegenprobe `desk=kernel`.
+Anwender: *„rest funktioniert alles"*, Tastenkuerzel ausdruecklich.
+
+Einziger Befund: [DESK62](DESK62.md) — Sanduhr bleibt nach Drop einer Datei
+auf eine Desktop-Verknuepfung; bestand schon vor dem Umbau, keine Regression.
+
+Nicht gefahren (Karte hatte die Mittel nicht): Crash-Prompt (CRCHILD),
+Panic-/Fehlblob-Abbilder, U9-1-Instrumente (Latenz, Stack-Hochstand),
+`memprot=verify` mit APITEST. Sie bleiben fuer U10 bzw. eine eigene Runde.
 
 ## Hardware-Abnahme U3/U4 (2026-09-28)
 

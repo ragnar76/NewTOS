@@ -5,23 +5,21 @@
 
 ## Current Phase
 
-### Stand 2026-10-16 — Desktop in EL0, Pi-Abnahme ausstehend
+### Stand 2026-10-16 — Desktop in EL0, auf echter Pi abgenommen
 
-Zweig `main`, Tag `v0.5` (`03b9025c`). Seit dem 13.10. in QEMU umgesetzt und
-abgenommen, **auf echter Pi 4 noch nicht gefahren**: FS10/FS11 (Zeichengeraete,
-Geraetetabelle, AUX = „Port ohne Kabel“), LIBC-MAIN, LIBC-TTY, LIBC-FSTAT,
-MEM05 (wachsender MD-Vorrat, Grenze je Prozess, mintlib-Hunks bis 16 MiB),
-PROC05/PROC06 (Exitcodes wie EmuTOS), **DESK43 U5a–U9-5: der Desktop bootet als
-EL0-Programm NEWDESK** (Rust, ins Kernel-Image eingebettet; `desk=kernel` in
-`cmdline.txt` waehlt den eingebauten Desktop bis zur Pi-Abnahme), DESK58/59/60,
-T16. Vorgeschlagenes Ziel weiterhin `base-1`
-(`docs/analysis/inventory-2026-10-08.md` §3, Definition offen).
+Zweig `main`, Tag `v0.5` (`03b9025c`). **Seit 2026-10-16 auf echter Pi 4
+abgenommen** (Kern aus `f73bb075`, alle libc-Programme neu gelinkt):
+**DESK43 U5a–U9-6 — der Desktop bootet als EL0-Programm NEWDESK** (Rust, ins
+Kernel-Image eingebettet; `desk=kernel` in `cmdline.txt` waehlt noch den
+eingebauten Desktop), dazu FS10/FS11 (Zeichengeraete, Geraetetabelle, AUX =
+„Port ohne Kabel“), LIBC-MAIN, LIBC-TTY, LIBC-FSTAT, MEM05, PROC05/PROC06,
+DESK58/59/60, T16. Einziger Nebenfund: DESK62 (alt). Vorgeschlagenes Ziel
+weiterhin `base-1` (`docs/analysis/inventory-2026-10-08.md` §3, Definition offen).
 
-**Naechster Schritt mit dem Anwender: Pi-Abnahme (DESK43 U9-6).** Karte: neuer
-Kernel **und alle libc-Programme neu gelinkt** (seit LIBC-MAIN aufgestaut).
-Pruefliste: `measurements/measurement-2026-10-15-desk43-acceptance/RUNINFO.TXT`
-(HW-Checkliste) plus Stichprobe umgelenkte Ausgabe (LIBC-FSTAT) und
-Ctrl-C-Kind (PROC06). Danach DESK43 U10 (Aufraeumen, Schalter weg).
+**Naechster Schritt: DESK43 U10** (Aufraeumen, `desk=kernel` und der
+Kernel-Desktop weg, Driftprobe 4 → 0). Auf der Pi noch nicht gefahren:
+Crash-Prompt, Panic-/Fehlblob-Abbilder, U9-1-Instrumente, `memprot=verify`
+(`TASK/DESK43.md`, Hardware-Abnahme U9-6).
 
 **Agenten-Scratch:** Job-Verzeichnis (`$CLAUDE_JOB_DIR/tmp`) bzw. Scratchpad,
 **nichts unter `/tmp`**; QEMU-Sockets relativ im Laufverzeichnis
@@ -65,7 +63,7 @@ Driftprobe 4 = die vier Kernel→Desktop-Aufrufe, die U10 entfernt.
 
 **Offen (Stand 2026-10-16):**
 
-- P1: **DESK43** (Desktop in EL0): U5a … U9-5 erledigt und in QEMU abgenommen; offen **U9-6 Pi-Abnahme**, dann U10.
+- P1: **DESK43** (Desktop in EL0): U5a … U9-6 erledigt, **auf echter Pi abgenommen** (2026-10-16); offen **U10** (Aufraeumen, `desk=kernel` weg).
 - P2: **MEM02** (`Mxalloc` ignoriert `MX_PREFTTRAM`),
   **PROC03** (Desktop/AES als EL0-Prozess), **FS06**, **ARCH02**, **DESK48**,
   **DESK57**, **DESK62** (Sanduhr nach Drop auf Desktop-Verknuepfung), PORT02 (zView-Bewertung).
@@ -490,6 +488,7 @@ Phasenbeginn entschieden sein (siehe `docs/api/_phase00-completion.md`):
 | 2026-10-16 | **DESK58 — `valid_drive` gegen `BLKDEVNUM` 26 (`4b057622`).** Wie EmuTOS `desksupp.c:1818-1819`; Selbsttest rot → gruen (Selbsttests 64/1), Abweichungseintrag in emutos-consts entfernt. Unsichtbar, weil BIOS/GEMDOS nur 16 Laufwerke melden → neues Ticket FS12. (`measurements/measurement-2026-10-16-desk58/`) |
 | 2026-10-16 | **T16 + DESK60 (`c215ada0`).** `tools/inject-arm.py` bewaffnet `launch:` jetzt am Startereignis (verpasst kein Kind mehr im selben Slot, rot → gruen). DESK60: „starting DESKTOP.NAP“ nach einem `#Z`-TeraDesk ist EmuTOS-gleich (`D.s_cmd` nach `SHW_NOEXEC`, `gemshlib.c:161-166,551-565`); nur unsere Logzeile war irrefuehrend und nennt jetzt den tatsaechlich gestarteten Desktop. Hosttests **1372/0/1** (`measurements/measurement-2026-10-16-t16-desk60/`). |
 | 2026-10-16 | **PROC06 — `Pexec`-Aufrufer bekommt den Exitcode zero-extended (`2f2c3792`).** Wie EmuTOS `xterm(UWORD)`: Ctrl-C-Kind → 65504 statt −32 (gemeinsames Terminate-Ende maskiert jetzt immer). Spec `4c-pterm.md` Exit-Code-Matrix (Anwender-Freigabe), SPEC01 OBJECT-Offsets korrigiert (`43ae3553`). Tests: Hosttests +4, Ziel-Paar PTERMCH/CTRLCPAR rot → gruen, **APITEST jetzt 109/0/5** (T33). Sichtbar: EmuCON meldet bei Ctrl-C-Kind „[program exited]“, mintlib `spawn`/`system` liefern 65504. Hosttests **1376/0/1** (`measurements/measurement-2026-10-16-proc06/`). |
+| 2026-10-16 | **DESK43 U9-6 — EL0-Desktop auf echter Pi 4 abgenommen.** Kern aus `f73bb075` (sha256 `2a90feda…`), alle libc-Programme neu gelinkt. Anwender: Boot, Desktop, Tastenkuerzel, Programmstarts inkl. TeraDesk → QED, SYSACC, INF, libc-Stichproben, `desk=kernel` — ohne Fehler. Damit auch FS10/FS11, LIBC-MAIN/TTY/FSTAT, MEM05, PROC05/06 erstmals auf HW. Nebenfund DESK62 (Sanduhr nach Drop auf Verknuepfung, alt). Nicht gefahren: Crash-Prompt, Panic-Abbilder, Instrumente, `memprot=verify`. |
 | 2026-10-16 | **LIBC-FSTAT — `fstat` folgt `isatty` fuer die Standard-Handles (`6ee90541`).** fd 0..5 ist Geraet genau dann, wenn `__isatty` es sagt; jede seekbare Datei bekommt 32 KiB. Umgelenktes stdin/stdout: `S_IFREG`, 32-KiB-Puffer, Textmodus wie mintlib auf TOS (CR/LF; `UNIXMODE=b` binaer) — Anwenderentscheidung (`docs/analysis/libc-fstat-2026-10-17.md`); fd 3–5 am Standardgeraet `S_IFCHR`. fstat-host 44 → 92 Checks, QEMU-Sonde FSTATP PASS (alte libc FAIL), APITEST 109/0/5, Dumps gleich (`measurements/measurement-2026-10-17-libc-fstat/`). Alle libc-Programme neu linken. Nebenfunde → CON02 (`Cconws` ignoriert Umlenkung), FS13 (`Fclose` −65), LIBC-BUF. |
 | 2026-10-13 | **FS10 — `Fseek` auf Zeichengeraete-Handles liefert 0 wie EmuTOS; Handles als vorzeichenbehaftetes WORD.** Spec korrigiert und vom Anwender freigegeben (`6b8468bf`): EmuTOS `osif` loest das Handle vor `xlseek` auf und beantwortet jedes Zeichengeraet-Ziel mit 0 (`bdos/bdosmain.c:571-642`); mintlibs stdio braucht das. `tos-api/src/bdos/fs/file.rs`: `resolve(i16)` mit -1..-3 als Geraet, < -3 und ausserhalb der Tabelle `EIHNDL`; `fseek` Geraet → 0; `fread`/`fwrite`/`fdatime` lesen das Handle als `i16` (vorher wurden -1..-3 zu 65533..65535 → `EIHNDL`). Verhaltensaenderung: -2/-3 in `Fread`/`Fwrite` gehen jetzt wie -1 auf die Konsole (EmuTOS: AUX/PRN → [FS11](../TASK/FS11.md)); `Fforce(h,-4)` macht h ungueltig wie EmuTOS. Hosttests 1268 → 1277 (9 neu, rot/gruen), FSEEKCON PASS in memprot on/off/strict, Regressionen bytegleich (`measurements/measurement-2026-10-13-fs10/`). Naechster Schritt: crt0 auf mintlibs `_main`. |
 | 2026-10-13 | **ARCH03 auf `main` abgenommen; Statuskopf auf den Stand nach der OFAM.** Die Stufenquittungen stammten von den Zweigen `arch03`/`desk-rebuild`; der Tester fuhr die volle Serie auf `main` `f721c5af` in memprot on/off/strict und `asid=on`: PASS, Basislinien gehalten (`measurements/measurement-2026-10-13-arch03-acceptance/`, `b10ab22c`). Alle Offen-Punkte der Quittungen 3b/3c/Post-E9 sind geschlossen (E10 `ae097d0f`, `p_parent` `7e97a682`, crt0/`free_accs` `50207c5f`, VFORKT `9882f5ec`, TSRPAR semantisch, strict-Varianten); Abschlussvermerke in den Quittungen, Dateinamen bleiben wegen der Verweise. Neu: [FS10](../TASK/FS10.md) — `Fseek` auf Konsolen-Handles liefert `EIHNDL` (FSEEKCON FAIL in allen Modi; Spec-Pruefung gegen EmuTOS laeuft). Offen: MEM05, Stufe 2b, `asid=on` auf echter Pi (Standard bleibt aus; die Vorfuehrkarte vom 2026-10-08 enthielt alle ARCH03-Commits, lief aber ohne ASIDs). Die Sonden ENVKID/PPZ/PPDESK der aelteren Runs sind seit PORT09 (`fa99b4d8`) veraltet; angepasste Fassungen im Abnahme-Run. |
