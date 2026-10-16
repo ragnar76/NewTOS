@@ -2226,6 +2226,123 @@ and its record together; counting only MD pages would have let MEM05 take
 
 ---
 
+## ADR-026: The desktop is an EL0 program (NEWDESK); the kernel carries no desktop (fulfils ADR-022's endgame)
+
+**Date:** 2026-10-16
+**Status:** **Accepted** (user decision 2026-10-16; plan approved 2026-10-14, D1–D6 in `TASK/DESK43.md`).
+**Phase:** PHASE-14 (Desktop), cross-cutting (AES shell, kernel boot path).
+
+### Context
+
+ADR-022 rebuilt the desktop 1:1 against EmuDesk, through the AES trap, but
+left it running at EL1 inside the kernel and named the move to EL0 as the
+"endgame, later". That placement was not design freedom: in EmuTOS the
+desktop runs in user mode as the AES process `rlr`, and a launched
+application takes over the same descriptor (`aes/gemasm.S:77-79`,
+`aes/gemstart.S:126`, `aes/gemshlib.c:604,622-634`). It was a deviation
+(DESK43, evidence 2026-09-25). It also cost real defects: the EL1 desktop
+started programs past the path real applications use (PORT05) and needed a
+window handoff (`save_windows`/`restore_windows`) that EmuTOS' `sh_ldapp`
+does not have. Two earlier attempts drifted back to bypasses because the
+bypasses "had to keep working" (ADR-016 and ADR-022 Context, `343b3c5`).
+
+### Decision
+
+1. **The desktop is a process that ends.** It returns from its main loop
+   with EmuTOS' epilogue (`desk/deskmain.c:2154-2166`), starts programs only
+   via `shel_write` (`desk/deskpro.c:36-63`), keeps its state in the AES
+   shell buffer, and `sh_ldapp`'s DESKTOP arm restarts it from the top
+   (`aes/gemshlib.c:600-612`).
+2. **The desktop is the EL0 program NEWDESK.** Source: the library
+   `programs/desktop/` (dependencies `newtos-gem` and `tos-types` only, so
+   a kernel bypass is a compiler error) with the binary `programs/newdesk/`.
+   It is built by `cargo xtask build-programs`, embedded in the kernel image
+   as an ELF blob (`kernel/embed.rs`), and started through the program
+   registry as an ordinary EL0 process, like EmuTOS'
+   `aes_run_rom_program` (`aes/gemshlib.c:570-580,606`). It has no
+   privilege QED does not have.
+3. **The kernel neither links nor calls the desktop** (DESK43 U10,
+   `0a3b9be9`). `kernel/src/desk/`, the `desk=kernel` boot switch and the
+   handoff API are gone. The xtask test
+   `programs_tests::the_kernel_does_not_link_the_desktop` guards it, and
+   `tools/desk-drift-probe.sh` reads 0.
+4. **Failure policy (D6).** If the desktop ends, `wm_new()` runs and the
+   desktop restarts with no message, as in EmuTOS. A panic inside NEWDESK
+   waits for one key (D6-a). A load failure is not retried in the same
+   boot (D6-c). It falls back to the console, EmuCON, with the line "No
+   desktop: NEWDESK could not be loaded (GEMDOS error N)" (D6-d). The
+   failure is kept in `shell_loop::DESKTOP_LOAD_ERROR`.
+
+Order was part of the decision: the process model (1) came before the move
+(2/3), and replacement came before removal. The fallback switch lived for
+exactly one hardware round (U9-6, real Pi 4, 2026-10-16) and was deleted in
+U10.
+
+### Rationale
+
+- **Conformance:** EmuTOS runs its desktop in user mode as an ordinary AES
+  client; EL1 was a measured deviation, not latitude
+  ([[no-rationalizing-emutos-deviations]]).
+- **One world:** the desktop now exercises exactly the trap path every
+  application uses, so a desktop that works validates that path
+  ([[desktop-bypasses-app-abi-path]] no longer applies).
+- **Replaceability:** the desktop is one registry entry; a `#Z` program
+  (TeraDesk) uses the same mechanism.
+- **Security is explicitly not the reason.** NewTOS is single-user and has no
+  network, and the original had no memory protection at all.
+- Since ARCH03 the premise of plan v2 §8.3 ("every connection crosses a real
+  address-space boundary") no longer holds. The address space is shared and
+  identity-mapped, with rights per process. The move therefore cost
+  correspondence work, not marshalling.
+
+### Consequences
+
+- Positive: the desktop is EmuTOS-conformant in placement and life cycle,
+  bypasses are a compile error, and the kernel boot path is smaller.
+- Positive: a broken or missing desktop no longer takes the system down.
+  The user lands in EmuCON.
+- Negative: every desktop change rebuilds the embedded blob, so the kernel
+  build depends on the program build (`build_kernel` → `build_programs`). A
+  stale board build can embed the wrong blob
+  ([[cargo-xtask-board-target-footgun]]).
+- Negative: program start/exit latency rises by the EL0 round-trip (QEMU
+  estimate ~41 ms vs 6 ms at EL1, U9 acceptance run 2026-10-15; not yet measured on the Pi).
+- Neutral: `KERNEL_DTA` stays, because EmuCON at EL1 and the self-tests use
+  it. This corrects the plan v2 draft, which listed it for deletion.
+  `pd::DESKTOP` is the kernel context's identity; its rename is a separate
+  task.
+- Not yet run on real hardware: the EmuCON fallback, the NEWDESK panic
+  prompt, `memprot=verify` with the desktop up (`TASK/DESK43.md`,
+  "Hardware-Abnahme U9-6").
+
+### Alternatives considered
+
+- **Keep the 1:1 desktop at EL1 (ADR-022 as it stood):** rejected. It is a
+  deviation from EmuTOS and masks app-path defects.
+- **Port EmuDesk's C as the EL0 program:** rejected (ADR-022). Rust stays,
+  and the source correspondence gives the debugging benefit.
+- **Keep `desk=kernel` permanently as a fallback:** rejected (D5-b, G6).
+  Two desktops would be the third drift's mechanism. EmuCON is the fallback
+  instead.
+- **Move first, fix the process model afterwards:** rejected. That is the
+  order that let the earlier attempts drift.
+
+### References
+
+- `TASK/DESK43.md` (decisions D1–D6, progress table, HW acceptance U3/U4 and
+  U9-6); `TASK/PORT05.md`.
+- `docs/analysis/desktop-userspace-plan-v2.md` (§8, §10 = the draft of this
+  ADR), `docs/analysis/desk43-u5-u10-review-2026-10-14.md`,
+  `docs/analysis/desk43-u9-prep-2026-10-14.md`,
+  `docs/api/aes/shell-loop.md`.
+- Commits `b3b1fc54` (U9-3..5, EL0 default), `0a3b9be9` (U10).
+- Evidence: `measurements/measurement-2026-10-15-desk43-acceptance/RUNINFO.TXT`,
+  `measurements/measurement-2026-10-16-desk43-u10/RUNINFO.TXT`.
+- ADR-016, ADR-022 (refined and fulfilled), ADR-018 (`.NAP`), ADR-023 (what
+  the kernel hands out must be reachable).
+
+---
+
 ## Quirks Discovered
 
 Format: `QUIRK-NNN`, dated, with severity (low / medium / high / critical).
