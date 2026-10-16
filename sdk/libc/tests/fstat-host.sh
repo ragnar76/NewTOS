@@ -11,8 +11,10 @@
 # -> fstat-host-fs.c).
 #
 # DO_FSTAT_SRC=<file> builds that do_fstat.c instead of the tree's -- for the
-# before/after counter-check against the previous shim
-# (git show f14942c:sdk/libc/newtos-arch/do_fstat.c).
+# before/after counter-check against a previous shim (FS08:
+# git show f14942c:sdk/libc/newtos-arch/do_fstat.c; TASK/LIBC-FSTAT:
+# git show 70a2e69b:sdk/libc/newtos-arch/do_fstat.c, whose fds 0-2 are always
+# S_IFCHR -- the redirected and device 3-5 cases go red).
 #
 # Exit status: the number of failed checks (0 = all passed); 77 = skipped
 # (mintlib tree not extracted, or host not LP64); 1 = did not build.

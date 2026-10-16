@@ -9,18 +9,20 @@
  * (get_sysvar, getpwuid, getgrent, setgrent, endgrent, ioctl).
  *
  * stdio's stream initialiser (stdio/stdio_init.c __stdio_init_stream) only
- * reads st_mode (S_ISCHR test, then __isatty) and st_blksize (buffer sizing).
+ * reads st_mode (S_ISCHR test, then __isatty) and st_blksize (buffer sizing);
+ * mintlib's start-up (main.c init_stream_mode) reads S_ISREG to give a
+ * standard stream redirected to a file the UNIXMODE text/binary default.
  * unix/fstat.c calls __do_fstat(fd, st, 1) for a real fstat(). So we fill only:
  *
- *   st_mode    S_IFCHR|0600 for the console fds 0,1,2; S_IFREG|0644 otherwise.
+ *   st_mode    S_IFCHR|0600 for a standard handle 0..5 that __isatty reports
+ *              as a terminal; S_IFREG|0644 otherwise. See "STANDARD HANDLES".
  *   st_size    for a regular file, the HONEST size via GEMDOS Fseek to SEEK_END
- *              with the original position restored by a second Fseek; 0 for the
- *              console.
- *   st_blksize NEWTOS_FILE_BLKSIZE (32 KiB) for a GEMDOS file handle
- *              (fd >= 6) whose size Fseek could read; BUFSIZ (1024) for
- *              everything else -- the console fds 0..2, the other standard
- *              handles 3..5 and negative (BIOS device) handles keep exactly
- *              the value they had before. See "STDIO BUFFER SIZE" below.
+ *              with the original position restored by a second Fseek; 0 for a
+ *              character device.
+ *   st_blksize NEWTOS_FILE_BLKSIZE (32 KiB) for a handle fd >= 0 that is not
+ *              a terminal and whose size Fseek could read; BUFSIZ (1024) for
+ *              everything else -- terminals, negative (BIOS device) handles
+ *              and handles Fseek rejects. See "STDIO BUFFER SIZE" below.
  *   st_blocks  derived from st_size (512-byte units).
  *   st_nlink   1.
  *
@@ -50,12 +52,29 @@
  * in <= 8 KiB chunks (sysd-stdio.c:205-214). Documented in
  * docs/sdk/07-mintlib-limits.md section 2. A program that wants another size
  * calls setvbuf(); console and device streams are unchanged.
+ *
+ * STANDARD HANDLES (TASK/LIBC-FSTAT, user decision 2026-10-17,
+ * docs/analysis/libc-fstat-2026-10-17.md section 3). mintlib's own TOS
+ * branch (mintlib/do_fstat.c:102-114) calls a handle a terminal when isatty()
+ * says so, which on TOS is the Fseek probe of mintlib/isatty.c: a standard
+ * handle Fforce'd to a file answers a position and is a file. We ask the
+ * same __isatty -- the same __open_stat[] cache stdio_init.c and main.c use,
+ * so fstat and isatty cannot disagree, and once main.c has asked, the
+ * question costs no trap -- but only for 0..5: __open_stat[] is cleared at
+ * start-up (main.c:161-162) but kept only by libc open/close/dup, so a
+ * handle >= 6 opened or closed with raw Fopen/Fclose could inherit a stale
+ * entry. Handles >= 6 therefore stay classified as before (S_IFREG, 32 KiB
+ * when Fseek works -- also for a device opened as a file handle). The known
+ * upstream limit carries over: an Fforce in the same process after the first
+ * isatty question is not seen until open/close/dup reset the entry; a child
+ * started with the redirection in place (bdos/proc.c init_pd_files) is.
  */
 
 #include <string.h>       /* memset */
 #include <stdio.h>        /* BUFSIZ, SEEK_SET/CUR/END */
 #include <sys/types.h>
 #include <sys/stat.h>     /* struct stat, S_IFCHR, S_IFREG, S_BLKSIZE */
+#include <unistd.h>       /* __isatty (mintlib/isatty.c) */
 #include <mint/osbind.h>  /* Fseek (GEMDOS 0x42) */
 #include "lib.h"
 
@@ -72,8 +91,8 @@ __do_fstat (int fd, struct stat *st, int exact)
 
 	memset (st, 0, sizeof (*st));
 
-	if (fd >= 0 && fd <= 2) {
-		/* Console handles: character device, no size. */
+	if (fd >= 0 && fd < NEWTOS_NUMSTD && __isatty (fd)) {
+		/* A standard handle at a terminal/device: no size. */
 		st->st_mode = S_IFCHR | 0600;
 		st->st_size = 0;
 	} else {
@@ -86,7 +105,7 @@ __do_fstat (int fd, struct stat *st, int exact)
 		st->st_size = (end >= 0) ? (off_t) end : 0;
 		if (cur >= 0)
 			(void) Fseek (cur, fd, SEEK_SET);   /* restore */
-		if (fd >= NEWTOS_NUMSTD && end >= 0)
+		if (fd >= 0 && end >= 0)
 			st->st_blksize = NEWTOS_FILE_BLKSIZE;
 	}
 

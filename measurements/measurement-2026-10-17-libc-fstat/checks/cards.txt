@@ -1,0 +1,63 @@
+plain.img: copy
+apitest.img: #Z 01 C:\APITEST.NCP@
+fsck apitest.img: ** /dev/rdisk6s1 ** Phase 1 - Preparing FAT ** Phase 2 - Checking Directories ** Phase 3 - Checking for Orphan Clusters Warning: 104 files, 55764 KiB free (27882 clusters) 
+teradesk.img: #Z 01 C:\Apps\TERADESK\DESKTOP.NAP@
+fsck teradesk.img: ** /dev/rdisk6s1 ** Phase 1 - Preparing FAT ** Phase 2 - Checking Directories ** Phase 3 - Checking for Orphan Clusters Warning: 104 files, 55764 KiB free (27882 clusters) 
+qed.img: #Z 01 C:\Apps\QED\QED.NAP@
+fsck qed.img: ** /dev/rdisk6s1 ** Phase 1 - Preparing FAT ** Phase 2 - Checking Directories ** Phase 3 - Checking for Orphan Clusters Warning: 104 files, 55764 KiB free (27882 clusters) 
+lf-all: 55 files
+lf-all.img: #Z 01 C:\APITEST.NCP@
+fsck lf-all.img: ** /dev/rdisk6s1 ** Phase 1 - Preparing FAT ** Phase 2 - Checking Directories ** Phase 3 - Checking for Orphan Clusters Warning: 104 files, 55764 KiB free (27882 clusters) 
+fstatp.img: #Z 01 C:\FSTATP.NAP@
+fsck fstatp.img: ** /dev/rdisk6s1 ** Phase 1 - Preparing FAT ** Phase 2 - Checking Directories ** Phase 3 - Checking for Orphan Clusters Warning: 105 files, 55652 KiB free (27826 clusters) 
+stdoutdb.img: #Z 01 C:\STDOUTDB.NAP@
+fsck stdoutdb.img: ** /dev/rdisk6s1 ** Phase 1 - Preparing FAT ** Phase 2 - Checking Directories ** Phase 3 - Checking for Orphan Clusters Warning: 104 files, 55764 KiB free (27882 clusters) 
+serr-newcrt0.img: #Z 01 C:\STDERRP.NAP@
+fsck serr-newcrt0.img: ** /dev/rdisk6s1 ** Phase 1 - Preparing FAT ** Phase 2 - Checking Directories ** Phase 3 - Checking for Orphan Clusters Warning: 104 files, 55764 KiB free (27882 clusters) 
+serr-oldcrt0.img: #Z 01 C:\STDERRP.NAP@
+fsck serr-oldcrt0.img: ** /dev/rdisk6s1 ** Phase 1 - Preparing FAT ** Phase 2 - Checking Directories ** Phase 3 - Checking for Orphan Clusters Warning: 104 files, 55768 KiB free (27884 clusters) 
+stderra.img: #Z 01 C:\STDERRA.NAP@
+fsck stderra.img: ** /dev/rdisk6s1 ** Phase 1 - Preparing FAT ** Phase 2 - Checking Directories ** Phase 3 - Checking for Orphan Clusters Warning: 104 files, 55764 KiB free (27882 clusters) 
+ttya.img: #Z 01 C:\TTYA.NAP@
+fsck ttya.img: ** /dev/rdisk6s1 ** Phase 1 - Preparing FAT ** Phase 2 - Checking Directories ** Phase 3 - Checking for Orphan Clusters Warning: 104 files, 55764 KiB free (27882 clusters) 
+doom.img: #Z 01 C:\DOOM\DOOM.NAP@
+fsck doom.img: ** /dev/rdisk6s1 ** Phase 1 - Preparing FAT ** Phase 2 - Checking Directories ** Phase 3 - Checking for Orphan Clusters Warning: 104 files, 55764 KiB free (27882 clusters) 
+a-fstatp.img: #Z 01 C:\FSTATP.NAP@
+fsck a-fstatp.img: ** /dev/rdisk6s1 ** Phase 1 - Preparing FAT ** Phase 2 - Checking Directories ** Phase 3 - Checking for Orphan Clusters Warning: 105 files, 55652 KiB free (27826 clusters) 
+a-stdoutdb.img: #Z 01 C:\STDOUTDB.NAP@
+fsck a-stdoutdb.img: ** /dev/rdisk6s1 ** Phase 1 - Preparing FAT ** Phase 2 - Checking Directories ** Phase 3 - Checking for Orphan Clusters Warning: 104 files, 55764 KiB free (27882 clusters) 
+a-serr-newcrt0.img: #Z 01 C:\STDERRP.NAP@
+fsck a-serr-newcrt0.img: ** /dev/rdisk6s1 ** Phase 1 - Preparing FAT ** Phase 2 - Checking Directories ** Phase 3 - Checking for Orphan Clusters Warning: 104 files, 55764 KiB free (27882 clusters) 
+a-serr-oldcrt0.img: #Z 01 C:\STDERRP.NAP@
+fsck a-serr-oldcrt0.img: ** /dev/rdisk6s1 ** Phase 1 - Preparing FAT ** Phase 2 - Checking Directories ** Phase 3 - Checking for Orphan Clusters Warning: 104 files, 55768 KiB free (27884 clusters) 
+a-stderra.img: #Z 01 C:\STDERRA.NAP@
+fsck a-stderra.img: ** /dev/rdisk6s1 ** Phase 1 - Preparing FAT ** Phase 2 - Checking Directories ** Phase 3 - Checking for Orphan Clusters Warning: 104 files, 55764 KiB free (27882 clusters) 
+a-ttya.img: #Z 01 C:\TTYA.NAP@
+fsck a-ttya.img: ** /dev/rdisk6s1 ** Phase 1 - Preparing FAT ** Phase 2 - Checking Directories ** Phase 3 - Checking for Orphan Clusters Warning: 104 files, 55764 KiB free (27882 clusters) 
+fsck source plain: ** /dev/rdisk6s1 ** Phase 1 - Preparing FAT ** Phase 2 - Checking Directories ** Phase 3 - Checking for Orphan Clusters Warning: 104 files, 55764 KiB free (27882 clusters) 
+fsck source apitest: ** /dev/rdisk6s1 ** Phase 1 - Preparing FAT ** Phase 2 - Checking Directories ** Phase 3 - Checking for Orphan Clusters Warning: 104 files, 55764 KiB free (27882 clusters) 
+fsck source teradesk: ** /dev/rdisk6s1 ** Phase 1 - Preparing FAT ** Phase 2 - Checking Directories ** Phase 3 - Checking for Orphan Clusters Warning: 104 files, 55764 KiB free (27882 clusters) 
+fsck source qed: ** /dev/rdisk6s1 ** Phase 1 - Preparing FAT ** Phase 2 - Checking Directories ** Phase 3 - Checking for Orphan Clusters Warning: 104 files, 55764 KiB free (27882 clusters) 
+4c903c52fb23e0c813fca2100684a3bcb6a3b02b9193b3ed8a3f96f620ec7f72  /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/u5b/cards/apitest.img
+f30f360a6dc1721cc960ea67da8a60b367d4b0ba61397f617f97d51e6f0d0740  /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/u5b/cards/plain.img
+b4ad4d58619da3593c4192163259ce5bb88fd7735a9e24568a4c2effff3ca500  /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/u5b/cards/qed.img
+43a75ede38a1694385884b8e5c66024755c772317959c96f3311ed96aaa8172e  /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/u5b/cards/teradesk.img
+1ac0d932e13c546111f311acd62591811317b775886d9ab1a68c936ca99b619f  /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/cards/a-fstatp.img
+0874a3272fe44f1985ea0eb9f4411613c84c4e07e1b1c32e6c9017b01ab54df3  /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/cards/a-serr-newcrt0.img
+a7f5491dd6ebc70fc85cf95ca652c0236f8f372c9b7814672db7f1e8a212aa35  /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/cards/a-serr-oldcrt0.img
+9979502e6a59f5bf28d36375a6bb7c165fc855f61b4f35a43de05a6c119febaa  /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/cards/a-stderra.img
+0673220099b19c106ebd3db4929b50be2c2df4fb9194d96243411e72eb343912  /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/cards/a-stdoutdb.img
+70d49926c05124d0d251dfebd4b365dcb7a154251170ac86cced1a06bb4b0c88  /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/cards/a-ttya.img
+17b9ded18a883383d8f1c74bbd098dac65af1280786c31095e201f9819056416  /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/cards/apitest.img
+98b8c2ec8e7953b727551f041d38ec493d4958423c0ff6ad70b886b78fe6a21a  /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/cards/doom.img
+4f0d2fe4940b6c98691c4794a5ea81ab8e91265fa6227f1a159367e7448a1e18  /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/cards/fstatp-old.img
+580a1907bb26c320268dbd4bd5e937f244b84d9e496249470b5945157c4a87d7  /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/cards/fstatp.img
+75cd78c4dc3299cf02dc241a7e0cb122cd5483fd5782545f33270ee769138dc6  /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/cards/lf-all.img
+f30f360a6dc1721cc960ea67da8a60b367d4b0ba61397f617f97d51e6f0d0740  /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/cards/plain.img
+e7a6ce04527c6ec7949b0f734c86cc7ecf4aea15e7c44e384728cfc1a5562618  /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/cards/qed.img
+0c2d4445d5796dbbeb1ab8fd54255f82b3ef879deb78f721d3ffd9d96f04df35  /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/cards/serr-newcrt0.img
+191c041581eec53bb3fec376f16cfd75da11c223ce3795b5ca0915a887442d40  /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/cards/serr-oldcrt0.img
+2a5a0e0ed39723602426d5b5f9db2c4a88078dcc426173d3aa0ee5b68498abce  /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/cards/stderra.img
+d24e17a411f4c3a6493cdf416a04ebc2388a24c5f42eff70784e47605aebff18  /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/cards/stdoutdb.img
+5e503b1e8808c85c18b8a896a7a85678f63f3af4e3c3514691b0c909723c8a47  /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/cards/teradesk.img
+81fe94f4f5835fdba00ec28250b066c1f9beaa9f123c4e96e5031799563dab80  /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/cards/ttya.img

@@ -1,0 +1,87 @@
+measurement-2026-10-17-libc-fstat -- TASK/LIBC-FSTAT: the lean __do_fstat (sdk/libc/newtos-arch/do_fstat.c) calls a standard handle 0..5 a
+character device exactly when __isatty says so (a standard handle Fforce'd to a file is S_IFREG), and gives st_blksize 32 KiB to every handle
+fd >= 0 that is not a terminal and whose Fseek(END) succeeds. Per TASK/LIBC-FSTAT.md "Entscheidung" and docs/analysis/libc-fstat-2026-10-17.md
+section 3 / 5. Developer evidence; the Tester's verdict is separate.
+
+Base HEAD 70a2e69b (main). Changed in the shared tree (uncommitted): sdk/libc/newtos-arch/do_fstat.c, sdk/libc/tests/fstat-host{.c,-fs.c,.sh},
+docs/sdk/07-mintlib-limits.md. Rebuilt build artifacts (gitignored): sdk/libc/libc.a (313a7bc0 -> b98eb9e8), sdk/gemlib/gemlib.a (lib_ensure
+chain, 67fb8b86), sdk/apps/{qed,teradesk,doom,gemtest,chaintest,coremark} build outputs (checks/repo-binaries-{before,after}.sha256); the shared
+tree's sdk/apps/apitest/APITEST.NCP left as it was (APITEST built into the scratch dir). Host macOS, QEMU raspi4b only, no SD card, no Pi.
+Scratch /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf (libc-pre-lf.a, b/ = relinked programs, b-old/ = controls, cards/, tree-kv, s/ QMP
+sockets relative to the per-run dir). SOURCE_DATE_EPOCH=1791979200. One QEMU at a time, screendumps keyed to serial markers (mdrive.py).
+
+RESULT: host harness red 32/92 -> green 0/92, old shim red again (counter-check); QEMU probe FSTATP: PASS in on/off/strict with the LIBC-FSTAT
+libc, FAIL 4 with the previous libc (same source, same kernel); OUT.TXT = 61 0D 0A 62 0D 0A (text), with UNIXMODE=b 61 0A 62 0A; stdin from
+"x\r\ny\r\n" -> fgets "x\n", "y\n", EOF; console control S_IFCHR/1024/isatty 1. APITEST 109/0/5 all modes; views + series 45/45 dumps
+BYTE-IDENTICAL to measurement-2026-10-16-proc06; STDOUTDB, stderr matrix (STDERRP new/old crt0, STDERRA), TTYA: probe lines identical A/B except
+the TTYA T3 kid file, whose line now ends 0D 0A instead of 0A (the intended text-mode change). Baselines unchanged.
+
+1. CHANGE (sdk/libc/newtos-arch/do_fstat.c __do_fstat)
+   console branch `fd >= 0 && fd <= 2` -> `fd >= 0 && fd < NEWTOS_NUMSTD && __isatty(fd)` (mintlib/isatty.c, same __open_stat[] cache as
+   stdio_init.c / main.c); 32 KiB condition `fd >= NEWTOS_NUMSTD && end >= 0` -> `fd >= 0 && end >= 0`. Negative fds (BIOS devices), invalid
+   handles (Fseek EIHNDL -> S_IFREG, 1024) and handles >= 6 (no isatty probe; a device opened as a handle >= 6 keeps S_IFREG + 32 KiB) as
+   before. llvm-nm arch__do_fstat.o: U __isatty (defined in mintlib__isatty.o, same archive). clang -Wall -Wextra on the file: 0 warnings.
+
+2. HOST TESTS (sdk/libc/tests/fstat-host.sh; spec list 5.1 items 1-7)
+   Model: Fseek on handles 0..5 answers 0 (device) unless fh_redirect(h, size) put the handle in the file table; fh_reset_cache() clears
+   __open_stat[] as main.c:161-162. New checks: devices 3/4/5 S_IFCHR, 1024, line-buffered, no seek; redirected 0/1/2/3 after a cache reset:
+   S_IFREG, honest size, 32768, position unchanged, stdio buffer 32768, not line-buffered, seekable; isatty(fd) == S_ISCHR(fstat(fd)) for 0..5
+   before and after the redirection, no trap for a cached terminal; stale case (fd 4 cached as tty, Fforce'd afterwards): stays S_IFCHR/1024,
+   S_IFREG/32768 after the reset (documented upstream limit); unchanged fd 6/7/8 (files), 9 (not open, 1024), -1 (BIOS device, 1024).
+   red (tree's shim before the edit): checks/fstat-host-red.txt -- 92 checks, 32 failed. green: checks/fstat-host-green.txt -- 92, 0 failed.
+   counter-check (method/fstat-host-countercheck.sh = git show 70a2e69b:...do_fstat.c): checks/fstat-host-countercheck-old-shim.txt -- 32 failed.
+
+3. QEMU PROBE FSTATP (method/tests/fstatp.c, build-fstatp.sh; spec list 5.2), kernel bin/kernel8-lf.img, EL0 default desktop, #Z autorun
+   Parent: P0 own Fforce(1,file) + fstat(1) (info), P1 kid "c" (console), P2 Fcreate C:\OUT.TXT + Fforce(1,fh) + spawnl kid "o" + Fforce(1,-1)
+   + re-read, P3 the same with spawnle env UNIXMODE=b, P4 C:\IN.TXT "x\r\ny\r\n" + Fforce(0,fh) + spawnl kid "i" + Fforce(0,-1). Kids check
+   their own fstat/isatty/stdio values and exit with the failure count. Serial: serial/p-<mode>-fstatp-serial.log (B) and p-<mode>-a-fstatp-
+   (A = FSTATP linked against the pre-LIBC-FSTAT libc.a); checks/probes-ab.txt.
+     B (on/off/strict identical):  kid o: fd1 REG blksize 0x8000 isatty 0; fd0/fd2 CHR 0x400 isatty 1; stdout bufsize 0x8000 linebuf 0
+                                   binary 0 (P2) / 1 (P3, "UNIXMODE=b" seen); OUT.TXT P2 = 61 0d 0a 62 0d 0a, P3 = 61 0a 62 0a
+                                   kid i: fd0 REG size 6 blksize 0x8000 isatty 0; stdin bufsize 0x8000 binary 0; line1 78 0a, line2 79 0a, EOF
+                                   kid c: fd0..2 CHR 0x400 isatty 1; stdout bufsize 0x400 linebuf 1 binary 0       -> "FSTATP: PASS"
+     A (on/off/strict identical):  kid o: fd1 CHR 0x400 isatty 0 (fstat and isatty disagree); stdout 0x400 binary 1; OUT.TXT P2 = 61 0a 62 0a
+                                   kid i: fd0 CHR 0x400; stdin 0x400 binary 1; line1 78 0d 0a, line2 79 0d 0a        -> "FSTATP: FAIL 4"
+   P0 (same process, after main.c's isatty(1)): CHR 0x400 in B as in A -- the documented upstream cache limit (not a check).
+   Inheritance (analysis 4.4 precondition) measured: the kids see the parent's Fforce'd handles (fd1/fd0 REG with the file's size).
+   Parent Fclose(fh) after Fforce(n,-1) returns -65 (EINTRN) in A and B: the second close of a shared OFD (docs/api/gemdos/file/3e-fclose.md,
+   PROC02), kernel behaviour, not part of this change. The file contents are complete.
+   Info only (kid trace lines): stdout __bufsize is 0x8000 before the first output, the first printf on the still unbuffered stream (vfprintf
+   buffered_vfprintf path) leaves __bufsize 0 and the following putchar allocates BUFSIZ (0x400) -- on the console kid (0x400 -> 0 -> 0x400)
+   as on the redirected one; upstream stdio path, not changed here.
+
+4. OTHER PROBES, A/B on the same kernel (method/probes.sh, cmp-probes.sh -> checks/probes-ab.txt; B cards = lf-all + #Z, A cards = the series
+   apitest card + #Z, whose programs are byte-identical to relinks against the pre-LIBC-FSTAT libc.a: checks/libcprogs-old.sha256 vs the card
+   hashes in checks/cards.txt)
+   STDOUTDB, STDERRP (new crt0), STDERRP (old crt0), STDERRA: probe lines A == B (addresses masked), all ...DONE, on/off/strict.
+   TTYA: TTYT1/T2/T3 PASS A and B; only difference the T3 "kid file bytes" line: ... 34 36 0a (A) -> ... 34 36 0d 0a (B) -- the child's
+   stdout Fforce'd to a file is now in text mode (the intended change).
+   Doom (B DOOM.NAP): "VERIFIED via EdDI+scale+vro_cpyfm" on/off/strict, dumps p-<mode>-doom-t30.png viewed (Doom running).
+   [EXC]/PANIC/load failed: 0 in every log.
+
+5. NO-REGRESSION vs measurement-2026-10-16-proc06 (method/all.sh + apitest2.sh, cmp-acc.sh -> checks/lf-vs-p06.txt)
+   views: kv kernel bin/kernel8-kv.img (byte-identical to proc06's kv), plain card (unchanged copy of the series plain card; the views show
+   C:\ with sizes/dates, so relinked files there would change the dump by construction -- the desktop is not a libc program).
+   series: bin/kernel8-lf.img; apitest card = series apitest card + relinked APITEST.NCP + C:\PTERMCH.NCP (proc06 binary), teradesk / qed card
+   + relinked DESKTOP.NAP / QED.NAP (timestamps kept). EL0 default desktop, on/off/strict.
+   45/45 dumps BYTE-IDENTICAL (30 views + 15 series); APITEST TOTAL 109/0/5 in on/off/strict, [OK]/[FAIL]/[SKIP] lines identical to proc06
+   (checks/apitest-verdict-diff-<mode>.txt, 0 lines). 0 [EXC]/PANIC.
+   First series pass (kept as serial/first-s-el0-*-apitest*, screendumps/first-s-el0-*-apitest*): the apitest card lacked C:\PTERMCH.NCP
+   (T33.1-3 SKIP, TOTAL 106/0/8 on/strict) and the off run stalled after BC28 under host load (Spotlight, load average ~12; the desktop dump
+   of that pass came at t=495 s and is still byte-identical) -> MISSING marker. Card corrected (cards.sh), the three APITEST runs repeated.
+   kernel8-lf.img vs proc06 kernel8-p06.img: 14 bytes differ, the two "(<git rev>)" stamps (checks/kernel-vs-p06-cmp.txt) -- the kernel code
+   is unchanged (the change is SDK-only).
+
+6. BASELINES (method/checks.sh lf, checks/lf-checks-summary.txt; identical to proc06's p06 summary line by line)
+   host tests 1376/0/1; release warnings tos-api 64 / kernel 94 both boards, 0 errors; clippy 76/125 rpi4, qemu-virt, rpi4+selftest-desk;
+   programs build + clippy 0 warning lines; drift TOTAL 4, UNSAFE 20; emutos-consts unchanged; SDK host tests 20/0/0 (count unchanged:
+   fstat-host is one test, now 92 checks instead of 44); cite fns=479 cited=318; NAPs unchanged.
+   Relink (method/build-libcprogs.sh, checks/build-libcprogs.txt): every libc program of the series cards (53 files + apps) built and
+   linked, 0 compiler warnings / errors; build-teradesk.log has its one pre-existing resource-converter line "label buffer at 16682 has no NUL".
+   build-fstatp.sh compiles fstatp.c with -Wall -Wextra: 0 warnings.
+
+7. NOT RUN: real Pi 4; qemu-virt boots (kernel-virt-lf.img only built); desk=kernel (EL1) paths; asid modes; EmuCON (kernel Rust, no
+   redirection); a program that redirects through system("prog >file") (the probe drives Fforce + spawn directly).
+
+Files: method/ (scripts; tests/ = measurement-2026-10-13-mem05-acceptance/method/tests + fstatp.c), bin/SHA256SUMS (kernel images
+gitignored; FSTATP.NAP / FSTATP-OLD.NAP kept), checks/, serial/, screendumps/.

@@ -12,20 +12,23 @@
  *             SEEK_SET/CUR/END move the position and return it, as GEMDOS
  *             Fseek does (docs/api/gemdos/file/42-fseek.md). A handle not in
  *             the table answers EIHNDL (-37). A character device -- a negative
- *             handle (a BIOS device, e.g. -1 = CON:) or a standard handle 0-2
+ *             handle (a BIOS device, e.g. -1 = CON:) or a standard handle 0-5
  *             at its default device mapping -- answers 0 whatever the offset,
  *             as the spec's "Character-device and standard handles" case and
  *             the kernel (tos-api/src/bdos/fs/file.rs, Target::Device) do.
  *             For -1 that means it LOOKS seekable, so the check that devices
- *             keep BUFSIZ proves that __do_fstat classifies by handle number,
- *             not by Fseek success. Handle 3 is in the table: a standard
- *             handle Fforce'd to a file.
+ *             keep BUFSIZ proves that __do_fstat does not size by Fseek
+ *             success alone. fh_redirect(h, size) puts a standard handle 0-5
+ *             into the table -- the handle Fforce'd to a file of that size
+ *             (TASK/LIBC-FSTAT); from then on Fseek answers its position.
  *   Fcntl  -- answers EINVFN (-32) for every call: NewTOS, like EmuTOS, has no
  *             GEMDOS function 0x104 (tos-api/src/gemdos/mod.rs, id > MAX_FN),
  *             which is the -ENOSYS __isatty needs to take its Fseek probe.
  *
  * Every Fseek/Fcntl call is counted (fh_trap_count) so the harness can see
- * __isatty's cache answer without a trap.
+ * __isatty's cache answer without a trap. fh_reset_cache() clears
+ * __open_stat[] as mintlib's start-up does (mintlib/main.c:161-162), i.e. what
+ * a child started with an inherited redirection sees.
  *
  * fh_probe_stat(), fh_probe_stream() and fh_probe_isatty() hand the harness
  * plain integers, so the harness (fstat-host.c) can use the host's headers.
@@ -39,10 +42,11 @@
 
 struct fh { short h; long size; long pos; };
 static struct fh tab[] = {
-	{ 3, 4096L, 0 },		/* a standard handle redirected to a file */
 	{ 6, 10485760L, 0 },		/* a regular file, 10 MiB */
 	{ 7, 0L, 0 },			/* an empty regular file */
 	{ 8, 300003L, 0 },		/* a regular file, odd size */
+	{ -99, 0L, 0 }, { -99, 0L, 0 }, { -99, 0L, 0 },	/* free: fh_redirect */
+	{ -99, 0L, 0 }, { -99, 0L, 0 }, { -99, 0L, 0 },
 };
 #define NTAB ((int)(sizeof tab / sizeof tab[0]))
 
@@ -63,8 +67,6 @@ fh_test_Fseek (long off, short h, short mode)
 {
 	int i;
 	traps++;
-	if (h <= 2)
-		return 0;			/* character device */
 	for (i = 0; i < NTAB; i++) {
 		long np;
 		if (tab[i].h != h)
@@ -75,7 +77,33 @@ fh_test_Fseek (long off, short h, short mode)
 		tab[i].pos = np;
 		return np;
 	}
+	if (h <= 5)
+		return 0;			/* character device */
 	return -37;				/* EIHNDL */
+}
+
+/* Fforce(h, <file of `size' bytes>) for a standard handle 0..5: from now on
+ * Fseek on h answers the file position (starting at 0). */
+void
+fh_redirect (short h, long size)
+{
+	int i;
+	for (i = 0; i < NTAB; i++)
+		if (tab[i].h == -99) {
+			tab[i].h = h;
+			tab[i].size = size;
+			tab[i].pos = 0;
+			return;
+		}
+}
+
+/* mintlib/main.c:161-162: every __open_stat[] entry back to FH_UNKNOWN. */
+void
+fh_reset_cache (void)
+{
+	int i;
+	for (i = 0; i < __NHANDLES; i++)
+		__open_stat[i].status = FH_UNKNOWN;
 }
 
 void

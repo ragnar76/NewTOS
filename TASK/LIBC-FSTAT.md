@@ -1,6 +1,6 @@
 # LIBC-FSTAT — `fstat` meldet fds 0–2 auch bei Umlenkung als Zeichengeraet
 
-Status: **OFFEN** · Prioritaet: **P3** · Typ: SDK / libc — Anwenderentscheidung 2026-10-13 ([LIBC-TTY](LIBC-TTY.md) Punkt 4)
+Status: **ERLEDIGT** ([Quittung](LIBC-FSTAT-STATUS-DONE.MD), 2026-10-17, Tester-Abnahme offen) · Prioritaet: **P3** · Typ: SDK / libc — Anwenderentscheidung 2026-10-13 ([LIBC-TTY](LIBC-TTY.md) Punkt 4)
 
 ## Sachverhalt
 

@@ -1,0 +1,3 @@
+apitest.img: #Z 01 C:\APITEST.NCP@
+fsck apitest.img: ** /dev/rdisk6s1 ** Phase 1 - Preparing FAT ** Phase 2 - Checking Directories ** Phase 3 - Checking for Orphan Clusters Warning: 105 files, 55756 KiB free (27878 clusters) 
+ea4a074686db88e3828b948d425ac49f4327ffb8a11843f46b602aa591bcd96d  /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/cards/apitest.img

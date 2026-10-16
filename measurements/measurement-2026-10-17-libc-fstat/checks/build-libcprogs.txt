@@ -1,0 +1,76 @@
+built P10KID.NCP
+built P10TEST.NCP
+built /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/ENVPAR.NAP (48776 bytes)
+built /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/ENVKID.NAP (48776 bytes)
+built /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/P34PAR.NAP (50024 bytes)
+built /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/P34KID.NAP (48984 bytes)
+built /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/PFLAGS1.NCP (49536 bytes) PRGFLAGS=0x10000004
+built /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/PFLAGS2.NCP (49536 bytes) PRGFLAGS=0x10000004
+/Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/PFLAGS2.NCP: PRGFLAGS 0x10000004 -> 0x00000007 (PF_FASTLOAD | PF_TTRAMLOAD | PF_TTRAMMEM)
+/Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/PFLAGS2.NCP: PRGFLAGS 0x00000007 (PF_FASTLOAD | PF_TTRAMLOAD | PF_TTRAMMEM)
+/Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/PFLAGS1.NCP: PRGFLAGS 0x10000004 (PF_TTRAMMEM | TPA quantum 2 (x 128 KiB))
+built /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/P567.NAP (52184 bytes)
+built /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/TSRPAR.NAP (50192 bytes)
+built /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/TSRRES.NAP (48488 bytes)
+built /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/TSRUSE.NAP (48120 bytes)
+built /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/OWNPAR.NAP (49944 bytes)
+built /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/OWNKID.NAP (48904 bytes)
+built /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/VFORKT.NAP (118272 bytes)
+built /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/S2ALL.NAP (48928 bytes)
+built /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/P567S.NAP (52200 bytes)
+built /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/TSRPARS.NAP (48736 bytes)
+built /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/S2ALLS.NAP (48928 bytes)
+built /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/ATEXITP.NAP (48928 bytes)
+built /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/ATEXITK.NAP (102840 bytes)
+built /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/ACCFREE.NAP (50776 bytes)
+built /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/MDPROBE.NAP (49504 bytes)
+built /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/ENVRN.NAP (50488 bytes)
+built /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/E9MEM.NAP (50640 bytes)
+built /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/FSEEKCON.NAP (48312 bytes)
+built /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/STDOUTDBG.NAP (102456 bytes)
+built /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/STDERRP.NAP (107496 bytes)
+built /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/PPAUTO.NCP (50168 bytes)
+built /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/PPZ.NAP (53024 bytes)
+built /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/PPDESK.NAP (53056 bytes)
+built /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/PPACC.NAC (50696 bytes)
+built /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/FS11DEV.NAP (54176 bytes)
+built /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/FS11A.NAP (51400 bytes)
+built /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/STDERRA.NAP (107696 bytes)
+copied STDOUTDBG.NAP -> STDOUTDB.NAP
+built /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/TTYPROBE.NAP (106648 bytes)
+built /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/TTYA.NAP (104632 bytes)
+built /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/STDERRQ.NAP (102608 bytes)
+built /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/oldcrt0/STDERRQ.NAP (98624 bytes)
+built /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/oldcrt0/STDERRP.NAP (103536 bytes)
+built /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/MDPROBE.NAP (49504 bytes)
+built /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/MDPAR.NAP (50280 bytes)
+built /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/MDKID.NAP (48240 bytes)
+built /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/MDBUD.NAP (49504 bytes)
+b98eb9e8e31ec185c14e9c3e64f61000aca71bd959793533511ea1e809b38ba5  measurements/measurement-2026-10-17-libc-fstat/method/../../../sdk/libc/libc.a
+built /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/MDPROBE.NAP (49504 bytes)
+built /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/MDSTEP.NAP (49920 bytes)
+built /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/MDTIME.NAP (49712 bytes)
+built /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/HELLOMEM.NAP (102712 bytes)
+built /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/MDACC.NAC (51424 bytes)
+b98eb9e8e31ec185c14e9c3e64f61000aca71bd959793533511ea1e809b38ba5  sdk/libc/libc.a
+built /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/lf/b/FSTATP.NAP (113160 bytes)
+b98eb9e8e31ec185c14e9c3e64f61000aca71bd959793533511ea1e809b38ba5  sdk/libc/libc.a
+built APITEST.NCP
+built via apps/build-qed.sh
+built via apps/build-teradesk.sh
+built via apps/build-doom.sh
+built via apps/gemtest/build-gemtest.sh
+built via apps/chaintest/build-chaintest.sh
+built via apps/build-coremark.sh
+apitest.log: 0 warning lines, 0 error lines
+build-chaintest.log: 0 warning lines, 0 error lines
+build-coremark.log: 0 warning lines, 0 error lines
+build-doom.log: 0 warning lines, 0 error lines
+build-gemtest.log: 0 warning lines, 0 error lines
+build-qed.log: 0 warning lines, 0 error lines
+build-teradesk.log: 1 warning lines, 0 error lines
+p10kid.log: 0 warning lines, 0 error lines
+p10test.log: 0 warning lines, 0 error lines
+b98eb9e8e31ec185c14e9c3e64f61000aca71bd959793533511ea1e809b38ba5  sdk/libc/libc.a
+67fb8b86cde4f51a196fc8f5f4e6a0af312248e4256bb16c50c48e6eff05e1fc  sdk/gemlib/gemlib.a
+done

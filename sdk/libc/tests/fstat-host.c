@@ -5,9 +5,11 @@
  *
  * mintlib's stdio takes a stream's buffer size from st_blksize
  * (stdio/stdio_init.c:72-77), which the lean sdk/libc/newtos-arch/do_fstat.c
- * fills. Before FS08 part 4 it was BUFSIZ (1024) for every handle; now a
- * GEMDOS file handle (>= 6) gets NEWTOS_FILE_BLKSIZE, everything else keeps
- * BUFSIZ. fstat-host.sh links the shim (unchanged), mintlib's own
+ * fills. Before FS08 part 4 it was BUFSIZ (1024) for every handle; then a
+ * GEMDOS file handle (>= 6) got NEWTOS_FILE_BLKSIZE; since TASK/LIBC-FSTAT
+ * every handle >= 0 that is not a terminal and whose Fseek(END) succeeds gets
+ * it, and a standard handle 0..5 is S_IFCHR exactly when __isatty says so.
+ * fstat-host.sh links the shim, mintlib's own
  * mintlib/isatty.c (TASK/LIBC-TTY: the NewTOS isatty shim is gone) and
  * stdio/stdio_init.c, fstat-host-fs.c (Fseek/Fcntl model + probes) and this
  * file.
@@ -20,13 +22,28 @@
  *   console       handles 0, 1, 2: S_IFCHR, st_blksize BUFSIZ (1024);
  *                 the stream is line-buffered, BUFSIZ, its seek removed
  *                 (as before);
- *   unchanged     handle 3 (a standard handle, here seekable as if Fforce'd
- *                 to a file), handle -1 (a BIOS device that answers Fseek
- *                 0) and handle 9 (not open, Fseek EIHNDL): st_blksize BUFSIZ.
+ *   devices 3-5   standard handles at their device (AUX/PRN): S_IFCHR,
+ *                 BUFSIZ, line-buffered, no seek (TASK/LIBC-FSTAT; before:
+ *                 S_IFREG, size 0);
+ *   redirected    standard handles 0, 1, 2, 3 Fforce'd to a file (fh_redirect)
+ *                 and the isatty cache cleared as at start-up (fh_reset_cache):
+ *                 S_IFREG, honest size, 32768, position unchanged, 32768-byte
+ *                 stdio buffer, not line-buffered, seekable (TASK/LIBC-FSTAT;
+ *                 before: S_IFCHR, 1024 for 0-2);
+ *   consistency   isatty(fd) == S_ISCHR(fstat(fd)) for 0..5 before and after
+ *                 the redirection; fstat of 0..5 after isatty makes no trap
+ *                 for a terminal (the cached answer);
+ *   stale cache   a handle whose isatty answer is cached as a terminal and
+ *                 that is Fforce'd to a file afterwards in the same process
+ *                 stays S_IFCHR until the cache is cleared -- the upstream
+ *                 limit (mintlib/isatty.c:23-24), pinned as a finding;
+ *   unchanged     handle -1 (a BIOS device that answers Fseek 0) and handle
+ *                 9 (not open, Fseek EIHNDL): st_blksize BUFSIZ.
  *   isatty        (mintlib/isatty.c: Fcntl -> EINVFN, then the Fseek probe)
  *                 handles 0, 1, 2 (devices): 1, status FH_ISATTY, flags
  *                 CRMOD|ECHO -- the flags __read needs to take the Fread line
- *                 path instead of the RAW path; handle 3 (Fforce'd to a file),
+ *                 path instead of the RAW path; handles 3, 4, 5 (devices): 1;
+ *                 handle 3 (Fforce'd to a file),
  *                 6 (file, mid-way), 7 (empty file), 9 (not open): 0, status
  *                 FH_ISAFILE, file position unchanged by the probe; handle -1
  *                 (BIOS device): 1 (upstream); a second query is answered from
@@ -43,6 +60,8 @@ long fh_get_pos (short);
 long fh_bufsiz (void);
 int fh_probe_isatty (int, int *, int *);
 long fh_trap_count (void);
+void fh_redirect (short, long);
+void fh_reset_cache (void);
 int fh_fh_isatty (void);
 int fh_fh_isafile (void);
 int fh_crmod_echo (void);
@@ -140,9 +159,55 @@ isatty_case (int fd, int want_tty, long pos, const char *what)
   check (r == want_tty && fh_trap_count () == t, w);
 }
 
+/* isatty(fd) == S_ISCHR(fstat(fd)); for a terminal the fstat (after the
+ * isatty that filled the cache) makes no GEMDOS call. */
+static void
+consistency_case (int fd, const char *what)
+{
+  int st, fl, tty, reg, chr;
+  long sz, bs, t, n;
+  char w[200];
+
+  tty = fh_probe_isatty (fd, &st, &fl);
+  t = fh_trap_count ();
+  fh_probe_stat (fd, &reg, &chr, &sz, &bs);
+  n = fh_trap_count () - t;
+  snprintf (w, sizeof w, "fd %d (%s): isatty %d == S_ISCHR(fstat) %d", fd, what, tty, chr);
+  check (tty == chr && reg == !chr, w);
+  if (tty)
+    {
+      snprintf (w, sizeof w, "fd %d (%s): fstat after isatty makes no trap (got %ld)", fd, what, n);
+      check (n == 0, w);
+    }
+}
+
+/* fd Fforce'd to a file AFTER its isatty answer was cached as a terminal, the
+ * cache not cleared: still S_IFCHR, BUFSIZ (upstream limit, documented). */
+static void
+stale_case (int fd, long size)
+{
+  int st, fl, reg, chr;
+  long sz, bs;
+  char w[200];
+
+  fh_probe_isatty (fd, &st, &fl);
+  fh_redirect ((short) fd, size);
+  fh_probe_stat (fd, &reg, &chr, &sz, &bs);
+  snprintf (w, sizeof w, "fd %d: Fforce after a cached isatty, no cache reset: stays S_IFCHR, BUFSIZ (got chr %d, %ld)",
+	    fd, chr, bs);
+  check (st == fh_fh_isatty () && chr && !reg && bs == fh_bufsiz (), w);
+  fh_reset_cache ();
+  fh_probe_stat (fd, &reg, &chr, &sz, &bs);
+  snprintf (w, sizeof w, "fd %d: after the cache reset: S_IFREG, size %ld, st_blksize %ld (got reg %d, %ld, %ld)",
+	    fd, size, WANT_FILE_BLKSIZE, reg, sz, bs);
+  check (reg && !chr && sz == size && bs == WANT_FILE_BLKSIZE, w);
+}
+
 int
 main (void)
 {
+  int fd;
+
   if (sizeof (long) != 8 || sizeof (void *) != 8)
     {
       printf ("fstat-host: skipped -- host is not LP64\n");
@@ -152,15 +217,39 @@ main (void)
   file_case (6, 10485760L);
   file_case (7, 0L);
   file_case (8, 300003L);
+  /* start-up: every standard handle at its device */
+  fh_reset_cache ();
   small_case (0, 1, "console");
   small_case (1, 1, "console");
   small_case (2, 1, "console");
-  small_case (3, 0, "standard handle, seekable");
+  small_case (3, 1, "standard device AUX");
+  small_case (4, 1, "standard device PRN");
+  small_case (5, 1, "standard device");
   small_case (-1, 0, "BIOS device");
   small_case (9, 0, "not open");
+  for (fd = 0; fd <= 5; fd++)
+    consistency_case (fd, "device");
   isatty_case (0, 1, -1, "console");
   isatty_case (1, 1, -1, "console");
   isatty_case (2, 1, -1, "console");
+  isatty_case (3, 1, -1, "standard device AUX");
+  isatty_case (4, 1, -1, "standard device PRN");
+  isatty_case (5, 1, -1, "standard device");
+  /* a child started with 0, 1, 2, 3 Fforce'd to files: fresh cache */
+  fh_redirect (0, 5000L);
+  fh_redirect (1, 0L);
+  fh_redirect (2, 12345L);
+  fh_redirect (3, 4096L);
+  fh_reset_cache ();
+  file_case (0, 5000L);
+  file_case (1, 0L);
+  file_case (2, 12345L);
+  file_case (3, 4096L);
+  fh_reset_cache ();
+  for (fd = 0; fd <= 5; fd++)
+    consistency_case (fd, fd <= 3 ? "redirected" : "device");
+  stale_case (4, 777L);
+  fh_reset_cache ();
   isatty_case (3, 0, 0, "standard handle Fforce'd to a file, at 0");
   isatty_case (6, 0, 4242, "regular file, mid-way");
   isatty_case (7, 0, 0, "empty regular file");

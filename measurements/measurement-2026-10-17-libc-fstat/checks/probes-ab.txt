@@ -1,0 +1,225 @@
+== on fstatp: B 44 lines, A 44 lines, 32 differing; exc/panic B 0 A 0
+   B FSTATP: PASS
+   A FSTATP: FAIL 0x00000004
+   14c14
+   < FSTATP[o] fd0x00000001 rc=0x00000000 CHR size=0x00000000 blksize=0x00000400 isatty=0x00000000 FAIL
+   ---
+   > FSTATP[o] fd0x00000001 rc=0x00000000 REG size=0x00000000 blksize=0x00008000 isatty=0x00000000 ok
+   16c16
+   < FSTATP[o] stdout bufsize=0x00000400 linebuf=0x00000000 binary=0x00000001 FAIL
+   ---
+   > FSTATP[o] stdout bufsize=0x00008000 linebuf=0x00000000 binary=0x00000000 ok
+   19,21c19,21
+   < FSTATP[o]: DONE fails=0x00000002
+   < FSTATP[PAR] spawn o rc=0x00000002 Fforce(1,-1)=0x00000000 Fclose=0xADDR
+   < FSTATP[PAR] P2 OUT.TXT = 61 0D 0A 62 0D 0A (text) bytes: 0x00000061 0x0000000a 0x00000062 0x0000000a
+   ---
+   > FSTATP[o]: DONE fails=0x00000000
+   > FSTATP[PAR] spawn o rc=0x00000000 Fforce(1,-1)=0x00000000 Fclose=0xADDR
+   > FSTATP[PAR] P2 OUT.TXT = 61 0D 0A 62 0D 0A (text) bytes: 0x00000061 0x0000000d 0x0000000a 0x00000062 0x0000000d 0x0000000a
+   25c25
+   < FSTATP[o] fd0x00000001 rc=0x00000000 CHR size=0x00000000 blksize=0x00000400 isatty=0x00000000 FAIL
+   ---
+   > FSTATP[o] fd0x00000001 rc=0x00000000 REG size=0x00000000 blksize=0x00008000 isatty=0x00000000 ok
+   27c27
+   < FSTATP[o] stdout bufsize=0x00000400 linebuf=0x00000000 binary=0x00000001 FAIL
+   ---
+   > FSTATP[o] stdout bufsize=0x00008000 linebuf=0x00000000 binary=0x00000001 ok
+   30,31c30,31
+   < FSTATP[o]: DONE fails=0x00000002
+   < FSTATP[PAR] spawn o rc=0x00000002 Fforce(1,-1)=0x00000000 Fclose=0xADDR
+   ---
+   > FSTATP[o]: DONE fails=0x00000000
+   > FSTATP[PAR] spawn o rc=0x00000000 Fforce(1,-1)=0x00000000 Fclose=0xADDR
+   34c34
+   < FSTATP[i] fd0x00000000 rc=0x00000000 CHR size=0x00000000 blksize=0x00000400 isatty=0x00000000 FAIL
+   ---
+   > FSTATP[i] fd0x00000000 rc=0x00000000 REG size=0x00000006 blksize=0x00008000 isatty=0x00000000 ok
+   37,42c37,42
+   < FSTATP[i] stdin bufsize=0x00000400 linebuf=0x00000000 binary=0x00000001 FAIL
+   < FSTATP[i] line1 0x00000078 0x0000000d 0x0000000a
+   < FSTATP[i] line2 0x00000079 0x0000000d 0x0000000a
+   < FSTATP[i]: DONE fails=0x00000004
+   < FSTATP[PAR] spawn i rc=0x00000004 Fforce(0,-1)=0x00000000 Fclose=0xADDR
+   < FSTATP: FAIL 0x00000004
+   ---
+   > FSTATP[i] stdin bufsize=0x00008000 linebuf=0x00000000 binary=0x00000000 ok
+   > FSTATP[i] line1 0x00000078 0x0000000a
+   > FSTATP[i] line2 0x00000079 0x0000000a
+   > FSTATP[i]: DONE fails=0x00000000
+   > FSTATP[PAR] spawn i rc=0x00000000 Fforce(0,-1)=0x00000000 Fclose=0xADDR
+   > FSTATP: PASS
+== on stdoutdb: B 11 lines, A 11 lines, 0 differing; exc/panic B 0 A 0
+   B DBG: DONE
+   A DBG: DONE
+== on serr-newcrt0: B 27 lines, A 27 lines, 0 differing; exc/panic B 0 A 0
+   B STDERRP[PAR]: DONE
+   A STDERRP[PAR]: DONE
+== on serr-oldcrt0: B 19 lines, A 19 lines, 0 differing; exc/panic B 0 A 0
+   B STDERRP[PAR]: DONE
+   A STDERRP[PAR]: DONE
+== on stderra: B 20 lines, A 20 lines, 0 differing; exc/panic B 0 A 0
+   B STDERRA[PAR]: DONE
+   A STDERRA[PAR]: DONE
+== on ttya: B 11 lines, A 11 lines, 2 differing; exc/panic B 0 A 0
+   B TTYT1: PASS
+   B TTYT2: PASS
+   B TTYT3: PASS
+   A TTYT1: PASS
+   A TTYT2: PASS
+   A TTYT3: PASS
+   8c8
+   <   kid file bytes: 54 54 59 43 48 49 4c 44 2d 53 54 44 4f 55 54 20 63 6f 64 65 3d 34 36 0a
+   ---
+   >   kid file bytes: 54 54 59 43 48 49 4c 44 2d 53 54 44 4f 55 54 20 63 6f 64 65 3d 34 36 0d 0a
+== on doom: exc/panic 0; I_InitGraphics: DOOM screen size: w x h: 320 x 200|I_InitGraphics: Auto-scaling factor: 1|DOOM: picture 640x480 at (0,0) VERIFIED via EdDI+scale+vro_cpyfm|
+== off fstatp: B 44 lines, A 44 lines, 32 differing; exc/panic B 0 A 0
+   B FSTATP: PASS
+   A FSTATP: FAIL 0x00000004
+   14c14
+   < FSTATP[o] fd0x00000001 rc=0x00000000 CHR size=0x00000000 blksize=0x00000400 isatty=0x00000000 FAIL
+   ---
+   > FSTATP[o] fd0x00000001 rc=0x00000000 REG size=0x00000000 blksize=0x00008000 isatty=0x00000000 ok
+   16c16
+   < FSTATP[o] stdout bufsize=0x00000400 linebuf=0x00000000 binary=0x00000001 FAIL
+   ---
+   > FSTATP[o] stdout bufsize=0x00008000 linebuf=0x00000000 binary=0x00000000 ok
+   19,21c19,21
+   < FSTATP[o]: DONE fails=0x00000002
+   < FSTATP[PAR] spawn o rc=0x00000002 Fforce(1,-1)=0x00000000 Fclose=0xADDR
+   < FSTATP[PAR] P2 OUT.TXT = 61 0D 0A 62 0D 0A (text) bytes: 0x00000061 0x0000000a 0x00000062 0x0000000a
+   ---
+   > FSTATP[o]: DONE fails=0x00000000
+   > FSTATP[PAR] spawn o rc=0x00000000 Fforce(1,-1)=0x00000000 Fclose=0xADDR
+   > FSTATP[PAR] P2 OUT.TXT = 61 0D 0A 62 0D 0A (text) bytes: 0x00000061 0x0000000d 0x0000000a 0x00000062 0x0000000d 0x0000000a
+   25c25
+   < FSTATP[o] fd0x00000001 rc=0x00000000 CHR size=0x00000000 blksize=0x00000400 isatty=0x00000000 FAIL
+   ---
+   > FSTATP[o] fd0x00000001 rc=0x00000000 REG size=0x00000000 blksize=0x00008000 isatty=0x00000000 ok
+   27c27
+   < FSTATP[o] stdout bufsize=0x00000400 linebuf=0x00000000 binary=0x00000001 FAIL
+   ---
+   > FSTATP[o] stdout bufsize=0x00008000 linebuf=0x00000000 binary=0x00000001 ok
+   30,31c30,31
+   < FSTATP[o]: DONE fails=0x00000002
+   < FSTATP[PAR] spawn o rc=0x00000002 Fforce(1,-1)=0x00000000 Fclose=0xADDR
+   ---
+   > FSTATP[o]: DONE fails=0x00000000
+   > FSTATP[PAR] spawn o rc=0x00000000 Fforce(1,-1)=0x00000000 Fclose=0xADDR
+   34c34
+   < FSTATP[i] fd0x00000000 rc=0x00000000 CHR size=0x00000000 blksize=0x00000400 isatty=0x00000000 FAIL
+   ---
+   > FSTATP[i] fd0x00000000 rc=0x00000000 REG size=0x00000006 blksize=0x00008000 isatty=0x00000000 ok
+   37,42c37,42
+   < FSTATP[i] stdin bufsize=0x00000400 linebuf=0x00000000 binary=0x00000001 FAIL
+   < FSTATP[i] line1 0x00000078 0x0000000d 0x0000000a
+   < FSTATP[i] line2 0x00000079 0x0000000d 0x0000000a
+   < FSTATP[i]: DONE fails=0x00000004
+   < FSTATP[PAR] spawn i rc=0x00000004 Fforce(0,-1)=0x00000000 Fclose=0xADDR
+   < FSTATP: FAIL 0x00000004
+   ---
+   > FSTATP[i] stdin bufsize=0x00008000 linebuf=0x00000000 binary=0x00000000 ok
+   > FSTATP[i] line1 0x00000078 0x0000000a
+   > FSTATP[i] line2 0x00000079 0x0000000a
+   > FSTATP[i]: DONE fails=0x00000000
+   > FSTATP[PAR] spawn i rc=0x00000000 Fforce(0,-1)=0x00000000 Fclose=0xADDR
+   > FSTATP: PASS
+== off stdoutdb: B 11 lines, A 11 lines, 0 differing; exc/panic B 0 A 0
+   B DBG: DONE
+   A DBG: DONE
+== off serr-newcrt0: B 27 lines, A 27 lines, 0 differing; exc/panic B 0 A 0
+   B STDERRP[PAR]: DONE
+   A STDERRP[PAR]: DONE
+== off serr-oldcrt0: B 19 lines, A 19 lines, 0 differing; exc/panic B 0 A 0
+   B STDERRP[PAR]: DONE
+   A STDERRP[PAR]: DONE
+== off stderra: B 20 lines, A 20 lines, 0 differing; exc/panic B 0 A 0
+   B STDERRA[PAR]: DONE
+   A STDERRA[PAR]: DONE
+== off ttya: B 11 lines, A 11 lines, 2 differing; exc/panic B 0 A 0
+   B TTYT1: PASS
+   B TTYT2: PASS
+   B TTYT3: PASS
+   A TTYT1: PASS
+   A TTYT2: PASS
+   A TTYT3: PASS
+   8c8
+   <   kid file bytes: 54 54 59 43 48 49 4c 44 2d 53 54 44 4f 55 54 20 63 6f 64 65 3d 34 36 0a
+   ---
+   >   kid file bytes: 54 54 59 43 48 49 4c 44 2d 53 54 44 4f 55 54 20 63 6f 64 65 3d 34 36 0d 0a
+== off doom: exc/panic 0; I_InitGraphics: DOOM screen size: w x h: 320 x 200|I_InitGraphics: Auto-scaling factor: 1|DOOM: picture 640x480 at (0,0) VERIFIED via EdDI+scale+vro_cpyfm|
+== strict fstatp: B 44 lines, A 44 lines, 32 differing; exc/panic B 0 A 0
+   B FSTATP: PASS
+   A FSTATP: FAIL 0x00000004
+   14c14
+   < FSTATP[o] fd0x00000001 rc=0x00000000 CHR size=0x00000000 blksize=0x00000400 isatty=0x00000000 FAIL
+   ---
+   > FSTATP[o] fd0x00000001 rc=0x00000000 REG size=0x00000000 blksize=0x00008000 isatty=0x00000000 ok
+   16c16
+   < FSTATP[o] stdout bufsize=0x00000400 linebuf=0x00000000 binary=0x00000001 FAIL
+   ---
+   > FSTATP[o] stdout bufsize=0x00008000 linebuf=0x00000000 binary=0x00000000 ok
+   19,21c19,21
+   < FSTATP[o]: DONE fails=0x00000002
+   < FSTATP[PAR] spawn o rc=0x00000002 Fforce(1,-1)=0x00000000 Fclose=0xADDR
+   < FSTATP[PAR] P2 OUT.TXT = 61 0D 0A 62 0D 0A (text) bytes: 0x00000061 0x0000000a 0x00000062 0x0000000a
+   ---
+   > FSTATP[o]: DONE fails=0x00000000
+   > FSTATP[PAR] spawn o rc=0x00000000 Fforce(1,-1)=0x00000000 Fclose=0xADDR
+   > FSTATP[PAR] P2 OUT.TXT = 61 0D 0A 62 0D 0A (text) bytes: 0x00000061 0x0000000d 0x0000000a 0x00000062 0x0000000d 0x0000000a
+   25c25
+   < FSTATP[o] fd0x00000001 rc=0x00000000 CHR size=0x00000000 blksize=0x00000400 isatty=0x00000000 FAIL
+   ---
+   > FSTATP[o] fd0x00000001 rc=0x00000000 REG size=0x00000000 blksize=0x00008000 isatty=0x00000000 ok
+   27c27
+   < FSTATP[o] stdout bufsize=0x00000400 linebuf=0x00000000 binary=0x00000001 FAIL
+   ---
+   > FSTATP[o] stdout bufsize=0x00008000 linebuf=0x00000000 binary=0x00000001 ok
+   30,31c30,31
+   < FSTATP[o]: DONE fails=0x00000002
+   < FSTATP[PAR] spawn o rc=0x00000002 Fforce(1,-1)=0x00000000 Fclose=0xADDR
+   ---
+   > FSTATP[o]: DONE fails=0x00000000
+   > FSTATP[PAR] spawn o rc=0x00000000 Fforce(1,-1)=0x00000000 Fclose=0xADDR
+   34c34
+   < FSTATP[i] fd0x00000000 rc=0x00000000 CHR size=0x00000000 blksize=0x00000400 isatty=0x00000000 FAIL
+   ---
+   > FSTATP[i] fd0x00000000 rc=0x00000000 REG size=0x00000006 blksize=0x00008000 isatty=0x00000000 ok
+   37,42c37,42
+   < FSTATP[i] stdin bufsize=0x00000400 linebuf=0x00000000 binary=0x00000001 FAIL
+   < FSTATP[i] line1 0x00000078 0x0000000d 0x0000000a
+   < FSTATP[i] line2 0x00000079 0x0000000d 0x0000000a
+   < FSTATP[i]: DONE fails=0x00000004
+   < FSTATP[PAR] spawn i rc=0x00000004 Fforce(0,-1)=0x00000000 Fclose=0xADDR
+   < FSTATP: FAIL 0x00000004
+   ---
+   > FSTATP[i] stdin bufsize=0x00008000 linebuf=0x00000000 binary=0x00000000 ok
+   > FSTATP[i] line1 0x00000078 0x0000000a
+   > FSTATP[i] line2 0x00000079 0x0000000a
+   > FSTATP[i]: DONE fails=0x00000000
+   > FSTATP[PAR] spawn i rc=0x00000000 Fforce(0,-1)=0x00000000 Fclose=0xADDR
+   > FSTATP: PASS
+== strict stdoutdb: B 11 lines, A 11 lines, 0 differing; exc/panic B 0 A 0
+   B DBG: DONE
+   A DBG: DONE
+== strict serr-newcrt0: B 27 lines, A 27 lines, 0 differing; exc/panic B 0 A 0
+   B STDERRP[PAR]: DONE
+   A STDERRP[PAR]: DONE
+== strict serr-oldcrt0: B 19 lines, A 19 lines, 0 differing; exc/panic B 0 A 0
+   B STDERRP[PAR]: DONE
+   A STDERRP[PAR]: DONE
+== strict stderra: B 20 lines, A 20 lines, 0 differing; exc/panic B 0 A 0
+   B STDERRA[PAR]: DONE
+   A STDERRA[PAR]: DONE
+== strict ttya: B 11 lines, A 11 lines, 2 differing; exc/panic B 0 A 0
+   B TTYT1: PASS
+   B TTYT2: PASS
+   B TTYT3: PASS
+   A TTYT1: PASS
+   A TTYT2: PASS
+   A TTYT3: PASS
+   8c8
+   <   kid file bytes: 54 54 59 43 48 49 4c 44 2d 53 54 44 4f 55 54 20 63 6f 64 65 3d 34 36 0a
+   ---
+   >   kid file bytes: 54 54 59 43 48 49 4c 44 2d 53 54 44 4f 55 54 20 63 6f 64 65 3d 34 36 0d 0a
+== strict doom: exc/panic 0; I_InitGraphics: DOOM screen size: w x h: 320 x 200|I_InitGraphics: Auto-scaling factor: 1|DOOM: picture 640x480 at (0,0) VERIFIED via EdDI+scale+vro_cpyfm|
