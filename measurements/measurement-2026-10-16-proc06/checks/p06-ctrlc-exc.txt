@@ -1,0 +1,5 @@
+ctrlc-kc-el0-off-serial.log: exc/panic 0 desk-up 1
+ctrlc-kc-el0-on-serial.log: exc/panic 0 desk-up 1
+ctrlc-kc-el0-strict-serial.log: exc/panic 0 desk-up 1
+ctrlc-kc-red-el0-on-serial.log: exc/panic 0 desk-up 1
+apired-el0-on-apitest-serial.log: exc/panic 0 desk-up 0

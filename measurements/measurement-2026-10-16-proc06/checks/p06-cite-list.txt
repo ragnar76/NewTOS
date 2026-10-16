@@ -1,0 +1,24 @@
+NewTOS desktop citation list — programs/desktop/src/ (all fns)
+
+file                                 fns  cited newtos  uncited
+programs/desktop/src/act.rs           15      9      0        6
+programs/desktop/src/app.rs            8      7      0        1
+programs/desktop/src/dir.rs           74     47      0       27
+programs/desktop/src/dlg.rs            2      0      0        2
+programs/desktop/src/ftype.rs          1      0      0        1
+programs/desktop/src/global.rs        23     13      2        8
+programs/desktop/src/gsx.rs            7      7      0        0
+programs/desktop/src/icons.rs          7      4      0        3
+programs/desktop/src/inf.rs           97     63      0       34
+programs/desktop/src/ins.rs           16     13      0        3
+programs/desktop/src/insapp.rs         6      3      0        3
+programs/desktop/src/lib.rs           15     14      0        1
+programs/desktop/src/main.rs         110     82      0       28
+programs/desktop/src/menu.rs          30     14      0       16
+programs/desktop/src/model.rs         15      9      0        6
+programs/desktop/src/pro.rs            5      5      0        0
+programs/desktop/src/redraw.rs         9      6      0        3
+programs/desktop/src/selftest.rs       3      0      3        0
+programs/desktop/src/win.rs           36     22      0       14
+
+DESK-CITE: fns=479 cited=318 newtos=5 uncited=156

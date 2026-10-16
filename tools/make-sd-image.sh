@@ -223,6 +223,24 @@ else
   echo "note: sdk/build.sh unavailable (no clang/lld?); C:\\DTACHILD.NCP skipped"
 fi
 
+# PTERMCH.NCP is the Pexec exit-code child (TASK/PROC06): it ends with the exit
+# code its one-character command tail selects (m = Pterm(-1), h = Pterm(0x8000),
+# z = Pterm0, c = wait in Cconin for a Ctrl-C). APITEST case T33 Pexecs it in
+# the m/h/z modes and checks that the parent gets rc & 0xFFFF zero-extended
+# (65535 / 32768 / 0). CTRLCPAR.NCP Pexecs it in mode c and prints the Pexec
+# result after a Ctrl-C (65504) -- it waits for that key, so it lives on C:
+# only, never in \AUTO\.
+if "$SCRIPT_DIR/../sdk/build.sh" "$SCRIPT_DIR/../sdk/examples/ptermch.c" "$V/PTERMCH.NCP" >/dev/null 2>&1; then
+  echo "built + installed C:\\PTERMCH.NCP (Pexec exit-code test child)"
+else
+  echo "note: sdk/build.sh unavailable (no clang/lld?); C:\\PTERMCH.NCP skipped"
+fi
+if "$SCRIPT_DIR/../sdk/build.sh" "$SCRIPT_DIR/../sdk/examples/ctrlcpar.c" "$V/CTRLCPAR.NCP" >/dev/null 2>&1; then
+  echo "built + installed C:\\CTRLCPAR.NCP (Ctrl-C'd child -> Pexec rc 65504)"
+else
+  echo "note: sdk/build.sh unavailable (no clang/lld?); C:\\CTRLCPAR.NCP skipped"
+fi
+
 # SYSINFO.NCP is the ACC06-part-1 proof: it reads the ARM core clock and the
 # SoC die temperature through the two NewTOS-own Ssystem subfunctions (2000 /
 # 2001) and prints them -- the evidence that the two values leave the kernel

@@ -19,6 +19,7 @@ freestanding examples):
 |--------------|--------|----------|-------|
 | `C:\HELLO.NCP` | `tools/mk-hello-ncp.py` (hand-crafted ELF) | the script | `:71-83` |
 | `C:\HELLO2.NCP`, `BIG.NCP`, `PHYSBASE.NCP`, `SCRFLIP.NCP`, `DTACHILD.NCP` | `sdk/examples/*.c` | `sdk/build.sh`, run **by the script** | `:78-136` |
+| `C:\PTERMCH.NCP`, `C:\CTRLCPAR.NCP` (PROC06: the `Pexec` exit-code child for APITEST T33, and the Ctrl-C'd-child proof, which waits for a key) | `sdk/examples/{ptermch,ctrlcpar}.c` | `sdk/build.sh`, run **by the script** | DTACHILD block |
 | `C:\LIBTEST.NCP`, `C:\CLOCKTST.NCP` | `sdk/libc/build/{libtest,clocktest}.NCP` | you: `sdk/libc/build-libc.sh [sdk/libc/tests/clocktest.c]` | `:143-166` |
 | `C:\SETJMPT.NCP`, `C:\MATHTST.NCP` (T07) | `sdk/libc/build/setjmptst.NCP`, `sdk/libm/build/mathtst.NCP` | you: `sdk/libc/build-libc.sh sdk/examples/setjmptst.c sdk/libc/build/setjmptst.NCP`, `sdk/libm/build-libm.sh` | `:169-200` |
 | `C:\COREMARK\{CORE,COREVAL}.NCP` | `sdk/apps/coremark/build/` | you: `sdk/apps/build-coremark.sh` | `:189-201` |

@@ -1,0 +1,60 @@
+views-el0-off-1-text.png: BYTE-IDENTICAL BYTE-IDENTICAL 0 px  (bebf3207a0b1 / bebf3207a0b1) 
+views-el0-off-10-end.png: BYTE-IDENTICAL BYTE-IDENTICAL 0 px  (31bc949069c5 / 31bc949069c5) 
+views-el0-off-2-a.png: BYTE-IDENTICAL BYTE-IDENTICAL 0 px  (3d0e210a842a / 3d0e210a842a) 
+views-el0-off-3-b.png: BYTE-IDENTICAL BYTE-IDENTICAL 0 px  (a4cf09624e11 / a4cf09624e11) 
+views-el0-off-4-c.png: BYTE-IDENTICAL BYTE-IDENTICAL 0 px  (b605223e6e43 / b605223e6e43) 
+views-el0-off-5-d.png: BYTE-IDENTICAL BYTE-IDENTICAL 0 px  (b605223e6e43 / b605223e6e43) 
+views-el0-off-6-e.png: BYTE-IDENTICAL BYTE-IDENTICAL 0 px  (10e4f0f180f9 / 10e4f0f180f9) 
+views-el0-off-7-f.png: BYTE-IDENTICAL BYTE-IDENTICAL 0 px  (10e4f0f180f9 / 10e4f0f180f9) 
+views-el0-off-8-g.png: BYTE-IDENTICAL BYTE-IDENTICAL 0 px  (066b3203cd7a / 066b3203cd7a) 
+views-el0-off-9-config.png: BYTE-IDENTICAL BYTE-IDENTICAL 0 px  (066b3203cd7a / 066b3203cd7a) 
+views-el0-on-1-text.png: BYTE-IDENTICAL BYTE-IDENTICAL 0 px  (bebf3207a0b1 / bebf3207a0b1) 
+views-el0-on-10-end.png: BYTE-IDENTICAL BYTE-IDENTICAL 0 px  (31bc949069c5 / 31bc949069c5) 
+views-el0-on-2-a.png: BYTE-IDENTICAL BYTE-IDENTICAL 0 px  (3d0e210a842a / 3d0e210a842a) 
+views-el0-on-3-b.png: BYTE-IDENTICAL BYTE-IDENTICAL 0 px  (a4cf09624e11 / a4cf09624e11) 
+views-el0-on-4-c.png: BYTE-IDENTICAL BYTE-IDENTICAL 0 px  (b605223e6e43 / b605223e6e43) 
+views-el0-on-5-d.png: BYTE-IDENTICAL BYTE-IDENTICAL 0 px  (b605223e6e43 / b605223e6e43) 
+views-el0-on-6-e.png: BYTE-IDENTICAL BYTE-IDENTICAL 0 px  (10e4f0f180f9 / 10e4f0f180f9) 
+views-el0-on-7-f.png: BYTE-IDENTICAL BYTE-IDENTICAL 0 px  (10e4f0f180f9 / 10e4f0f180f9) 
+views-el0-on-8-g.png: BYTE-IDENTICAL BYTE-IDENTICAL 0 px  (2efcd212a012 / 2efcd212a012) 
+views-el0-on-9-config.png: BYTE-IDENTICAL BYTE-IDENTICAL 0 px  (2efcd212a012 / 2efcd212a012) 
+views-el0-strict-1-text.png: BYTE-IDENTICAL BYTE-IDENTICAL 0 px  (bebf3207a0b1 / bebf3207a0b1) 
+views-el0-strict-10-end.png: BYTE-IDENTICAL BYTE-IDENTICAL 0 px  (31bc949069c5 / 31bc949069c5) 
+views-el0-strict-2-a.png: BYTE-IDENTICAL BYTE-IDENTICAL 0 px  (3d0e210a842a / 3d0e210a842a) 
+views-el0-strict-3-b.png: BYTE-IDENTICAL BYTE-IDENTICAL 0 px  (a4cf09624e11 / a4cf09624e11) 
+views-el0-strict-4-c.png: BYTE-IDENTICAL BYTE-IDENTICAL 0 px  (b605223e6e43 / b605223e6e43) 
+views-el0-strict-5-d.png: BYTE-IDENTICAL BYTE-IDENTICAL 0 px  (b605223e6e43 / b605223e6e43) 
+views-el0-strict-6-e.png: BYTE-IDENTICAL BYTE-IDENTICAL 0 px  (10e4f0f180f9 / 10e4f0f180f9) 
+views-el0-strict-7-f.png: BYTE-IDENTICAL BYTE-IDENTICAL 0 px  (10e4f0f180f9 / 10e4f0f180f9) 
+views-el0-strict-8-g.png: BYTE-IDENTICAL BYTE-IDENTICAL 0 px  (2efcd212a012 / 2efcd212a012) 
+views-el0-strict-9-config.png: BYTE-IDENTICAL BYTE-IDENTICAL 0 px  (2efcd212a012 / 2efcd212a012) 
+s-el0-off-apitest-t-a.png: BYTES-DIFFER DIFF 58 px bbox x=97..110 y=194..301  (2c092b4a2ca6 / 465f4b708027)   box x=97 y=194 w=6 h=8 px=30 A[(0, 0, 0), (255, 255, 255)] B[(0, 0, 0), (255, 255, 255)]   box x=105 y=290 w=6 h=12 px=28 A[(0, 0, 0), (255, 255, 255)] B[(0, 0, 0), (255, 255, 255)] 
+s-el0-off-apitest-t-b.png: BYTES-DIFFER DIFF 58 px bbox x=97..110 y=194..301  (2c092b4a2ca6 / 465f4b708027)   box x=97 y=194 w=6 h=8 px=30 A[(0, 0, 0), (255, 255, 255)] B[(0, 0, 0), (255, 255, 255)]   box x=105 y=290 w=6 h=12 px=28 A[(0, 0, 0), (255, 255, 255)] B[(0, 0, 0), (255, 255, 255)] 
+s-el0-off-desktop-t.png: BYTE-IDENTICAL BYTE-IDENTICAL 0 px  (0e6f770497da / 0e6f770497da) 
+s-el0-off-qed-t.png: BYTE-IDENTICAL BYTE-IDENTICAL 0 px  (ec79c00a999e / ec79c00a999e) 
+s-el0-off-teradesk-t.png: BYTE-IDENTICAL BYTE-IDENTICAL 0 px  (5148fde2f61b / 5148fde2f61b) 
+s-el0-on-apitest-t-a.png: BYTES-DIFFER DIFF 58 px bbox x=97..110 y=194..301  (2c092b4a2ca6 / 465f4b708027)   box x=97 y=194 w=6 h=8 px=30 A[(0, 0, 0), (255, 255, 255)] B[(0, 0, 0), (255, 255, 255)]   box x=105 y=290 w=6 h=12 px=28 A[(0, 0, 0), (255, 255, 255)] B[(0, 0, 0), (255, 255, 255)] 
+s-el0-on-apitest-t-b.png: BYTES-DIFFER DIFF 58 px bbox x=97..110 y=194..301  (2c092b4a2ca6 / 465f4b708027)   box x=97 y=194 w=6 h=8 px=30 A[(0, 0, 0), (255, 255, 255)] B[(0, 0, 0), (255, 255, 255)]   box x=105 y=290 w=6 h=12 px=28 A[(0, 0, 0), (255, 255, 255)] B[(0, 0, 0), (255, 255, 255)] 
+s-el0-on-desktop-t.png: BYTE-IDENTICAL BYTE-IDENTICAL 0 px  (0e6f770497da / 0e6f770497da) 
+s-el0-on-qed-t.png: BYTE-IDENTICAL BYTE-IDENTICAL 0 px  (ec79c00a999e / ec79c00a999e) 
+s-el0-on-teradesk-t.png: BYTE-IDENTICAL BYTE-IDENTICAL 0 px  (5148fde2f61b / 5148fde2f61b) 
+s-el0-strict-apitest-t-a.png: BYTES-DIFFER DIFF 58 px bbox x=97..110 y=194..301  (2c092b4a2ca6 / 465f4b708027)   box x=97 y=194 w=6 h=8 px=30 A[(0, 0, 0), (255, 255, 255)] B[(0, 0, 0), (255, 255, 255)]   box x=105 y=290 w=6 h=12 px=28 A[(0, 0, 0), (255, 255, 255)] B[(0, 0, 0), (255, 255, 255)] 
+s-el0-strict-apitest-t-b.png: BYTES-DIFFER DIFF 58 px bbox x=97..110 y=194..301  (2c092b4a2ca6 / 465f4b708027)   box x=97 y=194 w=6 h=8 px=30 A[(0, 0, 0), (255, 255, 255)] B[(0, 0, 0), (255, 255, 255)]   box x=105 y=290 w=6 h=12 px=28 A[(0, 0, 0), (255, 255, 255)] B[(0, 0, 0), (255, 255, 255)] 
+s-el0-strict-desktop-t.png: BYTE-IDENTICAL BYTE-IDENTICAL 0 px  (0e6f770497da / 0e6f770497da) 
+s-el0-strict-qed-t.png: BYTE-IDENTICAL BYTE-IDENTICAL 0 px  (ec79c00a999e / ec79c00a999e) 
+s-el0-strict-teradesk-t.png: BYTE-IDENTICAL BYTE-IDENTICAL 0 px  (5148fde2f61b / 5148fde2f61b) 
+views-el0-off-serial.log: exc/panic 0 
+views-el0-on-serial.log: exc/panic 0 
+views-el0-strict-serial.log: exc/panic 0 
+s-el0-off-apitest-serial.log: exc/panic 0 TOTAL 109 0 5
+s-el0-off-desktop-serial.log: exc/panic 0 
+s-el0-off-qed-serial.log: exc/panic 0 
+s-el0-off-teradesk-serial.log: exc/panic 0 
+s-el0-on-apitest-serial.log: exc/panic 0 TOTAL 109 0 5
+s-el0-on-desktop-serial.log: exc/panic 0 
+s-el0-on-qed-serial.log: exc/panic 0 
+s-el0-on-teradesk-serial.log: exc/panic 0 
+s-el0-strict-apitest-serial.log: exc/panic 0 TOTAL 109 0 5
+s-el0-strict-desktop-serial.log: exc/panic 0 
+s-el0-strict-qed-serial.log: exc/panic 0 
+s-el0-strict-teradesk-serial.log: exc/panic 0 

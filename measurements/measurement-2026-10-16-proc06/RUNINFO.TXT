@@ -1,0 +1,66 @@
+measurement-2026-10-16-proc06 -- PROC06: Pexec returns the child's exit code as rc & 0xFFFF zero-extended on every terminate path
+(console Ctrl-C -32 -> 65504, upcall-nesting overflow -998 -> 64538), per docs/api/gemdos/process/4c-pterm.md "Exit-code matrix" and
+4b-pexec.md native ABI.
+Base HEAD 43ae3553 (main). Changed in the shared tree (uncommitted): kernel/src/arch/aarch64/exceptions.rs (finish_terminate),
+tos-api/src/bdos/process/pterm.rs (exit_code_for_caller), tos-api/src/gemdos/console.rs (CTRLC_RC pub), tos-api/tests/proc06_pexec_exit_code.rs
+(new), sdk/examples/ptermch.c + ctrlcpar.c (new), sdk/apps/apitest/apitest.c (case T33), tools/make-sd-image.sh (installs PTERMCH/CTRLCPAR),
+docs (4c-pterm.md implementation note, docs/sdk/06-image-and-testing.md, sdk/README.md).
+Host macOS, QEMU raspi4b only. No SD card, no Pi. Scratch /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/proc06 (scratch trees, cards, program
+builds, QMP sockets relative to a per-run dir under s/). SOURCE_DATE_EPOCH=1791979200. One QEMU at a time, screendumps keyed to serial markers
+(mdrive.py). Host was on battery power during the QEMU runs (mrun.sh line); marker-keyed dumps are unaffected.
+
+RESULT: host tests red (compile: exit_code_for_caller missing, CTRLC_RC private) -> green 4/4; on target the Ctrl-C child case is red on the
+pre-fix tail (Pexec rc=-32) and green with the fix (65504) in on/off/strict; APITEST 109/0/5 (= 106/0/5 + T33.1-3) in on/off/strict;
+views + series 39/45 dumps byte-identical to measurement-2026-10-16-t16-desk60, the 6 APITEST dumps differ only in the summary digits
+(GEMDOS 10 -> 13, TOTAL 106 -> 109).
+
+1. CHANGE
+   finish_terminate, Pexec-caller branch: frame.gpr[0] = tos_api::bdos::process::pterm::exit_code_for_caller(rc) (was rc as i64 as u64).
+   exit_code_for_caller(rc) = u64::from(rc as u16) = parent_exit_code(rc) zero-extended. The kernel-launch branch is unchanged (it already
+   stored parent_exit_code(rc) via launch::record_kernel_child_exit, PROC05); handle_pterm's own mask is unchanged (harmless double mask).
+   EmuTOS: xterm(UWORD rc), run->p_dreg[0] = rc (bdos/proc.c:601,616); terminate() = xterm(-32) (bdos/console.c:101).
+
+2. HOST TESTS (tos-api/tests/proc06_pexec_exit_code.rs; spec host-test list items 1-3)
+   red: checks/proc06-host-red.txt -- E0432 exit_code_for_caller unresolved, E0603 CTRLC_RC private (the tail's decision was not a
+   testable function; the old expression rc as i64 as u64 gives 0xFFFF_FFFF_FFFF_FFE0 for -32).
+   green: checks/proc06-host-green.txt -- 4 passed: parent_exit_code matrix (0,1,0x7FFF,0x8000,-1,-2,-32,-998,0x12345,i32::MIN,i32::MAX),
+   never negative (sweep), CTRLC_RC -> 65504 (both functions), exit_code_for_caller -32/-1/-998/0/0x8000/0x12345, upper 48 bits 0.
+
+3. ON TARGET -- Ctrl-C child (spec item 8): method/ctrlc.sh, card ctrlc.img (= series APITEST card + C:\PTERMCH.NCP + C:\CTRLCPAR.NCP,
+   #Z C:\CTRLCPAR.NCP; method/cards.sh), kernels from method/build.sh: kc = shared tree + tools/inject-arm.py launch:CTRLCPAR=ctrlc.script
+   (tag p06c: Ctrl make/C make/C break/Ctrl break at +1000..+1015 ticks), kc-red = the same with the finish_terminate line put back to
+   `rc as i64 as u64` in the scratch copy only.
+     kc-red on:  "PTERMCH: waiting in Cconin" -> feed -> "CTRLCPAR: Pexec rc=-32 [FAIL: expected 65504]"   (the PROC06 defect)
+     kc on/off/strict: "CTRLCPAR: Pexec rc=65504 [OK]"
+   All four: shell "'C:\CTRLCPAR.NCP' exited with rc=0", then "[desk] desktop up"; 0 [EXC]/PANIC/load failed (checks/p06-ctrlc-exc.txt).
+   Dumps screendumps/ctrlc-*-t.png (CTRLCPAR line) and -desk.png.
+
+4. ON TARGET -- APITEST T33 (spec items 4-5): Pexec(0,"C:\PTERMCH.NCP", "\001m"|"\001h"|"\001z") -> 65535 / 32768 / 0 (ck_eq; skip only
+   for EFILNF/EPTHNF = child missing). Card apitest-p06.img = series card u5b/cards/apitest.img (4c903c52...) with C:\APITEST.NCP replaced by
+   the T33 build and C:\PTERMCH.NCP added (method/cards.sh, programs.sh; the card's old APITEST.NCP was byte-identical to the pre-change
+   build of the shared tree, checks/cards.txt). fsck_msdos -n clean on both cards (checks/cards.txt).
+   Control (method/apired.sh): the same card on the PRE-PROC06 product kernel (measurement-2026-10-16-t16-desk60/bin/kernel8-t16d60.img),
+   mode on: T33.1-3 [OK], TOTAL 109/0/5. T33 runs through the Pterm trap, which masked before PROC06 too -- T33 pins the Pterm path
+   (no red expected there); the path PROC06 changes is the Ctrl-C one of section 3.
+
+5. NO-REGRESSION (method/all.sh: 8 views on kv (inject-arm desktop=views.script, tag u7v) + series on p06 (checks.sh product build) with
+   APICARD = apitest-p06.img, EL0 default desktop, on/off/strict = 45 dumps; method/cmp-acc.sh vs measurement-2026-10-16-t16-desk60):
+   checks/p06-vs-t16d60.txt: 39 BYTE-IDENTICAL; s-el0-{on,off,strict}-apitest-t-{a,b}.png differ in 58 px, bbox x=97..110 y=194..301 = the
+   GEMDOS PASS column (10 -> 13) and the TOTAL PASS column (106 -> 109) of the APITEST summary. APITEST [OK]/[FAIL]/[SKIP] lines vs t16-desk60
+   (hex masked): only the three T33 lines added, all modes (checks/p06-apitest-verdict-diff.txt). 0 [EXC]/PANIC/load failed in all logs.
+
+6. BASELINES (method/checks.sh p06, summary checks/p06-checks-summary.txt):
+   host tests tos-api tos-types xtask 1376/0/1 (= 1372/0/1 + the 4 PROC06 tests); release warnings rpi4 / qemu-virt: tos-api 64, kernel 94
+   both, 0 errors; clippy kernel rpi4 / qemu-virt / rpi4+selftest-desk: 76/125 each (0 hits in pterm.rs, gemdos/console.rs, exceptions.rs);
+   programs build + clippy 0; drift TOTAL 4, UNSAFE 20; emutos-consts total=466 matched=333 mismatched=1 documented=1 undocumented=0 stale=0
+   no-counterpart=132; SDK 20/0/0; cite fns=479 cited=318 newtos=5 uncited=156; NAPs unchanged (97f14224.. f686f6ba.. 38fa2c4f.. ef99f9e1..).
+   sdk/build.sh of ptermch.c / ctrlcpar.c (-Wall -Wextra): 0 warnings; build-apitest.sh: 0 warning/error lines.
+
+7. NOT RUN: real Pi 4; qemu-virt boot (kernel-virt-p06.img only built); desk=kernel (EL1) paths; spec items 6 (Ptermres(n,-2)) and 7
+   (crashing child) as new cases -- both go through handle_pterm's masked arm, unchanged by PROC06; the upcall-overflow -998 path on target
+   (host-tested only: it shares terminate_and_redirect -> finish_terminate with the Ctrl-C path proven in section 3); EmuCON `run` of a
+   Ctrl-C'd child (visible effect derived from kernel/src/shell.rs cmd_run, not driven).
+
+Files: method/ (copies of measurement-2026-10-16-t16-desk60/method with scratch proc06 / kernel id p06 / reference t16-desk60 / APICARD in
+series2.sh, plus build.sh, cards.sh, programs.sh, ctrlc.sh, ctrlc.script, apired.sh), bin/SHA256SUMS (kernel images gitignored; the three
+.NCP programs kept), checks/, serial/, screendumps/.

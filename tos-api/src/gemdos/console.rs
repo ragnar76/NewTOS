@@ -201,8 +201,10 @@ pub fn crawio(args: &TrapArgs) -> Long {
 
 /// ASCII ETX — Ctrl-C. EmuTOS `terminate()` exit code is `-32`.
 const CTRL_C: u8 = 0x03;
-/// Exit code EmuTOS passes to `xterm` on a console Ctrl-C.
-const CTRLC_RC: i32 = -32;
+/// Exit code EmuTOS passes to `xterm` on a console Ctrl-C
+/// (`bdos/console.c:101`, `#define terminate() xterm(-32)`). The `Pexec`
+/// caller receives it as `pterm::parent_exit_code(CTRLC_RC)` = 65504 (PROC06).
+pub const CTRLC_RC: i32 = -32;
 /// ASCII DC2 — Ctrl-R. `cgets` redisplays the current line
 /// (`bdos/console.c:571`).
 const CTRL_R: u8 = 0x12;

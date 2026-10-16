@@ -1589,6 +1589,33 @@ int main(void)
 		       (unsigned long) _base, (unsigned long) BP_U32(0x00UL));
 	}
 
+	/* ---- T33 (PROC06): Pexec returns the child's exit code as a UWORD
+	 *      zero-extended into the LONG -- EmuTOS xterm(UWORD rc) stores
+	 *      run->p_dreg[0] = rc (bdos/proc.c:601,616), so the parent sees
+	 *      rc & 0xFFFF, never a negative value
+	 *      (docs/api/gemdos/process/4c-pterm.md, "Exit-code matrix").
+	 *      C:\PTERMCH.NCP (sdk/examples/ptermch.c) ends with the code its
+	 *      one-character command tail selects. Only "child not on the
+	 *      card" (EFILNF/EPTHNF) is a skip; any other negative result is
+	 *      the defect this case pins. ---- */
+	before("T33 Pexec(0,C:\\PTERMCH.NCP,m|h|z): child exit code zero-extended");
+	{
+		static const struct { const char *tail; const char *name; long want; } t33[] = {
+			{ "\001m", "T33.1 child Pterm(-1) -> Pexec == 65535", 65535L },
+			{ "\001h", "T33.2 child Pterm(0x8000) -> Pexec == 32768", 32768L },
+			{ "\001z", "T33.3 child Pterm0() -> Pexec == 0", 0L },
+		};
+		unsigned int i;
+
+		for (i = 0; i < sizeof t33 / sizeof t33[0]; i++) {
+			long prc = Pexec(0, "C:\\PTERMCH.NCP", t33[i].tail, 0L);
+			if (prc == -33L || prc == -34L)
+				ck_skip(G_GEMDOS, t33[i].name, "C:\\PTERMCH.NCP not on the card");
+			else
+				ck_eq(G_GEMDOS, t33[i].name, prc, t33[i].want);
+		}
+	}
+
 	/* ================================================================ *
 	 *  SUPER group -- Super (GEMDOS 0x20) / Supexec (XBIOS 0x26)       *
 	 *                                                                  *

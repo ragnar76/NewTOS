@@ -295,6 +295,11 @@ Fix (Developer, not done here): mask once in `finish_terminate`
 `terminate_and_redirect`; every path then yields the EmuTOS value. The mask
 at `handle_pterm` stays harmless.
 
+**Fixed 2026-10-16 (TASK/PROC06):** `finish_terminate` writes
+`pterm::exit_code_for_caller(rc)` (= `parent_exit_code(rc)` zero-extended to
+`u64`) into the `Pexec` caller's `x0`, so divergences 1 and 2 are closed; see
+"NewTOS implementation notes" below.
+
 ### Proposed host tests (PROC06)
 
 Pure-function level (`tos-api/tests/`, next to `proc05_shell_exit_code.rs`):
@@ -412,3 +417,35 @@ the memory sweep (`file::close_process_files`). Before PROC02 files a process
 left open stayed open after its `Pterm`. The current-directory half
 (`decr_curdir_usage`) has no counterpart: NewTOS keeps no per-PD current
 directories.
+
+TASK/PROC06 (2026-10-16): the exit code is masked once in the shared
+terminate tail. `finish_terminate` (`kernel/src/arch/aarch64/exceptions.rs`)
+writes `tos_api::bdos::process::pterm::exit_code_for_caller(rc)` — the low 16
+bits, zero-extended into the 64-bit `x0` — on its `Pexec`-caller branch; the
+kernel-launch branch already stored `parent_exit_code(rc)`
+(`launch::record_kernel_child_exit`, PROC05). Every terminate path now
+delivers the EmuTOS value: `Pterm`/`Pterm0`/`Ptermres` (unchanged, already
+masked at `handle_pterm`), a crash (`-1` → 65535, unchanged), the console
+Ctrl-C (`-32` → **65504**, was −32) and the upcall-nesting overflow (`-998` →
+**64538**, was −998). `CTRLC_RC` is `pub` in `tos_api::gemdos::console` for the
+host test. Tests: `tos-api/tests/proc06_pexec_exit_code.rs` (host-test list
+items 1–3); on target APITEST T33 (items 4–5: `C:\PTERMCH.NCP` ending with
+`Pterm(-1)` / `Pterm(0x8000)` / `Pterm0` → 65535 / 32768 / 0) and
+`C:\CTRLCPAR.NCP` (item 8: a child ended by Ctrl-C in `Cconin` → 65504; needs
+a key, so not in APITEST); evidence `measurements/measurement-2026-10-16-proc06/`.
+Items 6 (`Ptermres(n, -2)`) and 7 (crashing child) are not run as new cases:
+6 goes through the same masked `handle_pterm` arm as `Pterm`, 7 through
+`kill_program` → `handle_pterm`, both unchanged by PROC06.
+
+Visible effects of the change (all toward EmuTOS):
+- **EmuCON `run`** (`kernel/src/shell.rs` `cmd_run`): a child ended by Ctrl-C
+  used to print `Cannot run program (error 32).` (the `rc < 0` branch); it now
+  prints `[program exited]`, as for any other exit code.
+- **mintlib `spawn*`/`system`** (`sdk/libc/overlay/mintlib/spawn.c:475-493`):
+  a Ctrl-C'd child used to come back as `-1` with `errno = 32` (the `rval < 0`
+  "Pexec error" branch); it now returns 65504 like EmuTOS. The same holds for
+  any `Pexec` caller that tests `< 0` for a load error (APITEST T29's
+  "child did not run").
+- The AES shell (`sh_ldapp`, kernel-launched child) is unchanged — it already
+  saw 65504 (PROC05).
+

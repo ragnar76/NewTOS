@@ -1,0 +1,15 @@
+== on
+27a28,30
+> T33.1 child Pterm(-1) -> Pexec == 65535  got=65535 want=65535  [OK]
+> T33.2 child Pterm(HEX) -> Pexec == 32768  got=32768 want=32768  [OK]
+> T33.3 child Pterm0() -> Pexec == 0  got=0 want=0  [OK]
+== off
+27a28,30
+> T33.1 child Pterm(-1) -> Pexec == 65535  got=65535 want=65535  [OK]
+> T33.2 child Pterm(HEX) -> Pexec == 32768  got=32768 want=32768  [OK]
+> T33.3 child Pterm0() -> Pexec == 0  got=0 want=0  [OK]
+== strict
+27a28,30
+> T33.1 child Pterm(-1) -> Pexec == 65535  got=65535 want=65535  [OK]
+> T33.2 child Pterm(HEX) -> Pexec == 32768  got=32768 want=32768  [OK]
+> T33.3 child Pterm0() -> Pexec == 0  got=0 want=0  [OK]

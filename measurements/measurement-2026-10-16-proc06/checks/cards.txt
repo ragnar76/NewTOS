@@ -1,0 +1,98 @@
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+card APITEST.NCP vs pre-PROC06 build: identical
+#Z 01 C:\APITEST.NCP@
+A107PAR.NAP
+A79COLOR.NAP
+A96ZOMB.NAP
+ACCFREE.NAP
+APITEST.NCP
+Apps
+ATEXITK.NAP
+ATEXITP.NAP
+BIG.NCP
+CMDLINE.NCP
+CMDLINE.NTP
+CRASHTST.NAP
+CRCHILD.NAP
+CURDIR.NCP
+DOOM
+DTACHILD.NCP
+E10KID.NAP
+E10USR.NAP
+E10USRO.NAP
+E10USRS.NAP
+E9MEM.NAP
+E9PLAIN.NCP
+ENVKID.NAP
+ENVPAR.NAP
+ENVRN.NAP
+FS11A.NAP
+FS11DEV.NAP
+FSEEKCON.NAP
+HELLO.NCP
+HELLO2.NCP
+HELLOMEM.NAP
+HELLOOLD.NAP
+KBDVEC.NAP
+MDBUD.NAP
+MDKID.NAP
+MDPAR.NAP
+MDPROBE.NAP
+MDSTEP.NAP
+MDTIME.NAP
+MPKID.NAP
+MPROT3B.NAP
+MPROTO.NAP
+MPROTS.NAP
+NEWDESK.INF
+OLDEXEC.NCP
+OWNKID.NAP
+OWNPAR.NAP
+P10
+P10KID.NCP
+P10TEST.NCP
+P34KID.NAP
+P34PAR.NAP
+P567.NAP
+P567S.NAP
+PFLAGS1.NCP
+PFLAGS2.NCP
+PHYSBASE.NCP
+PPAUTO.NCP
+PPDESK.NAP
+PPZ.NAP
+PTERMCH.NCP
+README.TXT
+S2ALL.NAP
+S2ALLS.NAP
+SCRFLIP.NCP
+STDERRA.NAP
+STDERRO.NAP
+STDERRP.NAP
+STDERRQ.NAP
+STDOUTDB.NAP
+STDOUTDBG.NAP
+SYSINFO.NCP
+TERADESK.INF
+TSRPAR.NAP
+TSRPARS.NAP
+TSRRES.NAP
+TSRUSE.NAP
+TTYA.NAP
+TTYPROBE.NAP
+UACC3A.NAP
+UAKID.NAP
+VFORKT.NAP
+WFSCREEN.NAP
+hdiutil: WARNING: 'hdiutil detach ...' is deprecated. Please use 'diskutil eject ...' instead.
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+0000000    #   Z       0   1       C   :   \   C   T   R   L   C   P   A
+0000020    R   .   N   C   P   @  \n                                    
+0000027
+hdiutil: WARNING: 'hdiutil detach ...' is deprecated. Please use 'diskutil eject ...' instead.
+Invalid BS_jmpBoot in boot block: 000000
+** /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/proc06/cards/apitest-p06.img
+fsck apitest-p06: ** /dev/rdisk6s1 ** Phase 1 - Preparing FAT ** Phase 2 - Checking Directories ** Phase 3 - Checking for Orphan Clusters Warning: 105 files, 55756 KiB free (27878 clusters) 
+fsck ctrlc: ** /dev/rdisk6s1 ** Phase 1 - Preparing FAT ** Phase 2 - Checking Directories ** Phase 3 - Checking for Orphan Clusters Warning: 106 files, 55748 KiB free (27874 clusters) 
+33160ec56059e3e7c8cf08552d008f50872bb890c6b7d14b11ae683887555741  /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/proc06/cards/apitest-p06.img
+3ada46636f0b78a32ba5672bf7d40f3c9d6fbbdc084e51029c1c6cfc0ed3409e  /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/proc06/cards/ctrlc.img

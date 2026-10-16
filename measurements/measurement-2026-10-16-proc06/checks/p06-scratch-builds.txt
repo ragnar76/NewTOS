@@ -1,0 +1,7 @@
+inject-arm.py: /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/proc06/tree-kv: tag [u7v], desktop (147 bytes)
+kv: warning: `tos-api` (lib) generated 64 warnings warning: `kernel` (lib) generated 94 warnings 
+inject-arm.py: /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/proc06/tree-kc: tag [p06c], launch:CTRLCPAR (4 bytes)
+kc: warning: `tos-api` (lib) generated 64 warnings warning: `kernel` (lib) generated 94 warnings 
+inject-arm.py: /Users/ingouhlemann/.claude/jobs/a6cc309c/tmp/proc06/tree-kc-red: tag [p06c], launch:CTRLCPAR (4 bytes)
+kc-red: fix reverted: 1 line
+kc-red: warning: `tos-api` (lib) generated 64 warnings warning: `kernel` (lib) generated 94 warnings 

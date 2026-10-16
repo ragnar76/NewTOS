@@ -95,9 +95,21 @@ pub enum PtermError {
 /// → 65504. Never negative, so never confused with a `Pexec` load error.
 ///
 /// Used for the kernel-launched child's exit code (the shell's `dos_exec`
-/// value, PROC05); the `Pterm` trap applies the same mask to `x0` itself.
+/// value, PROC05) and, via [`exit_code_for_caller`], for the `Pexec` caller's
+/// `x0` (PROC06).
 pub fn parent_exit_code(rc: i32) -> i32 {
     i32::from(rc as u16)
+}
+
+/// The 64-bit `x0` a `Pexec` caller (modes 0/4/6) resumes with when its child
+/// terminates with exit code `rc` — [`parent_exit_code`] zero-extended, so the
+/// upper 48 bits are always 0 and the value is never negative
+/// (`docs/api/gemdos/process/4c-pterm.md`, "Exit-code matrix"; native ABI in
+/// `4b-pexec.md`). The kernel's shared terminate tail writes this for every
+/// path — `Pterm`/`Pterm0`/`Ptermres`, the console Ctrl-C (`-32` → 65504), the
+/// upcall-nesting overflow (`-998` → 64538) and a crash (`-1` → 65535).
+pub fn exit_code_for_caller(rc: i32) -> u64 {
+    u64::from(rc as u16)
 }
 
 /// Tear down the running process's *resources* and return the

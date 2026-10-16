@@ -1455,6 +1455,13 @@ fn kill_program(frame: &mut ExceptionFrame) {
 /// `Ptermres`, and the Ctrl-C self-terminate): copy the parent's frame
 /// snapshot back over the trap frame, restore the parent's `TTBR0`,
 /// release the slot, and let the post-handler `eret` resume the parent.
+///
+/// `rc` may arrive unmasked (Ctrl-C `-32`, upcall overflow `-998`); the
+/// parent receives `rc & 0xFFFF` zero-extended on both branches — the
+/// `Pexec` caller's `x0` via [`pterm::exit_code_for_caller`], the
+/// kernel-launch path via `record_kernel_child_exit` (PROC06, PROC05).
+///
+/// [`pterm::exit_code_for_caller`]: tos_api::bdos::process::pterm::exit_code_for_caller
 fn finish_terminate(
     frame: &mut ExceptionFrame,
     rc: i32,
@@ -1534,8 +1541,13 @@ fn finish_terminate(
         if pexec_caller {
             // Exit code lands in the caller's `x0` per the GEMDOS Pexec
             // ABI. Overwrite gpr[0] *after* the bulk copy so the
-            // caller's pre-trap value doesn't shadow it.
-            frame.gpr[0] = rc as i64 as u64;
+            // caller's pre-trap value doesn't shadow it. The low 16 bits,
+            // zero-extended (EmuTOS `xterm(UWORD rc)`, `bdos/proc.c:601,
+            // 616`): masked here, once for every terminate path, so the
+            // console Ctrl-C's `-32` arrives as 65504 and the upcall
+            // overflow's `-998` as 64538, never as a negative "load error"
+            // (PROC06; `docs/api/gemdos/process/4c-pterm.md`).
+            frame.gpr[0] = tos_api::bdos::process::pterm::exit_code_for_caller(rc);
         }
     } else {
         // The kernel-launch path: no caller register takes the exit code, so
