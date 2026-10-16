@@ -1,6 +1,6 @@
 # ARCH02 — `Pexec`-Eltern verlieren ihre FP/SIMD-Register
 
-Status: **OFFEN** · Prioritaet: **P2** · Typ: Belegter Defekt / Architektur — Nebenbefund ACC03
+Status: **ERLEDIGT** (2026-10-17, QEMU; Pi-Lauf offen) · Prioritaet: **P2** · Typ: Belegter Defekt / Architektur — Nebenbefund ACC03
 
 Abhaengigkeiten: [ACC03](ACC03.md) (erledigt)
 
@@ -43,3 +43,25 @@ scheitern, sonst misst der Test nicht, was er soll.
 
 [Gemeinsame Regeln](README.md) gelten. Architekturdatei — Registerverhalten
 nur aus der ARM ARM.
+
+## Abschluss
+
+**ERLEDIGT (2026-10-17)** — `8bac146b`, Quittung [ARCH02-STATUS-DONE.MD](ARCH02-STATUS-DONE.MD).
+
+* **Wo der Elternrahmen liegt:** gesichert im Startzweig von `handle_pexec`
+  (alle startenden Modi: 0, 4, 6; Modi 100+ gibt es im Baum nicht),
+  zurueckgespielt in `finish_terminate`, dem gemeinsamen Schluss jedes
+  Prozessendes (`Pterm`/`Pterm0`/`Ptermres`, Absturz, Ctrl-C, `etv_term`).
+  Kernel-Start (AUTO, `sh_ldapp`, NEWDESK und sein Neustart) und der Kernel-Park
+  der Accessories setzen EL1-Code fort, der keine FP-Register benutzt.
+* **Fix:** `Process::parent_fp` am Kind-Slot; `save_fp_context` in
+  `handle_pexec`, `restore_fp_context` im `parent_frame_pexec`-Arm von
+  `finish_terminate` — dieselben Routinen wie ACC03. `CPACR_EL1.FPEN = 0b11`,
+  also kein faules FP-Sichern.
+* **Abnahme:** `sdk/examples/fppexec.c` haelt ein Muster in allen 32
+  v-Registern plus FPCR/FPSR ueber `Pexec` 0, 3+6 und 3+4. Vorher: 0/32,
+  FPCR/FPSR = die Werte des Kindes, `RESULT FAIL`. Nachher: 32/32, `RESULT PASS`
+  in memprot on/off/strict. APITEST 109/0/5 vor und nach dem Fix gleich.
+  Belege: `measurements/measurement-2026-10-17-arch02/RUNINFO.TXT`.
+* **Offen:** derselbe Lauf auf der echten Pi 4 (`SD_FPPEXEC_AUTO=1` in
+  `tools/make-sd-image.sh` gilt nur fuer das QEMU-Abbild).
