@@ -69,7 +69,7 @@ Driftprobe 0 seit U10: der Kernel linkt den Desktop nicht mehr.
   **PROC03** (Desktop/AES als EL0-Prozess), **FS06**, **ARCH02**, **DESK48**,
   **DESK57**, PORT02 (zView-Bewertung).
 - P3 / Erweiterungen: ARCH03 Stufe 2b, **SND01/SND02** (Ton), SDL01, RTC01,
-  BALL01, FS05, REF03, T15, DESK49, DESK51–DESK56, **CON01** (Spaltenzaehler/Typeahead), **CON02** (`Cconws` folgt Umlenkung nicht), FS12 (26 Laufwerke), FS13, LIBC-IOCTL, LIBC-BUF, DESK61, MEM07–MEM10, MEM06 (Idee),
+  BALL01, FS05, REF03, T15, DESK49, DESK51–DESK56, **CON01** (Spaltenzaehler/Typeahead), **CON02** (`Cconws` folgt Umlenkung nicht), FS12 (26 Laufwerke), FS13, LIBC-IOCTL, LIBC-BUF, DESK61, DESK63 (Verknuepfung auf Verknuepfung), MEM07–MEM10, MEM06 (Idee),
   IO01 (Idee: AUX/MIDI/PRN-Treiber).
 - Erledigt seit dem 30.09., hier frueher als offen gefuehrt: MEM03, MEM04,
   PROC01, PROC02, PORT09, GUI07, ARCH03 (bis auf das Obige), FS10, FS11, LIBC-MAIN, LIBC-TTY, LIBC-FSTAT, MEM05, PROC05, PROC06, SPEC01, DESK58, DESK59, DESK60, T16.
