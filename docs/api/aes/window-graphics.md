@@ -1229,7 +1229,7 @@ window (handle 0) is not deleted.
 > `cnx_get`). So the sweep NewTOS runs when the desktop regains control
 > (`desktop_resume` → `tos_api::aes::window::wm_new_keep_desktop`) is
 > `wm_new` **minus the windows the desktop identity owns** (`w_owner ==
-> pd::DESKTOP`): every other window — the program's, or a `Pexec`
+> pd::KERNEL_CONTEXT`): every other window — the program's, or a `Pexec`
 > descendant's that had no sweep of its own — is closed if open and deleted,
 > both lock counters are reset, and a `WF_NEWDESK` tree the program
 > registered is dropped (EmuTOS resets `gl_newdesk` in `wm_init` before the

@@ -8,8 +8,7 @@
 //! **Identity and reported value** (spec § "AES process identity and pid").
 //! A client's *identity* — the key of its descriptor, queue, wait-key,
 //! resource list and window ownership — is its GEMDOS process slot, or
-//! [`pd::DESKTOP`] for the kernel context ([`current_identity`]; the name is
-//! from the time the desktop ran there, until DESK43 U10).
+//! [`pd::KERNEL_CONTEXT`] for the kernel context ([`current_identity`]).
 //! The *value* a program reads back (`ap_id`, `appl_find`, `WF_OWNER`,
 //! `msg[1]`) is computed from the identity by [`reported_pid`] and mapped back
 //! by [`identity_of`] where a program hands a value in (`appl_write`,
@@ -178,7 +177,7 @@ impl AesGlobalVals {
 
 /// The AES identity of the current caller — the index of its process
 /// descriptor in [`pd`]'s table: its GEMDOS process slot for an EL0 process
-/// (`RUN`'s slot), [`pd::DESKTOP`] for the kernel boot context (`RUN` null —
+/// (`RUN`'s slot), [`pd::KERNEL_CONTEXT`] for the kernel boot context (`RUN` null —
 /// the shell loop, the boot path and the boot-time selftests). A non-null
 /// `RUN` that names no slot cannot occur (every basepage the loader installs
 /// is a slot's); it falls to the kernel context's entry, as the old `current_pid` fell to
@@ -186,9 +185,9 @@ impl AesGlobalVals {
 pub(super) fn current_identity() -> usize {
     let bp = crate::bdos::process::current();
     if bp.is_null() {
-        return pd::DESKTOP;
+        return pd::KERNEL_CONTEXT;
     }
-    crate::bdos::process::slot_for(bp).unwrap_or(pd::DESKTOP)
+    crate::bdos::process::slot_for(bp).unwrap_or(pd::KERNEL_CONTEXT)
 }
 
 /// The pid of the application chain — EmuTOS's `D.g_int[0].p_pid`, the one

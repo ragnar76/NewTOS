@@ -237,7 +237,7 @@ fn spend_pass(who: usize) -> u32 {
     match WAIT_PASSES.get(who) {
         Some(c) => c.fetch_add(1, Ordering::AcqRel) + 1,
         // No identity to charge — a caller outside the descriptor table cannot
-        // exist (`current_identity` returns a slot or `pd::DESKTOP`), but an
+        // exist (`current_identity` returns a slot or `pd::KERNEL_CONTEXT`), but an
         // out-of-range index must not silently wait forever either.
         None => WAIT_TIMEOUT + 1,
     }

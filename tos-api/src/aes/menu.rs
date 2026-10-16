@@ -56,7 +56,7 @@ static MNTREE: AtomicUsize = AtomicUsize::new(0);
 /// (`aes/gemmnlib.h:17`), set beside `gl_mntree` in `mn_bar`: `p =
 /// fpdnm(NULL, rlr->p_pid); … gl_mnppd = p; gl_mntree = tree;`
 /// (`aes/gemmnlib.c:707,712-713`). The AES identity of the caller
-/// (`appl::current_identity`: a GEMDOS slot, or `pd::DESKTOP` for kernel
+/// (`appl::current_identity`: a GEMDOS slot, or `pd::KERNEL_CONTEXT` for kernel
 /// code), `usize::MAX` when no bar is installed.
 ///
 /// EmuTOS uses it as the message target for a menu selection
@@ -1312,7 +1312,7 @@ pub(super) fn gl_dafirst() -> i16 {
 /// [`menu_fixup`] called out of a desk accessory's `menu_register`, and the
 /// Control Manager's drop-down tracker — and an ILP32 app's 24-byte records
 /// read at LP64 width, or an EL0 VA walked under a different `TTBR0`, is the
-/// A97 class of defect. A kernel-installed tree (`MNPPD == pd::DESKTOP`)
+/// A97 class of defect. A kernel-installed tree (`MNPPD == pd::KERNEL_CONTEXT`)
 /// is native LP64 and needs no owner mapping.
 fn mntree_accessor(tree: *mut Object) -> ObjTree {
     let owner = MNPPD.load(Ordering::Relaxed);

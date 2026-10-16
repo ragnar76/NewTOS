@@ -698,7 +698,7 @@ static UPDATE_LOCK: AtomicI16 = AtomicI16::new(0);
 /// Our per-slot sweep ([`wm_new_for_slot`]) needs the same test, because unlike
 /// EmuTOS's shell loop it runs while another client is still alive (A110).
 ///
-/// A GEMDOS slot index or [`super::pd::DESKTOP`]; [`NO_OWNER`] = free
+/// A GEMDOS slot index or [`super::pd::KERNEL_CONTEXT`]; [`NO_OWNER`] = free
 /// (`sy_owner = NULL`).
 static UPDATE_OWNER: AtomicUsize = AtomicUsize::new(NO_OWNER);
 
@@ -729,7 +729,7 @@ static MCTRL_OWNER: AtomicUsize = AtomicUsize::new(NO_OWNER);
 
 /// "No process holds this counter" — EmuTOS's `sy_owner = NULL`
 /// (`aes/gemflag.c:128`, `geminit.c:838`). Not a valid identity: identities are
-/// GEMDOS slots `< MAX_PROCESSES` plus [`super::pd::DESKTOP`].
+/// GEMDOS slots `< MAX_PROCESSES` plus [`super::pd::KERNEL_CONTEXT`].
 const NO_OWNER: usize = usize::MAX;
 
 /// EmuTOS `ml_pmown` (`gemfmlib.c:58`) — the mouse owner `fm_own` found on
@@ -737,7 +737,7 @@ const NO_OWNER: usize = usize::MAX;
 /// back on the matching `END_MCTRL` (`ct_chgown(ml_pmown, &ml_ctrl)`, `:102`).
 /// An [`input::Mown`] as [`input::get_mown`] reports it, in
 /// [`input::Mown::to_raw`]'s encoding; power-up value: the application chain.
-static ML_PMOWN: AtomicUsize = AtomicUsize::new(super::pd::DESKTOP);
+static ML_PMOWN: AtomicUsize = AtomicUsize::new(super::pd::KERNEL_CONTEXT);
 
 /// Global default per-gadget colour words (`WF_DCOLOR`): the topped/untopped
 /// defaults new windows inherit (EmuTOS `gl_wtcolor`/`gl_wbcolor`,
@@ -4516,7 +4516,7 @@ pub(super) fn reinit() {
     UPDATE_OWNER.store(NO_OWNER, Ordering::Relaxed);
     *gl_wtcolor() = GL_WTCOLOR_DEFAULT;
     *gl_wbcolor() = GL_WBCOLOR_DEFAULT;
-    ML_PMOWN.store(super::pd::DESKTOP, Ordering::Relaxed);
+    ML_PMOWN.store(super::pd::KERNEL_CONTEXT, Ordering::Relaxed);
 }
 
 fn inside(r: Grect, x: i16, y: i16) -> bool {
@@ -5193,9 +5193,9 @@ pub(super) fn top_owner() -> usize {
 /// (`w_setup(ppd, DESKWH, NONE)`, `aes/gemwmlib.c:1254-1290`), and `rlr` is
 /// the application chain at every `wm_init` the shell loop runs; NewTOS leaves
 /// the slot unowned until `WF_NEWDESK` re-owns it, so an unowned desktop window
-/// answers the chain, represented by [`super::pd::DESKTOP`].
+/// answers the chain, represented by [`super::pd::KERNEL_CONTEXT`].
 pub(super) fn desk_owner() -> usize {
-    owner_of(DESKWH).unwrap_or(super::pd::DESKTOP)
+    owner_of(DESKWH).unwrap_or(super::pd::KERNEL_CONTEXT)
 }
 
 /// `ml_ocnt > 0` — a `wind_update(BEG_MCTRL)` / `fm_own(TRUE)` bracket is in

@@ -68,7 +68,7 @@
 
 use core::sync::atomic::{AtomicBool, AtomicI16, AtomicI32, AtomicU32, AtomicU64, AtomicU8, AtomicUsize, Ordering};
 
-use super::pd::{DESKTOP, NUM_PDS};
+use super::pd::{KERNEL_CONTEXT, NUM_PDS};
 use tos_types::aes::{WA_DNLINE, WA_UPLINE, WM_ARROWED};
 
 /// EmuTOS `MB_DOWN` (`aes/geminput.c:46`) — the left button, the only state
@@ -107,9 +107,9 @@ static GL_MOWNER_APP: AtomicBool = AtomicBool::new(true);
 /// same places as the flag, under the same guards (`set_mown`, `bchange`'s
 /// `chkown`); read by [`owns_keys`]. Identities are compared as EmuTOS's
 /// `AESPD`s are, see [`same_pd`]. Power-up value: the application chain,
-/// represented by [`DESKTOP`] (the first `w_setactive` hands the mouse to the
+/// represented by [`KERNEL_CONTEXT`] (the first `w_setactive` hands the mouse to the
 /// desktop window's owner, `rlr` at `wm_init`, `aes/gemwmlib.c:1254-1290`).
-static GL_MOWNER_PD: AtomicUsize = AtomicUsize::new(DESKTOP);
+static GL_MOWNER_PD: AtomicUsize = AtomicUsize::new(KERNEL_CONTEXT);
 
 /// The application half of EmuTOS `gl_cowner` (`aes/geminput.c:63`) — the
 /// owner of the control rectangle, set together with `gl_mowner` by
@@ -120,7 +120,7 @@ static GL_MOWNER_PD: AtomicUsize = AtomicUsize::new(DESKTOP);
 /// remembered `ctl_pd` — would make `gl_cowner` the Control Manager too; that
 /// half is not carried: a press inside the control rectangle stays an
 /// application's, as the flag has always answered it (`chkown`'s `+1`).
-static GL_COWNER_PD: AtomicUsize = AtomicUsize::new(DESKTOP);
+static GL_COWNER_PD: AtomicUsize = AtomicUsize::new(KERNEL_CONTEXT);
 
 /// A value of EmuTOS `gl_mowner` as `get_mown`/`set_mown`/`ct_chgown` pass it:
 /// the Control Manager (`ctl_pd`) or an application process, named by its AES
@@ -135,7 +135,7 @@ pub(super) enum Mown {
 
 impl Mown {
     /// `ctl_pd` in [`Mown::to_raw`]'s encoding — not an AES identity
-    /// (identities are GEMDOS slots and [`DESKTOP`]).
+    /// (identities are GEMDOS slots and [`KERNEL_CONTEXT`]).
     const RAW_CTL: usize = usize::MAX;
 
     /// One word for an atomic (`fm_own`'s `ml_pmown`).
@@ -322,8 +322,8 @@ pub(super) fn reinit() {
     XRAT.store(0, Ordering::Relaxed);
     YRAT.store(0, Ordering::Relaxed);
     GL_MOWNER_APP.store(true, Ordering::Relaxed);
-    GL_MOWNER_PD.store(DESKTOP, Ordering::Relaxed);
-    GL_COWNER_PD.store(DESKTOP, Ordering::Relaxed);
+    GL_MOWNER_PD.store(KERNEL_CONTEXT, Ordering::Relaxed);
+    GL_COWNER_PD.store(KERNEL_CONTEXT, Ordering::Relaxed);
     GL_CTMOWN.store(false, Ordering::Relaxed);
     CT_MSGUP.store(false, Ordering::Relaxed);
 }

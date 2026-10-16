@@ -2,9 +2,9 @@
 //!
 //! Spec: [`docs/api/aes/application.md`] § "AES process identity and pid",
 //! contract (a). Every AES client has a descriptor **by construction**: the
-//! table has one entry per GEMDOS process slot plus one for the kernel-context
-//! desktop ([`NUM_PDS`] = `MAX_PROCESSES + 1`), and a client's **identity** is
-//! its index — the GEMDOS slot for an EL0 process, [`DESKTOP`] for the boot
+//! table has one entry per GEMDOS process slot plus one for the kernel
+//! context ([`NUM_PDS`] = `MAX_PROCESSES + 1`), and a client's **identity** is
+//! its index — the GEMDOS slot for an EL0 process, [`KERNEL_CONTEXT`] for the boot
 //! context (`appl::current_identity`). The descriptor holds the client's
 //! `p_flags` (`AP_OPEN`/`AP_MESAG`/…), its 8-char name (for `appl_find`), and
 //! a per-application **FIFO message queue** (the standard GEM message pipe
@@ -55,12 +55,13 @@ pub const NUM_PDS: usize = crate::bdos::process::MAX_PROCESSES + 1;
 /// Identity of the kernel context — the one AES client that is not a GEMDOS
 /// process: kernel code calling the AES with `RUN` null (the shell loop's
 /// `sh_draw`/`fm_error`, the boot path, the boot-time selftests). Its own
-/// index keeps it apart from GEMDOS slot 0. The name is historical: until
-/// DESK43 U10 the built-in desktop was this client (`desk::run` called
-/// `appl_init` from the boot context); since U9/U10 the desktop is the EL0
-/// program `NEWDESK` with a slot of its own, and the move needed no special
-/// case here.
-pub const DESKTOP: usize = crate::bdos::process::MAX_PROCESSES;
+/// index keeps it apart from GEMDOS slot 0. EmuTOS's counterpart is its
+/// initial AES process, `pd_index(0)` = `D.g_int[0].a_pd` with `p_pid` 0
+/// (`aes/gempd.c:32-35`, `aes/geminit.c:850-876`), which runs the shell loop;
+/// EmuTOS gives it no name of its own. Until DESK43 U10 the built-in desktop
+/// was this client (hence its former name `DESKTOP`); since U9/U10 the desktop
+/// is the EL0 program `NEWDESK` with a slot of its own.
+pub const KERNEL_CONTEXT: usize = crate::bdos::process::MAX_PROCESSES;
 
 /// Length of the standard GEM message (8 WORDs = 16 bytes) — the normal case
 /// for every internal AES poster (`WM_REDRAW`, menu, keyboard, …).
@@ -355,7 +356,7 @@ pub fn table_addr() -> u64 {
 /// queue, name and other flags (A25). Cannot fail: the descriptor exists from
 /// boot, as EmuTOS's does, so there is no "table full" to report and
 /// `appl_init` never returns −1 for it (A62). `idx` is an identity
-/// (`appl::current_identity`: a GEMDOS slot `< MAX_PROCESSES` or [`DESKTOP`]),
+/// (`appl::current_identity`: a GEMDOS slot `< MAX_PROCESSES` or [`KERNEL_CONTEXT`]),
 /// always inside the table.
 ///
 /// The application's loaded resources are not part of this descriptor

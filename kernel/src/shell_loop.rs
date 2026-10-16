@@ -598,7 +598,7 @@ fn p_setappdir(cmd: &[u8]) {
 /// process slot ([`tos_api::aes::register_process`] →
 /// `tos_api::aes::pd::register`), because NewTOS's AES process descriptors are
 /// keyed on that slot (A62: one entry per GEMDOS slot plus one for the
-/// kernel context, `tos_api::aes::pd::DESKTOP`), so the descriptor to
+/// kernel context, `tos_api::aes::pd::KERNEL_CONTEXT`), so the descriptor to
 /// rename and clear is only identified there. There is exactly **one** launch
 /// path — this arm: since DESK43 U3 the desktop asks for a program with
 /// `shel_write(SHW_EXEC, …)` and terminates (`deskpro.c:35-45`,

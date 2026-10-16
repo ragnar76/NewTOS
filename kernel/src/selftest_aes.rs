@@ -108,7 +108,7 @@ pub fn run_phase13_aes_test() {
     aes(pb);
     let ap_id = intout[0];
     // EmuTOS reports `rlr->p_pid` = 0 for the whole application chain, the
-    // kernel-context identity (`pd::DESKTOP`) this selftest runs as included
+    // kernel-context identity (`pd::KERNEL_CONTEXT`) this selftest runs as included
     // (`aes/gemsuper.c:94`, `geminit.c:850-877`; spec § "AES process
     // identity and pid", contract (b), A56).
     check(ap_id == 0, "appl_init returns the application chain's id, 0");

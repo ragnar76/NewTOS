@@ -60,7 +60,7 @@ pub const fn wait_input() -> u64 {
 }
 
 /// The `WAIT_MESG(idx)` wake key for the message FIFO of AES identity `idx`
-/// (the descriptor index: a GEMDOS slot or `pd::DESKTOP`; design §4.1). Used
+/// (the descriptor index: a GEMDOS slot or `pd::KERNEL_CONTEXT`; design §4.1). Used
 /// by `evnt_mesag`; the poster ([`crate::aes::pd::post_msg`]) wakes on the
 /// same key.
 #[inline]

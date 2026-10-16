@@ -403,7 +403,7 @@ impl Drop for Proc {
 }
 
 /// The kernel boot context: no running process — the kernel-context client
-/// (`pd::DESKTOP`; the built-in desktop until DESK43 U10).
+/// (`pd::KERNEL_CONTEXT`).
 fn desktop_context() {
     process::set_current(std::ptr::null_mut());
 }

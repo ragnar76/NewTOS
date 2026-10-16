@@ -594,7 +594,7 @@ impl Loaded {
 // hold several loaded blobs, of which its array names one. NewTOS keeps the
 // equivalent here: every entry is one `rsrc_load` of one process, keyed by the
 // loading process's AES **identity** (`appl::current_identity`: its GEMDOS
-// slot, or `pd::DESKTOP` for the kernel context — not the pid it
+// slot, or `pd::KERNEL_CONTEXT` for the kernel context — not the pid it
 // reports, which parent and child may share), and the caller's `ap_rscmem` —
 // matched against the entries' names — says which one a call acts on.
 // XaAES's per-client `resources` list (`xaaes/src.km/xa_rsrc.c:895-900`) is
@@ -689,7 +689,7 @@ unsafe fn table() -> &'static mut [RscEntry; MAX_LOADED] {
 
 /// The AES identity of the process making the current call — the key of its
 /// resource list (`appl::current_identity`): its GEMDOS slot for an EL0
-/// caller, `pd::DESKTOP` for the kernel boot context. The identity, not the
+/// caller, `pd::KERNEL_CONTEXT` for the kernel boot context. The identity, not the
 /// reported pid: the kernel context and the program in slot 0 report the same
 /// number but keep separate lists, as do a `Pexec` parent and child (A62,
 /// spec § "AES process identity and pid", consequences for A39).
@@ -874,7 +874,7 @@ pub fn on_process_exit(slot: usize) {
 /// By the time this runs every EL0 process of the session that ended is gone
 /// — `sh_main` returns only after the program it started has terminated — so
 /// the only identity that could still hold an entry is the kernel context
-/// ([`super::pd::DESKTOP`]), which issues no `rsrc_load` (see the module note:
+/// ([`super::pd::KERNEL_CONTEXT`]), which issues no `rsrc_load` (see the module note:
 /// no EL1 caller of opcode 110). The loop covers it regardless.
 pub(super) fn reinit() {
     // SAFETY: single-CPU restart path, no AES call in flight.
