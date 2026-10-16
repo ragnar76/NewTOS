@@ -21,3 +21,11 @@ Analyse `docs/analysis/libc-fstat-2026-10-17.md`. Fix nur in
 Ungueltiger fd und Geraete-Handles ≥ 6 bleiben wie heute. Die zwei
 veralteten Stellen in `docs/sdk/07-mintlib-limits.md` (Vererbung ans Kind,
 Zeile ~188) werden mitkorrigiert.
+
+## Datumsnotiz (2026-10-16)
+
+Die Arbeit an diesem Ticket ist vom **2026-10-16** (Commit `6ee90541`).
+Messlauf `measurements/measurement-2026-10-17-libc-fstat/`, Analyse
+`docs/analysis/libc-fstat-2026-10-17.md` und die Datumsangaben oben tragen
+versehentlich den 17.10. Die Pfade bleiben, weil Messlaeufe unveraenderlich
+sind und Verweise sonst brechen.
