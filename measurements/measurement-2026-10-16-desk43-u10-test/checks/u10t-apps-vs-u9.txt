@@ -1,0 +1,25 @@
+f1api-el0-on-t-a.png: BYTE-IDENTICAL 0 px  (2c092b4a2ca6 / 2c092b4a2ca6) 
+f1api-el0-on-t-b.png: BYTE-IDENTICAL 0 px  (2c092b4a2ca6 / 2c092b4a2ca6) 
+f1crash-el0-on-app.png: DIFF 82238 px bbox x=0..598 y=2..477  (0673a4c4379b / 4d6c87a2b5c8)   box x=0 y=2 w=469 h=476 px=53834 A[(0, 0, 0), (255, 255, 255)] B[(0, 0, 0), (255, 255, 255)]   box x=337 y=2 w=126 h=124 px=6736 A[(255, 255, 255)] B[(0, 0, 0)]   box x=473 y=2 w=126 h=108 px=5982 A[(255, 255, 255)] B[(0, 0, 0)]  
+f1crash-el0-on-end.png: BYTE-IDENTICAL 0 px  (0e6f770497da / 0e6f770497da) 
+f1crch-el0-off-app.png: DIFF 850 px bbox x=153..590 y=130..221  (f8804cfd18b7 / 7cc928686819)   box x=153 y=130 w=30 h=12 px=144 A[(0, 0, 0), (255, 255, 255)] B[(0, 0, 0), (255, 255, 255)]   box x=417 y=146 w=22 h=12 px=97 A[(0, 0, 0), (255, 255, 255)] B[(0, 0, 0), (255, 255, 255)]   box x=449 y=146 w=6 h=12 px=28 A[(0, 0,
+f1crch-el0-off-end.png: BYTE-IDENTICAL 0 px  (0e6f770497da / 0e6f770497da) 
+f1crch-el0-on-app.png: DIFF 927 px bbox x=145..590 y=146..237  (59b8574eb97c / b528a9ab88a6)   box x=153 y=146 w=30 h=12 px=144 A[(0, 0, 0), (255, 255, 255)] B[(0, 0, 0), (255, 255, 255)]   box x=417 y=162 w=38 h=28 px=216 A[(0, 0, 0), (255, 255, 255)] B[(0, 0, 0), (255, 255, 255)]   box x=145 y=194 w=22 h=12 px=107 A[(0,
+f1crch-el0-on-end.png: BYTE-IDENTICAL 0 px  (0e6f770497da / 0e6f770497da) 
+f1crch-el0-strict-app.png: DIFF 927 px bbox x=145..590 y=146..237  (59b8574eb97c / b528a9ab88a6)   box x=153 y=146 w=30 h=12 px=144 A[(0, 0, 0), (255, 255, 255)] B[(0, 0, 0), (255, 255, 255)]   box x=417 y=162 w=38 h=28 px=216 A[(0, 0, 0), (255, 255, 255)] B[(0, 0, 0), (255, 255, 255)]   box x=145 y=194 w=22 h=12 px=107 A[(0,
+f1crch-el0-strict-end.png: BYTE-IDENTICAL 0 px  (0e6f770497da / 0e6f770497da) 
+f1doom-el0-on-t1.png: DIFF 230328 px bbox x=0..639 y=0..403  (9eefcb95fe77 / f533ff8f0355)   box x=0 y=0 w=640 h=404 px=230164 A[(0, 0, 0), (8, 8, 8), (8, 24, 8), (16, 16, 16)] B[(0, 0, 0), (8, 8, 8), (8, 24, 8), (16, 16, 16)]   box x=14 y=0 w=2 h=3 px=6 A[(57, 66, 41)] B[(74, 82, 49)]   box x=48 y=0 w=2 h=3 px=6 A[(49, 
+f1hg-el0-off-app.png: BYTE-IDENTICAL 0 px  (f7b266f5ce9f / f7b266f5ce9f) 
+f1hg-el0-off-end.png: BYTE-IDENTICAL 0 px  (0e6f770497da / 0e6f770497da) 
+f1hg-el0-on-app.png: BYTE-IDENTICAL 0 px  (f7b266f5ce9f / f7b266f5ce9f) 
+f1hg-el0-on-end.png: BYTE-IDENTICAL 0 px  (0e6f770497da / 0e6f770497da) 
+f1hg-el0-strict-app.png: BYTE-IDENTICAL 0 px  (f7b266f5ce9f / f7b266f5ce9f) 
+f1hg-el0-strict-end.png: BYTE-IDENTICAL 0 px  (0e6f770497da / 0e6f770497da) 
+f1hgp-el0-off-app.png: BYTE-IDENTICAL 0 px  (0e6f770497da / 0e6f770497da) 
+f1hgp-el0-off-end.png: BYTE-IDENTICAL 0 px  (0e6f770497da / 0e6f770497da) 
+f1hgp-el0-on-app.png: BYTE-IDENTICAL 0 px  (0e6f770497da / 0e6f770497da) 
+f1hgp-el0-on-end.png: BYTE-IDENTICAL 0 px  (0e6f770497da / 0e6f770497da) 
+f1hgp-el0-strict-app.png: BYTE-IDENTICAL 0 px  (0e6f770497da / 0e6f770497da) 
+f1hgp-el0-strict-end.png: BYTE-IDENTICAL 0 px  (0e6f770497da / 0e6f770497da) 
+f1qed-el0-on-app.png: BYTE-IDENTICAL 0 px  (ec79c00a999e / ec79c00a999e) 
+f1tera-el0-on-app.png: BYTE-IDENTICAL 0 px  (5148fde2f61b / 5148fde2f61b) 

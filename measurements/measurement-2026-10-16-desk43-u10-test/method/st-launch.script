@@ -1,0 +1,9 @@
+# (DESK43 U9-3/4/5: copied unchanged from measurement-2026-10-14-desk43-u9-1-2/method/)
+# st-launch.script -- DESK43 U9-2: Return for the self-test DELETE box, from NEWDESK's launch: +2 s, +7 s, +12 s
+# (= U8b inj-selftest-return.py's schedule from "[desk-selftest] begin", which follows the launch within ~0.1 s).
+400 0x1C
+410 0x9C
+1400 0x1C
+1410 0x9C
+2400 0x1C
+2410 0x9C

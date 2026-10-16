@@ -1,0 +1,20 @@
+on desktop serial diff lines 5 exc/panic/loadfail=0 TOTAL=
+on apitest serial diff lines 59 exc/panic/loadfail=0 TOTAL=TOTAL 106 0 5
+on teradesk serial diff lines 3 exc/panic/loadfail=0 TOTAL=
+on qed serial diff lines 3 exc/panic/loadfail=0 TOTAL=
+off desktop serial diff lines 5 exc/panic/loadfail=0 TOTAL=
+off apitest serial diff lines 59 exc/panic/loadfail=0 TOTAL=TOTAL 106 0 5
+off teradesk serial diff lines 3 exc/panic/loadfail=0 TOTAL=
+off qed serial diff lines 3 exc/panic/loadfail=0 TOTAL=
+strict desktop serial diff lines 5 exc/panic/loadfail=0 TOTAL=
+strict apitest serial diff lines 59 exc/panic/loadfail=0 TOTAL=TOTAL 106 0 5
+strict teradesk serial diff lines 3 exc/panic/loadfail=0 TOTAL=
+strict qed serial diff lines 3 exc/panic/loadfail=0 TOTAL=
+on-asid desktop serial diff lines 5 exc/panic/loadfail=0 TOTAL=
+on-asid apitest serial diff lines 59 exc/panic/loadfail=0 TOTAL=TOTAL 106 0 5
+on-asid teradesk serial diff lines 3 exc/panic/loadfail=0 TOTAL=
+on-asid qed serial diff lines 3 exc/panic/loadfail=0 TOTAL=
+verify desktop serial diff lines 5 exc/panic/loadfail=0 TOTAL=
+verify apitest serial diff lines 59 exc/panic/loadfail=0 TOTAL=TOTAL 106 0 5
+verify teradesk serial diff lines 3 exc/panic/loadfail=0 TOTAL=
+verify qed serial diff lines 3 exc/panic/loadfail=0 TOTAL=

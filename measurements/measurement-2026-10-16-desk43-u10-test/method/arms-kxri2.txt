@@ -1,0 +1,1 @@
+desktop=ri2.script

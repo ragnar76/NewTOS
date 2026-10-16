@@ -1,0 +1,12 @@
+off accfree: EXC/PANIC-in-log=0 | verdict: ACCFREE: PASS| | out-diff vs EL1: n/a, vs mem05-ref: 0
+off e9mem: EXC/PANIC-in-log=0 | verdict: [E9MEM kid] E9MEM: PASS|[E9MEM] E9MEM: PASS| | out-diff vs EL1: n/a, vs mem05-ref: 0
+off stdoutdb: EXC/PANIC-in-log=0 | verdict: DBG: DONE| | out-diff vs EL1: n/a, vs mem05-ref: 0
+off ttya: EXC/PANIC-in-log=0 | verdict: TTYT2: PASS|TTYT3: PASS|TTYPROBE: PASS| | out-diff vs EL1: n/a, vs mem05-ref: 0
+on accfree: EXC/PANIC-in-log=0 | verdict: ACCFREE: PASS| | out-diff vs EL1: n/a, vs mem05-ref: 0
+on e9mem: EXC/PANIC-in-log=0 | verdict: [E9MEM kid] E9MEM: PASS|[E9MEM] E9MEM: PASS| | out-diff vs EL1: n/a, vs mem05-ref: 0
+on stdoutdb: EXC/PANIC-in-log=0 | verdict: DBG: DONE| | out-diff vs EL1: n/a, vs mem05-ref: 0
+on ttya: EXC/PANIC-in-log=0 | verdict: TTYT2: PASS|TTYT3: PASS|TTYPROBE: PASS| | out-diff vs EL1: n/a, vs mem05-ref: 0
+strict accfree: EXC/PANIC-in-log=0 | verdict: ACCFREE: PASS| | out-diff vs EL1: n/a, vs mem05-ref: 0
+strict e9mem: EXC/PANIC-in-log=0 | verdict: [E9MEM kid] E9MEM: PASS|[E9MEM] E9MEM: PASS| | out-diff vs EL1: n/a, vs mem05-ref: 0
+strict stdoutdb: EXC/PANIC-in-log=0 | verdict: DBG: DONE| | out-diff vs EL1: n/a, vs mem05-ref: 0
+strict ttya: EXC/PANIC-in-log=0 | verdict: TTYT2: PASS|TTYT3: PASS|TTYPROBE: PASS| | out-diff vs EL1: n/a, vs mem05-ref: 0

@@ -1,0 +1,116 @@
+measurement-2026-10-16-desk43-u10-test -- Tester verification of main HEAD 04fc0b23 after DESK43 U10 (0a3b9be9: built-in kernel desktop and
+desk=kernel removed, NEWDESK load failure -> EmuCON) and the rename pd::DESKTOP -> pd::KERNEL_CONTEXT (d11ed66b).
+Host macOS, QEMU raspi4b + qemu-virt. No SD card, no Pi, nothing under /Volumes/BOOT* or NEWTOS*. Test only: no product code changed, nothing
+checked out/restored/stashed; the shared tree stayed clean (git status: only this directory new). Scratch = the session scratchpad (trees, cards,
+sockets), nothing under /tmp. SOURCE_DATE_EPOCH 1791979200 (checks) / 1792152000 (scratch kernels). One QEMU at a time, AC power (caffeinate),
+screendumps keyed to serial markers (method/mrun.sh + mdrive.py = the U9 acceptance method). Per-run card = APFS clone (cp -c), deleted afterwards.
+
+RESULT: PASS for everything run. No regression found. Only deviations from the U9 references are explained below (card contents, kernel
+addresses, log wording, guest timing) and each one is backed by a control run or by the U9 RUNINFO. Not run: section 9.
+
+Method base: copies of measurement-2026-10-15-desk43-acceptance/method (adapted: scratch paths, EL0 path only -- there is no other desktop path any
+more -- relative socket paths, cp -c) and measurement-2026-10-16-desk43-u10/method (dev-u10-*.sh, virt-run.py is derived from its run.py).
+References: U9 acceptance dumps/serial of the EL0 path (tags with -el0-).
+
+1. BASELINES (method/checks.sh u10t on the shared tree at HEAD 04fc0b23; checks/u10t-*)
+   host tests tos-api tos-types xtask      1374 / 0 / 1                                   (expected 1374/0/1)
+   SDK host tests                           20 / 0 / 0                                      (expected 20/0/0)
+   release build rpi4 / qemu-virt           tos-api 64, kernel 94 both, rc 0, 0 errors      (expected 64/94)
+       fresh: cargo clean -p kernel -p tos-api -p desktop -p newtos-gem --target aarch64-unknown-none-softfloat --release before each board.
+       rpi4 log: "Compiling tos-api" + "Compiling kernel"; qemu-virt log: "Compiling kernel" only -- tos-api is board-independent and was NOT
+       rebuilt in the second build (its 64 warnings are replayed from the cache of the first build; the kernel, which differs per board, was
+       compiled fresh: 94 warnings in the log). "desktop crate compiled: 0" both boards: the program workspace is not touched by that clean;
+       the NEWDESK blob embedded is the existing build (NAP sha256 in checks/u10t-nap-sha256.txt; HELLOGEM rpi4 97f14224.. = U9).
+   clippy kernel rpi4 / qemu-virt / rpi4+selftest-desk   tos-api 76, kernel 125 (all three)  (expected 76/125)
+   clippy programs (hello-gem+newtos-gem, newtos-gem no rt, desktop x3, newdesk x3, newtos-gem pwk): 0 lines each
+   sh tools/desk-drift-probe.sh -v          TOTAL 0 (unsafe 20)                              (expected 0)
+   desk-cite-list fns=479 cited=318 newtos=5 uncited=156 (dev: unchanged);  deptree: kernel no longer depends on desktop/newtos-gem
+       (cargo tree -i desktop: "package ID specification `desktop` did not match any packages"; checks/u10t-deptree-*.txt).
+   build-programs rpi4 / qemu-virt rc 0, 0 warning/error lines.
+   emutos-consts: total 466 matched 333 mismatched 1 documented 1 undocumented 0 stale 0 (U9 run: 332/2/2) -- changed by commits after
+       dab1fe62, not by U10; not chased.
+   Product images (bin/): kernel8-u10t.img (rpi4, 1255528 B) sha256 2bb07348f5276ce478c49a3fe895fac36e7c84854668aa1ab0bd9dc450716c92, kernel-virt-u10t.img (flat, 1221936 B)
+       sha256 5acf10c4f896e5875135518a18109875574154ef05ecdcc38d6c004371cbbd12 (checks/u10t-bin-sha256.txt)
+       U9 rpi4 image was 1528712 B; the kernel is 274432 B smaller in [mm] "kernel: ... (2535424 vs 2809856 bytes)".
+
+2. QEMU-VIRT (method/virt.sh, virt3.sh; flat image kernel-virt-u10t.img; modes on / off / strict / on-asid; tags acc-<mode>-virt-desktop)
+   All four: "[shell] sh_ldapp: starting desktop NEWDESK ...", "[launch] EL0: slot 0 entry 0x41986000", "[desk] desktop up (0 drives)", 0 [EXC]/PANIC;
+   "ASIDs ON: 16-bit" in on-asid. End screens pixel-identical to the U9 acceptance dumps acc-<mode>-virt-desktop-end.png (checks/u10t-virt-vs-u9.txt,
+   4/4 BYTE-IDENTICAL) and viewed: green desktop, menu bar Desk File View Options, TRASH + PRINTER, pointer.
+
+3. APITEST (method/apitest109b.sh; card apitest109b.img = HEAD-built APITEST.NCP (bin/APITEST-HEAD.NCP, sdk build-apitest.sh -> scratch) + C:\PTERMCH.NCP
+   (sha256 30fa331e.., copy of measurement-2026-10-16-proc06/bin); kernel8-u10t.img, EL0 NEWDESK)
+   mode on / off / strict / on-asid / verify:  TOTAL 109 / 0 / 5 in all five, 0 [EXC]/PANIC; T33.1-3 [OK] (65535 / 32768 / 0); the 5 SKIPs = BC26-30 (no key).
+   memprot=verify run: see series (section 4) for the "[memprot] verify ... 0 mismatches" line.
+   Why this card: the sdk copy sdk/apps/apitest/APITEST.NCP (gitignored build output, dated 2026-10-13) is stale = 106 tests, and the seeded card has no PTERMCH.NCP.
+   First attempt (rebuilt APITEST, no PTERMCH on the card): 106 / 0 / 8 (T33.1-3 SKIP "C:\PTERMCH.NCP not on the card") -> void/api109-*.
+   The series APITEST of section 4 deliberately uses the stale 106 binary: TOTAL 106 / 0 / 5 in every mode and, per mode, 126 result lines identical to U9.
+
+4. SERIES (method/series2.sh via q-series.sh; kernel8-u10t.img; plain / APITEST / TeraDesk / QED cards seeded by seed-card.sh; modes on off strict on-asid verify = 20 runs)
+   Compared with the U9 acceptance EL0 dumps (checks/u10t-series-vs-u9.txt): 25/25 dumps BYTE-IDENTICAL (5 modes x desktop, apitest t-a, t-b, teradesk, qed).
+   Serial vs U9 (hex-normalised, checks/u10t-series-serial-vs-u9.txt): desktop 5 lines, teradesk 3, qed 3, apitest 59 lines differ; the differences are
+     - "[shell] desktop: EL0 program NEWDESK (embedded; desk=kernel selects the built-in one)" gone (U10), "[shell] sh_ldapp: starting NEWDESK, ..." now
+       "starting desktop NEWDESK (D.s_cmd NEWDESK), ...", "[mm] kernel: ... (2809856 bytes)" now 2535424 bytes;
+     - APITEST only: T12 free clusters (27881 -> 28064) and the T14 directory listing = my card has other files than the U9 card (not the product).
+       APITEST result lines [OK]/[FAIL]/[SKIP]: 126, 0 differing vs U9, in every mode; 106 / 0 / 5 every mode.
+   0 [EXC]/PANIC/"load failed" in all 20 logs. verify: "[memprot] verify: 11 checks, 3239483 pages compared, 0 mismatches, 0 tolerated shortfalls" (as U9).
+
+5. VIEWS (method/views2.sh; kernel kv = injector views.script; modes on off strict verify + input=aes; 50 dumps, checks/u10t-views-vs-u9.txt)
+   vs U9: all 50 differ in the directory window text only (x=59..590 y=59..419): FILE LIST / SIZES / DATES of C:\ -- this run's card (seed-card.sh, "3037910 bytes
+   used in 77 items", 10/16/26) is not the U9 card ("3406406 bytes used in 82 items", 10/13/26; viewed both 1-text dumps). Therefore a CONTROL: the tree of the U9
+   base dab1fe62 (git archive -> scratch, same injector, kernel8-kvold.img) on THIS card, mode on: checks/u10t-vs-control.txt: 10/10 views BYTE-IDENTICAL to the new kernel.
+   Within this run: on vs strict vs verify vs input=aes identical (all 10 views); off differs only in 8-g and 9-config (Free RAM box), as in U9 (122 vs 137 px).
+
+6. PROGRAMS UNDER THE EL0 DESKTOP (method/apps3.sh, kernel kf2, injector T16-fixed tools/inject-arm.py; cards derived by make-cards.sh; checks/u10t-apps-vs-u9.txt)
+   25 dumps compared with U9, 20 BYTE-IDENTICAL: HELLOGEM on/off/strict app+end (6), HGPANIC app+end (6), QED, TeraDesk, APITEST via #F t-a/t-b (2), CRCHILD end x3, CRASHTST end;
+   the other 5: CRCHILD app (on/off/strict, 3 dumps): differ only in the crash report's register dump -- the X4-X7 / X8-11 / X12-15 / X16-19 / X20-23 / X24-27
+   kernel pointer values (0xffff0000...) (viewed, EL0 values identical), because the kernel image is smaller; same two hashes in all three modes. CRASHTST app dump:
+   same crash reports at another scroll position (guest timing, as in U9 RUNINFO s4; control kf2old on this card shows yet another position), "end" identical.
+   DOOM t1: frames differ (demo timing, as in U9).
+   ACC (method/acc2.sh, kernel ka, SYSACC via Desk menu; on/off/strict): 9/9 BYTE-IDENTICAL.
+   EmuCON typed commands (method/emucon2.sh, kernel kxe; cli, hello2, oldexec, exit; on/off/strict): 12/12 BYTE-IDENTICAL.
+   20 start/exit cycles vs 0 cycles (method/cycles2.sh; kernels kxcy/kxcy0, card f1hg, mode on): cyc0 and cyc20 config-dialog dumps BYTE-IDENTICAL to U9 (and to each other); serial
+       20 x "quit by key", 20 x "'C:\HELLOGEM.NAP' exited with rc=0", 20 x "desktop NEWDESK (D.s_cmd NEWDESK) exited with rc=0" (U9 wording "desktop 'NEWDESK' exited ...": log text
+       changed by U10), 20 x "MEM05 after program", all 20 identical (in_use=3, pages held 2/512, heap used=8224 free=8380384), 0 [EXC].
+   Save desktop (method/save2.sh, kernel ksave, mode on): NEWDESK.INF written = BYTE-IDENTICAL to U9's (672 B; original 374 B identical): checks/save2-el0-on-NEWDESK.INF.
+   Crash with open windows (method/crchw2.sh, card f1crchw = saved card + F1 -> CRCHILD; on/off/strict): vs control kf2old on the same card: end dump BYTE-IDENTICAL; report
+       dump differs only by the same kernel-pointer register values; vs U9: differs in addition by the window's file list (card).
+   Read .INF (method/readinf3.sh, kernel kxri3, saved card): A-start, B-closed, B2-fsel, C-read all BYTE-IDENTICAL to control kxri3old; B-closed also to U9.
+   TeraDesk -> QED chain and Quit (method/tdqed2.sh, kxtd): 4/4 dumps BYTE-IDENTICAL to U9.
+   Selftest kernel (kt, --features selftest-desk, method/selftest2.sh): "[desk-selftest] done", 64 PASS / 1 FAIL (checks/u10t-selftest-lines.txt). U9 had 53 PASS / 1 FAIL: the 53 are
+       all present unchanged (+ 11 new PASS lines [desk-act] 3, [desk-drv] 8 from later work); the 1 FAIL is the same pre-existing "[desk-ins] FAIL ins_devices on a complete
+       desktop reports no change". Screen BYTE-IDENTICAL to U9.
+   SDK probe programs (method/probes3.sh, reduced set; modes on/off/strict): ACCFREE PASS, E9MEM (kid + parent) PASS, STDOUTDB DONE, TTYPROBE PASS; program output hex-normalised
+       identical to the MEM05 acceptance serial logs (diff 0) in all 12 runs, 0 [EXC]/PANIC (checks/u10t-probes.txt).
+
+7. DESKTOP CRASH / LOAD-FAILURE POLICY (method/crash3.sh; kernels kp (NEWDESK panic!() before desktop::run), kc (ELF header zeroed), km (no registry entry NEWDESK))
+   kp on/off/strict: panic text + "*** Press any key to continue ***", after the key one restart, panic + prompt again and it WAITS: 2 launches, 2 prompts, same screen +25 s;
+       dumps vs U9 differ in one glyph each: "Rust panic at newdesk/src/lib.rs:53" (ours) vs ":54" (U9) = the scratch panic line shifted by one source line in newdesk/src/lib.rs. 0 [EXC].
+   kc (rpi4, on): "[launch] load failed: LoadFailed(Parse(BadMagic))" x1, "[shell] desktop NEWDESK could not be loaded (rc=-66) -- not retried; falling back to the console (EmuCON)",
+       screen = EmuCON banner + "No desktop: NEWDESK could not be loaded (GEMDOS error -66)." + "C:\>" (viewed), end dump +25 s unchanged, 1 load attempt.
+   km (rpi4, on): "[launch] load failed: NotFound" x1, rc=-33, same fallback screen text with error -33, 1 attempt.
+   The built-in-desktop fallback of U9 (kc/km dumps = desk=kernel twin) is replaced as intended; nothing else in this path changed.
+
+8. ITEM 5: CORRUPT / MISSING NEWDESK ON QEMU-VIRT (method/build-virt-bad.sh, virt-run.py, virt-bad.sh; scratch kernels kcv/kxv/kmv, board qemu-virt, no card; serial RX = console key on this board)
+   kcv (blob ELF header zeroed): "[launch] load failed: LoadFailed(Parse(BadMagic))" x1, "could not be loaded (rc=-66) -- not retried; falling back to the console (EmuCON)", EmuCON screen with
+       the reason (viewed). Typed "exit" over the serial line (this board takes it): "C:\> exit", then "[shell] sh_ldapp: starting desktop (none: load failed) (D.s_cmd NEWDESK)",
+       "[shell] desktop NEWDESK not started: its load failed earlier this boot (rc=-66) -- the console (EmuCON) instead", banner + reason again; "dir" -> "No matching files." (no C: on virt).
+   kxv (kcv + U10-TEMP scratch instrument feeding `exit`+Return into EmuCON once, as the developers' kx): the same sequence without serial input.
+   kmv (no registry entry): "[launch] load failed: NotFound" x1, rc=-33, same fallback; "exit" -> "not started: its load failed earlier this boot (rc=-33)".
+   In all three: exactly ONE "[launch] load failed:" line, 0 "[launch] EL0", 0 "desktop up", 0 [EXC]/PANIC.
+
+9. NOT RUN / OPEN
+   Real Pi 4 (EmuCON fallback and EL0 desktop on silicon, keyboard in the crash prompt, HDMI, USB input, cache-coherence class, QUIRK-001). Oracle G2 (svc-seq-trace), S2ALL under strict
+   (crash kernel), MDPAR/MDSTEP/PPARENT/PORT10 and the rest of the SDK probe set (only ACCFREE, E9MEM, STDOUTDB, TTYPROBE were run), asid=tiny, Doom pixel identity (timing), clean-target
+   path-reproducibility build (not repeated), the real-card INF/ACC variants. The new qemu-virt serial-RX-as-console-key finding was used, not investigated.
+   The U9 series cards were not recoverable (/tmp/m5j gone): cards re-seeded (seed-card.sh/make-cards.sh/derive-card.sh from the MEM05/U9 method) -- hence the control kernels in section 5/6.
+
+10. OBSERVATIONS (not chased)
+   * tools/inject-arm.py (T16-fixed) was used for all injector kernels; every anchor still matched after U10 (all builds succeeded).
+   * emutos-consts counts moved (333/1/1 vs 332/2/2); see section 1.
+   * sdk/apps/apitest/APITEST.NCP in the tree is stale (106 tests); anyone running "APITEST 109/0/5" must rebuild it AND put PTERMCH.NCP on the card.
+
+Files: RUNINFO.TXT, method/ (all scripts: checks.sh, mrun.sh, mdrive.py, series2.sh, q-series.sh, q-rest.sh, q-last.sh, q-after*.sh, views2.sh, views-old.sh, apps3.sh, acc2.sh, emucon2.sh,
+cycles2.sh, save2.sh, crchw2.sh, readinf3.sh, tdqed2.sh, selftest2.sh, probes3.sh, crash3.sh, apitest109*.sh, virt*.sh, build-kernels.sh, build-old.sh, build-virt-bad.sh, virt-run.py,
+cmp-u9.sh, cmp-control.sh; dev-u10-* = the developers' scripts for reference), bin/ (kernel images gitignored, sha256 in checks/u10t-bin-sha256.txt, APITEST-HEAD.NCP),
+checks/, serial/ (87), screendumps/ (205), void/ (first APITEST attempt without PTERMCH).

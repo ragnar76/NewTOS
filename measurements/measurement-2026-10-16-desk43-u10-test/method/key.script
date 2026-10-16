@@ -1,0 +1,4 @@
+# (DESK43 U9-3/4/5: copied unchanged from measurement-2026-10-14-desk43-u9-1-2/method/)
+# key.script -- DESK43 U9-2: one key (Return) 8 s after NEWDESK's launch -- answers the panic prompt.
+1600 0x1C
+1610 0x9C

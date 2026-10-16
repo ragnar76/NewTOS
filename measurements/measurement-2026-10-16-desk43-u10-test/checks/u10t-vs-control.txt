@@ -1,0 +1,19 @@
+views-el0-on-1-text vs vold: BYTE-IDENTICAL 0 px  (c93a971b6468 / c93a971b6468)
+views-el0-on-2-a vs vold: BYTE-IDENTICAL 0 px  (34bcf88edf3f / 34bcf88edf3f)
+views-el0-on-3-b vs vold: BYTE-IDENTICAL 0 px  (9c777066bb2c / 9c777066bb2c)
+views-el0-on-4-c vs vold: BYTE-IDENTICAL 0 px  (3772c1179ea6 / 3772c1179ea6)
+views-el0-on-5-d vs vold: BYTE-IDENTICAL 0 px  (3772c1179ea6 / 3772c1179ea6)
+views-el0-on-6-e vs vold: BYTE-IDENTICAL 0 px  (978a071acfa5 / 978a071acfa5)
+views-el0-on-7-f vs vold: BYTE-IDENTICAL 0 px  (978a071acfa5 / 978a071acfa5)
+views-el0-on-8-g vs vold: BYTE-IDENTICAL 0 px  (4f0bb6094826 / 4f0bb6094826)
+views-el0-on-9-config vs vold: BYTE-IDENTICAL 0 px  (4f0bb6094826 / 4f0bb6094826)
+views-el0-on-10-end vs vold: BYTE-IDENTICAL 0 px  (e28d228606bf / e28d228606bf)
+crchw-el0-on-start vs crchwold-el0-on-start: DIFF 927 px bbox x=145..590 y=146..237  (59b8574eb97c / b528a9ab88a6)   box x=153 y=146 w=30 h=12 px=144 A[(0, 0, 0), (255, 255, 255)] B[(0, 0, 0), (255, 255, 255)]   box x=417 y=162 w=38 h=28 px=216 A[(0, 0, 0), (255, 255, 255)] B[(0, 0, 0), (255, 255, 255)] 
+crchw-el0-on-report vs crchwold-el0-on-report: DIFF 927 px bbox x=145..590 y=146..237  (59b8574eb97c / b528a9ab88a6)   box x=153 y=146 w=30 h=12 px=144 A[(0, 0, 0), (255, 255, 255)] B[(0, 0, 0), (255, 255, 255)]   box x=417 y=162 w=38 h=28 px=216 A[(0, 0, 0), (255, 255, 255)] B[(0, 0, 0), (255, 255, 255)] 
+crchw-el0-on-end vs crchwold-el0-on-end: BYTE-IDENTICAL 0 px  (b4b84984b337 / b4b84984b337) 
+ri3-el0-on-A-start vs ri3old-el0-on-A-start: BYTE-IDENTICAL 0 px  (194de56b20ac / 194de56b20ac) 
+ri3-el0-on-B-closed vs ri3old-el0-on-B-closed: BYTE-IDENTICAL 0 px  (237328f7bc5c / 237328f7bc5c) 
+ri3-el0-on-B2-fsel vs ri3old-el0-on-B2-fsel: BYTE-IDENTICAL 0 px  (c1825e6b8bfb / c1825e6b8bfb) 
+ri3-el0-on-C-read vs ri3old-el0-on-C-read: BYTE-IDENTICAL 0 px  (c1825e6b8bfb / c1825e6b8bfb) 
+f1crash-el0-on-app vs f1crashold-el0-on-app: DIFF 81650 px bbox x=0..598 y=2..477  (ed20fa00de29 / 4d6c87a2b5c8)   box x=0 y=2 w=469 h=476 px=47557 A[(0, 0, 0), (255, 255, 255)] B[(0, 0, 0), (255, 255, 255)]   box x=337 y=2 w=126 h=124 px=6736 A[(255, 255, 255)] B[(0, 0, 0)]   box x=473 y=2 w=126 h=108 p
+f1crash-el0-on-end vs f1crashold-el0-on-end: BYTE-IDENTICAL 0 px  (0e6f770497da / 0e6f770497da) 

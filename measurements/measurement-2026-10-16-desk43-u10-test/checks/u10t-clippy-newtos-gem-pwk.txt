@@ -1,0 +1,2 @@
+    Checking newtos-gem v0.1.0 (/Volumes/Daten/Development/PiRusTOS/programs/newtos-gem)
+    Finished `release` profile [optimized] target(s) in 0.10s
