@@ -63,3 +63,17 @@ zu liefern.
 ## Arbeitsregel
 
 [Gemeinsame Regeln](README.md) gelten.
+
+## Neubewertung 2026-10-17 (`ac073067`)
+
+Auf dem heutigen Stand behoben — durch ARCH03 Stufe 1 (`a9279fe9`, VA = PA):
+alle vier Modi antworten aus dem richtigen Pool, unter memprot on/off/strict
+(`docs/analysis/mem02-mxalloc-pools-2026-10-17.md`,
+`measurements/measurement-2026-10-17-mem02/`). Der Befund vom 2026-09-28 war
+kein Pool-Fehler: die Bloecke kamen schon aus dem TT-RAM, zurueck kam aber
+eine Fensteradresse unter `phystop`. Die Aussage oben „4,2 MB ST-Verbrauch“
+ist damit widerlegt.
+
+**Abnahme neu (Anwender 2026-10-17):** die Ball-Demo ist kein Messwert und
+wird ohnehin ueberarbeitet. Abnahme = Hosttests aller vier Modi (inkl.
+`MX_TTRAM` ohne TT-Pool → 0) plus QEMU-Sonde `MXPROBE`.

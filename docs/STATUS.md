@@ -71,7 +71,7 @@ Driftprobe 0 seit U10: der Kernel linkt den Desktop nicht mehr.
   **X01** (`Supexec`: entschieden 2026-10-17, offen Tester), **RST01** (Neustart: Warm/Kalt, Ctrl+Alt+Del), **X04** (TeraDesk „Reboot“ springt auf 0, folgt aus RST01), **A25** (QEMU-Lauf
   `appl_init` zweimal), **M08** (Harness `aes-m07-parameter.tsv`).
 - P3 / Erweiterungen: ARCH03 Stufe 2b, **SND01/SND02** (Ton), SDL01, RTC01,
-  BALL01, REF03, T15, DESK49, DESK51–DESK55, **CON01** (Spaltenzaehler/Typeahead), **CON02** (`Cconws` folgt Umlenkung nicht), FS12 (26 Laufwerke), FS14 (Frename ueber Verzeichnisgrenzen), LIBC-IOCTL, LIBC-BUF, DESK61, DESK63 (Verknuepfung auf Verknuepfung), DESK65 (sofort speichern, Erweiterung), DESK66 (Hintergrund an die AES melden), MEM07, MEM08, MEM10, MEM06 (Idee),
+  REF03, T15, DESK49, DESK51–DESK55, **CON01** (Spaltenzaehler/Typeahead), **CON02** (`Cconws` folgt Umlenkung nicht), FS12 (26 Laufwerke), FS14 (Frename ueber Verzeichnisgrenzen), LIBC-IOCTL, LIBC-BUF, DESK61, DESK63 (Verknuepfung auf Verknuepfung), DESK65 (sofort speichern, Erweiterung), DESK66 (Hintergrund an die AES melden), MEM07, MEM08, MEM10, MEM06 (Idee),
   IO01 (Idee: AUX/MIDI/PRN-Treiber).
 - Erledigt seit dem 30.09., hier frueher als offen gefuehrt: MEM03, MEM04,
   PROC01, PROC02, PORT09, GUI07, ARCH03 (bis auf das Obige), FS10, FS11, LIBC-MAIN, LIBC-TTY, LIBC-FSTAT, MEM05, PROC05, PROC06, SPEC01, DESK58, DESK59, DESK60, T16.
