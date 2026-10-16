@@ -1,0 +1,110 @@
+  MEM02 Phase 1 -- beantwortet Mxalloc die vier Modi aus dem richtigen Pool?
+===========================================================================
+
+Ticket: TASK/MEM02.md (Befund 2026-09-28, echte Pi 4, Kern 09f3e928, Ball-Demo:
+alle MX_PREFTTRAM-Puffer "/ST").  Auftrag Phase 1: Ursache und Ist-Zustand mit
+Belegen, KEINE Produktcode-Aenderung.  Analyse:
+docs/analysis/mem02-mxalloc-pools-2026-10-17.md
+
+Basis: main, HEAD 6b8b88cb, `git status` sauber vor und nach dem Lauf.
+Am NewTOS-Baum wurde kein Quelltext angefasst; gebaut wurde in einer
+rsync-Kopie (method/make-scratch-Schema aus
+measurement-2026-10-17-libc-fstat) im Session-Scratchpad.  Kein Geraet, keine
+Karte, nichts unter /Volumes/BOOT*/NEWTOS* beruehrt.  Kartenabbilder: eine Basis
+je Kern, je Lauf ein APFS-Klon (cp -c), nach dem Lauf geloescht.
+
+
+1. WAS GEMESSEN WURDE
+---------------------------------------------------------------------------
+QEMU 11.0.2, -M raspi4b, -display none, -append "serial=on[ memprot=...]",
+Bildschirm 640x480.  Ein QEMU zur Zeit.
+
+Probe  method/tests/mxprobe.c -> C:\AUTO\MXPROBE.NCP (LP64-PIE, libc-Pfad,
+       method/build-probe.sh).  Liest phystop ($42E) und ramtop ($5A4) direkt,
+       fragt Mxalloc(-1, 0..3) und Malloc(-1), holt je Modus 64 KiB
+       (plus MX_PREFTTRAM|F_PROT_G, MX_PREFTTRAM 2025 KiB = Ball-Puffer bei
+       1920x1080), schreibt/liest aus EL0 jede 4-KiB-Stufe und das letzte Byte,
+       prueft Verweigerung (MX_STRAM/MX_TTRAM ueber dem groessten Block) und
+       Rueckfall (MX_PREFSTRAM ueber ST-Groesstem -> TT).  Klassifikation wie
+       die Ball-Demo: Adresse < phystop = ST, sonst alt.
+Ball   /Volumes/Daten/Development/ball-demo (ball.c sha256 f8590ef3...,
+       plat-newtos.c 4490c5a6...), Quellen in den Scratch kopiert und dort
+       gebaut (im Demo-Verzeichnis nichts geschrieben), per NEWDESK.INF
+       "#Z 01 C:\BALL.NAP@" nach dem AUTO-Ordner gestartet; C:\BALL.LOG nach
+       dem Lauf vom (schreibgeschuetzt eingehaengten) Klon kopiert.
+
+Laeufe (serial/<tag>-serial.log, serial/<tag>-BALL.LOG, screendumps/<tag>-ball.png):
+  on          HEAD 6b8b88cb, memprot an (Vorgabe)
+  off         HEAD 6b8b88cb, memprot=off
+  strict      HEAD 6b8b88cb, memprot=strict
+  pre-arch03  c806a645 = a9279fe9^ (letzter Stand VOR ARCH03 Stufe 1,
+              ADR-021-Fenster), per `git archive` in den Scratch, dort gebaut;
+              Probe und Ball gegen die SDK/libc DIESES Standes gelinkt.
+
+
+2. ERGEBNIS
+---------------------------------------------------------------------------
+HEAD, alle drei memprot-Stellungen: MXPROBE: PASS.  Jeder Modus aus seinem
+Pool, EL0 schreibt/liest jeden Block, Verweigerung und Rueckfall wie EmuTOS
+umem.c:234-330.  Ball-Demo: alle neun Puffer "/alt".
+
+  Modus                    on/strict      off            Pool
+  MX_STRAM      64K        0x00400000     0x00400000     ST
+  MX_TTRAM      64K        0x0198a000     0x0101a290     alt
+  MX_PREFSTRAM  64K        0x00410000     0x00410000     ST
+  MX_PREFTTRAM  64K        0x0199a000     0x0102a290     alt
+  MX_PREFTTRAM|F_PROT_G    0x019aa000     0x0103a290     alt
+  MX_PREFTTRAM  2025K      0x019ba000     0x0104a290     alt
+  MX_STRAM  > ST-Groesster 0              0              verweigert
+  MX_TTRAM  > TT-Groesster 0              0              verweigert
+  MX_PREFSTRAM > ST-Gr.    0x01bb5000     0x01244690     alt (Rueckfall)
+  Mxalloc(-1,ST/TT/PST/PTT) on: 0x00a00000/0x37e76000/0x37e76000/0x37e76000
+                            off: 0x00a00000/0x387e5d70/0x387e5d70/0x387e5d70
+  phystop 0x00e00000, ramtop 0x39800000 (alle drei)
+
+c806a645 (vor ARCH03 Stufe 1): MXPROBE: FAIL -- JEDER Block meldet "ST",
+fortlaufend ab 0x00400000 (0x00400000, 0x00410000, 0x00420000, ...), egal
+welcher Modus; Ball-Demo: alle neun Puffer "/ST" -- das Bild aus dem Ticket.
+Die Probe belegt zugleich, dass die PREFTT/TT-Bloecke dabei NICHT aus dem
+ST-Pool kamen: Mxalloc(-1,ST) fiel von 0x009ff000 auf 0x009dd000 = 0x22000
+= 2 x (64 KiB + 1 Seite Ausrichtungsreserve) = genau MX_STRAM + MX_PREFSTRAM;
+die vier TT-/PREFTT-Bloecke (zusammen ~2,2 MB) liessen den ST-Pool unberuehrt.
+Mxalloc(-1,TT) = 0x01c00000 = 28 MiB = das auf das Fenster (4..32 MiB VA)
+geklemmte Maximum, nicht der TT-Pool.
+
+=> Der Pool hat die Praeferenz auch damals bedient.  Was die Demo sah, war die
+   ADR-021-Fenster-VA (ab TPA_SIZE = 4 MiB, usermem.rs:77/326), die numerisch
+   im ST-Bereich 0x00400000..0x00e00000 liegt.  Seit a9279fe9 (2026-10-05,
+   VA = PA) ist der zurueckgegebene Wert der Poolblock selbst.
+
+Host-Tests (Entwurf, NICHT in tos-api/tests eingetragen):
+method/host-tests/mem02_mxalloc_modes.rs (3 Faelle) und
+mem02_mxalloc_no_alt.rs (1 Fall, ohne TT-Pool), in der Scratch-Kopie von HEAD
+mit `cargo test -p tos-api --test mem02_mxalloc_modes --test
+mem02_mxalloc_no_alt` gefahren: 3/3 und 1/1 ok.
+
+
+3. SHA256 (Abbilder und Binaerdateien liegen nicht hier)
+---------------------------------------------------------------------------
+696b2c987ae5a5c62713bb924a3d0a14c58c614a6c4fa7d6eafa15fc62e23a6b  kernel8 HEAD 6b8b88cb (rpi4 --release)
+a0f7dd9d8232edbe4875c3bdc3c19e3bc82e352277446a6683316858e9f4a0f3  kernel8 c806a645 (rpi4 --release)
+a8754ab15c5b44aa3c3d486d4cd4098f1b1fc4ea6a2a3e7d05c11ed3b1415a0a  base.img (HEAD-Probe + HEAD-Ball)
+0b14b335bde789b1fe570749598cb8d8c4c4fe408deab34905f5fc29b79cd115  base-old.img (c806a645-Probe + -Ball)
+0a469d40c08be1471640046022f38721284063aa428942e79cc8085edcd37503  MXPROBE.NCP (HEAD libc.a 5e093c38...)
+64c4e3d8ed4e3618554247541e38b4a613d6ac1b9916e32dda206e72d79771cf  BALL.NAP (HEAD SDK)
+b8afb8ebd39a5ccad21f6a4a7709db887975ad20d1a3c09c0cda1188de5bcacc  MXPROBE.NCP (c806a645 libc.a a8ab28d9...)
+2926c9726f426111206ff9e5a9db33f0e12137eedb8adfafdeeac4d1357274b9  BALL.NAP (c806a645 SDK)
+Build-Warnungen beider Kerne: tos-api 64, kernel 94.
+
+
+4. METHODE
+---------------------------------------------------------------------------
+method/build-probe.sh <outdir>      Probe bauen (build() aus build-mem05.sh)
+method/make-card.sh <img> <probe> <ball>   64-MiB-FAT16-Karte, Volume MXBASE
+method/run.sh <kernel> <base> <tag> "<append>"   ein Lauf auf APFS-Klon
+method/tests/mxprobe.c, common.h    Probe
+method/host-tests/*.rs              vorgeschlagene Host-Tests
+
+Nicht gemessen: echte Pi 4 (1920x1080, ramtop 0x2FE00000).  Die Abnahme des
+Tickets ("dieselbe Ball-Demo auf derselben Karte") bleibt ein Pi-Lauf fuer
+Lead/Anwender.

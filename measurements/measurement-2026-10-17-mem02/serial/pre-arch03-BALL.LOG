@@ -1,0 +1,15 @@
+BALL: screen 640x480, 1 page(s), ball d=102 px, apex=303 px
+BALL: ball 0.1600 of screen width = 102 px; readout off (set `hud 1' to show it), from built-in default
+BALL: ST-RAM top 0x00E00000, ramtop 0x3BE00000; buffers asked for alternate RAM (MX_PREFTTRAM)
+BALL: buffers idx=300K/ST bg=300K/ST bgrow=0K/ST map_off=20K/ST map_shd=10K/ST run0=0K/ST run1=0K/ST tex=64K/ST log=32K/ST
+BALL: texture 256x128, 4 hues, from generated
+BALL: room 10x10 floor cells, wall 10x6, 24 palette entries, background image 307200 bytes painted in 15.00 ms; reflection fades over 48 rows
+BALL: sphere map 8184 px in 5.00 ms (1 ticks of 200 Hz)
+BALL: bounce 326 ticks, traverse 1090 ticks, roll 197.61 px/s; elastic, no decay; path holds 32 traverses (174.40 s) before coming within 3 % of retracing
+BALL: wind 15.81 px/s peak (8 % of the roll), 3 sines, periods 2.64 / 4.27 / 6.90 s, seed 1592637969
+BALL: headroom 651 frames in 0.20 s free-running = 3255.00 fps, 0.31 ms/frame
+BALL: platform wait 59.81 Hz measured (3.34 ticks of 200 Hz); a frame counts as dropped above 5 ticks
+BALL: clock read 15 ns; the frame budget is split with 3 extra reads a frame = 0.00 % of a 20 ms frame
+BALL: one page and no flip, so the BLIT is the presentation: deferred to just after the platform wait, one frame behind composing
+BALL: model 28.71 rows/ms -- the card's phase is UNVERIFIED, so this is a cost model and not a guarantee against tearing
+BALL: blit 11.64 ns/px + 3.94 us/call, so one more rectangle is worth 339 px, and one merge may add at most an eighth; the frame splits up to 3 ways
