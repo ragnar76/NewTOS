@@ -19,8 +19,8 @@ programs/
 ├── build.sh              crt0.o + cargo staticlib + rust-lld -> <name>.NAP
 ├── rustc-stable-metadata.sh  path-independent crate hashes (DESK43 U9-2)
 ├── newtos-gem/           runtime crate: gemdos / aes / vdi / xbios trap
-│                         bindings (since U6b the only copy -- the kernel
-│                         desktop links them too), and with feature `rt`
+│                         bindings (since U6b the only copy), and with
+│                         feature `rt`
 │                         (default) the heap (GlobalAlloc over GEMDOS Malloc
 │                         hunks) and the panic handler (Cconws, Pterm(-1));
 │                         feature `panic-wait-key`: a key first (D6-a)
@@ -28,7 +28,7 @@ programs/
 │                         stack measurement, `--features panic-test`)
 ├── desktop/              the desktop (EmuTOS desk/ in Rust), a library crate
 │                         (DESK43 U8b; until then kernel/src/desk/): linked by
-│                         the kernel (built-in desktop) and by NEWDESK
+│                         NEWDESK (until U10 also by the kernel)
 └── newdesk/              NEWDESK.NAP (DESK43 U9-2): the desktop as an EL0
                           program -- `main` calls `desktop::run()`; embedded in
                           the kernel image under the registry name NEWDESK
@@ -57,28 +57,29 @@ of `sdk/build.sh`.
 every program in its `PROGRAMS` table (`tools/xtask/src/main.rs`) with
 `-- --features board-<b>` and writes `target/programs/<b>/<NAME>.NAP`. The
 board feature is the X03 pass-through: the desktop's About-box machine line
-is a per-board build constant, so a separately built desktop needs the board
-as the kernel has it. **Every program declares `board-rpi4` and
+is a per-board build constant, so the desktop program needs the board the
+kernel it is embedded in is built for (`cargo xtask build` runs
+`build-programs` for its own board first). **Every program declares `board-rpi4` and
 `board-qemu-virt`** (cargo refuses an unknown feature; the host test
 `programs_tests` checks the table and the features).
 
-The programs workspace is still separate (root `Cargo.toml`
-`exclude = ["programs"]`), but the kernel depends on `newtos-gem` by path
-(`default-features = false`: the bindings without `rt`): the kernel desktop
-calls the system through the same bindings a program does. Cargo builds it
-as a non-member path package with the kernel's profile and target.
+The programs workspace is separate (root `Cargo.toml`
+`exclude = ["programs"]`). From DESK43 U6b to U10 the kernel depended on
+`newtos-gem` and `desktop` by path for its built-in desktop; since U10 it
+links no crate of this workspace and only embeds the built program files
+(`kernel/embed.rs`).
 
 **The desktop crate (DESK43 U8b).** `desktop/` is a library, not a program
-(no `staticlib`, not in `PROGRAMS`): the kernel links it by path and calls
-`desktop::run`/`desktop::reset` in EL1 from `sh_ldapp`'s DESKTOP arm, as it
-called the module before; the `NEWDESK` program (`newdesk/`, U9-2) is a thin
-crate around the same library — one source, two link targets (review §3.1). Its
+(no `staticlib`, not in `PROGRAMS`): the `NEWDESK` program (`newdesk/`, U9-2)
+is a thin crate around it. (From U8b to U10 the kernel linked it as a second
+target and called `desktop::run`/`desktop::reset` in EL1 — one source, two
+link targets, review §3.1; U10 removed the kernel's.) Its
 dependencies are **`newtos-gem` (without `rt`) and `tos-types` only**: a
 `tos_api::` or kernel path in the desktop does not compile (guard G1; checked
 by `tools/desk-drift-probe.sh` group D and the host test
 `programs_tests::desktop_depends_only_on_newtos_gem_and_tos_types`). It
 declares `board-rpi4`/`board-qemu-virt` (exactly one required: the About-box
-machine line) and `selftest-desk`; the kernel features of the same names pass
+machine line) and `selftest-desk`; NEWDESK's features of the same names pass
 through (`board-rpi4 = ["desktop/board-rpi4"]`). Building or linting it on
 its own therefore needs a board:
 `cargo clippy -p desktop --features board-rpi4` (in `programs/`); a bare
@@ -99,9 +100,9 @@ first; `kernel/build.rs` embeds the ones listed in `kernel/embed.rs` from
 `target/programs/<board>/` (one `include_bytes!` each, registered under their
 registry name at boot, `kernel/src/embedded.rs`) and **stops with a hard
 error** when a listed program has not been built. Since U9-2 the list is
-`NEWDESK` (`NEWDESK.NAP`, the shell's `DEF_DESKTOP`). Until U9-4 nothing on
-the boot path starts it — the DESKTOP arm still runs the built-in desktop; it
-is reachable by its registry name (`#Z 01 NEWDESK@` in `NEWDESK.INF`).
+`NEWDESK` (`NEWDESK.NAP`, the shell's `DEF_DESKTOP`); the shell loop's
+DESKTOP arm starts it (U9-4), and since U10 it is the only desktop. If it
+cannot be loaded, the arm runs the console EmuCON instead (D6-d).
 
 **Reproducible program files (U9-2).** The kernel image embeds a program file,
 so the program files must not depend on the checkout path. Cargo hashes the

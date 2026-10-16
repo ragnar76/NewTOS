@@ -107,7 +107,7 @@ pub fn hz_200() -> u32 {
 /// matches the classic contract rather than tightening it.
 fn publish(value: u32) {
     let Some(page0) = crate::bdos::process::current_page0_kva() else {
-        // No user process is running (kernel/EL1 code — desktop, boot);
+        // No user process is running (kernel/EL1 code — boot, shell loop);
         // nothing to mirror into. The counter itself keeps running.
         return;
     };

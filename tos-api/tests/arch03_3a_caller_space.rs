@@ -1,7 +1,7 @@
 //! ARCH03 stage 3a: the GEMDOS file surface reads and writes its pointer
 //! arguments in the **caller's space** (`TrapArgs::space`) — an EL0 program's
 //! through the fault-safe `tos_api::uaccess` routines, an in-kernel caller's
-//! (the built-in desktop's `svc` from EL1, the AES fiber) as kernel addresses.
+//! (an `svc` from EL1 such as EmuCON's, the AES fiber) as kernel addresses.
 //!
 //! On the host both spaces are plain host-memory accesses, so what can be
 //! asserted here is that the conversion from raw dereferences to the

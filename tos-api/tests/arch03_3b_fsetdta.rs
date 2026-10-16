@@ -2,7 +2,7 @@
 //! running must not cut the kernel address to 32 bits into that process's
 //! `p_xdta` (3a observation). EmuTOS `xsetdta` stores into `run->p_xdta`
 //! (`bdos/fsmain.c:403-405`) — every EmuTOS caller is a process; NewTOS's
-//! kernel callers (the in-kernel desktop, the built-in shell) keep their own
+//! kernel callers (the built-in shell EmuCON, the selftests) keep their own
 //! DTA cell (`bdos::fs::find`, `KERNEL_DTA`).
 
 use tos_api::bdos::fs::find;

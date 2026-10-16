@@ -674,7 +674,7 @@ pub fn run_two_windows() {
 /// window A with its work-area rectangle. Drives the real GEM trap end-to-end;
 /// the message is read back through `window::test_pending_msg`.
 ///
-/// Invoke by hand (temporary hook before `desk::run()`) to capture the serial
+/// Invoke by hand (temporary hook before `shell_loop::sh_main`) to capture the serial
 /// PASS/FAIL lines; it is intentionally not called during normal boot.
 #[allow(unused_assignments)] // the `control = [0; 8]` reset idiom, as elsewhere here
 pub fn run_p5_redraw() {

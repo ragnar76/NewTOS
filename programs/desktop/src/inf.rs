@@ -904,9 +904,9 @@ fn prefs_to_env(
 
 // ── Boot / runtime load + apply ─────────────────────────────────────────────
 
-/// Forget the parsed `.INF` of the session that has ended — the `inf` half of
-/// [`super::reset`] (A106). [`load_and_apply`] fills it again at the next
-/// desktop start; dropping it here means a file that has since disappeared
+/// Forget the parsed `.INF` of the run that has ended — the `inf` half of
+/// [`super::reset`]. [`load_and_apply`] fills it again at the next
+/// `deskmain` run; dropping it here means a file that has since disappeared
 /// cannot be re-saved from a stale in-memory copy.
 pub(super) fn reset() {
     *SESSION.borrow_mut() = None;
@@ -960,8 +960,8 @@ fn inf_text(buf: &[u8]) -> &[u8] {
 /// the `!(bootflags & BOOTFLAG_SKIP_AUTO_ACC)` term of `:834` is missing, so a
 /// Ctrl-held boot still reads the file. The flag is a BIOS global EmuTOS's
 /// desktop shares an address space with; NewTOS has it in
-/// `crate::launch::skip_auto_acc()`, which is a kernel symbol the desktop must
-/// not name on its way to EL0 (DESK43 §6.4), and there is no trap that carries
+/// `crate::launch::skip_auto_acc()`, which is a kernel symbol the desktop, an
+/// EL0 program, cannot name (DESK43 §6.4), and there is no trap that carries
 /// it. Closing it needs that carrier first.
 pub(super) fn load_and_apply() -> bool {
     // `buf = must_alloc_buf(SIZE_SHELBUF)` (`:808`) — the whole shell buffer,
@@ -2586,8 +2586,9 @@ const INDEPENDENCE_NOTICE: &str =
 /// (`desk_rsc.c:772-873`).
 ///
 /// **A per-board build constant** (X03, user decision 2026-10-01): the text is
-/// fixed when the kernel is compiled for a board feature, not asked for at run
-/// time. Same texts as the boot screen's `kernel::initinfo::machine_name`,
+/// fixed when the desktop is compiled for a board feature (`cargo xtask
+/// build-programs --board`, which the kernel build runs for its own board,
+/// DESK43 U6b/U9), not asked for at run time. Same texts as the boot screen's `kernel::initinfo::machine_name`,
 /// deliberately a second copy, for the reason in the block comment above.
 /// There is no syscall source for it: `_MCH` is one fixed NewTOS marker,
 /// `0x0005_0000` on **both** boards (`tos-api/src/cookie.rs:143`,
@@ -2595,10 +2596,10 @@ const INDEPENDENCE_NOTICE: &str =
 /// from QEMU; a board cookie or an `Ssystem` subfunction was considered and
 /// declined (`TASK/X03.md`).
 ///
-/// **Limit, accepted in X03:** this holds only while the desktop is compiled
-/// together with the kernel and therefore sees its board feature. Once the
-/// desktop is a separately built program it no longer knows the board, and
-/// the cookie-or-`Ssystem` question has to be asked again.
+/// **Limit, accepted in X03:** this holds because the program is built per
+/// board and embedded in that board's kernel image (DESK43 D3). A `NEWDESK`
+/// started from a card built for the other board (`#Z`) would show that
+/// board's line; the cookie-or-`Ssystem` question returns if that matters.
 ///
 /// **A board without a line here is a compile error, not a fallback.** The
 /// boot screen's `other => other` arm prints the raw board identifier, which

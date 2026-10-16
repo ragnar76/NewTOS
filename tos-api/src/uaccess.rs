@@ -234,9 +234,9 @@ pub fn read_user_cstr(src: u64, dst: &mut [u8]) -> Result<usize, UserFault> {
 ///
 /// A trap from an EL0 program hands the kernel **user** addresses, which are
 /// accessed with that program's rights — the unprivileged, fault-recovered
-/// routines of this module. The in-kernel callers — the built-in desktop
-/// (`programs/newtos-gem/src/gemdos.rs`, `svc` from EL1), the AES fiber and the
-/// kernel's own services calling a GEMDOS leaf directly — hand it **kernel**
+/// routines of this module. The in-kernel callers — kernel code that traps
+/// with `svc` from EL1 (EmuCON, `kernel/src/shell.rs`), the AES fiber and the kernel's own services calling
+/// a GEMDOS leaf directly — hand it **kernel**
 /// addresses (high-half VAs, kernel stacks and statics), which an EL0-rights
 /// access would refuse; they are accessed as they are, exactly as before.
 /// The trap handler derives the space from `SPSR_EL1.M` of the caller

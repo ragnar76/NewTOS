@@ -1347,7 +1347,7 @@ fn funkey_number(key: i16) -> Option<u16> {
 /// The first three fields of the BIOS's `struct keytbl` (`bios/ikbd.h:57-86`);
 /// the desktop needs no more of it. The XBIOS lays the image out at the
 /// **caller's** pointer width (`tos-api/src/xbios/keytbl.rs`, `write_area`),
-/// which for the desktop's kernel-boot context is LP64 — this `#[repr(C)]`
+/// which for the desktop (a native LP64 program) is LP64 — this `#[repr(C)]`
 /// struct of three raw pointers.
 #[repr(C)]
 struct Keytab {
@@ -1403,7 +1403,7 @@ fn check_alt_letter_key(key: i16) -> bool {
     }
     // `drive = keytab->shift[HIBYTE(thechar)];` (`:1145`).
     // SAFETY: `p` is the `struct keytbl` image the XBIOS just wrote, at this
-    // caller's own pointer width and in kernel-addressable memory (see
+    // caller's own pointer width and in memory the caller can read (see
     // [`Keytab`] and `xbios::keytbl`'s doc). `shift` points at that image's
     // 128-byte `shft` table, and `sc` is a `u8` masked out of the key word,
     // i.e. < 128 for every scancode the IKBD produces — the two scancodes
@@ -1412,10 +1412,9 @@ fn check_alt_letter_key(key: i16) -> bool {
     // The one case where `shift` would *not* point into that image is a
     // program having installed its own table: `Keytbl` then reports the
     // caller's pointer verbatim, as EmuTOS does (`bios/ikbd.c:126`), and in
-    // EmuTOS's flat address space that stays readable. Ours would be an EL0 VA
-    // read from EL1 — the address-space difference DESK43 names as the cost of
-    // the move, and U9's business, not this unit's. It is unreachable in this
-    // tree: every `Keytbl` caller in `sdk/` passes the `(void *)-1` sentinel
+    // EmuTOS's flat address space that stays readable. (While the desktop ran
+    // at EL1, until DESK43 U10, ours would have been an EL0 VA read from EL1;
+    // the desktop is an EL0 program now.) It is unreachable in this tree: every `Keytbl` caller in `sdk/` passes the `(void *)-1` sentinel
     // (`sdk/cflib/cflib-21/nkccinit.c:97-99`, `sdk/apps/apitest/apitest.c:1474`,
     // `sdk/apps/teradesk/library/xdialog/xdevent.c:76`), so `OVERRIDE` is never
     // assigned.

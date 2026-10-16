@@ -157,7 +157,7 @@ pub fn write_defaults(tpa: &mut [u8]) {
 
 // ─── The table with no process running ───────────────────────────────────
 
-/// The table an EL1 caller (the in-kernel desktop, the boot path — `RUN`
+/// The table an EL1 caller (kernel code such as the boot path — `RUN`
 /// names no process) gets from `Kbdvbase`: same layout, same default values.
 /// Nothing ever calls through it — with no process running the decoder always
 /// takes the default path — so it only answers the pointer (the same "kernel

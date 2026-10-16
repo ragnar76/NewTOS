@@ -14,7 +14,7 @@
 //!     it is NOT pushed forward by the elapsed time (the empirical proof: the
 //!     timer still fires at the ORIGINAL deadline);
 //!   * **completion** clears the field, so the next timer wait recomputes fresh;
-//!   * the **no-slot** (EL1 desktop, `current() == NONE`) path never persists and
+//!   * the **no-slot** (EL1 kernel context, `current() == NONE`) path never persists and
 //!     recomputes each call — unchanged from today's behavior.
 //!
 //! Deterministic: it feeds synthetic `now` values straight into the scheduler
@@ -72,7 +72,7 @@ pub fn run() {
     // 5. A later, unrelated timer wait recomputes fresh from the new `now`.
     let d3 = sched::arm_or_get_deadline(3000, MS);
 
-    // 6. No-slot (EL1 desktop) path: `current() == NONE` → nothing persisted, so
+    // 6. No-slot (EL1 kernel context) path: `current() == NONE` → nothing persisted, so
     //    each call recomputes `now + ms` (exactly today's behavior, no restart).
     sched::set_running(MAX_PROCESSES);
     let dn0 = sched::arm_or_get_deadline(1000, MS);

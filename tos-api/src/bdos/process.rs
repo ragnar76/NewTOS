@@ -132,7 +132,7 @@ impl State {
 pub enum Abi {
     /// Native AArch64 LP64: 8-byte pointers and `long`. Kernel-launched
     /// ELF64 programs, the embedded selftests, and every in-kernel (EL1)
-    /// GEM caller (the desktop, the boot VDI/AES selftests) use this.
+    /// GEM caller (kernel code, the boot VDI/AES selftests) use this.
     Lp64 = 0,
     /// GNU ILP32 (`aarch64-elf-gcc -mabi=ilp32`, `ELFCLASS32`): 4-byte
     /// pointers and `long`. Source-port GEM apps built against the ILP32
@@ -342,8 +342,8 @@ pub struct Process {
     /// `elr`/`sp_el0`/`spsr` triple the EL0-entry helper writes — the
     /// desk-accessory case (ACC03). An accessory is not entered through
     /// `enter_el0_with_resume_capture`: it is switched to from a parked EL1
-    /// kernel client (the boot path's `wait_for_accs`, or the desktop inside a
-    /// blocking `evnt_*`), and that client's frame is copied in here so a
+    /// kernel client (the boot path's `wait_for_accs`; until DESK43 U10 also
+    /// the built-in desktop inside a blocking `evnt_*`), and that client's frame is copied in here so a
     /// *terminating* accessory resumes it the same way a *blocking* one does.
     /// Such a frame must be restored in full — its `x0`/`x1` carry the GEM-trap
     /// selector and parameter block of an `svc` that is about to re-execute —
@@ -951,10 +951,10 @@ pub const fn kva_to_user_va(kva: u64) -> u64 {
 /// The GEM trap dispatch (`svc #2`) reads this to interpret the caller's
 /// AES/VDI parameter block at the right pointer width. An EL0 app's slot
 /// carries the ABI its ELF class implied; every in-kernel (EL1) GEM
-/// caller — the desktop and the boot-time VDI/AES selftests, which run
-/// while [`RUN`] is still null — resolves to [`Abi::Lp64`] and keeps its
-/// native 64-bit blocks. (The desktop never reaches this path at all: it
-/// calls the AES/VDI functions directly, not through the trap readers.)
+/// caller — kernel code and the boot-time VDI/AES selftests, which run
+/// while [`RUN`] is null — resolves to [`Abi::Lp64`] and keeps its
+/// native 64-bit blocks. (The desktop is the EL0 program `NEWDESK` since
+/// DESK43 U9/U10 and takes its slot's ABI, LP64, like any native program.)
 #[inline]
 pub fn current_abi() -> Abi {
     match slot_for(current()) {

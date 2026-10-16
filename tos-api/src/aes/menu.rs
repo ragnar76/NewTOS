@@ -56,8 +56,8 @@ static MNTREE: AtomicUsize = AtomicUsize::new(0);
 /// (`aes/gemmnlib.h:17`), set beside `gl_mntree` in `mn_bar`: `p =
 /// fpdnm(NULL, rlr->p_pid); … gl_mnppd = p; gl_mntree = tree;`
 /// (`aes/gemmnlib.c:707,712-713`). The AES identity of the caller
-/// (`appl::current_identity`: a GEMDOS slot, or `pd::DESKTOP` for the
-/// in-kernel desktop), `usize::MAX` when no bar is installed.
+/// (`appl::current_identity`: a GEMDOS slot, or `pd::DESKTOP` for kernel
+/// code), `usize::MAX` when no bar is installed.
 ///
 /// EmuTOS uses it as the message target for a menu selection
 /// (`ct_msgup(MN_SELECTED, gl_mnppd, …)`, `aes/gemctrl.c:353-367`); NewTOS
@@ -734,7 +734,7 @@ fn track_owned(tree: *mut Object, backend: &dyn RasterBackend) -> Option<(i16, i
 /// `desk/desk_rsc.c:294`; TeraDesk's `desktop.rsc` likewise) keeps its border
 /// clear of the item rectangles, so the XOR never reaches it; a box with an
 /// inside border gets its frame inverted in the item's rows in EmuTOS too —
-/// the frame repaint that compensated for the kernel desktop's former inside
+/// the frame repaint that compensated for the then kernel desktop's inside
 /// border is gone (A100).
 fn rehilite(t: ObjTree, old: i16, new: i16, backend: &dyn RasterBackend) {
     crate::vdi::cursor_hide(backend);
@@ -1178,8 +1178,9 @@ struct Accs {
 // therefore live in a page of their own that is published read-only to every
 // process at VA = PA (`usermem::expose`, `PROT_PR`, ADR-023 — the pattern of
 // `bdos::process::standin`), and an application's tree gets the **user
-// address** of its copy; the kernel desktop's own tree, read by kernel code
-// only, keeps the kernel address (the per-reader choice `Getmpb` and
+// address** of its copy; a kernel-installed tree (the built-in desktop's
+// until DESK43 U10, today only the selftests'), read by kernel code only,
+// keeps the kernel address (the per-reader choice `Getmpb` and
 // `wind_get(WF_SCREEN)` make).
 
 /// Bytes reserved per copied accessory title, NUL included. The *Desk*
@@ -1272,7 +1273,7 @@ fn titles_user_va() -> Option<u64> {
 }
 
 /// The `ob_spec` [`menu_fixup`] links for slot `idx` into a tree read through
-/// `t`: the kernel address for a kernel-built tree (the kernel desktop's bar,
+/// `t`: the kernel address for a kernel-built tree (a kernel-installed bar,
 /// read by kernel code only), the published user address for an
 /// application's tree, which the application reads itself. `0` (the empty
 /// string to the drawer) if the page could not be published.
@@ -1311,7 +1312,7 @@ pub(super) fn gl_dafirst() -> i16 {
 /// [`menu_fixup`] called out of a desk accessory's `menu_register`, and the
 /// Control Manager's drop-down tracker — and an ILP32 app's 24-byte records
 /// read at LP64 width, or an EL0 VA walked under a different `TTBR0`, is the
-/// A97 class of defect. The kernel desktop's own tree (`MNPPD == pd::DESKTOP`)
+/// A97 class of defect. A kernel-installed tree (`MNPPD == pd::DESKTOP`)
 /// is native LP64 and needs no owner mapping.
 fn mntree_accessor(tree: *mut Object) -> ObjTree {
     let owner = MNPPD.load(Ordering::Relaxed);
@@ -3245,7 +3246,7 @@ mod acc_title_tests {
             ob_height: 0,
         }];
 
-        // The kernel desktop's tree (`mntree_accessor` with no owner slot):
+        // A kernel-installed tree (`mntree_accessor` with no owner slot):
         // the kernel address of the copy.
         let k = title_spec(ObjTree::lp64(objs.as_ptr()), 1);
         assert_eq!(k, TITLES.0.get() as u64 + ACC_TITLE_LEN as u64);

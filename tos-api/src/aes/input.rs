@@ -160,7 +160,7 @@ impl Mown {
 /// desktop, every launched program and every `Pexec` child on **one**
 /// descriptor, `D.g_int[0]` (`aes/geminit.c:851-877`, `gemshlib.c:572`), and
 /// each desk accessory on one of its own (`D.g_acc[]`, `geminit.c:819`).
-/// NewTOS gives every GEMDOS slot and the kernel desktop an identity of its
+/// NewTOS gives every GEMDOS slot and the kernel context an identity of its
 /// own (A62); for ownership they fold back: a registered accessory
 /// ([`super::acc::is_process`]) is itself, every other identity is the one
 /// application chain.
@@ -951,7 +951,8 @@ pub(super) fn pending_transition() -> Option<(u8, i16)> {
 /// `usb::poll` → `ikbd::feed` → `mousexvec` → `call_user_wheel` → here, and
 /// `pump_input` is only ever called **synchronously** from EL1 code running
 /// on behalf of a well-defined caller: an AES/GEMDOS trap of the running EL0
-/// process, or the kernel desktop's own loop. (INPUT01's timer-interrupt pump
+/// process, or a wait loop of kernel code (the blocking console reads, the
+/// boot path). (INPUT01's timer-interrupt pump
 /// does not decode wheel detents — they are held for the trap-side pump,
 /// `kernel::input_gate`.) There is no point at which a
 /// "no running process" sentinel is installed, so the precondition of

@@ -504,9 +504,7 @@ struct Window {
     ///
     /// Bound to the slot, so every path that resets a slot — `wind_create`'s
     /// `Window::EMPTY`, [`wm_delete`] (behind [`wind_delete`] and [`wm_new`]),
-    /// [`init_desk_window`] — resets list and cursor **together**, and
-    /// [`save_windows`] / [`restore_windows`] carry them with the rest of the
-    /// slot.
+    /// [`init_desk_window`] — resets list and cursor **together**.
     rlist: [Grect; RCAP],
     rcount: u16,
     rnext: u16,
@@ -555,25 +553,6 @@ unsafe impl Sync for WinTable {}
 static TABLE: WinTable = WinTable {
     slots: UnsafeCell::new([Window::EMPTY; NUM_WIN]),
     next_z: UnsafeCell::new(1),
-};
-
-/// Saved copy of the desktop's window set for the single-tasking **screen
-/// handoff** ([`save_windows`] / [`restore_windows`]). Disjoint from [`TABLE`]:
-/// [`save_windows`] snapshots the live table here and clears the live one so a
-/// launched GEM app gets a clean window list; [`restore_windows`] copies it back
-/// on the child's `Pterm`. `active` guards a restore with no prior save.
-struct WinSave {
-    slots: UnsafeCell<[Window; NUM_WIN]>,
-    next_z: UnsafeCell<i16>,
-    active: UnsafeCell<bool>,
-}
-// SAFETY: only the single boot CPU touches the AES; no concurrent access.
-unsafe impl Sync for WinSave {}
-
-static SAVE: WinSave = WinSave {
-    slots: UnsafeCell::new([Window::EMPTY; NUM_WIN]),
-    next_z: UnsafeCell::new(1),
-    active: UnsafeCell::new(false),
 };
 
 /// Set once [`wm_init`] has built the desktop window's slot.
@@ -1227,8 +1206,8 @@ static NEWDESK_ABI: AtomicU8 = AtomicU8::new(Abi::Lp64 as u8);
 /// slot's mapping** ([`draw_desk_tree`] → `render_tree_app(…, owner, …)`,
 /// A97) — the tree's records, sub-structs, strings and rasters are all user
 /// VAs of that process, and the composite runs from other processes' AES
-/// calls and from the kernel desktop, under other `TTBR0`s. A registrant that
-/// has ended is swept with its windows ([`wm_new_keep_desktop`]).
+/// calls and from kernel code, under other `TTBR0`s. A registrant that has
+/// ended is swept with its windows ([`wm_new_for_slot`], [`wm_init`]).
 static NEWDESK_OWNER: AtomicI32 = AtomicI32::new(-1);
 
 /// [`NEWDESK_OWNER`] as an `Option`: `Some(slot)` for an EL0 registrant.
@@ -1337,55 +1316,6 @@ fn fallback_root(w: i16, h: i16) -> Object {
         ob_y: 0,
         ob_width: w,
         ob_height: h,
-    }
-}
-
-/// Screen handoff — **relinquish** the desktop's windows: snapshot the whole
-/// shared window table into [`SAVE`] and clear the live table (every desktop
-/// window is hidden, its z-order counter reset). The saved state is *preserved*,
-/// not destroyed, so [`restore_windows`] can rebuild it exactly; the launched
-/// GEM app then gets a fresh window list (all handles free), composites over no
-/// desktop windows, and its own `wind_*` calls run against the empty table.
-///
-/// This mirrors EmuTOS tearing the desktop's windows (`wm_init`) when a child is
-/// launched. It is called from the desktop's launch path (kernel) together with
-/// the `wind_set(DESKWH, WF_NEWDESK, NULL, …)` un-registration and the menu-bar
-/// removal; the caller then clears the screen with
-/// [`super::shell::sh_draw_clear`] (EmuTOS `sh_draw(cmd, TRUE)`).
-pub fn save_windows() {
-    // Make sure the desktop window's slot exists before it is snapshotted.
-    let live = slots();
-    // SAFETY: single-CPU AES; `SAVE` and `TABLE` are disjoint statics and
-    // `[Window; NUM_WIN]` is `Copy`, so these are plain array copies.
-    unsafe {
-        *SAVE.slots.get() = *live;
-        *SAVE.next_z.get() = *TABLE.next_z.get();
-        *SAVE.active.get() = true;
-        // Hide every desktop window by resetting the live table (its state is
-        // held in `SAVE`); reset the z counter for the child. Slot 0 — the
-        // desktop *window* — is left alone: EmuTOS' `wm_new` likewise deletes
-        // only handles 1.. (`gemwmlib.c:1886`); the desktop window is never
-        // torn down.
-        live[1..].fill(Window::EMPTY);
-        *TABLE.next_z.get() = 1;
-    }
-}
-
-/// Screen handoff — **resume** the desktop's windows: restore the set saved by
-/// [`save_windows`] back into the shared window table, discarding whatever the
-/// child left there. A no-op if no set is currently saved. Called from the
-/// desktop's launch path on the child's `Pterm`, alongside re-registering the
-/// desktop background tree (`wind_set(DESKWH, WF_NEWDESK, tree, …)`) and a
-/// repaint.
-pub fn restore_windows() {
-    // SAFETY: single-CPU AES; disjoint `Copy` statics (see [`save_windows`]).
-    unsafe {
-        if !*SAVE.active.get() {
-            return;
-        }
-        *TABLE.slots.get() = *SAVE.slots.get();
-        *TABLE.next_z.get() = *SAVE.next_z.get();
-        *SAVE.active.get() = false;
     }
 }
 
@@ -3836,7 +3766,7 @@ pub fn wind_get(pb: &Aespb) {
     //     process's address space at VA = PA, read-write (`PROT_G` in
     //     FreeMiNT's words). Should the publication fail, the answer is
     //     FALSE: a pointer the caller would fault on is not an answer;
-    //   * an EL1 caller (the in-kernel desktop, a selftest) gets the block's
+    //   * an EL1 caller (kernel code, a selftest) gets the block's
     //     physical address — the pool address, ADR-021's "raw PA for kernel
     //     callers" — which fits the two WORDs where the high-half alias does
     //     not.
@@ -4430,65 +4360,6 @@ pub fn wm_new() {
     unsafe { *TABLE.next_z.get() = 1 };
 }
 
-/// The `sh_ldapp` window sweep for a program the **desktop** launched and
-/// that has returned (A96): `wm_new` (`gemshlib.c:676-677` → `gemwmlib.c:
-/// 1875-1893`) minus the desktop's own windows.
-///
-/// EmuTOS's `wm_new` deletes **every** window, the desktop's included —
-/// there the desktop is itself a shell program: `shel_write` ends it,
-/// `sh_ldapp` runs the child and sweeps, `sh_main` loops and starts the
-/// desktop afresh (`gemshlib.c:600-612,708-731`), which rebuilds its
-/// windows from its own context save (`cnx_get`, `desk/deskmain.c:2055`).
-/// This variant dates from the time the NewTOS desktop did **not** restart: it
-/// ran the child nested in its own event loop (AES gap G1) and kept its windows
-/// in this table across the launch. **It has had no caller since DESK35 and the
-/// construct behind it is gone since DESK43 U3** — the desktop now ends and is
-/// started afresh, so `sh_ldapp`'s plain [`wm_new`] is what runs. Kept only
-/// because removing public AES surface is a step of its own. What it does: the
-/// sweep keeps the windows the
-/// desktop identity owns (`pd::DESKTOP`, `w_owner`) and takes everything
-/// else, exactly as `wm_new` would: closed if open (`wm_close`, with its
-/// `draw_change` repaint and `WM_REDRAW` fan-out), then deleted
-/// (`wm_delete`). When the desktop is back no EL0 process is alive — the
-/// launched chain has ended, single-tasking — so every non-desktop owner is
-/// a dead program (the launched one, or a `Pexec` descendant of it that left
-/// windows behind and had no sweep of its own).
-///
-/// As `sh_ldapp` before `wm_new`: the `wind_update` locks a dead program
-/// still holds are released (`unsync(&wind_spb)`, `gemshlib.c:668-669`;
-/// `wm_new`'s own drains, `gemwmlib.c:1879-1883`) — the desktop takes no
-/// lock across a launch, so the counters are the program's. And the
-/// desktop-background tree the program registered is dropped: EmuTOS
-/// resets `gl_newdesk` in `wm_init` before the desktop restarts
-/// (`gemwmlib.c:1300`) and the desktop registers its own again
-/// (`deskmain.c:2049`); the restarted NewTOS desktop re-registers likewise, and
-/// the program's tree is a VA of an address space that is gone (A97).
-///
-/// Draws what closing those windows draws (see [`wm_new`]); the
-/// whole-screen repaint is the desktop's `redraw_desktop` afterwards.
-pub fn wm_new_keep_desktop() {
-    // `wm_new`'s drain loops (`gemwmlib.c:1879-1883`), owner fields with them —
-    // no other client is alive at this point, the launched chain has ended.
-    MCTRL_CNT.store(0, Ordering::Relaxed);
-    MCTRL_OWNER.store(NO_OWNER, Ordering::Relaxed);
-    UPDATE_LOCK.store(0, Ordering::Relaxed);
-    UPDATE_OWNER.store(NO_OWNER, Ordering::Relaxed);
-    let desktop = super::pd::DESKTOP as i16;
-    for wh in 1..NUM_WIN as i16 {
-        let Some((owner, open)) = win(wh).map(|w| (w.owner, w.open)) else { continue };
-        if owner == desktop {
-            continue;
-        }
-        if open {
-            close_window(wh);
-        }
-        wm_delete(wh);
-    }
-    if newdesk_owner().is_some() {
-        clear_newdesk();
-    }
-}
-
 /// The `sh_ldapp` window sweep narrowed to **one dead client**: the GEMDOS
 /// slot `slot` has ended, take what it left in the Window Manager and leave
 /// every other client's state alone (A107).
@@ -4515,8 +4386,8 @@ pub fn wm_new_keep_desktop() {
 ///
 /// * the two `wind_update` counters, **but only the dead slot's own holds** —
 ///   [`release_locks_of`]. `wm_new` drains both unconditionally
-///   (`gemwmlib.c:1879-1883`) and so does [`wm_new_keep_desktop`], because at
-///   those points no other client is alive to hold one. Here the parent *is*
+///   (`gemwmlib.c:1879-1883`), because at that point no other client is
+///   alive to hold one. Here the parent *is*
 ///   alive and may legitimately hold its own, which is precisely the case
 ///   EmuTOS's owner test covers: `if (wind_spb.sy_owner == rlr)
 ///   unsync(&wind_spb)` (`gemshlib.c:668-669`) (A110).
@@ -4596,10 +4467,6 @@ pub fn wm_init() {
     init_desk_window();
     // `gl_newdesk = NULL;` (gemwmlib.c:1300)
     clear_newdesk();
-    // Any saved desktop window set belongs to a desktop instance that is
-    // over; `wm_init` leaves no window state behind (`:1263-1268`).
-    // SAFETY: single-CPU AES.
-    unsafe { *SAVE.active.get() = false };
 }
 
 /// The Window Manager's share of an AES restart (A106, [`super::reinit`]) —
@@ -4619,7 +4486,7 @@ pub fn wm_init() {
 /// that is about to be redrawn anyway and, worse, refill the message queues
 /// [`super::pd::reinit`] has just emptied.
 ///
-/// So: blank both window tables, rebuild the desktop window
+/// So: blank the window table, rebuild the desktop window
 /// (`w_setup`/`w_setsize`, `gemwmlib.c:1290-1294`), and put back the state
 /// that lives outside them —
 ///
@@ -4633,17 +4500,12 @@ pub fn wm_init() {
 ///   `wind_set(WF_DCOLOR)` may have changed for the session that ended.
 /// * `ml_pmown` (`gemfmlib.c:58`) — the mouse owner parked by the outermost
 ///   `BEG_MCTRL`; the application chain is its power-up value.
-/// * the save/restore snapshot of [`save_windows`], slots included, so no dead
-///   session's window record (its title pointer with it) survives at all.
 pub(super) fn reinit() {
     // `bzero(&D, size_theglo())` over `D.w_win[]` (`gemstart.S:101-110`).
     // SAFETY: single-CPU restart path, no AES call in flight.
     unsafe {
         *TABLE.slots.get() = [Window::EMPTY; NUM_WIN];
         *TABLE.next_z.get() = 1;
-        *SAVE.slots.get() = [Window::EMPTY; NUM_WIN];
-        *SAVE.next_z.get() = 1;
-        *SAVE.active.get() = false;
     }
     // `wm_start()`: the desktop window and the global defaults.
     init_desk_window();
@@ -6185,7 +6047,7 @@ mod newdesk_owner_tests {
     //! composite time ([`NEWDESK_OWNER`], `object.rs` `ObjTree::app_owned`).
     //! The registrant's tree, its sub-structs, strings and rasters are user
     //! VAs of that process; the composite runs from other processes' AES
-    //! calls and from the kernel desktop, under other `TTBR0`s. Modelled at
+    //! calls and from kernel code, under other `TTBR0`s. Modelled at
     //! the [`owner_kva`] seam exactly as the A83 title cases
     //! ([`live_title_tests`]): a resolver over host pages stands in for the
     //! owner's block table, the registration state is set directly (the

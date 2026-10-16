@@ -5,22 +5,24 @@ The log is written by the kernel's `svc` tracer in sequence mode (kernel cargo
 feature `svc-seq-trace`, `kernel/src/dbg_qedtrace.rs` module doc "Sequence
 mode"; DESK43 U5a, prerequisite of guard G2 in
 docs/analysis/desk43-u5-u10-review-2026-10-14.md §4). Every completed call is
-one line with a caller column (`K` = kernel space, i.e. the built-in desktop at
-EL1; `U<slot>` = an EL0 process), followed by indented detail lines for some
+one line with a caller column (`K` = kernel space, an `svc` from EL1 -- until
+DESK43 U10 that was the built-in desktop; `U<slot>` = an EL0 process, since U9
+the desktop `NEWDESK` among them), followed by indented detail lines for some
 calls; `>> evnt_multi entered (#n)` marks each event-loop entry.
 
 Output: one line per call, `<caller> <CLASS> <op> <name> [-> result]`, plus
 the `>> evnt_multi` marks, detail lines dropped unless --details.
 
   tools/svc-seq.py SVCSEQ.LOG                    # every caller
-  tools/svc-seq.py --caller K SVCSEQ.LOG         # only the EL1 desktop
+  tools/svc-seq.py --caller K SVCSEQ.LOG         # only EL1 callers
   tools/svc-seq.py --caller U3 --no-vdi LOG      # one EL0 process, no VDI
   tools/svc-seq.py --no-caller --no-results LOG  # the shape only: for a diff
                                                  # between two link targets of
                                                  # the same desktop (K vs U<n>)
   tools/svc-seq.py --details LOG                 # keep decoded detail lines
 
-The equality proof of U9 is then
+The equality proof of U9 was (logs of a kernel with the built-in desktop,
+which U10 removed)
   diff <(svc-seq.py --caller K --no-caller A.LOG) <(svc-seq.py --caller U5 --no-caller B.LOG)
 """
 import argparse

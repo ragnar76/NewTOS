@@ -66,8 +66,8 @@ pub struct TrapArgs {
     /// Whose address space the pointer arguments live in (ARCH03 stage 3a):
     /// [`Space::User`] for a trap from an EL0 program — its pointers are
     /// accessed with its rights through [`crate::uaccess`] — and
-    /// [`Space::Kernel`] for an in-kernel caller (the built-in desktop's
-    /// `svc` from EL1, and every `TrapArgs` the kernel builds to call a leaf
+    /// [`Space::Kernel`] for an in-kernel caller (an `svc` from EL1 such as
+    /// EmuCON's, and every `TrapArgs` the kernel builds to call a leaf
     /// function directly), whose pointers are kernel addresses. Set by the
     /// trap handler from the caller's `SPSR_EL1.M` ([`Space::from_spsr`]).
     pub space: Space,

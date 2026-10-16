@@ -41,7 +41,8 @@ pub use tos_types::aes::{IconBlk, Object, TedInfo};
 // ── ObjTree: ABI-parametrized in-place OBJECT accessor (ADR-020 stage 4) ──
 //
 // An OBJECT tree is read/written at the **caller's** ABI width: an LP64 caller
-// (the desktop, the boot selftests, any kernel-built tree) has 32-byte records
+// (a native program such as the desktop, the boot selftests, any kernel-built
+// tree) has 32-byte records
 // with a u64 `ob_spec` @16 and coordinates @24..30; an ILP32 caller (a
 // source-ported GEM app such as QED) has 24-byte records with a u32 `ob_spec`
 // @12 and coordinates @16..22 (confirmed against `Object` above + the ILP32
@@ -154,7 +155,7 @@ impl ObjTree {
     /// [`Self::app_at`] for a tree read **outside its owner's trap**: every
     /// address is resolved through process slot `owner`'s mapping (A97) —
     /// the `WF_NEWDESK` background tree, composited from other processes'
-    /// AES calls and from the kernel desktop. `owner == None` is
+    /// AES calls and from kernel code. `owner == None` is
     /// [`Self::app_at`].
     ///
     /// # Invariant
@@ -496,11 +497,12 @@ impl ObjTree {
 // registers with `wind_set(DESKWH, WF_NEWDESK, …)` is the one tree the AES
 // draws **outside** its owner's trap: `w_drawdesk` runs from every other
 // process's `wind_open`/`wind_close`/move (a `Pexec` child compositing over
-// its parent's background) and from the kernel desktop's own repaint. Since
+// its parent's background) and from kernel code (the shell loop's
+// `sh_draw`). Since
 // ARCH03 stage 1 a user address means the same in every process (VA = PA,
 // `bdos/process/mmu.rs`), but a raw read is still a privileged load through
 // whichever `TTBR0` happens to be installed — and through none at all from
-// the kernel desktop — and it would follow a dangling pointer into freed or
+// kernel code — and it would follow a dangling pointer into freed or
 // unmapped memory with a kernel data abort. Since stage 1 the same holds for
 // a tree read inside its owner's trap (a malformed tree, an index past its
 // end): [`ObjTree::new`] gives an EL0 caller's tree its owner too.
@@ -645,7 +647,8 @@ pub struct BitBlk {
 //
 // The `ob_spec` of a G_TEXT/G_IMAGE/G_ICON object points at a TEDINFO /
 // BITBLK / ICONBLK sub-struct laid out at the **tree's** ABI width: an LP64
-// tree (the desktop, kernel-built alerts, boot selftests) packs 8-byte pointer
+// tree (a native program such as the desktop, kernel-built alerts, boot
+// selftests) packs 8-byte pointer
 // fields, shifting the trailing WORDs; an ILP32 tree (a source-ported GEM app
 // such as QED) packs 4-byte pointer fields, so every WORD sits 4 bytes lower
 // per pointer. The native `TedInfo`/`BitBlk`/`IconBlk` structs above are the
@@ -2754,8 +2757,9 @@ fn ob_user(
         // A97 deferral, which existed only because before stage 1 the foreign
         // VA named nothing in the current process.
         let Some(slot) = slot_for(current()) else {
-            // No EL0 process to run it in (the kernel desktop or the boot
-            // path is the caller): there is no context for an EL0 callout.
+            // No EL0 process to run it in (kernel code such as the boot path
+            // or the shell loop is the caller): there is no context for an EL0
+            // callout.
             return new_state;
         };
         let Some(page0) = mmu::page0_kva(slot) else {

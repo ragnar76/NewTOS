@@ -48,16 +48,18 @@ pub const AP_MESAG: u16 = 0x0002;
 pub const AP_ACCLOSE: u16 = 0x0004;
 
 /// Number of AES process descriptors: one per GEMDOS process slot
-/// (`bdos::process::MAX_PROCESSES`) plus one for the kernel-context desktop.
+/// (`bdos::process::MAX_PROCESSES`) plus one for the kernel context.
 /// The table is full-size from boot; nothing is allocated into it.
 pub const NUM_PDS: usize = crate::bdos::process::MAX_PROCESSES + 1;
 
-/// Identity of the kernel-context desktop — the one AES client that is not a
-/// GEMDOS process (`desk::run` calls `appl_init` from the boot context, where
-/// `RUN` is null). Its own index keeps it apart from GEMDOS slot 0, which the
-/// program it launches occupies, so the desktop's queue and flags survive
-/// that program untouched, and the later move of the desktop into EL0 (where
-/// it becomes slot 0 itself) needs no special case.
+/// Identity of the kernel context — the one AES client that is not a GEMDOS
+/// process: kernel code calling the AES with `RUN` null (the shell loop's
+/// `sh_draw`/`fm_error`, the boot path, the boot-time selftests). Its own
+/// index keeps it apart from GEMDOS slot 0. The name is historical: until
+/// DESK43 U10 the built-in desktop was this client (`desk::run` called
+/// `appl_init` from the boot context); since U9/U10 the desktop is the EL0
+/// program `NEWDESK` with a slot of its own, and the move needed no special
+/// case here.
 pub const DESKTOP: usize = crate::bdos::process::MAX_PROCESSES;
 
 /// Length of the standard GEM message (8 WORDs = 16 bytes) — the normal case

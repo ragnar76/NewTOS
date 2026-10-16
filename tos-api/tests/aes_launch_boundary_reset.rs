@@ -332,16 +332,12 @@ fn drain(pb: &mut Aespb, pid: i16) -> usize {
 /// desktop epilog is `menu_bar(NULL,0)`, `wind_set(DESKWH,WF_NEWDESK,NULL,0,0)`,
 /// `appl_exit()` (`desk/deskmain.c:2159-2166`); the first two are draws that do
 /// not touch the descriptor, and `appl_exit` is last in EmuTOS as it is here —
-/// so nothing can re-queue after the drain.
+/// so nothing can re-queue after the drain. (The window-table handoff
+/// `save_windows`/`restore_windows` the nested launch also did was removed
+/// with its last caller in DESK43 U10; the child here opens no window, so the
+/// desktop's windows simply stay in the table.)
 fn desktop_relinquish(pb: &mut Aespb) {
-    tos_api::aes::window::save_windows();
     appl_exit(pb);
-}
-
-/// The desktop's half of `run_gem_app` after the child `Pterm`s
-/// (`programs/desktop/src/main.rs`, `desktop_resume`).
-fn desktop_resume() {
-    tos_api::aes::window::restore_windows();
 }
 
 /// The launcher's pre-run step (`kernel/src/launch.rs`,
@@ -405,8 +401,7 @@ fn the_launch_boundary_hands_the_child_a_reset_descriptor() {
         (0, 0),
         "phase 1: the child must start with an empty message queue; it holds a \
          message of type {} — the desktop's, for a window handle that is not \
-         its own and that save_windows() has already taken out of the live \
-         window list",
+         its own",
         leaked.map(|m| m[0]).unwrap_or(0)
     );
 
@@ -433,7 +428,6 @@ fn the_launch_boundary_hands_the_child_a_reset_descriptor() {
     // the child ends and the desktop comes back
     appl_exit(&mut pb);
     launcher_cleanup(0);
-    desktop_resume();
 
     // ── phase 3: the flag reset, seen through its one consumer ────────────
     // The desktop is an AES application again (EmuTOS re-enters deskmain, whose

@@ -508,7 +508,8 @@ pub fn popup_blit_save(backend: &dyn RasterBackend, x: i16, y: i16, w: i16, h: i
     if bytes == 0 || bytes > Long::MAX as usize {
         return None;
     }
-    // SAFETY: single-CPU AES path (trap context or the kernel desktop), the
+    // SAFETY: single-CPU AES path (trap context or the shell loop's
+    // `sh_tographic`), the
     // implicit BDOS lock is held.
     let raw = unsafe { crate::bdos::mem::traps::mxalloc(bytes as Long, MX_STRAM) };
     if raw == 0 {

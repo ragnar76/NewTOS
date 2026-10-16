@@ -13,9 +13,9 @@
 //! its Atari name in lower case (`CLAUDE.md` naming rule): [`cconout`],
 //! [`malloc`], [`pterm`]. [`dos_getcookie`] is NewTOS's own (see there).
 //!
-//! The binding is the same at EL1 and EL0: the kernel desktop calls it from
-//! the kernel's boot context, a native program from user mode; the trap
-//! handler tells the two apart by the caller's `SPSR_EL1.M` (`TrapArgs::space`,
+//! The binding is the same at EL1 and EL0: until DESK43 U10 the built-in
+//! desktop called it from the kernel's boot context, a native program calls it
+//! from user mode; the trap handler tells the two apart by the caller's `SPSR_EL1.M` (`TrapArgs::space`,
 //! ARCH03 stage 3a) and reads a kernel caller's pointers unchanged.
 //!
 //! ## ABI
@@ -28,7 +28,7 @@
 //! leading word, `Frename(0, old, new)` (`:53`) and `Fdatime(timeptr, handle,
 //! wflag)` (`:54`).
 //!
-//! ## What the trap changes for the EL1 desktop, and what it does not
+//! ## What the trap changed for the EL1 desktop, and what it did not (until DESK43 U10)
 //!
 //! Before DESK10 the desktop called the `tos_api::bdos::fs` leaf functions
 //! directly with a hand-built `TrapArgs`. Two properties of the trap path were
@@ -81,7 +81,7 @@ pub const F_SETMOD: i16 = 1;
 /// than three arguments (`bdosbind.h:22-54`).
 ///
 /// `nostack`: an exception taken at EL1 with `SPSel = 0` runs the handler on
-/// `SP_EL1` (the kernel desktop's case, `link-rpi4.ld:100-102`), and one taken
+/// `SP_EL1` (the built-in desktop's case until DESK43 U10, `link-rpi4.ld:100-102`), and one taken
 /// at EL0 switches to `SP_EL1` as well, so the caller's stack is untouched.
 /// Memory is deliberately *not* declared clean: `Fread` and `Fsfirst` write
 /// through the pointers they are given.
@@ -146,8 +146,9 @@ fn cpath(s: &str) -> [u8; 130] {
 /// The character travels in a register, so an EL1 caller can use it where it
 /// cannot use [`dos_conws`]: `Cconws` reads its string with the unprivileged
 /// `ldtrb` (`tos-api/src/gemdos/console.rs`), which faults on kernel-VA
-/// literals. The kernel desktop's self-test writer
-/// (`programs/desktop/src/selftest.rs`) is that caller.
+/// literals. The desktop's self-test writer
+/// (`programs/desktop/src/selftest.rs`) was that caller while the desktop ran
+/// at EL1 (until DESK43 U10) and still writes through it.
 // NEWTOS: EmuTOS's `include/gemdos.h` has no `dos_*` wrapper for `Cconout`.
 pub fn cconout(c: u8) {
     dos_trap(CCONOUT, c as u64, 0, 0);

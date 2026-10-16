@@ -49,7 +49,7 @@ fn kbrate_get_set_is_what_the_repeat_handler_reads() {
     assert_eq!(tos_api::xbios::system::kb_rate(), (15, 2));
 }
 
-/// With no process running (boot, the built-in desktop) the repeat handler
+/// With no process running (boot, EL1 kernel code) the repeat handler
 /// sees the boot `conterm` 7 — key repeat on (`bios/ikbd.c:1100`).
 #[test]
 fn conterm_without_a_process_is_the_boot_value() {

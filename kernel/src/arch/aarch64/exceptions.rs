@@ -435,11 +435,12 @@ fn sync_handler(frame: &mut ExceptionFrame) {
         svc_imm,
         // ARCH03 stage 3a: whose address space the pointer arguments are in —
         // an EL0 program's (accessed with its rights, `tos_api::uaccess`) or
-        // an EL1 caller's kernel addresses (the built-in desktop's `svc`).
+        // an EL1 caller's kernel addresses (the kernel's own `svc`s, e.g.
+        // EmuCON's GEMDOS calls).
         space: tos_api::uaccess::Space::from_spsr(frame.spsr),
     };
 
-    // `[desk] desktop up`: the kernel reports the built-in desktop's first
+    // `[desk] desktop up`: the kernel reports the desktop program's first
     // `evnt_multi` (DESK43 D4 — the desktop itself prints nothing). One atomic
     // load unless the desktop is running; see `shell_loop`.
     if matches!(class, TrapClass::Gem) {
@@ -449,8 +450,8 @@ fn sync_handler(frame: &mut ExceptionFrame) {
     // TEMPORARY `svc` tracer (debug tooling, not product history). It records
     // **every** `svc`, whichever exception level it came from. This gate also
     // tested `SPSR.M[3:0] == 0` until DESK43/U1, on the stated grounds that
-    // "the desktop runs at EL1 and never reaches here"; those grounds have been
-    // wrong since DESK10 — the built-in desktop issues the same two
+    // "the desktop runs at EL1 and never reaches here"; those grounds were
+    // wrong from DESK10 on — the then built-in desktop issued the same two
     // instructions an application does (`svc #2` and `svc #1` through the
     // `newtos_gem` bindings, DESK43 U6b), so an EL0-only gate silently
     // excluded the one caller whose call sequence has to be diffable against
@@ -566,8 +567,8 @@ fn sync_handler(frame: &mut ExceptionFrame) {
     // can be pending, and a pending upcall for *this* process is delivered on
     // its own resume (deliver-on-resume, §6), not now.
     //
-    // **The EL1 caller (ACC03).** When the blocking client is the built-in
-    // desktop or the boot path — `RUN` names no slot — there is no
+    // **The EL1 caller (ACC03).** When the blocking client is an EL1 kernel
+    // context such as the boot path — `RUN` names no slot — there is no
     // `saved_frame` to write and no run-set entry to drop; the frame is parked
     // in [`KERNEL_PARK`] instead, with the same ELR rewind, and restored the
     // moment the accessory it yields to blocks again.
@@ -988,10 +989,12 @@ fn save_yield_frame(cur: usize, frame: &ExceptionFrame, rewind: bool) {
 
 // ─── The kernel park (ACC03) ────────────────────────────────────────────────
 //
-// NewTOS's built-in desktop and the boot path are AES clients that run at EL1
-// and own no process slot, so they can never be `pick_next` candidates the way
-// EmuTOS's desktop AESPD is (`aes/geminit.c:851-877` gives it slot 0 in the
-// same round-robin as the accessories). To let an accessory run *beside* them,
+// NewTOS's boot path is an AES client that runs at EL1 and owns no process
+// slot (as the built-in desktop did until DESK43 U10; the desktop is now the
+// EL0 process `NEWDESK` with a slot of its own), so it can never be a
+// `pick_next` candidate the way EmuTOS's desktop AESPD is
+// (`aes/geminit.c:851-877` gives it slot 0 in the same round-robin as the
+// accessories). To let an accessory run *beside* such an EL1 client,
 // the EL1 client's trap frame is snapshotted here — the "kernel park" — the
 // accessory is switched to, and the park is restored the moment the accessory
 // blocks again. One slot is enough: exactly one EL1 context can be inside a
@@ -1354,7 +1357,8 @@ fn terminate_and_redirect(frame: &mut ExceptionFrame, rc: i32) {
 /// `dopanic` → `kill_program` (`bios/vectors.S`, `bios/kprint.c:302-596`,
 /// `bios/panicasm.S:96-99`; spec `docs/api/bios/_exception-crash.md`): print
 /// the crash report, wait for a key, terminate the program with `Pterm(-1)`.
-/// The parent (or the desktop) resumes as after any `Pterm`.
+/// The parent (a `Pexec` caller, or the kernel's launcher for a program the
+/// shell loop started) resumes as after any `Pterm`.
 ///
 /// Returns `false` — the caller then halts as before — when the exception
 /// cannot be attributed to a process (no live slot behind `RUN`).

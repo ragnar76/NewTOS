@@ -1,5 +1,5 @@
 //! **TEMPORARY** kernel-side `svc` tracer — originally for an EL0 application
-//! (QED), now for every `svc` caller including the built-in desktop.
+//! (QED), now for every `svc` caller, EL0 programs and EL1 kernel callers alike.
 //!
 //! This is a DEBUG tool — it is **not** part of the product and must **not**
 //! be committed to product history. It was built to root-cause real-HW QED
@@ -21,11 +21,12 @@
 //! It used to test `SPSR.M[3:0] == 0` as well, justified with *"the desktop runs
 //! at EL1 and calls the AES/VDI directly (never through the `svc` path), so
 //! hooking the EL0 handler naturally traces only the app"*. **That has been
-//! false since DESK10.** The built-in desktop reaches the AES through
+//! false since DESK10.** The then built-in desktop reached the AES through
 //! `newtos_gem::aes` (`svc #2`) and GEMDOS through `newtos_gem::gemdos`
 //! (`svc #1`; DESK43 U6b, before that `crate::desk`) — the same two instructions
-//! an application uses; it was simply not recorded, because its `svc` is taken
-//! at EL1. The gate was widened for
+//! an application uses; it was simply not recorded, because its `svc` was taken
+//! at EL1. (Since DESK43 U9/U10 the desktop is the EL0 program `NEWDESK`.) The
+//! gate was widened for
 //! `docs/analysis/desktop-userspace-plan-v2.md` §5 U1, whose whole purpose is
 //! to make the desktop's call sequence diffable against
 //! `references/emutos/desk/deskmain.c` (measure 4 of §6.4).
@@ -76,7 +77,7 @@
 //! * every call **in completion order** — no geometry prologue, no clearing,
 //!   no keystroke latch;
 //! * each call line prefixed with its caller: `K` for a kernel-space caller
-//!   (the built-in desktop's `svc` from EL1), `U<slot>` for an EL0 process
+//!   (an `svc` from EL1), `U<slot>` for an EL0 process
 //!   (its process-table slot), so one client's sequence can be cut out of the
 //!   interleaving with accessories;
 //! * a `>> evnt_multi entered` line at every `evnt_multi` entry — a blocking
@@ -339,7 +340,7 @@ pub fn post_dispatch(class: TrapClass, args: &TrapArgs, result: i64) {
 }
 
 /// Sequence mode: the caller column in front of a call line — `K ` for a
-/// kernel-space caller (the built-in desktop at EL1), `U<slot> ` for an EL0
+/// kernel-space caller (an `svc` from EL1), `U<slot> ` for an EL0
 /// process. Taken after dispatch for a completed call, so for `Pexec`/`Pterm`
 /// it may already name the process that runs next.
 fn caller_tag(args: &TrapArgs) {
@@ -372,7 +373,7 @@ fn is_evnt_multi(class: TrapClass, args: &TrapArgs) -> bool {
     // control = block[0]; opcode = control[0] — the same reads the AES
     // dispatcher performs on this block.
     // SAFETY: the calling client's `TTBR0` is still active, so an EL0 caller's
-    // block is a mapped user VA; an EL1 caller (the built-in desktop) passes a
+    // block is a mapped user VA; an EL1 caller passes a
     // kernel high-half VA, and `current_abi()` resolves to LP64 for it, which
     // is the width that caller wrote. Either way this is the same read the AES
     // dispatcher performs on the same block a few instructions later.
@@ -457,8 +458,8 @@ fn record_gemdos_path(f: u16, args: &TrapArgs) {
 ///
 /// This reads the very pointer the just-dispatched GEMDOS call already walked
 /// (via `super::cstr`) in this same trap context, with the caller's `TTBR0`
-/// still active — a user VA from EL0, a kernel high-half VA from the built-in
-/// desktop at EL1. So it is exactly as safe as that call: it stops at the NUL
+/// still active — a user VA from EL0, a kernel high-half VA from an EL1
+/// caller. So it is exactly as safe as that call: it stops at the NUL
 /// or the 128-byte cap and never scans unbounded memory.
 fn trace_path(ptr: u64) {
     if ptr == 0 {

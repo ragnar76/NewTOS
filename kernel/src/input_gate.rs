@@ -29,14 +29,15 @@
 //!   CPU runs either inside the synchronous exception handler, where IRQs are
 //!   masked (that masking *is* the BDOS/AES/VDI mutual exclusion — see
 //!   `tos_api::bios::tick::publish`), or as EL1 code with IRQs open (the
-//!   built-in desktop, the boot path, the pump windows of `pump_input` and
-//!   the blocking reads). An IRQ from EL0 therefore interrupts no kernel
-//!   code: no VDI operation is drawing, no AES call is changing window or
-//!   menu state, no `usb::poll` or USB transfer is in flight, no lock is
-//!   held. The kernel state it sees is the state at the *entry* of any trap
-//!   the same program could make next — the state in which `pump_input`
-//!   already runs today. An IRQ from EL1 never pumps: the desktop's own code
-//!   may be in the middle of an in-kernel `objc_draw`.
+//!   boot path and the shell loop, the pump windows of `pump_input` and the
+//!   blocking reads; until DESK43 U10 also the built-in desktop). An IRQ from
+//!   EL0 therefore interrupts no kernel code: no VDI operation is drawing, no
+//!   AES call is changing window or menu state, no `usb::poll` or USB
+//!   transfer is in flight, no lock is held. The kernel state it sees is the
+//!   state at the *entry* of any trap the same program could make next — the
+//!   state in which `pump_input` already runs today. An IRQ from EL1 never
+//!   pumps: the interrupted kernel code may be in the middle of an in-kernel
+//!   `objc_draw` (the shell's `sh_draw`, a kernel-built alert).
 //! * **A process is running.** The EL0 code belongs to a slot (always true
 //!   at EL0; checked rather than assumed, so a pump never runs without a
 //!   well-defined running process for the AES motion handler to act for).

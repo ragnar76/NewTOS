@@ -10,13 +10,40 @@
 
 const LINE_MAX: usize = 128;
 
+/// The console's first lines.
+const BANNER: &[u8] = b"NewTOS console (EmuCON) - 'help' for commands, 'exit' to return.\r\n\r\n";
+
 /// Run the console REPL until the user types `exit`/`quit`, then return.
 /// This is the EmuCON-style console launched from the desktop ("Execute
 /// EmuCON"); on return the caller redraws the desktop.
 pub fn run_console() {
     crate::fbcon::clear_and_home();
-    puts(b"NewTOS console (EmuCON) - 'help' for commands, 'exit' to return.\r\n\r\n");
+    puts(BANNER);
+    repl();
+}
 
+/// [`run_console`] in place of a desktop program that could not be loaded
+/// (`desktop` its name, `rc` the negative GEMDOS code of the load; DESK43
+/// D6-d, `crate::shell_loop`): the same console, with one line under the
+/// banner that says why it is there. It goes through `Cconout` like the rest
+/// of the console, so it is on the screen as well as on the serial line — a
+/// machine without a serial cable still tells its user.
+pub fn run_console_without_desktop(desktop: &[u8], rc: i32) {
+    crate::fbcon::clear_and_home();
+    puts(BANNER);
+    puts(b"No desktop: ");
+    puts(desktop);
+    puts(b" could not be loaded (GEMDOS error ");
+    if rc < 0 {
+        cconout(b'-');
+    }
+    put_u32(rc.unsigned_abs());
+    puts(b").\r\n\r\n");
+    repl();
+}
+
+/// The console's read-execute loop, until `exit`/`quit`.
+fn repl() {
     let mut line = [0u8; LINE_MAX];
     loop {
         prompt();

@@ -8,7 +8,8 @@
 //! **Identity and reported value** (spec § "AES process identity and pid").
 //! A client's *identity* — the key of its descriptor, queue, wait-key,
 //! resource list and window ownership — is its GEMDOS process slot, or
-//! [`pd::DESKTOP`] for the kernel-context desktop ([`current_identity`]).
+//! [`pd::DESKTOP`] for the kernel context ([`current_identity`]; the name is
+//! from the time the desktop ran there, until DESK43 U10).
 //! The *value* a program reads back (`ap_id`, `appl_find`, `WF_OWNER`,
 //! `msg[1]`) is computed from the identity by [`reported_pid`] and mapped back
 //! by [`identity_of`] where a program hands a value in (`appl_write`,
@@ -178,9 +179,9 @@ impl AesGlobalVals {
 /// The AES identity of the current caller — the index of its process
 /// descriptor in [`pd`]'s table: its GEMDOS process slot for an EL0 process
 /// (`RUN`'s slot), [`pd::DESKTOP`] for the kernel boot context (`RUN` null —
-/// the built-in desktop and the boot-time selftests). A non-null `RUN` that
-/// names no slot cannot occur (every basepage the loader installs is a
-/// slot's); it falls to the desktop's entry, as the old `current_pid` fell to
+/// the shell loop, the boot path and the boot-time selftests). A non-null
+/// `RUN` that names no slot cannot occur (every basepage the loader installs
+/// is a slot's); it falls to the kernel context's entry, as the old `current_pid` fell to
 /// its value 1.
 pub(super) fn current_identity() -> usize {
     let bp = crate::bdos::process::current();
@@ -210,7 +211,7 @@ pub(super) const SCRENMGR_PID: i16 = 1;
 /// The pid a program sees for identity `idx` — `ap_id`, `appl_find`'s
 /// answer, `WF_OWNER`, `msg[1]` of a message the application itself sends.
 /// Every identity NewTOS has — the sixteen GEMDOS slots and the
-/// kernel-context desktop — is a member of the application chain, so the
+/// kernel context — is a member of the application chain, so the
 /// value is [`AP_CHAIN_PID`] for all of them (spec § "AES process identity
 /// and pid", contract (b)); the identity is not lost, it is simply not what
 /// EmuTOS reports. Desk accessories (pid 2+, `D.g_acc[]`) do not exist here;

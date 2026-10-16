@@ -164,7 +164,7 @@ pub fn current() -> usize {
 
 /// The slot of the execution context physically on the CPU, derived from the
 /// BDOS running-basepage `RUN` — or [`NONE`] for an **EL1 kernel context**
-/// (the boot path, the built-in desktop), which owns no process slot.
+/// (e.g. the boot path), which owns no process slot.
 ///
 /// This is the same derivation [`crate::aes::appl::current_identity`] uses and
 /// it is the one that is *always* maintained: every path that gives the CPU to
@@ -184,17 +184,19 @@ pub fn running_slot() -> usize {
     }
 }
 
-/// `true` while an **EL1 kernel client** (the boot path's accessory wait, or
-/// the built-in desktop inside a blocking `evnt_*`) has its trap frame parked
+/// `true` while an **EL1 kernel client** (the boot path's accessory wait; until
+/// DESK43 U10 also the built-in desktop inside a blocking `evnt_*`) has its
+/// trap frame parked
 /// by the kernel and is waiting to be resumed — the NewTOS stand-in for
 /// EmuTOS's "the desktop's AESPD is one more entry in the round-robin"
 /// (`aes/gemasm.S:169-194` `switchto`, over `rlr`/`drl`).
 ///
 /// EmuTOS has no equivalent flag because it has no privilege boundary: its
 /// desktop is an ordinary AESPD and `dsptch()` switches to it like to any
-/// other. NewTOS's desktop runs at EL1, owns no process slot and therefore
-/// cannot be a [`pick_next`] candidate; instead the trap handler snapshots its
-/// frame ("the kernel park") before switching to an accessory, and [`sleep`]
+/// other. NewTOS's EL1 kernel context owns no process slot and therefore
+/// cannot be a [`pick_next`] candidate (the desktop, for which this was built,
+/// is an EL0 process with a slot since DESK43 U9/U10); instead the trap
+/// handler snapshots its frame ("the kernel park") before switching to an accessory, and [`sleep`]
 /// consults this flag to know that such a context is waiting to be resumed.
 static KERNEL_PARKED: AtomicBool = AtomicBool::new(false);
 
@@ -485,7 +487,8 @@ pub enum SleepOutcome {
 ///     spin — only the wait *mechanism* moves here.
 ///
 /// **The EL1 kernel client (ACC03).** A caller that owns no slot — the boot
-/// path and the built-in desktop, both of which reach `evnt_*` from EL1 — is
+/// path; until DESK43 U10 also the built-in desktop, which reached `evnt_*`
+/// from EL1 — is
 /// not a [`pick_next`] candidate and has nothing to mark WAITING. It still has
 /// the two exits, mirrored:
 ///
@@ -710,7 +713,7 @@ pub fn dsptch() -> Dispatch {
 /// unchanged — so the elapsed time while a peer ran does not move the deadline.
 /// Cleared on completion by [`clear_deadline`].
 ///
-/// With no running scheduler slot — the EL1 desktop, whose timer waits run with
+/// With no running scheduler slot — an EL1 kernel context, whose timer waits run with
 /// [`current`]` == NONE` and never restart (idle-fallback only, §4.4) — there is
 /// nothing to persist, so it just returns `now + ms` (today's behavior).
 pub fn arm_or_get_deadline(now: u64, ms: u64) -> u64 {

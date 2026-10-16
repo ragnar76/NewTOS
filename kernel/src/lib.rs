@@ -280,14 +280,6 @@ extern "C" fn kernel_main_rust(dtb_phys: usize, entry_el: u64) -> ! {
     } else {
         input_gate::InputMode::Irq
     });
-    // DESK43 D5/U9-3: which desktop the shell loop's DESKTOP arm runs — the
-    // embedded EL0 program `NEWDESK` (default) or, with `desk=kernel`, the
-    // desktop built into the kernel. Decided while the boot arguments are
-    // reachable; the boot log names the choice.
-    shell_loop::select_desktop(boot_switch(dtb, false, |args: &[u8]| {
-        bootargs::has_token(args, bootargs::DESK_KERNEL)
-    }));
-
     // Discover the physical memory map and dump it for visibility.
     // Pure function of the board constants, the DTB and the firmware
     // answer above (no MMIO, no allocation of its own).
@@ -514,7 +506,7 @@ extern "C" fn kernel_main_rust(dtb_phys: usize, entry_el: u64) -> ! {
 
     // The programs the kernel image carries (DESK43 D3, `crate::embedded`):
     // into the program registry before anything can `Pexec` them, as
-    // EmuTOS' ROM desktop is there before the AES starts. Empty until U9.
+    // EmuTOS' ROM desktop is there before the AES starts (`NEWDESK`, U9).
     embedded::register();
 
     // The AES starts — EmuTOS `exec_os` after `autoexec` (`bios/bios.c:
@@ -532,8 +524,9 @@ extern "C" fn kernel_main_rust(dtb_phys: usize, entry_el: u64) -> ! {
     // assembly, which re-zeroes the global AES area and jumps back to
     // `gem_main` when `gl_changerez` is still set (`:122-124`); here the same
     // decision is `sh_main`'s return value, and the re-zeroing is
-    // `tos_api::aes::reinit()` + `desktop::reset()` (A106, ticket `TASK/A106.md`,
-    // design `docs/analysis/a48-shw-reschng-design-2026-09-21.md` §5 tier 2).
+    // `tos_api::aes::reinit()` (A106, ticket `TASK/A106.md`, design
+    // `docs/analysis/a48-shw-reschng-design-2026-09-21.md` §5 tier 2). The
+    // desktop's own state is a process's and ends with it (DESK43 U10).
     //
     // Only `ShExit::Shutdown` leaves the loop. On a board whose `can_shutdown()`
     // equivalent is FALSE — every NewTOS profile, as on the Falcon this build
@@ -569,14 +562,14 @@ extern "C" fn kernel_main_rust(dtb_phys: usize, entry_el: u64) -> ! {
         // run after the AES's own init and immediately before the shell loop:
         // it sets the double-click speed from the `#E` line and reads the `#Z`
         // autorun line into the SHELL's `sh_desk`/`sh_cdir` pair, telling us
-        // whether a program is configured to run instead of the built-in
+        // whether a program is configured to run instead of the embedded
         // desktop. Re-run per session, as EmuTOS runs it, so a restarted
         // session starts the same program a cold boot would.
         let (isauto, isgem) = tos_api::aes::init::process_inf2();
 
         // The AES shell loop (EmuTOS `sh_main`, `geminit.c:739`): it decides
-        // which program runs — the `#Z` program, the built-in desktop, or the
-        // console — starts it, and starts the next one when it terminates.
+        // which program runs — the `#Z` program, the embedded desktop
+        // `NEWDESK`, or the console — starts it, and starts the next one when it terminates.
         // This is what replaced the hardcoded `desk::run()` call: the desktop
         // is now a configuration choice, not a compiled-in one.
         // `dsptch(); wait_for_accs(AP_MESAG);` (`geminit.c:736-737`) — this is
@@ -611,16 +604,11 @@ extern "C" fn kernel_main_rust(dtb_phys: usize, entry_el: u64) -> ! {
         // ended: close this AES session and open a fresh one. The physical
         // mode switch `gem_main` would do here (`geminit.c:778-793`) is the
         // one hardware-gated step and stays absent on a single-mode board
-        // (ADR-017 rev 2, D-101); everything else — every AES structure, the
-        // desktop's own state — is rebuilt from scratch.
+        // (ADR-017 rev 2, D-101); every AES structure is rebuilt from
+        // scratch. The desktop's own state needs nothing here: it belongs to
+        // the `NEWDESK` process, which has ended (DESK43 U10).
         kprintln!("[shell] AES restart (resolution change requested)");
         tos_api::aes::reinit();
-        // The built-in desktop's state outlives a session (A106); the EL0
-        // desktop's dies with its process, so this is for the built-in one
-        // only (`desk=kernel`, or the load-failure fallback; DESK43 U9-4).
-        if shell_loop::kernel_desktop_in_use() {
-            desktop::reset();
-        }
         // `dos_sdrv(bootdev)` (`geminit.c:796-803`): "resolution change always
         // resets the default drive to the boot device". NewTOS has no boot
         // device variable; the boot drive is the first hard disk in the drive

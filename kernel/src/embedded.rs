@@ -11,8 +11,8 @@
 //! (`aes_run_rom_program(deskstart)`, `aes/gemshlib.c:606`).
 //!
 //! Since DESK43 U9-2 the table holds the desktop program `NEWDESK`
-//! (`programs/newdesk`), registered at boot; until U9-4 nothing starts it on
-//! the boot path (the shell's DESKTOP arm still runs the built-in desktop).
+//! (`programs/newdesk`), registered at boot; the shell's DESKTOP arm starts it
+//! (U9-4), and since U10 it is the only desktop the image has.
 
 use tos_api::bdos::process::registry;
 

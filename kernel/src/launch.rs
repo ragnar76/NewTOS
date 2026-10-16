@@ -55,9 +55,7 @@ const NO_CHILD: usize = usize::MAX;
 static SHELL_CHILD_SLOT: AtomicUsize = AtomicUsize::new(NO_CHILD);
 
 /// The slot of the program the kernel's launcher started and that is still
-/// running — see [`SHELL_CHILD_SLOT`]. `None` while no such program runs
-/// (in particular while the built-in desktop runs: it is a kernel call, not a
-/// launched program).
+/// running — see [`SHELL_CHILD_SLOT`]. `None` while no such program runs.
 pub fn shell_child_slot() -> Option<usize> {
     match SHELL_CHILD_SLOT.load(Ordering::Acquire) {
         NO_CHILD => None,

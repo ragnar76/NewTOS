@@ -11,10 +11,11 @@
 //!   symbol, so the copies are kept equal by this test instead.
 //! * DESK43 U8b: the desktop is the library crate `programs/desktop`. It is
 //!   not a program (no `staticlib`, not in [`PROGRAMS`]) but takes the same
-//!   board features, which the kernel passes through together with
-//!   `selftest-desk`; and its dependency graph is the boundary guard G1 of
-//!   the review (§4.2): `newtos-gem` + `tos-types`, nothing else, all the way
-//!   down.
+//!   board features and `selftest-desk`, which the NEWDESK program passes
+//!   through; and its dependency graph is the boundary guard G1 of the review
+//!   (§4.2): `newtos-gem` + `tos-types`, nothing else, all the way down.
+//! * DESK43 U10: the kernel depends on neither the desktop nor its trap
+//!   bindings — the desktop is only the embedded NEWDESK program.
 //! * DESK43 U9-2: the `NEWDESK` program (`programs/newdesk`) is the desktop
 //!   library plus the program runtime (`newtos-gem` with `rt` and the crash
 //!   policy `panic-wait-key`), takes the kernel's three desktop switches, and
@@ -334,28 +335,42 @@ fn desktop_depends_only_on_newtos_gem_and_tos_types() {
 }
 
 /// X03 for the desktop crate (DESK43 U8b): it declares both board features and
-/// `selftest-desk`, and the kernel passes each of its own through
-/// (`board-x = ["desktop/board-x"]`), so the desktop is always built for the
-/// kernel's board — and the NEWDESK program (U9) gets the same switch from
-/// `build-programs`.
+/// `selftest-desk` — the switches the NEWDESK program passes through
+/// (`newdesk_is_the_desktop_with_the_program_runtime`) and `build-programs`
+/// sets — and the kernel declares the same names (`cargo xtask build` takes
+/// them as kernel features).
 #[test]
-fn desktop_takes_the_kernel_board_and_selftest_features() {
+fn desktop_takes_the_board_and_selftest_features() {
     let root = root();
     let desk = fs::read_to_string(root.join("programs/desktop/Cargo.toml")).expect("programs/desktop/Cargo.toml");
     let kernel = fs::read_to_string(root.join("kernel/Cargo.toml")).expect("kernel/Cargo.toml");
     let desk_feats = features(&desk);
+    let kernel_feats = features(&kernel);
     let mut switches: Vec<&str> = Board::ALL.iter().map(|b| b.feature()).collect();
     switches.push("selftest-desk");
     for f in switches {
         assert!(desk_feats.iter().any(|d| d == f), "programs/desktop/Cargo.toml does not declare `{f}`");
-        let line = kernel
-            .lines()
-            .find(|l| l.trim_start().starts_with(&format!("{f} =")))
-            .unwrap_or_else(|| panic!("kernel/Cargo.toml: no feature `{f}`"));
-        assert!(
-            line.contains(&format!("\"desktop/{f}\"")),
-            "kernel/Cargo.toml feature `{f}` does not enable `desktop/{f}`: {line}"
-        );
+        assert!(kernel_feats.iter().any(|d| d == f), "kernel/Cargo.toml has no feature `{f}`");
+    }
+}
+
+/// DESK43 U10: the kernel links neither the desktop library nor its trap
+/// bindings — the desktop is the NEWDESK program only (embedded as a file,
+/// `kernel/embed.rs`), so no kernel build can call into it again.
+#[test]
+fn the_kernel_does_not_link_the_desktop() {
+    let root = root();
+    let kernel = fs::read_to_string(root.join("kernel/Cargo.toml")).expect("kernel/Cargo.toml");
+    let deps = dependencies(&kernel);
+    let names: Vec<&str> = deps.iter().map(|(_, n)| n.as_str()).collect();
+    for banned in ["desktop", "newtos-gem", "newdesk"] {
+        assert!(!names.contains(&banned), "kernel/Cargo.toml depends on `{banned}`: {deps:?}");
+    }
+    let mut switches: Vec<&str> = Board::ALL.iter().map(|b| b.feature()).collect();
+    switches.push("selftest-desk");
+    for name in switches {
+        let line = kernel.lines().find(|l| l.trim_start().starts_with(&format!("{name} ="))).unwrap();
+        assert!(!line.contains("desktop/"), "kernel feature `{name}` still enables the desktop crate: {line}");
     }
 }
 
@@ -387,9 +402,9 @@ fn string_scanner_reads_multi_line_and_escaped_literals() {
 /// DESK43 U9-2: `programs/newdesk` depends on exactly `desktop` and
 /// `newtos-gem`; it takes `newtos-gem` **with** its runtime (no
 /// `default-features = false`) and the D6-a crash policy `panic-wait-key`; and
-/// it passes the three desktop switches through as the kernel does
-/// (`board-x = ["desktop/board-x"]`, `selftest-desk`), so the program and the
-/// built-in desktop are built from the same source with the same switches.
+/// it passes the three desktop switches through
+/// (`board-x = ["desktop/board-x"]`, `selftest-desk`), so the desktop is built
+/// for the board and with the self-tests `build-programs` asks for.
 #[test]
 fn newdesk_is_the_desktop_with_the_program_runtime() {
     let root = root();

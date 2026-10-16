@@ -423,9 +423,10 @@ const PROGRAMS: &[(&str, &str)] = &[("hello-gem", "HELLOGEM.NAP"), ("newdesk", "
 /// Kernel features a program build takes over (DESK43 U9-4): `(crate,
 /// feature)`. Since the desktop is the EL0 program `NEWDESK`, the kernel's
 /// `selftest-desk` must reach that program — the self-tests run inside the
-/// desktop (`programs/desktop/src/lib.rs`), and the kernel's own copy of the
-/// desktop runs only with `desk=kernel`. Every listed feature is declared by
-/// the crate (host test `programs_tests`).
+/// desktop (`programs/desktop/src/lib.rs`), and since DESK43 U10 the kernel
+/// has no copy of the desktop of its own (the kernel feature is only this
+/// switch). Every listed feature is declared by the crate (host test
+/// `programs_tests`).
 const PROGRAM_FEATURES: &[(&str, &str)] = &[("newdesk", "selftest-desk")];
 
 fn cmd_build_programs(args: &[String]) -> Result<(), String> {

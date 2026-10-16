@@ -72,14 +72,6 @@ pub const CPUCLK_FIRMWARE: &[u8] = b"cpuclk=firmware";
 /// (`kernel::input_gate`).
 pub const INPUT_AES: &[u8] = b"input=aes";
 
-/// The fallback switch of the desktop (DESK43 D5): `desk=kernel` makes the
-/// shell loop's DESKTOP arm run the desktop built into the kernel image as a
-/// kernel call — the desktop as it was before DESK43 U9. Without it the arm
-/// starts the embedded desktop **program** `NEWDESK` at EL0, as EmuTOS starts
-/// its ROM desktop as a process (`aes_run_rom_program(deskstart)`,
-/// `aes/gemshlib.c:606`). Both are in every image; the token only chooses.
-pub const DESK_KERNEL: &[u8] = b"desk=kernel";
-
 /// The size of the block read cache in KiB (FS09): `bcache=<KiB>`, `0` = off.
 /// FreeMiNT's `CACHE=` / `FS_CACHE_SIZE=` (`references/freemint/sys/
 /// cnf_mint.c:97,128`), but a boot argument: the cache's memory is carved off
@@ -207,18 +199,6 @@ mod tests {
         assert!(!has_token(b"cpuclk=", CPUCLK_FIRMWARE));
         assert!(!has_token(b"cpuclk=max", CPUCLK_FIRMWARE));
         assert!(!has_token(b"serial=on emmc=compat", CPUCLK_FIRMWARE));
-    }
-
-    #[test]
-    fn desk_kernel_is_a_whole_token() {
-        assert!(has_token(b"serial=on desk=kernel memprot=on", DESK_KERNEL));
-        assert!(has_token(b"desk=kernel\r\n", DESK_KERNEL));
-        assert!(!has_token(b"desk=kernelx", DESK_KERNEL));
-        assert!(!has_token(b"desk=KERNEL", DESK_KERNEL));
-        assert!(!has_token(b"xdesk=kernel", DESK_KERNEL));
-        assert!(!has_token(b"desk=", DESK_KERNEL));
-        assert!(!has_token(b"desk=el0", DESK_KERNEL));
-        assert!(!has_token(b"serial=on input=aes", DESK_KERNEL));
     }
 
     #[test]

@@ -1,7 +1,7 @@
 [package]
 name = "desktop"
 version = "0.1.0"
-description = "The NewTOS desktop (EmuTOS desk/ rebuilt in Rust): a library linked by the kernel today and by the NEWDESK program (DESK43 U9)"
+description = "The NewTOS desktop (EmuTOS desk/ rebuilt in Rust): the library the NEWDESK program links (DESK43 U9/U10)"
 edition.workspace = true
 license.workspace = true
 authors.workspace = true
@@ -14,14 +14,15 @@ bench = false
 
 [features]
 # The board the desktop is built for (X03): the About box's machine line
-# (`MACHINE_NAME`, src/inf.rs). Exactly one is required; the kernel passes its
-# own through (`board-rpi4 = ["desktop/board-rpi4"]`, kernel/Cargo.toml), the
-# NEWDESK program (U9) gets it from `cargo xtask build-programs --board`.
+# (`MACHINE_NAME`, src/inf.rs). Exactly one is required; the NEWDESK program
+# passes its own through (`board-rpi4 = ["desktop/board-rpi4"]`,
+# programs/newdesk/Cargo.toml), which `cargo xtask build-programs --board` sets.
 board-rpi4 = []
 board-qemu-virt = []
 # Run the desktop's four self-tests once, at the first event loop
 # (DESK45, DESK43 U8a; src/selftest.rs). Writes to C: -- test images only.
-# Switched on by the kernel feature of the same name.
+# Switched on through NEWDESK's feature of the same name, which `cargo xtask
+# build` sets for a kernel built with `selftest-desk`.
 selftest-desk = []
 
 [dependencies]
@@ -33,7 +34,7 @@ selftest-desk = []
 # `programs_tests::desktop_depends_only_on_newtos_gem_and_tos_types` report it.
 #
 # Without newtos-gem's `rt`: the program runtime (allocator, panic handler)
-# belongs to whatever links the desktop -- the kernel has its own, the NEWDESK
-# program enables `rt` itself.
+# belongs to whatever links the desktop -- the NEWDESK program enables `rt`
+# itself (until DESK43 U10 the kernel, with its own, linked it too).
 newtos-gem = { path = "../newtos-gem", default-features = false }
 tos-types = { path = "../../tos-types" }

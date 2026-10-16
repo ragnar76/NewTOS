@@ -204,16 +204,14 @@ pub fn patcol_all() -> [u8; 6] {
 ///
 /// **The invariant.** Every access comes from the desktop's own control flow,
 /// one call at a time:
-/// * today the desktop is called on the boot CPU from `sh_ldapp`'s DESKTOP arm
-///   (`kernel::shell_loop`, kernel context, single core); no interrupt handler,
-///   no AES callback and no other process names any desktop item — the kernel
-///   reaches the desktop only through `run` and `reset`, never while `run` is
-///   active (`tools/desk-drift-probe.sh` group C lists every such line);
+/// * the desktop is the EL0 program `NEWDESK` (DESK43 U9), one single-threaded
+///   process, and these statics live in its own address space; no interrupt
+///   handler, no AES callback and no other process names any desktop item
+///   (since DESK43 U10 the kernel does not link this crate at all —
+///   `tools/desk-drift-probe.sh` group C);
 /// * while one of its traps is parked (an `evnt_multi` that yields to an
 ///   accessory, ACC03) no desktop code runs: the accessory is an EL0 process
-///   with its own code, and the desktop resumes where it stopped;
-/// * as an EL0 program (DESK43 U9) the desktop is one single-threaded process,
-///   and these statics live in its own address space.
+///   with its own code, and the desktop resumes where it stopped.
 ///
 /// A second thread or an interrupt-context caller would break the invariant;
 /// neither exists, and adding one has to replace this wrapper first.
@@ -914,20 +912,19 @@ pub fn init(g_desk: Grect) {
 /// On EmuTOS the desktop is an ordinary shell program: it ends, its memory goes
 /// back to the pool (`deskmain.c:2131-2133`, `deskstart.S:57-59`), and the next
 /// `sh_ldapp` runs `deskstart` again, which re-runs `app_start`/`win_start`/
-/// `cnx_get` on a zeroed `G`. NewTOS's desktop ends the same way since DESK43
-/// U3, but its state is this lazily-initialised singleton and [`init`] is a
-/// no-op once built — so the "memory goes back to the pool" half has to be
-/// stated. Without it the next desktop would keep the previous one's window
-/// list and object arena while the AES's own window table has just been emptied
-/// (`sh_main`'s `wm_init`, `gemshlib.c:717`; or `tos_api::aes::reinit` on the
-/// A106 path), i.e. it would believe in windows that no longer exist.
+/// `cnx_get` on a zeroed `G`. NewTOS's desktop is such a program since DESK43
+/// U9 and gets that for free when it ends. What remains is the restart *inside*
+/// the process, *Read .INF file* (`deskmain.c:2140-2147`): its state is this
+/// lazily-initialised singleton and [`init`] is a no-op once built, so the
+/// "memory goes back" half has to be stated there. (Until DESK43 U10 the
+/// kernel's built-in copy also needed it before every start, because its state
+/// outlived the call.)
 ///
 /// Dropping the state frees the object arena and the cached `.INF` vectors
 /// (all `alloc` allocations). Nothing else holds a pointer into them by then:
 /// the AES's `gl_newdesk` registration, which does, has been cleared by
-/// `deskmain`'s own epilog (`wind_set(DESKWH, WF_NEWDESK, NULL)`, `:2163`) or
-/// by the `wm_init` inside `tos_api::aes::reinit`, both of which precede
-/// every caller.
+/// `deskmain`'s own epilog (`wind_set(DESKWH, WF_NEWDESK, NULL)`, `:2163`),
+/// which precedes the one caller, [`super::run`]'s restart loop.
 pub fn reset() {
     *DESK.borrow_mut() = None;
 }

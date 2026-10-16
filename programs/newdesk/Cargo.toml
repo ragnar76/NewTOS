@@ -17,17 +17,17 @@ bench = false
 [features]
 # The board (X03 pass-through, as for every program): `cargo xtask
 # build-programs --board <b>` passes `board-<b>`; here it selects the desktop's
-# About-box machine line (`desktop/board-*`), as the kernel's feature of the
-# same name does for the built-in desktop.
+# About-box machine line (`desktop/board-*`).
 board-rpi4 = ["desktop/board-rpi4"]
 board-qemu-virt = ["desktop/board-qemu-virt"]
-# The desktop's self-tests (DESK45), passed through like the kernel's
-# `selftest-desk`. Writes to C: -- test images only.
+# The desktop's self-tests (DESK45); `cargo xtask build` sets it when the
+# kernel is built with `selftest-desk`. Writes to C: -- test images only.
 selftest-desk = ["desktop/selftest-desk"]
 
 [dependencies]
-# One source, two link targets (decision D1): the same library the kernel
-# links. The desktop takes `newtos-gem` without `rt`; the program supplies it.
+# The desktop library (decision D1: one source; until DESK43 U10 the kernel
+# linked it as a second target). The desktop takes `newtos-gem` without `rt`;
+# the program supplies it.
 desktop = { path = "../desktop" }
 # The program runtime (`rt`: allocator, panic handler) with the desktop's
 # crash policy D6-a: a panic waits for a key before Pterm (TASK/DESK43.md,

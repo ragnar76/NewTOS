@@ -173,9 +173,9 @@
 //! opcodes at all — its two functions that issue 110 have no caller, and
 //! `run_rsrc`, reachable only from the callerless `aes_demo::showcase`,
 //! registers its blob through `relocate_and_register` and never issues 110.
-//! Traced in QEMU `raspi4b` (`--features aes-trace`): the built-in desktop
-//! makes 28 AES calls, all with `slot = 0xFF`, none of them rsrc; TeraDesk
-//! makes 188, all EL0, 68 of them rsrc, every blob address inside the process
+//! Traced in QEMU `raspi4b` (`--features aes-trace`): the then built-in
+//! (EL1) desktop made 28 AES calls, all with `slot = 0xFF`, none of them rsrc; TeraDesk
+//! made 188, all EL0, 68 of them rsrc, every blob address inside the process
 //! window below 32 MiB then — and since ARCH03 stage 1 a pool address below
 //! 2 GiB (plan invariant I2) — and so exact in four bytes.
 //! **The one caller that does drive the EL1 load path is the host test
@@ -185,8 +185,9 @@
 //!
 //! EmuTOS's own desktop is the counter-case — `load_icon_file`
 //! (`desk/deskapp.c:554`) calls `rsrc_load` and reads `AP_1RESV` back (`:571`)
-//! — but NewTOS's `desk/` is not getting that path: ADR-022 is rescinded,
-//! TeraDesk is the desktop. So the EL1 address question stays a
+//! — and NewTOS's desktop, should it take that path, is an EL0 program
+//! (`NEWDESK`) since DESK43 U9/U10, so its blob would lie in its own memory
+//! like TeraDesk's. So the EL1 address question stays a
 //! **conditional** constraint (`docs/api/aes/resource-fileselector.md`
 //! §`rsrc_load`), not a blocker: it binds only if an EL1 caller is ever made
 //! to load a resource itself.
@@ -593,7 +594,7 @@ impl Loaded {
 // hold several loaded blobs, of which its array names one. NewTOS keeps the
 // equivalent here: every entry is one `rsrc_load` of one process, keyed by the
 // loading process's AES **identity** (`appl::current_identity`: its GEMDOS
-// slot, or `pd::DESKTOP` for the kernel-context desktop — not the pid it
+// slot, or `pd::DESKTOP` for the kernel context — not the pid it
 // reports, which parent and child may share), and the caller's `ap_rscmem` —
 // matched against the entries' names — says which one a call acts on.
 // XaAES's per-client `resources` list (`xaaes/src.km/xa_rsrc.c:895-900`) is
@@ -689,7 +690,7 @@ unsafe fn table() -> &'static mut [RscEntry; MAX_LOADED] {
 /// The AES identity of the process making the current call — the key of its
 /// resource list (`appl::current_identity`): its GEMDOS slot for an EL0
 /// caller, `pd::DESKTOP` for the kernel boot context. The identity, not the
-/// reported pid: the desktop and the program in slot 0 report the same
+/// reported pid: the kernel context and the program in slot 0 report the same
 /// number but keep separate lists, as do a `Pexec` parent and child (A62,
 /// spec § "AES process identity and pid", consequences for A39).
 fn caller_identity() -> usize {
@@ -872,9 +873,9 @@ pub fn on_process_exit(slot: usize) {
 ///
 /// By the time this runs every EL0 process of the session that ended is gone
 /// — `sh_main` returns only after the program it started has terminated — so
-/// the only identity that could still hold an entry is the in-kernel desktop
-/// ([`super::pd::DESKTOP`]), which never calls `rsrc_load`: `programs/desktop/src/`
-/// draws from its own built-in trees. The loop covers it regardless.
+/// the only identity that could still hold an entry is the kernel context
+/// ([`super::pd::DESKTOP`]), which issues no `rsrc_load` (see the module note:
+/// no EL1 caller of opcode 110). The loop covers it regardless.
 pub(super) fn reinit() {
     // SAFETY: single-CPU restart path, no AES call in flight.
     let owners: [usize; MAX_LOADED] = {
@@ -2216,7 +2217,7 @@ pub fn rsrc_load(pb: &Aespb) {
     };
 
     // A `svc`-dispatched (EL0) caller cannot read the kernel high-half
-    // RSC_BUF; a direct EL1 caller (the desktop, the selftests) can. Pick
+    // RSC_BUF; a direct EL1 caller (the selftests) can. Pick
     // the placement by whether a user process is running: EmuTOS puts the
     // RSC in the *application's* memory (`rs_readit` → `dos_alloc_anyram`,
     // gemrslib.c:775) and returns app pointers via `rs_gaddr`. `RUN` is set

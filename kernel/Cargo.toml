@@ -20,10 +20,11 @@ path = "src/main.rs"
 [features]
 default = []
 # Mutually exclusive board selection; exactly one must be enabled.
-# The desktop crate gets the same board (X03: its About-box machine line,
-# DESK43 U8b).
-board-rpi4 = ["desktop/board-rpi4"]
-board-qemu-virt = ["desktop/board-qemu-virt"]
+# `cargo xtask build` builds the embedded programs (NEWDESK, kernel/embed.rs)
+# for the same board first (X03: the desktop's About-box machine line,
+# `build-programs`).
+board-rpi4 = []
+board-qemu-virt = []
 # Pass-through for the AES trap-path tracer (`tos_api::aes::trace`). Off by
 # default; build with `--features aes-trace` to instrument the AES trap path.
 aes-trace = ["tos-api/aes-trace"]
@@ -57,7 +58,7 @@ svc-seq-trace = []
 # This is the one boot-path gate the `selftest_*` modules have: without it
 # they are compiled but never called (docs/sdk/06-image-and-testing.md).
 selftest-emmc = []
-# Desktop self-test build (DESK45, DESK43 U8a): the built-in desktop runs its
+# Desktop self-test build (DESK45, DESK43 U8a): the desktop runs its
 # four self-tests once, the first time it reaches its event loop --
 # Install devices / Remove icon on the model, the file-operation backend
 # (C:\DESKT9\), the NEWDESK.INF round trip and the Install-application
@@ -66,8 +67,10 @@ selftest-emmc = []
 # continues normally. It WRITES to C: (C:\DESKT9\ is created and removed,
 # C:\NEWDESK.INF is overwritten), so build it only for a test image. Off by
 # default; `cargo xtask build --board rpi4 --release --features selftest-desk`.
-# The tests live in the desktop crate; this passes the switch through (U8b).
-selftest-desk = ["desktop/selftest-desk"]
+# The tests live in the desktop crate and run in the NEWDESK program: the
+# kernel itself compiles nothing differently, `cargo xtask build` hands the
+# switch to the NEWDESK build (`PROGRAM_FEATURES`, DESK43 U9-4/U10).
+selftest-desk = []
 # USB enumeration diagnostic build: tees every `kprint!` line into a RAM
 # buffer and writes it to `C:\\USBDIAG.LOG` once the card is mounted, so a
 # machine with no serial line still yields the whole boot log as a file. It
@@ -96,19 +99,8 @@ usb-diag = []
 [dependencies]
 tos-types = { path = "../tos-types" }
 tos-api   = { path = "../tos-api" }
-# The trap bindings (GEMDOS/AES/VDI/XBIOS) the built-in desktop calls the
-# system through -- the same crate native Rust programs link (DESK43 U6b,
-# docs/analysis/desk43-u5-u10-review-2026-10-14.md §3.2). A path dependency
-# into the separate `programs/` workspace (excluded from this one): cargo
-# builds it as a non-member path package with this workspace's profile and
-# target. Without its `rt` feature: the kernel keeps its own allocator and
-# panic handler.
-newtos-gem = { path = "../programs/newtos-gem", default-features = false }
-# The built-in desktop (DESK43 U8b: the library crate `programs/desktop`, until
-# then the module `kernel/src/desk/`). The kernel calls `desktop::run` /
-# `desktop::reset` from `sh_ldapp`'s DESKTOP arm and the A106 AES restart; the
-# desktop itself depends only on `newtos-gem` + `tos-types`, so it cannot name
-# a kernel or `tos_api` item (review §3.1/§4.2 G1). Removed in DESK43 U10, once
-# the desktop runs as the NEWDESK program (U9).
-desktop = { path = "../programs/desktop" }
+# No dependency on the desktop (`programs/desktop`) or its trap bindings
+# (`programs/newtos-gem`): since DESK43 U10 the desktop exists only as the
+# program NEWDESK, which the image embeds as a file (kernel/embed.rs), not as
+# linked code.
 xhci = "0.9.2"

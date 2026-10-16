@@ -69,9 +69,9 @@ pub(super) fn set_handle(h: i16) {
     HANDLE.store(h, Ordering::Relaxed);
 }
 
-/// Forget the workstation handle. Called from [`super::reset`] on the AES
-/// restart path (A106): the desktop is a program that restarts and asks
-/// `graf_handle` again (`deskmain.c:1956`) at the start of its next run.
+/// Forget the workstation handle. Called from [`super::reset`] (the
+/// *Read .INF file* restart): the next run asks `graf_handle` again
+/// (`deskmain.c:1956`) at its start.
 pub(super) fn reset() {
     HANDLE.store(0, Ordering::Relaxed);
 }

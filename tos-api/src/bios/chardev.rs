@@ -293,7 +293,7 @@ pub const CONTERM_KEY_REPEAT: u8 = 0x02;
 
 /// The `conterm` byte (`$484`) in effect for the keyboard right now: the
 /// running process's own copy, or the boot value `7` (EmuTOS `kbd_init`,
-/// `bios/ikbd.c:1100`) when no process runs (boot, the built-in desktop).
+/// `bios/ikbd.c:1100`) when no process runs (boot, EL1 kernel code).
 ///
 /// Read through the **kernel alias of the running process's page 0**, like
 /// `bios::tick`'s `_hz_200` publish — not through the user mapping — so
@@ -344,7 +344,7 @@ pub fn pack_console_key(word: u16) -> Long {
 /// page 0** ([`current_conterm`], ARCH03 stage 3a) — the same cell the
 /// program sees at VA `$484`, reached without a user-mode load, so the read
 /// can neither fault nor depend on which `TTBR0` is installed. With **no
-/// active user context** — boot, the desktop, or an EL1 selftest, all of
+/// active user context** — boot, EmuCON, or an EL1 selftest, all of
 /// which run with `RUN == null` and no per-process low-memory area — the
 /// fold is skipped. Gating on `RUN` (a stable atomic) rather than
 /// `SPSR_EL1` keeps the check correct across `console_read_key_blocking`'s

@@ -324,21 +324,22 @@ fn drain(pb: &mut Aespb, pid: i16) -> usize {
 /// The desktop's half of `run_gem_app` before the child runs
 /// (`programs/desktop/src/main.rs`, `desktop_relinquish`), in its order. The
 /// menu-bar removal and the `WF_NEWDESK` un-registration are draws that do not
-/// touch the descriptor; the two that do are `save_windows()` and, last,
-/// `appl_exit()` — EmuTOS's desktop epilog `desk/deskmain.c:2159-2166` (A28).
-/// This file is about what `appl_exit` must *not* do: it drains the queue and
-/// clears `AP_OPEN`, and the desktop is still addressable afterwards.
+/// touch the descriptor; the one that does is `appl_exit()`, last — EmuTOS's
+/// desktop epilog `desk/deskmain.c:2159-2166` (A28). (The window-table
+/// handoff `save_windows`/`restore_windows` of the nested launch was removed
+/// with its last caller in DESK43 U10; the child here opens no window, so the
+/// desktop's window simply stays in the table.) This file is about what
+/// `appl_exit` must *not* do: it drains the queue and clears `AP_OPEN`, and
+/// the desktop is still addressable afterwards.
 fn desktop_relinquish(pb: &mut Aespb) {
-    tos_api::aes::window::save_windows();
     appl_exit(pb);
 }
 
 /// The desktop's half of `run_gem_app` after the child `Pterm`s
-/// (`programs/desktop/src/main.rs`, `desktop_resume`): the saved window set comes
-/// back and the desktop re-enters the AES, as EmuTOS's re-entered `deskmain`
-/// does in its first statement (`desk/deskmain.c:1953`).
+/// (`programs/desktop/src/main.rs`, `desktop_resume`): the desktop re-enters
+/// the AES, as EmuTOS's re-entered `deskmain` does in its first statement
+/// (`desk/deskmain.c:1953`).
 fn desktop_resume(pb: &mut Aespb) {
-    tos_api::aes::window::restore_windows();
     appl_init(pb);
 }
 

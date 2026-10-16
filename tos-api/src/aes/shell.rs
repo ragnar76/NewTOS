@@ -61,7 +61,7 @@ pub const CONSOLE_APP: i16 = 1;
 /// The autorun program named by the `.INF` file's `#Z` line
 /// (`geminit.c:438-460` → [`sh_wdef`]).
 pub const AUTORUN_APP: i16 = 2;
-/// The built-in desktop (`gemshlib.c:600-612`).
+/// The desktop (`gemshlib.c:600-612`).
 pub const DESKTOP_APP: i16 = 3;
 
 /// `DEF_CONSOLE` (`include/aesdefs.h:627`) — the magic program name that makes
@@ -72,8 +72,9 @@ pub const DEF_CONSOLE: &[u8] = b"EMUCON";
 
 /// `DEF_DESKTOP` (`aes/geminit.h:13` = `"EMUDESK"`) — the magic name
 /// `set_default_desktop` puts in `sh_desk` to mean "the built-in desktop"
-/// (`gemshlib.c:587`). NewTOS's built-in desktop is `kernel::desk`, so the
-/// name is `NEWDESK`; it is never typed by a caller (EmuTOS only ever
+/// (`gemshlib.c:587`). NewTOS's desktop is the program embedded in the kernel
+/// image under this registry name (`kernel/embed.rs`, DESK43 D3), which the
+/// shell loop's DESKTOP arm starts; the name is never typed by a caller (EmuTOS only ever
 /// compares `sh_nextapp`, never this string), so the spelling is
 /// **reference**, not contract (`shell-loop.md` §12).
 pub const DEF_DESKTOP: &[u8] = b"NEWDESK";
@@ -377,7 +378,7 @@ pub fn shel_read(pb: &Aespb) {
 /// or by `sh_chdef` for an autorun entry (`:557-562`). NewTOS's shell loop
 /// takes the same route (`kernel/src/shell_loop.rs` reads `D.s_cmd`/`ad_stail`
 /// and hands them to the launcher, so this call rewrites the same values), and
-/// since DESK43 U3 the built-in desktop does too — its double click is a
+/// since DESK43 U3 the desktop does too — its double click is a
 /// `shel_write(SHW_EXEC, …)` like EmuTOS's (`desk/deskpro.c:41`). What has no
 /// `shel_write` in front of it is the `\AUTO\` runner, which starts before the
 /// AES exists at all (`bios/bios.c:713-714`). The launcher therefore calls this
@@ -1149,8 +1150,7 @@ pub fn shel_envrn(pb: &Aespb) {
     // `ad_envrn` is the AES PD's `p_env` (EmuTOS `aes/gemstart.S:78-96`):
     // the AES-PD stand-in's environment, a copy of `default_env`
     // (`bios/bios.c:626-636`; TASK/PPARENT, `bdos::process::standin`). Where
-    // the caller can read it: a kernel caller (the in-kernel desktop) at the
-    // kernel address; an EL0 program at the stand-in page's address, which
+    // the caller can read it: a kernel (EL1) caller at the kernel address; an EL0 program at the stand-in page's address, which
     // the kernel published read-only to every process at boot (EmuTOS hands
     // out a pointer into `ad_envrn`, which every program of its flat machine
     // can read — ARCH03 3b). Before the stand-ins exist there is no AES

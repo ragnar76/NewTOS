@@ -842,13 +842,13 @@ pub fn v_hide_c(backend: &dyn RasterBackend) {
     HIDE_COUNT.store(c + 1, Ordering::Relaxed);
 }
 
-// ── Direct (non-trap) cursor control for the kernel desktop ──
+// ── Direct (non-trap) cursor control for kernel code ──
 //
-// The desktop is kernel-side and repaints the framebuffer directly, so it
-// brackets each repaint with `hide` (erase the sprite) + `show` (redraw it on
-// top), and calls `show` once at start-up to take the cursor out of GEM's
-// power-up hidden state. Same machinery as `v_hide_c`/`v_show_c`, without a
-// `Vdipb`.
+// Callers without a VDI parameter block — the VDI's own raster and input
+// paths, `graf_mouse(M_OFF/M_ON)`, the shell loop's `sh_toalpha`
+// (`kernel/src/shell_loop.rs`); until DESK43 U10 also the built-in desktop,
+// which bracketed each repaint with `hide` + `show` — use the same machinery
+// as `v_hide_c`/`v_show_c`, without a `Vdipb`.
 
 /// Erase the cursor and increment the hide depth (kernel `v_hide_c`).
 pub fn hide(backend: &dyn RasterBackend) {

@@ -609,7 +609,7 @@ mod imp {
     }
 
     /// The GEMDOS process slot of the current caller, or [`SLOT_KERNEL`] for
-    /// an in-kernel (EL1) GEM caller — the desktop and the boot selftests
+    /// an in-kernel (EL1) GEM caller — kernel code and the boot selftests
     /// run with a null `RUN` basepage.
     #[inline]
     fn caller_slot() -> u8 {

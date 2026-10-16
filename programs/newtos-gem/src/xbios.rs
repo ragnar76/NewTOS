@@ -41,8 +41,8 @@ pub const KEYTBL_KEEP: u64 = u64::MAX;
 /// argument registers would be noise in it. No XBIOS function bound here takes
 /// more than three arguments.
 ///
-/// `nostack`: an exception taken at EL1 with `SPSel = 0` (the kernel desktop)
-/// or at EL0 runs the handler on `SP_EL1`, so the caller's stack is untouched.
+/// `nostack`: an exception taken at EL0 (or at EL1 with `SPSel = 0`, the
+/// case of the built-in desktop until DESK43 U10) runs the handler on `SP_EL1`, so the caller's stack is untouched.
 /// Memory is deliberately *not* declared clean — `Keytbl` rewrites the
 /// `current_keytbl` image the caller is about to read.
 #[inline]

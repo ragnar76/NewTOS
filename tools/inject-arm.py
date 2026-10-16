@@ -12,8 +12,7 @@ usage:
                   `evnt_multi` of a `deskmain` run of the desktop the shell's
                   DESKTOP arm started (kernel/src/shell_loop.rs,
                   observe_desktop_gem_call -- its key is the program identity:
-                  the launched shell child, or the built-in desktop while there
-                  is none). Only the first such event arms it.
+                  the launched shell child). Only the first such event arms it.
   launch:NAME     ... the launcher published a shell child (kernel/src/launch.rs,
                   the `SHELL_CHILD_SLOT` store right before the drop to EL0)
                   whose name is NAME. Every publication is a launch event, also

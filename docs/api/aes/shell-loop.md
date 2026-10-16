@@ -570,7 +570,9 @@ Key points not obvious from a skim:
   loop (gap G1), runs the same step as `wm_new_keep_desktop()` at
   `desktop_resume` — every window but the desktop's own, which this
   desktop keeps because it resumes in place instead of restarting through
-  `sh_main`/`cnx_get` (gap G2). **A107 (2026-09-22):** a GEM program that
+  `sh_main`/`cnx_get` (gap G2). (That construct ended with DESK43 U3;
+  `wm_new_keep_desktop` was removed in U10 — the desktop restarts through
+  `sh_main` like EmuTOS's.) **A107 (2026-09-22):** a GEM program that
   `Pexec`s another one *without* going through this loop (TeraDesk → QED)
   gets the same step for the child's slot alone, at the parent's next AES
   dispatch — `wm_new_for_slot()`. Rule and rationale:
@@ -644,16 +646,16 @@ Decisions D5/D6 (`TASK/DESK43.md`, "U9-Vorbereitung entschieden";
    `ENSMEM`, no slot, `EFILNF` if the registry has no `NEWDESK`). Loading the
    same blob again would fail again, so the arm logs
    `[shell] desktop NEWDESK could not be loaded (rc=N) — not retried; falling
-   back to the built-in kernel desktop` and runs the built-in desktop instead,
-   for the rest of the boot (D6-d; after DESK43 U10, which removes the built-in
-   desktop, the fallback becomes EmuCON).
-5. **The fallback switch `desk=kernel`** (D5-a; `kernel/src/bootargs.rs`
-   `DESK_KERNEL`): with this boot argument the arm runs the desktop linked into
-   the kernel as a kernel call, the arm as it was before U9-4
-   (`desktop::reset()` + `desktop::run()`, no exit code). Both desktops are in
-   every image; the boot log names the choice (`[shell] desktop: …`). Default
-   (D5-b): the EL0 program. The AES restart's `desktop::reset()` (A106,
-   `kernel/src/lib.rs`) runs only while the built-in desktop is the one in use.
+   back to the console (EmuCON)` and, for the rest of the boot, runs the
+   console arm's body in its place (D6-d): `sh_isgem` FALSE + `sh_chgrf`
+   (alpha mode, as for any character program, `:513-523`), EmuCON with the
+   line `No desktop: NEWDESK could not be loaded (GEMDOS error N).` under its
+   banner (screen and serial line), then `set_default_desktop` (`:614-622`).
+   Each later pass through the DESKTOP arm logs `[shell] desktop NEWDESK not
+   started: its load failed earlier this boot (rc=N)` and takes the same way
+   without loading. (From U9-4 to U10 the fallback was the built-in kernel
+   desktop, and a boot argument `desk=kernel` chose it outright, D5; DESK43
+   U10 removed both together with the kernel's copy of the desktop.)
 
 The serial line of a desktop end is `[shell] sh_ldapp: desktop '<cmd>' exited
 with rc=N`. The kernel's "desktop up" observation keys on the launched child's

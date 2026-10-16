@@ -201,11 +201,12 @@ fn scan_folder(dir: &str) -> Vec<RawEntry> {
     let mut spec = String::from(dir);
     spec.push_str("*.*");
 
-    // The DTA the search writes into. It is a kernel-stack buffer, and the
-    // trap keeps it in the process-less caller's DTA cell (`newtos_gem::gemdos`'s
-    // module documentation, "What the trap changes"); `dos_sdta` must therefore be
-    // re-issued for every scan, exactly as EmuTOS re-points `G.g_wdta`
-    // (`deskdir.c:195-196`).
+    // The DTA the search writes into, a buffer on this scan's stack frame;
+    // `dos_sdta` is therefore re-issued for every scan, exactly as EmuTOS
+    // re-points `G.g_wdta` (`deskdir.c:195-196`). (The trap keeps it in the
+    // desktop process's `p_xdta`; until DESK43 U10 the built-in desktop's went
+    // to the process-less caller's cell, `newtos_gem::gemdos`'s module
+    // documentation.)
     let mut dta = [0u8; 44];
     dos_sdta(dta.as_mut_ptr());
 

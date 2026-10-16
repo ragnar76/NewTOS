@@ -1,4 +1,5 @@
-//! A96 — **what survives a program: nothing of its windows.**
+//! **What survives a program: nothing of its windows** — for the clients the
+//! shell loop does not sweep after (A107, A110).
 //!
 //! EmuTOS sweeps the window table after every program the shell loop ran:
 //! `sh_ldapp` → `dos_exec(PE_LOADGO, …)` returns → `if (gl_shgem) wm_new();`
@@ -8,28 +9,18 @@
 //! program that crashed or never bothered to `wind_close`/`wind_delete`
 //! leaves nothing behind for the next occupant of the AES.
 //!
-//! NewTOS's shell loop does that (`kernel/src/shell_loop.rs`, the `#Z`
-//! autorun path). The built-in desktop's double-click launch does **not** go
-//! through the shell loop: `run_gem_app` (`programs/desktop/src/main.rs`) runs the
-//! program nested in the desktop's event loop and `desktop_resume` repaints
-//! the desktop from the shared window table — with the dead program's windows
-//! still in it, composited over the desktop as zombies (A83 finding b).
+//! NewTOS's shell loop does that (`kernel/src/shell_loop.rs`). What it cannot
+//! reach is an EL0 `Pexec` child that dies **inside** a living parent
+//! (TeraDesk → QED): the tests here drive that case and ask, after the child is
+//! gone, **is its property gone** — its windows out of the table, invisible to
+//! `wind_find` and not one pixel in the whole-screen composite, its background
+//! tree, its menu bar and its `wind_update` holds — while the parent's own
+//! state is untouched?
 //!
-//! The fix is the same sweep at the point the desktop regains control —
-//! `tos_api::aes::window::wm_new_keep_desktop()`, `wm_new` minus the windows
-//! the desktop identity owns: EmuTOS's `wm_new` takes those too, but there
-//! the desktop restarts through `sh_main` and rebuilds them from `cnx_get`
-//! (`desk/deskmain.c:2055`); this desktop resumes in place (gap G2) and keeps
-//! them. The sweep also drops a `WF_NEWDESK` tree the program registered
-//! (EmuTOS resets `gl_newdesk` in `wm_init` before the desktop restarts,
-//! `gemwmlib.c:1300`; the tree is a VA of an address space that is gone, A97).
-//!
-//! The tests drive the launch boundary through the LP64 AES dispatcher in
-//! the order `desktop_relinquish` / the launcher / `desktop_resume` execute
-//! it (`programs/desktop/src/main.rs`, `kernel/src/launch.rs`) and then ask:
-//! after the program is gone, **is its window gone** — out of the table,
-//! invisible to `wind_find`, and not one pixel of it in the desktop's
-//! whole-screen composite — while the desktop's own window is still there?
+//! (Until DESK43 U10 this file also held the A96 tests of
+//! `wm_new_keep_desktop`, the sweep of the nested launch from the built-in
+//! desktop; that construct ended with DESK43 U3 and the function and its tests
+//! went with U10.)
 //!
 //! Harness: the process fixture of `aes_pd_by_slot.rs`, a pixel-keeping
 //! backend so the composite can be inspected.
@@ -40,7 +31,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, MutexGuard, Once};
 
 use tos_api::aes::object::Object;
-use tos_api::bdos::process::{self, Abi, MAX_PROCESSES, PROCESS_TABLE};
+use tos_api::bdos::process::{self, Abi, PROCESS_TABLE};
 use tos_api::host::Host;
 use tos_api::vdi::backend::{ClipRect, MonoSrc, PatternFill, Pel, RasterBackend, Rect, WriteMode};
 use tos_types::BasePage;
@@ -408,7 +399,6 @@ impl Aespb {
 // AES opcodes used here.
 const APPL_INIT: i16 = 10;
 const APPL_EXIT: i16 = 19;
-const FORM_DIAL: i16 = 51;
 const WIND_CREATE: i16 = 100;
 const WIND_OPEN: i16 = 101;
 const WIND_CLOSE: i16 = 102;
@@ -427,26 +417,18 @@ const NAME: i16 = 0x0001;
 const CLOSER: i16 = 0x0002;
 const MOVER: i16 = 0x0008;
 
-/// `wind_set` field / `form_dial` type / `wind_update` mode (`aesdefs.h`).
+/// `wind_set` field / `wind_update` mode (`aesdefs.h`).
 const WF_NEWDESK: i16 = 14;
-const FMD_FINISH: i16 = 3;
 const BEG_UPDATE: i16 = 1;
 const BEG_MCTRL: i16 = 3;
 
-/// The desktop window handle, and the desktop's AES identity — the reserved
-/// descriptor index past the GEMDOS slots (`pd::DESKTOP`).
+/// The desktop window handle.
 const DESKWH: i16 = 0;
-const DESKTOP_IDENTITY: usize = MAX_PROCESSES;
 
 /// `G_BOX` (`obdefs.h`) and the `ob_spec` of a solid white box (`gr_crack`:
 /// pattern 7 in bits 4..6, interior colour 0, thickness 0).
 const G_BOX: u16 = 20;
 const WHITE_SOLID: u64 = 0x70;
-
-/// The desktop's window and the program's: disjoint, both clear of the menu
-/// row, the program's on the bare desktop.
-const DESK_WIN: (i16, i16, i16, i16) = (330, 260, 240, 160);
-const PROG_WIN: (i16, i16, i16, i16) = (40, 60, 240, 160);
 
 /// A107: the living EL0 parent's window and its `Pexec` child's — disjoint,
 /// both clear of the menu row, and far enough apart that neither the border
@@ -559,18 +541,6 @@ fn wind_set_newdesk(pb: &mut Aespb, tree: u64, root: i16) {
     pb.addrin[0] = 0;
 }
 
-/// `form_dial(FMD_FINISH, 0,0,0,0, 0,0,W,H)` — the desktop's whole-screen
-/// composite (`redraw_desktop`, `programs/desktop/src/redraw.rs`).
-fn form_dial_finish(pb: &mut Aespb) {
-    pb.intin.fill(0);
-    pb.intin[0] = FMD_FINISH;
-    pb.intin[5] = 0;
-    pb.intin[6] = 0;
-    pb.intin[7] = SCREEN_W as i16;
-    pb.intin[8] = SCREEN_H as i16;
-    pb.call(FORM_DIAL, 9, 1, 0);
-}
-
 // ── a process slot the host can "run" ─────────────────────────────────────
 
 /// A claimed GEMDOS process slot with a basepage page of its own (the
@@ -613,21 +583,10 @@ impl Drop for Proc {
     }
 }
 
-/// The kernel boot context: no running process — the built-in desktop.
+/// The kernel boot context: no running process (the role the built-in desktop
+/// had until DESK43 U10; here the parents' stand-in between steps).
 fn desktop_context() {
     process::set_current(std::ptr::null_mut());
-}
-
-/// `Pterm` of the running process — the real `terminate` path followed by the
-/// handler's `release_slot`. What is under test is what it leaves in the AES
-/// window table: nothing is touched there (`pterm.rs`, `release_client`).
-fn pterm(p: &Proc) {
-    PROCESS_TABLE[p.slot].parent_frame.elr().store(1, Ordering::Release);
-    // SAFETY: single-threaded under `LOCK`; `RUN` is `p`'s basepage.
-    let resume = unsafe { process::pterm::terminate(0) }.expect("Pterm of the running process");
-    assert_eq!(resume.parent_frame_slot, p.slot);
-    // SAFETY: the frame snapshot is not needed on the host.
-    unsafe { process::pterm::release_slot(p.slot) };
 }
 
 /// `Pterm` of an EL0 **child** whose parent is still alive: `parent_slot` is
@@ -667,33 +626,6 @@ fn desktop_tree() -> Box<Object> {
     })
 }
 
-/// `desktop_relinquish` (`programs/desktop/src/main.rs`): un-register the
-/// background tree, leave the AES (`deskmain.c:2159-2166`). The menu bar is
-/// not part of this test.
-fn desktop_relinquish(pb: &mut Aespb) {
-    desktop_context();
-    wind_set_newdesk(pb, 0, 0);
-    appl_exit(pb);
-}
-
-/// The launcher's post-run step (`kernel/src/launch.rs`
-/// `close_client_if_open(child.slot)` — `sh_ldapp`'s `AP_OPEN` cleanup,
-/// `aes/gemshlib.c:650-657`).
-fn launcher_cleanup(slot: usize) {
-    tos_api::aes::close_client_if_open(slot);
-}
-
-/// `desktop_resume` (`programs/desktop/src/main.rs`), step for step: the
-/// `sh_ldapp` window sweep (A96), `appl_init`, re-register the background
-/// tree (`deskmain.c:2049`), the whole-screen composite (`redraw_desktop`).
-fn desktop_resume(pb: &mut Aespb, tree: &Object) {
-    desktop_context();
-    tos_api::aes::window::wm_new_keep_desktop();
-    appl_init(pb);
-    wind_set_newdesk(pb, tree as *const Object as u64, 0);
-    form_dial_finish(pb);
-}
-
 /// Tear down what a test built, whether or not it passed.
 fn cleanup(pb: &mut Aespb, desk_win: i16) {
     desktop_context();
@@ -702,118 +634,6 @@ fn cleanup(pb: &mut Aespb, desk_win: i16) {
     wind_set_newdesk(pb, 0, 0);
     appl_exit(pb);
     tos_api::aes::window::wm_new();
-}
-
-// ── (1) the program's window is gone, the desktop's is not ─────────────────
-
-/// The desktop has a directory window open. The program it launches opens a
-/// window and `Pterm`s without `wind_close`/`wind_delete`. When the desktop
-/// resumes, the program's window must be out of the table (its slot free),
-/// `wind_find` at its centre must answer the desktop, and its rectangle in
-/// the whole-screen composite must be bare desktop — while the desktop's own
-/// window is still in the table, still found, and still painted.
-#[test]
-fn a_window_the_program_left_open_is_gone_when_the_desktop_resumes() {
-    let _g = lock();
-    let mut pb = Aespb::new();
-    let tree = desktop_tree();
-    tos_api::aes::window::wm_new();
-
-    // The desktop: in the AES, background registered, one window open.
-    desktop_context();
-    appl_init(&mut pb);
-    wind_set_newdesk(&mut pb, &*tree as *const Object as u64, 0);
-    let desk_win = wind_create(&mut pb);
-    wind_open(&mut pb, desk_win, DESK_WIN);
-    assert_eq!(tos_api::aes::window::test_window_owner(desk_win), Some(DESKTOP_IDENTITY));
-
-    // The launch: relinquish, the program runs, opens a window, dies.
-    desktop_relinquish(&mut pb);
-    let prog = Proc::new();
-    prog.run();
-    appl_init(&mut pb);
-    let prog_win = wind_create(&mut pb);
-    wind_open(&mut pb, prog_win, PROG_WIN);
-    assert_eq!(tos_api::aes::window::test_window_owner(prog_win), Some(prog.slot));
-    assert_eq!(wind_find(&mut pb, centre(PROG_WIN).0, centre(PROG_WIN).1), prog_win);
-    // …and holds the screen locks, as a program in the middle of a redraw.
-    wind_update(&mut pb, BEG_UPDATE);
-    wind_update(&mut pb, BEG_MCTRL);
-    pterm(&prog);
-    launcher_cleanup(prog.slot);
-
-    // The desktop regains control.
-    desktop_resume(&mut pb, &tree);
-
-    let white = host().raster.device(0);
-    let (px, py) = centre(PROG_WIN);
-    let (dx, dy) = centre(DESK_WIN);
-    let verdict = (
-        tos_api::aes::window::test_window_owner(prog_win),
-        wind_find(&mut pb, px, py),
-        host().raster.count_not(PROG_WIN, white),
-        tos_api::aes::window::test_window_owner(desk_win),
-        wind_find(&mut pb, dx, dy),
-        host().raster.count_not(inset(DESK_WIN, 1), white),
-    );
-    cleanup(&mut pb, desk_win);
-
-    assert_eq!(
-        verdict.0, None,
-        "the dead program's window must be out of the table (wm_new, gemwmlib.c:1886-1890)"
-    );
-    assert_eq!(verdict.1, DESKWH, "wind_find inside the dead program's window must answer the desktop");
-    assert_eq!(
-        verdict.2, 0,
-        "the whole-screen composite must paint the dead program's rectangle as bare desktop: {} pixels are not",
-        verdict.2
-    );
-    assert_eq!(verdict.3, Some(DESKTOP_IDENTITY), "the desktop's own window must survive the sweep (gap G2)");
-    assert_eq!(verdict.4, desk_win, "wind_find inside the desktop's window must still answer it");
-    assert!(verdict.5 > 0, "the desktop's window must still be painted");
-}
-
-// ── (2) the program's background tree goes with it ─────────────────────────
-
-/// A program that registered its own `WF_NEWDESK` tree (a desktop
-/// replacement) and died leaves a pointer into an address space that no
-/// longer exists. The sweep drops it — before the desktop re-registers its
-/// own, nothing must be registered (EmuTOS `wm_init`, `gl_newdesk = NULL`,
-/// `gemwmlib.c:1300`).
-#[test]
-fn the_programs_background_tree_is_dropped_with_it() {
-    let _g = lock();
-    let mut pb = Aespb::new();
-    let tree = desktop_tree();
-    tos_api::aes::window::wm_new();
-
-    desktop_context();
-    appl_init(&mut pb);
-    wind_set_newdesk(&mut pb, &*tree as *const Object as u64, 0);
-    let desk_win = wind_create(&mut pb);
-    wind_open(&mut pb, desk_win, DESK_WIN);
-
-    desktop_relinquish(&mut pb);
-    let prog = Proc::new();
-    prog.run();
-    appl_init(&mut pb);
-    // The program's own background tree, in its own memory.
-    let prog_tree = desktop_tree();
-    wind_set_newdesk(&mut pb, &*prog_tree as *const Object as u64, 0);
-    assert_eq!(tos_api::aes::window::test_newdesk_tree(), &*prog_tree as *const Object as u64);
-    pterm(&prog);
-    launcher_cleanup(prog.slot);
-
-    desktop_context();
-    tos_api::aes::window::wm_new_keep_desktop();
-    let after_sweep = tos_api::aes::window::test_newdesk_tree();
-    // The rest of `desktop_resume`, then tear down.
-    appl_init(&mut pb);
-    wind_set_newdesk(&mut pb, &*tree as *const Object as u64, 0);
-    form_dial_finish(&mut pb);
-    cleanup(&mut pb, desk_win);
-
-    assert_eq!(after_sweep, 0, "the dead program's WF_NEWDESK tree must be dropped by the sweep");
 }
 
 // ── A107: the nested EL0 `Pexec` child of a living GEM parent ──────────────

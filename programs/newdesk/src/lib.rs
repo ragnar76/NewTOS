@@ -1,9 +1,8 @@
 //! `NEWDESK.NAP` — the NewTOS desktop as an EL0 program (DESK43 U9-2).
 //!
-//! A thin entry around the `desktop` library: one source, two link targets
-//! (decision D1). The kernel links the same library and calls `desktop::run()`
-//! in EL1 only with `desk=kernel` or as the load-failure fallback; its DESKTOP
-//! arm starts this program (DESK43 U9-4). This crate links it with the program
+//! A thin entry around the `desktop` library (decision D1). The kernel's
+//! DESKTOP arm starts this program (DESK43 U9-4); since U10 it is the only
+//! desktop — the kernel no longer links the library as a second target. This crate links it with the program
 //! runtime (`newtos-gem` with `rt`) into a position-independent program,
 //! built for each board by `cargo xtask build-programs` and embedded in the
 //! kernel image under the registry name `NEWDESK` (decision D3,
@@ -18,16 +17,16 @@
 //! | `restart: jsr _deskmain; tst.w d0; jeq restart` (`:53-56`) | [`desktop::run`] (the same loop, *Read .INF file* restarts in the process) |
 //! | `clr.w -(sp); trap #1` — `Pterm(0)` (`:58-59`) | `main` returns 0, crt0 `Pterm`s with it |
 //!
-//! The rest of what the kernel's DESKTOP arm does around its `desktop::run()`
-//! call has no counterpart in the program:
+//! The rest of what the kernel's DESKTOP arm does around the program has no
+//! counterpart in it:
 //!
 //! * `sh_show("")`, `p_setappdir` (`gemshlib.c:603-605`) are the **shell's**
 //!   steps before the start; they stay in the kernel's `sh_ldapp`, as they
 //!   run in EmuTOS's `sh_ldapp` before `aes_run_rom_program`.
-//! * `desktop::reset()` stands in for the fresh process the ROM desktop gets
-//!   every time (the kernel's desktop state outlives its call). A program *is*
-//!   a fresh process: the loader zeroes `.bss` and copies `.data`, so the
-//!   desktop's lazily built state starts empty — nothing to reset.
+//! * A program *is* a fresh process, as the ROM desktop is every time: the
+//!   loader zeroes `.bss` and copies `.data`, so the desktop's lazily built
+//!   state starts empty — nothing to reset (the kernel's built-in copy needed
+//!   `desktop::reset()` for that until DESK43 U10).
 //! * The "desktop up" observation and its `DESKTOP_ACTIVE` flag are the
 //!   kernel's (`kernel/src/shell_loop.rs`); it recognises this program by the
 //!   shell child's slot (DESK43 U9-0c).

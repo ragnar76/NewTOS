@@ -49,21 +49,21 @@ const SLOTS_PER_SECTOR: u32 = 16;
 /// Sentinel for "DTA not initialised / search exhausted".
 const EXHAUSTED: u32 = u32::MAX;
 
-/// **Temporary** current-DTA cell for callers that are not a process.
+/// Current-DTA cell for callers that are not a process.
 ///
 /// EmuTOS has no such cell: every `Fsetdta`/`Fgetdta`/`Fsfirst` caller is
-/// `run`, a process descriptor with a `p_xdta` field. NewTOS has exactly one
-/// caller class that is not — the **in-kernel (EL1) desktop**, which calls
-/// `find::fsetdta` directly with a 44-byte DTA on its own kernel stack
-/// (`programs/desktop/src/dir.rs:270`, `programs/desktop/src/model.rs:281`) while
-/// [`crate::bdos::process::current`] is null and there is no basepage to
-/// store into. Such an address is a high-half kernel VA and does not even fit
-/// the 32-bit on-wire `p_xdta` field.
+/// `run`, a process descriptor with a `p_xdta` field. NewTOS has a caller
+/// class that is not — **EL1 kernel code** issuing GEMDOS calls with kernel
+/// buffers: the kernel-resident EmuCON (`kernel/src/shell.rs`, `Fsetdta` +
+/// `Fsfirst` with a DTA on its stack, from the shell loop's console arm) and
+/// the boot-time selftests (`Space::Kernel` `TrapArgs`). Such an address is a
+/// high-half kernel VA and does not even fit the 32-bit on-wire `p_xdta`
+/// field.
 ///
-/// **Removed by:** the desktop's move to EL0 (`docs/analysis/
-/// desktop-userspace-plan.md` stage S8). Once the desktop is a process, every
-/// caller has a `p_xdta` and this cell — and both `is_null()` branches below —
-/// go away.
+/// Until DESK43 U10 the built-in (EL1) desktop was a caller too, and this note
+/// said the cell would go with the desktop's move to EL0. It does not: the
+/// desktop is a process now (`NEWDESK`, its DTA in its `p_xdta`), but EmuCON
+/// and the selftests still trap from EL1 — the cell stays as long as they do.
 static KERNEL_DTA: AtomicU64 = AtomicU64::new(0);
 
 /// The current DTA pointer — EmuTOS `run->p_xdta` (`bdos/fsmain.c:396`).
@@ -90,7 +90,7 @@ pub(crate) fn cur_dta() -> u64 {
 /// The current DTA of a caller in `space` and the address space it lives in
 /// (ARCH03 3a/3b): a program's (`Space::User`) is its process's `p_xdta`, a
 /// user address read and written with its rights; a kernel caller's
-/// (`Space::Kernel` — the in-kernel desktop, the built-in shell) is the
+/// (`Space::Kernel` — the built-in shell EmuCON, the selftests) is the
 /// [`KERNEL_DTA`] cell, a kernel address — also while some process is the
 /// running one, so a kernel DTA never lands in a program's `p_xdta`.
 pub(crate) fn cur_dta_in(space: Space) -> (u64, Space) {

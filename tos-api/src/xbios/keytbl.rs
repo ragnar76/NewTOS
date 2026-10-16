@@ -25,7 +25,7 @@
 //! ([`crate::bdos::process::loader::KEYTBL_AREA_VA`]) and the returned pointer
 //! is the process's own user VA (page 0 is per process, ARCH03 plan E3) —
 //! "user address while a process runs, kernel VA otherwise". With no process
-//! running (the in-kernel desktop and the boot path) the area is a kernel
+//! running (EL1 kernel code such as the boot path) the area is a kernel
 //! static and its kernel VA is returned.
 //!
 //! The area is rewritten on **every** call, so the returned image always
@@ -87,8 +87,8 @@ static OVERRIDE: [AtomicU64; 3] = [
     AtomicU64::new(NO_OVERRIDE),
 ];
 
-/// The `current_keytbl` image used when no EL0 process is running — the
-/// in-kernel desktop and the boot path, which can dereference a kernel VA.
+/// The `current_keytbl` image used when no EL0 process is running — EL1
+/// kernel code such as the boot path, which can dereference a kernel VA.
 #[repr(align(8))]
 struct KernelArea(UnsafeCell<[u8; KEYTBL_AREA_SIZE as usize]>);
 // SAFETY: single boot CPU, cooperative (non-preemptive) trap path — the same

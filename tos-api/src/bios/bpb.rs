@@ -270,7 +270,7 @@ pub fn bpb_for(drive: u16) -> Option<Bpb> {
 /// it — so the address has to be one the caller can dereference (spec
 /// `docs/api/bios/07-getbpb.md` §Outputs):
 ///
-/// * **In-kernel (EL1) caller** — the FAT mount, the desktop, the boot
+/// * **In-kernel (EL1) caller** — the FAT mount, EmuCON, the boot
 ///   self-tests: the kernel VA of the table entry is exactly that address.
 /// * **EL0 caller** — the kernel is linked high-half and those pages are
 ///   EL1-only, so the table is published read-only (FreeMiNT `PROT_PR`,

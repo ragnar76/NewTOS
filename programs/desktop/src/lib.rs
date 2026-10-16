@@ -8,10 +8,12 @@
 //!
 //! **A crate of its own (DESK43 U8b).** Until U8b this was the kernel module
 //! `kernel/src/desk/`; it is now the library crate `desktop`
-//! (`programs/desktop/`), linked by the kernel, which still calls [`run`] and
-//! [`reset`] in EL1 from `sh_ldapp`'s DESKTOP arm — and, from DESK43 U9, by the
-//! `NEWDESK` program as well: one source, two link targets
-//! (`docs/analysis/desk43-u5-u10-review-2026-10-14.md` §3.1). Its only
+//! (`programs/desktop/`), linked by the `NEWDESK` program
+//! (`programs/newdesk`), which calls [`run`] at EL0. From U8b to U9 the kernel
+//! linked it too and called it in EL1 from `sh_ldapp`'s DESKTOP arm (one
+//! source, two link targets,
+//! `docs/analysis/desk43-u5-u10-review-2026-10-14.md` §3.1); DESK43 U10
+//! removed that second link target. Its only
 //! dependencies are `newtos-gem` (the trap bindings) and `tos-types` (the
 //! on-wire records and constants), so a path into the kernel or into
 //! `tos_api` does not compile here (guard G1, §4.2).
@@ -261,10 +263,9 @@ pub(crate) fn screen_rect() -> Grect {
 /// [`deskmain`] answers `false` for the one case that re-enters it in the same
 /// process — a successful *Options → Read .INF file* — and `true` when the
 /// desktop is done, which on an Atari is a `Pterm` and here is this function
-/// returning into the kernel's `sh_ldapp` (`kernel/src/shell_loop.rs`). The
-/// `Mshrink` and the stack switch the rest of `deskstart.S` performs are a
-/// process's own setup; the NewTOS desktop is still called on the kernel
-/// stack (DESK43 U9 moves it).
+/// returning into the `NEWDESK` program's `main`, whose return `crt0`
+/// `Pterm`s (`programs/newdesk`). The `Mshrink` and the stack switch the rest
+/// of `deskstart.S` performs are a process's own setup, `sdk/crt0.S`'s.
 pub fn run() {
     while !deskmain() {
         // The allocations `deskmain`'s restart arm gave back
@@ -298,11 +299,10 @@ fn deskmain() -> bool {
     // The desktop is a normal AES application. Register it FIRST (EmuTOS
     // `deskmain.c:1953`: `gl_apid = appl_init();` — the first library-init step,
     // before window creation and the event loop). `appl_init` opens the AES
-    // process descriptor — and its FIFO message queue — for the desktop's pid
-    // (=1 in the kernel boot context). Without it `pd::by_pid(1)` is `None`, so
-    // every `send_redraw` → `post_msg(1, WM_REDRAW)` from a MOVE/SIZE/TOP/CLOSE/
-    // open-new-window drops silently and the window content only appears on the
-    // direct-draw boot / view-switch paths (the empty directory-window bug).
+    // process descriptor — and its FIFO message queue — for the desktop. (In
+    // the kernel-boot-context era its pid was 1 and, without this call, every
+    // `send_redraw` → `post_msg(1, WM_REDRAW)` from a MOVE/SIZE/TOP/CLOSE/
+    // open-new-window dropped silently — the empty directory-window bug.)
     //
     // EmuTOS keeps the result in `gl_apid` and does not test it; neither does
     // this desktop (the id is only ever 0, `tos-api/src/aes/appl.rs:200-224`).
@@ -520,16 +520,15 @@ fn close_desktop_windows() {
 /// automatically freed"*), and what `deskmain`'s own restart arm does by hand
 /// for the *Read .INF file* re-entry (`:2140-2147`).
 ///
-/// Three callers, all of them a desktop that has just ended:
-/// the kernel's `sh_ldapp` DESKTOP arm (`kernel/src/shell_loop.rs`) before
-/// the next start, [`run`]'s restart loop, and the kernel's AES-restart path (A106,
-/// `kernel/src/lib.rs`).
+/// One caller since DESK43 U10: [`run`]'s restart loop (*Read .INF file*).
+/// Until then the kernel also called it, before each start of its built-in
+/// copy and on the AES restart (A106); a program's state ends with its
+/// process instead.
 ///
 /// Must run **after** whatever clears the AES's `gl_newdesk` registration
-/// ([`wind_set_newdesk`]) — [`deskmain`]'s epilog on the desktop's own way out,
-/// `tos_api::aes::reinit` on the A106 path. That pointer addresses the object
-/// arena this call frees.
-pub fn reset() {
+/// ([`wind_set_newdesk`]) — [`deskmain`]'s epilog on the desktop's own way out.
+/// That pointer addresses the object arena this call frees.
+fn reset() {
     global::reset();
     inf::reset();
     // The VDI handle table does not survive an AES restart either, so the
