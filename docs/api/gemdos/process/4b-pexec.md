@@ -150,6 +150,13 @@ failure before launch returns a negative GEMDOS error.
   65504; corrected 2026-10-16, PROC06, was "WORD sign-extended"; see
   [`4c-pterm.md`](4c-pterm.md) "Exit-code matrix"); any
   pre-launch failure is a negative LONG error, sign-extended.
+  For the launching modes 0/4/6 the caller resumes with **every other
+  register as it was at the `svc`** — `x1..x29`, `lr`, `sp_el0` **and the
+  FP/SIMD state `v0..v31`, `FPCR`, `FPSR`** (ARM ARM DDI 0487M.d C5.2.8,
+  C5.2.10). The child runs on the same register file, so the kernel saves
+  the vector half beside the GPRs at the launch and puts it back on the
+  child's termination, whichever way it ends (`Pterm`/`Pterm0`/`Ptermres`,
+  Ctrl-C, a crash) (TASK/ARCH02; probe `sdk/examples/fppexec.c`).
 
   | m68k stack | AArch64 reg | Name   | Type / size |
   |------------|-------------|--------|-------------|

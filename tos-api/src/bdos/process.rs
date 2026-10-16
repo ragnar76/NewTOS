@@ -370,6 +370,21 @@ pub struct Process {
     /// the EL0-entry helper writes.
     pub parent_frame_pexec: AtomicBool,
 
+    /// The FP/SIMD half of [`Self::parent_frame`] for a **`Pexec` caller** —
+    /// `v0..v31`, `FPCR`, `FPSR` as they were at the caller's `svc`
+    /// (ARCH02). Written by `handle_pexec` together with the GPR snapshot,
+    /// restored by `finish_terminate` on the [`Self::parent_frame_pexec`]
+    /// branch, so the caller resumes with the vector file it trapped with and
+    /// not the one its child left behind. Only meaningful while
+    /// `parent_frame_pexec` is set; the two other kinds of `parent_frame`
+    /// (the adopted kernel park, the partial kernel-launch triple) resume EL1
+    /// code, which never uses these registers (see [`FpContext`]).
+    ///
+    /// Kept on the **child** slot like the rest of the parent linkage, and
+    /// distinct from [`Self::saved_fp`] of the same slot, which the child
+    /// itself fills whenever *it* yields while its parent waits.
+    pub parent_fp: FpContext,
+
     // ── cooperative scheduler (Phase 06 EC4 / `sched`) ──
     /// Full EL0 context saved when this process yields via `Pwait`
     /// (so the round-robin can resume it exactly where it left off).
@@ -649,8 +664,12 @@ pub const FP_CONTEXT_FPSR: usize = 65;
 /// had run, the resumed accessory stored *that program's* leftover `d1` into
 /// its control array and trapped with a wrong opcode, every pass, forever.
 ///
-/// Saved where the GPRs are saved (a slot's yield) and restored where they are
-/// restored (a `!fresh` scheduler resume).
+/// Saved where the GPRs are saved and restored where they are restored: a
+/// slot's yield and its `!fresh` scheduler resume ([`Process::saved_fp`],
+/// ACC03), and a `Pexec` caller's launch and its child's termination
+/// ([`Process::parent_fp`], ARCH02 — the same failure on the
+/// EL0-parent → EL0-child → EL0-parent path: the child rewrites the whole
+/// vector file and the parent resumed on it).
 #[repr(C)]
 pub struct FpContext {
     /// `v0..v31` (low/high `u64` each), then `FPCR`, `FPSR`.
@@ -765,6 +784,7 @@ impl Process {
             parent_l0_pa: AtomicU64::new(0),
             parent_frame_full: AtomicBool::new(false),
             parent_frame_pexec: AtomicBool::new(false),
+            parent_fp: FpContext::zeroed(),
             saved_frame: ParentFrame::zeroed(),
             saved_fp: FpContext::zeroed(),
             runnable: AtomicBool::new(false),
@@ -1186,4 +1206,50 @@ pub fn slot_for(bp: *mut BasePage) -> Option<usize> {
 #[inline]
 pub fn slot(idx: usize) -> Option<&'static Process> {
     PROCESS_TABLE.get(idx)
+}
+
+#[cfg(test)]
+mod fp_context_tests {
+    use super::*;
+
+    /// The kernel's `save_fp_context`/`restore_fp_context`
+    /// (`kernel/src/arch/aarch64/exceptions.rs`) address an `FpContext` with
+    /// fixed immediates: `stp q0..q31` at `#0x000..#0x1e0`, `FPCR` at
+    /// `#0x200`, `FPSR` at `#0x208`. The structure has to be exactly that.
+    #[test]
+    fn fp_context_layout_matches_the_save_restore_asm() {
+        assert_eq!(core::mem::size_of::<FpContext>(), 0x210);
+        assert_eq!(FP_CONTEXT_LEN * 8, 0x210);
+        assert_eq!(FP_CONTEXT_FPCR * 8, 0x200);
+        assert_eq!(FP_CONTEXT_FPSR * 8, 0x208);
+        // The status words are loaded/stored with 64-bit `ldr`/`str`.
+        assert_eq!(core::mem::align_of::<FpContext>() % 8, 0);
+    }
+
+    /// ARCH02: a slot carries two FP contexts that are live at the same time
+    /// — `parent_fp` (its Pexec caller's vector file, held until this slot
+    /// terminates) and `saved_fp` (its own, written whenever it yields while
+    /// that caller waits). They must never overlap, in any slot, or the
+    /// child's first yield would overwrite the state its parent resumes on.
+    #[test]
+    fn parent_fp_and_saved_fp_are_disjoint_in_every_slot() {
+        let len = core::mem::size_of::<FpContext>();
+        for (i, p) in PROCESS_TABLE.iter().enumerate() {
+            let a = p.parent_fp.ptr() as usize;
+            let b = p.saved_fp.ptr() as usize;
+            assert!(a + len <= b || b + len <= a, "slot {i}: parent_fp overlaps saved_fp");
+        }
+        // …and no two slots share one (the parent's own `saved_fp` lives in
+        // the parent's slot, the `parent_fp` in the child's).
+        for i in 0..MAX_PROCESSES {
+            for j in 0..MAX_PROCESSES {
+                if i != j {
+                    assert_ne!(
+                        PROCESS_TABLE[i].parent_fp.ptr(),
+                        PROCESS_TABLE[j].saved_fp.ptr()
+                    );
+                }
+            }
+        }
+    }
 }

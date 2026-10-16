@@ -1,0 +1,8 @@
+clang : Apple clang version 21.0.0 (clang-2100.3.34.2)
+lld   : rust-lld -flavor gnu
+
++ clang -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 -fno-stack-protector -fPIE -fno-builtin -Wall -Wextra -I/Volumes/Daten/Development/PiRusTOS/sdk/include  -c /Volumes/Daten/Development/PiRusTOS/sdk/crt0.S -o crt0.o
++ clang -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 -fno-stack-protector -fPIE -fno-builtin -Wall -Wextra -I/Volumes/Daten/Development/PiRusTOS/sdk/include -c sdk/examples/fppexec.c -o app.o
++ rust-lld -flavor gnu -T /Volumes/Daten/Development/PiRusTOS/sdk/newtos.ld -pie --no-dynamic-linker -z text -z max-page-size=0x1000 --build-id=none crt0.o app.o -o /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/arch02/b/FPPEXEC.NCP
+
+wrote /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/arch02/b/FPPEXEC.NCP (10128 bytes)

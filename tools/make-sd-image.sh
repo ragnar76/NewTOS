@@ -241,6 +241,22 @@ else
   echo "note: sdk/build.sh unavailable (no clang/lld?); C:\\CTRLCPAR.NCP skipped"
 fi
 
+# FPPEXEC.NCP is the ARCH02 probe: it holds a pattern in all of v0..v31 plus
+# FPCR/FPSR across Pexec 0, 3+6 and 3+4 of itself (the child role, command tail
+# "k", rewrites all of them) and prints one [OK]/[FAIL] line per round and
+# "FPPEXEC: RESULT PASS|FAIL". The child is C:\FPPEXEC.NCP, so it is always
+# installed in the root; set SD_FPPEXEC_AUTO=1 to also run it from \AUTO\
+# (console only, no key wait) for a serial-verifiable boot.
+if "$SCRIPT_DIR/../sdk/build.sh" "$SCRIPT_DIR/../sdk/examples/fppexec.c" "$V/FPPEXEC.NCP" >/dev/null 2>&1; then
+  echo "built + installed C:\\FPPEXEC.NCP (FP/SIMD registers across Pexec)"
+  if [ "${SD_FPPEXEC_AUTO:-0}" = "1" ]; then
+    cp "$V/FPPEXEC.NCP" "$V/AUTO/FPPEXEC.NCP"
+    echo "  + \\AUTO\\FPPEXEC.NCP (runs at boot)"
+  fi
+else
+  echo "note: sdk/build.sh unavailable (no clang/lld?); C:\\FPPEXEC.NCP skipped"
+fi
+
 # SYSINFO.NCP is the ACC06-part-1 proof: it reads the ARM core clock and the
 # SoC die temperature through the two NewTOS-own Ssystem subfunctions (2000 /
 # 2001) and prints them -- the evidence that the two values leave the kernel

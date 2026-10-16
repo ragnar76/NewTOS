@@ -1502,7 +1502,8 @@ fn finish_terminate(
     //
     //   * [`parent_frame_pexec`] — a `Pexec` caller's trap frame, written by
     //     [`handle_pexec`] for every launch it redirects. Full register
-    //     restore, so the caller's `x0..x29 / lr / sp_el0` are exactly what
+    //     restore, so the caller's `x0..x29 / lr / sp_el0` — and, from
+    //     `parent_fp`, its `v0..v31 / FPCR / FPSR` (ARCH02) — are exactly what
     //     they were at the `Pexec` SVC, with `gpr[0]` overwritten to the
     //     child's exit code (`docs/api/gemdos/process/4b-pexec.md`,
     //     "Trap interface"; EmuTOS `bdos/proc.c:601-618`). This holds for an
@@ -1552,6 +1553,15 @@ fn finish_terminate(
             // overflow's `-998` as 64538, never as a negative "load error"
             // (PROC06; `docs/api/gemdos/process/4c-pterm.md`).
             frame.gpr[0] = tos_api::bdos::process::pterm::exit_code_for_caller(rc);
+            // The caller's FP/SIMD registers as `handle_pexec` saved them
+            // (ARCH02); the live ones are the terminating child's. Restored
+            // straight into the registers: nothing between here and the
+            // `eret` uses them (soft-float kernel). Not for the adopted
+            // kernel park (`full`) — its context is EL1 code, which never
+            // reads these registers, and it saved none.
+            restore_fp_context(
+                &tos_api::bdos::process::PROCESS_TABLE[resume.parent_frame_slot].parent_fp,
+            );
         }
     } else {
         // The kernel-launch path: no caller register takes the exit code, so
@@ -2047,6 +2057,14 @@ fn handle_pexec(frame: &mut ExceptionFrame) {
     pf.elr().store(frame.elr, Ordering::Release);
     pf.spsr().store(frame.spsr, Ordering::Release);
     pf.sp_el0().store(frame.sp_el0, Ordering::Release);
+    // …and the vector half of the caller's state (ARCH02): `v0..v31`, `FPCR`,
+    // `FPSR` (ARM ARM DDI 0487M.d C5.2.8, C5.2.10) still hold what the caller
+    // had at its `svc` — the kernel builds soft-float and nothing on the way
+    // here touched them — and the child is about to rewrite all of them.
+    // AAPCS64 lets the caller keep live values in `d8..d15` across the call,
+    // and a TOS caller expects to come back intact (`docs/api/gemdos/process/
+    // 4b-pexec.md`, native ABI). `finish_terminate` puts them back.
+    save_fp_context(&tos_api::bdos::process::PROCESS_TABLE[child.slot].parent_fp);
     tos_api::bdos::process::PROCESS_TABLE[child.slot]
         .parent_frame_pexec
         .store(true, Ordering::Release);

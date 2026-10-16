@@ -327,12 +327,12 @@ pub unsafe extern "C" fn _start() -> ! {
         // ARM ARM D19.2 (CPACR_EL1); ISB is the mandatory context
         // synchronisation before the enable can be relied upon.
         //
-        // NOTE: FP/SIMD register state (V0..V31, FPCR/FPSR) is not yet
-        // saved/restored across the Pexec/Pterm trap frame, so a parent
-        // that keeps live FP values across a `Pexec` would see them
-        // clobbered by the child. The current callers (soft-float kernel
-        // launching one program at a time) never do; per-process FP
-        // context is a later refinement when nested FP-using Pexec lands.
+        // With the trap off there is no lazy FP state: the registers are
+        // always accessible, and the kernel saves/restores the EL0 FP/SIMD
+        // context (V0..V31, FPCR, FPSR) eagerly wherever it swaps EL0
+        // contexts -- a scheduler switch (`saved_fp`, ACC03) and a `Pexec`
+        // caller's launch/termination (`parent_fp`, ARCH02), see
+        // `save_fp_context`/`restore_fp_context` in `exceptions.rs`.
         "mov    x0, #(0b11 << 20)",        // FPEN = 0b11
         "msr    cpacr_el1, x0",
         "isb",

@@ -1,0 +1,74 @@
+measurement-2026-10-17-arch02 -- TASK/ARCH02: a Pexec caller lost its FP/SIMD registers (v0..v31, FPCR, FPSR) to its child.
+Host macOS, QEMU raspi4b + qemu-virt. No SD card, no Pi, nothing under /Volumes/BOOT* or NEWTOS* (the cards are volume ARCH02).
+Scratch = session scratchpad .../scratchpad/arch02 (kernels, cards, per-run APFS clones; clones deleted after each run). One QEMU at a time.
+SOURCE_DATE_EPOCH 1792152000 for all kernel builds. Base tree HEAD 569fb871.
+
+RESULT: red FAIL before the fix, green PASS after it, in memprot on/off/strict. APITEST 109/0/5 before and after, result lines identical.
+
+1. WHERE THE PARENT FRAME IS SAVED AND RESTORED (read in the source, kernel/src/arch/aarch64/exceptions.rs, tos-api/src/bdos/process*.rs)
+   Save: handle_pexec, launch branch (child.launch == true) -- PE_LOADGO (0) and PE_GO/PE_GOTHENFREE (4/6, incl. a mode-5/7 basepage
+     started at p_tbase) all go through this one branch; 3/5/7 return without a launch. Pexec 100+ does not exist in the tree
+     (pexec.rs knows 0/3/4/5/6/7 only). It copied x0..x29/lr/elr/spsr/sp_el0 into PROCESS_TABLE[child].parent_frame and set
+     parent_frame_pexec -- no FP state.
+   Restore: finish_terminate, the one common tail of every termination: handle_pterm (Pterm 0x4C, Pterm0 0x00, Ptermres 0x31),
+     kill_program (EL0 crash -> kill_crashed_program, and the uaccess fault tail), terminate_and_redirect (Ctrl-C), and the
+     Psigreturn Terminate disposition (etv_term upcall). On the parent_frame_pexec branch it restored the GPRs + x0 = exit code, no FP.
+   Other kinds of parent_frame (not a Pexec caller, no FP state to restore):
+     * kernel launch (crate::launch, enter_el0_with_resume_capture: AUTO programs, sh_ldapp, the desktop NEWDESK and its restart):
+       the parent is an EL1 kernel function (soft-float kernel, never uses v-registers); only elr/sp_el0/spsr are written.
+       NEWDESK's restart is a fresh kernel launch after it exited, not a resume.
+     * parent_frame_full (a desk accessory that terminates resumes the parked EL1 client, ACC03): EL1 again.
+   Scheduler switches already save/restore saved_fp (ACC03); unchanged.
+   CPACR_EL1.FPEN = 0b11 at boot (boot.rs), no FP traps at EL0/EL1 -> no lazy FP state; eager save/restore is complete.
+
+2. PROBE sdk/examples/fppexec.c (FPPEXEC.NCP, sdk/build.sh; sha256 in checks/sha256.txt)
+   C:\AUTO\FPPEXEC.NCP (parent, EL0, launched by the kernel AUTO runner) Pexecs C:\FPPEXEC.NCP with tail "k" (child, EL0).
+   Each round is ONE asm block: load a pattern into all v0..v31, write FPCR=0x07C00000 (AHP DN FZ RMode=RZ) and FPSR=0x0800009F
+   (QC IDC IXC UFC OFC DZC IOC; ARM ARM DDI 0487M.d C5.2.8 / C5.2.10), read both back ("pre"), svc Pexec, then immediately store
+   v0..v31 and FPCR/FPSR ("post"). The child loads the complement pattern, FPCR=0x00400000 (RP), FPSR=0, and Pterm0's from the
+   same block. Rounds: A Pexec(0); B Pexec(3)+Pexec(6); C Pexec(3)+Pexec(4).
+   method/make-card.sh fp, method/run.sh (marker "FPPEXEC: RESULT", screendump after the desktop came up).
+
+   RED (kernel8-red.img = HEAD 569fb871, unchanged), memprot on -- serial/fp-red-on-serial.log:
+     FPPEXEC: A Pexec(0) rc=0 v=0/32 lost=ffffffff FPCR 07c00000/00400000 FPSR 0800009f/00000000 [FAIL]
+     FPPEXEC: B Pexec(3)+Pexec(6) rc=0 v=0/32 lost=ffffffff FPCR 07c00000/00400000 FPSR 0800009f/00000000 [FAIL]
+     FPPEXEC: C Pexec(3)+Pexec(4) rc=0 v=0/32 lost=ffffffff FPCR 07c00000/00400000 FPSR 0800009f/00000000 [FAIL]
+     FPPEXEC: RESULT FAIL
+     = every v register and both status/control registers came back with the CHILD's values.
+   GREEN (kernel8-green.img = fix), memprot on / off / strict -- serial/fp-green-{on,off,strict}-serial.log, all three identical:
+     FPPEXEC: A Pexec(0) rc=0 v=32/32 lost=00000000 FPCR 07c00000/07c00000 FPSR 0800009f/0800009f [OK]
+     FPPEXEC: B Pexec(3)+Pexec(6) rc=0 v=32/32 lost=00000000 FPCR 07c00000/07c00000 FPSR 0800009f/0800009f [OK]
+     FPPEXEC: C Pexec(3)+Pexec(4) rc=0 v=32/32 lost=00000000 FPCR 07c00000/07c00000 FPSR 0800009f/0800009f [OK]
+     FPPEXEC: RESULT PASS
+   All four runs: desktop up afterwards, 0 [EXC]/PANIC; screendumps/fp-*.png = the default desktop (viewed fp-green-on).
+
+3. FIX (product code)
+   tos-api/src/bdos/process.rs: Process::parent_fp: FpContext (child slot, beside parent_frame; distinct from saved_fp).
+   kernel/src/arch/aarch64/exceptions.rs: handle_pexec saves the live FP/SIMD state into parent_fp with the ACC03 save_fp_context,
+     finish_terminate restores it with restore_fp_context on the parent_frame_pexec branch (not for the kernel park / kernel launch).
+   Host tests (tos-api, bdos::process::fp_context_tests): FpContext layout = the asm immediates (0x210, FPCR 0x200, FPSR 0x208);
+     parent_fp and saved_fp disjoint in every slot and across slots. Structural only -- the behaviour proof is the probe above.
+
+4. REGRESSION (QEMU raspi4b, card method/make-card.sh api: rebuilt APITEST.NCP + PTERMCH.NCP + DTACHILD.NCP, NEWDESK.INF #Z APITEST)
+   method/series.sh, method/cmp-api.sh -> checks/api-red-vs-green.txt
+   red and green, memprot on / off / strict: TOTAL 109 / 0 / 5 in all six; 124 result lines per run, red vs green 0 differing lines
+   in every mode; 0 [EXC]/PANIC. The 5 SKIPs = BC26-30 (no key). screendumps/api-*.png = the summary screen.
+   qemu-virt (method/virt-smoke.sh, kernel-virt-green.img, no card): "[desk] desktop up", 0 [EXC]/PANIC (serial/virt-smoke-serial.log).
+
+5. BASELINES (checks/)
+   host tests tos-api tos-types xtask   1380 / 0 / 1   (1378 + the 2 new tests)
+   SDK host tests                        20 / 0 / 0
+   release build qemu-virt / rpi4        tos-api 64, kernel 94, rc 0, 0 errors; fresh: cargo clean -p kernel -p tos-api
+                                         --target aarch64-unknown-none-softfloat --release before each board, "Compiling tos-api" +
+                                         "Compiling kernel" in both logs. The rpi4 image of the final build is byte-identical to
+                                         kernel8-green.img (the one that ran).
+   clippy kernel rpi4 / qemu-virt / rpi4+selftest-desk   tos-api 76, kernel 125 (all three); no warning in a touched file.
+   desk drift probe                      TOTAL 0
+
+6. NOT RUN / OPEN
+   Real Pi 4 (the probe from C:\AUTO\ on silicon: tools/make-sd-image.sh SD_FPPEXEC_AUTO=1 -- QEMU image only, never the real card).
+   Not covered by the probe: a child that ends by crash / Ctrl-C / Ptermres (same finish_terminate branch, read, not driven);
+   an EL1 Pexec caller (EmuCON run; soft-float, nothing to lose).
+
+Files: RUNINFO.TXT; method/ (build-programs.sh, make-card.sh, run.sh, series.sh, cmp-api.sh, virt-smoke.sh); serial/ (11 logs);
+screendumps/ (10); checks/ (host-tests, sdk-host, build-*, clippy-*, drift, api-red-vs-green, sha256, fppexec-build.log).
