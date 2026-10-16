@@ -154,8 +154,12 @@ Beleg: `measurements/measurement-2026-10-16-desk43-u10/RUNINFO.TXT`.
 - **Erledigt nachgezogen (2026-10-16, Anwender ja):** ADR-026 in
   `docs/MEMORY.md` (`01555c8d`); `pd::DESKTOP` → `pd::KERNEL_CONTEXT`
   (`d11ed66b`).
-- **Offen:** Tester-Lauf (APITEST, qemu-virt, Serien), Pi-Gegenprobe des
-  EmuCON-Rueckfalls; veralteter Abschnitt `docs/api/aes/window-graphics.md`
+- **Tester-Abnahme 2026-10-16 PASS** (`d0e5afa5`,
+  `measurements/measurement-2026-10-16-desk43-u10-test/`): Basislinien
+  gleich, APITEST 109/0/5 in fuenf Modi, Serien/ACC/EmuCON/Zyklen/INF
+  bytegleich zu U9, Rueckfall EmuCON auf beiden Boards mit genau einem
+  Ladeversuch.
+- **Offen:** Pi-Gegenprobe des EmuCON-Rueckfalls; veralteter Abschnitt `docs/api/aes/window-graphics.md`
   ~1224–1240 (beschreibt die in U10 geloeschten `wm_new_keep_desktop`/
   `desktop_resume`).
 
