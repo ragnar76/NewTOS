@@ -1,6 +1,6 @@
 # DESK57 — Dropping a text file onto a desktop QED icon starts nothing
 
-Status: **OFFEN** (after the Atari meeting) · Priority: P2 · Type: defect, reported by the user on the real Pi (2026-10-09)
+Status: **ERLEDIGT** 2026-10-17 — superseded by [DESK62](DESK62.md) ([Quittung](DESK57-STATUS-DONE.MD)) · Priority: P2 · Type: defect, reported by the user on the real Pi (2026-10-09)
 
 ## Observation (user)
 
