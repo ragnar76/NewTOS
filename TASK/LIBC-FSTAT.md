@@ -10,3 +10,14 @@ und eine passende Erkennung (z. B. ueber den `isatty`-Status) belegen, dann
 korrigieren. Analyse: `docs/analysis/libc-tty-2026-10-13.md`.
 
 [Gemeinsame Regeln](README.md) gelten.
+
+## Entscheidung (Anwender 2026-10-17)
+
+Analyse `docs/analysis/libc-fstat-2026-10-17.md`. Fix nur in
+`sdk/libc/newtos-arch/do_fstat.c`: fd 0–5 sind Geraet genau dann, wenn
+`__isatty(fd)` es sagt; 32 KiB `st_blksize` fuer jede seekbare Datei mit
+`fd >= 0`. Umgelenktes stdout/stdin bekommt den Textmodus wie mintlib auf TOS
+(CR/LF; `UNIXMODE=b` fuer binaer). fd 3–5 als Standardgeraet → `S_IFCHR`.
+Ungueltiger fd und Geraete-Handles ≥ 6 bleiben wie heute. Die zwei
+veralteten Stellen in `docs/sdk/07-mintlib-limits.md` (Vererbung ans Kind,
+Zeile ~188) werden mitkorrigiert.
