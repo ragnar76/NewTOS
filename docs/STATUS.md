@@ -68,7 +68,7 @@ Driftprobe 0 seit U10: der Kernel linkt den Desktop nicht mehr.
 - P2: **MEM02** (`Mxalloc` ignoriert `MX_PREFTTRAM`),
   **PROC03** (Desktop-Haelfte durch DESK43 geliefert; offen AES-PD als echter
   Prozess, Ticket umformulieren), **FS06**, **ARCH02**, **DESK48**,
-  **X01** (`Supexec`: entschieden 2026-10-17, offen nur Pi-Aufrufstellen + Tester), **A25** (QEMU-Lauf
+  **X01** (`Supexec`: entschieden 2026-10-17, offen Tester), **X04** (TeraDesk „Reboot“ springt auf 0), **A25** (QEMU-Lauf
   `appl_init` zweimal), **M08** (Harness `aes-m07-parameter.tsv`), PORT02
   (zView-Bewertung).
 - P3 / Erweiterungen: ARCH03 Stufe 2b, **SND01/SND02** (Ton), SDL01, RTC01,

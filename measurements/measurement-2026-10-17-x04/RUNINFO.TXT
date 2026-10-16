@@ -1,0 +1,15 @@
+X04 -- TeraDesk Quit dialog "Reboot" on the real Pi 4 (2026-10-17)
+
+What:   User clicked TeraDesk's quit dialog button "Reboot" (QUITBOOT,
+        sdk/apps/teradesk/main.c:1328-1332) on the real Pi 4.
+Kernel: kernel8.img from c93d89e0, sha256 715462e57691b7e7...
+Why:    Last Pi-only open point of X01: QUITBOOT reaches Supexec(rv) with
+        rv = *((long *) os_start + 4) (main.c:2096), predicted 0 on NewTOS.
+How:    Manual, photo of the HDMI screen by the user.
+Result: Crash report "Panic: Illegal Instruction", esr=02000000 (EC 0),
+        spsr=60000000, pc=0000000000000000, basepage=01c64000,
+        text=01c65000 data=01c9ba50 bss=01c9eb80, "*** Press any key to
+        continue ***". The program jumped to address 0; the kernel caught it
+        as a program crash. What happens after the key press is not recorded
+        here (see TASK/X04.md).
+Files:  screendumps/pi-teradesk-reboot-panic.jpg (user's photo).
