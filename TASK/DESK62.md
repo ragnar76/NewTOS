@@ -48,4 +48,4 @@ im Fenster; Fenster-Drop unveraendert gruen. Quittung:
 `measurements/measurement-2026-10-16-desk62/RUNINFO.TXT` (Ursache),
 `measurements/measurement-2026-10-16-desk62-fix/RUNINFO.TXT` (Fix),
 `docs/analysis/desk62-hourglass-after-drop-on-shortcut-2026-10-16.md`.
-Offen: Abnahme auf echter Pi 4.
+**Auf echter Pi 4 abgenommen 2026-10-16** (Kern aus `970b87d8`, sha256 `50278e3b…`): Drop auf Verknuepfung startet QED mit Datei, Pfeil zurueck; Fenster-Drop und Desktop-Symbol ins Fenster gruen. Anwender: *„alles laeuft wie es soll“*.

@@ -32,5 +32,5 @@ Fehler im Desktop, nicht in der AES. Analyse: `docs/analysis/desk62-hourglass-af
 
 ## Offen
 
-* Abnahme auf echter Pi 4.
-* `fun_desk2desk` auf eine Programmverknuepfung (EmuTOS ueber `fun_file2any`, `deskfun.c:1297`) fehlt — eigenes Ticket (Lead).
+* ~~Abnahme auf echter Pi 4~~ — erledigt 2026-10-16, Kern `970b87d8`, Anwender bestaetigt.
+* `fun_desk2desk` auf eine Programmverknuepfung (EmuTOS ueber `fun_file2any`, `deskfun.c:1297`) fehlt — eigenes Ticket [DESK63](DESK63.md).

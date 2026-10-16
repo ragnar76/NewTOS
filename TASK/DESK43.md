@@ -159,7 +159,8 @@ Beleg: `measurements/measurement-2026-10-16-desk43-u10/RUNINFO.TXT`.
   gleich, APITEST 109/0/5 in fuenf Modi, Serien/ACC/EmuCON/Zyklen/INF
   bytegleich zu U9, Rueckfall EmuCON auf beiden Boards mit genau einem
   Ladeversuch.
-- **Offen:** Pi-Gegenprobe des EmuCON-Rueckfalls; veralteter Abschnitt `docs/api/aes/window-graphics.md`
+- **U10 auf echter Pi 4 gebootet 2026-10-16** (Kern aus `970b87d8`): Desktop, Programmstarts, TeraDesk → QED, `desk=kernel` ohne Wirkung — Anwender bestaetigt.
+- **Offen:** Pi-Gegenprobe des EmuCON-Rueckfalls (braucht Kern mit defektem NEWDESK); veralteter Abschnitt `docs/api/aes/window-graphics.md`
   ~1224–1240 (beschreibt die in U10 geloeschten `wm_new_keep_desktop`/
   `desktop_resume`).
 
