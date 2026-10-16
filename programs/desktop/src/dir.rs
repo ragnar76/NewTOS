@@ -49,6 +49,7 @@
 
 use alloc::string::String;
 use alloc::vec::Vec;
+use core::sync::atomic::{AtomicBool, Ordering};
 
 use tos_types::aes::{
     Grect, Object, TedInfo, DEFAULT, DESKWH, EDITABLE, EXIT, FL3DACT, FL3DBAK, G_BUTTON,
@@ -1647,6 +1648,15 @@ fn delete_disk_alert(letter: u8) -> bool {
 
 // ── the drag-and-drop dispatch tree (deskfun.c fun_drag) ────────────────────
 
+/// `static BOOL exit_desktop;` (`deskfun.c:61`) — set by the three drop
+/// branches that launch a program (`deskfun.c:967,1034,1249`) to `do_aopen`'s
+/// answer, cleared and returned by [`fun_drag`] (`:1304,1338`).
+///
+/// A plain `AtomicBool`, like `main::RESTART_DESKTOP`: one file-static flag
+/// with no invariant tying it to the `RefCell`-held `G`, written while `G` is
+/// not borrowed.
+static EXIT_DESKTOP: AtomicBool = AtomicBool::new(false);
+
 /// `fun_drag` — dispatch a completed drag gesture (EmuTOS `deskfun.c:1302`).
 /// `wh` = source window handle ([`DESKWH`] for the desktop), `dest_wh` =
 /// destination window handle (`0`/[`DESKWH`] if dropped on the desktop),
@@ -1654,16 +1664,27 @@ fn delete_disk_alert(letter: u8) -> bool {
 /// `act_bdown` passes back (the top-left of the dragged outline, `deskact.c:
 /// 683-684`), `keystate` = modifiers at drop.
 ///
-/// Returns `exit_desktop`: EmuTOS sets it when a dropped file launched a
-/// program, so that `deskmain` leaves and the AES shell loads the child
-/// (`deskfun.c:967` → `do_aopen` → `pro_run`). Since DESK43 U3 NewTOS does the
-/// same — the window-to-window branch is the one that can launch (DESK19) and
-/// it hands back whatever `super::main::do_aopen_drop`'s `shel_write` returned.
+/// Returns [`EXIT_DESKTOP`] (`return exit_desktop;`, `deskfun.c:1338`),
+/// cleared on entry (`:1304`). Three branches can launch a program by drop
+/// and set it from `do_aopen`'s answer (`super::main::do_aopen_drop`, whose
+/// `shel_write` only *records* the launch): [`fun_win2win`] (`:967`, a file
+/// dropped on a program in a window), [`fun_file2desk`]'s `AT_ISFILE` arm
+/// (`:1034`, a file dropped on a desktop program shortcut — via
+/// [`fun_win2desk`]) and [`fun_desk2win`] (`:1249`, a desktop icon dropped on a
+/// program in a window). `deskmain` then leaves its event loop and the AES
+/// shell loads the child (`deskmain.c:977,2103-2104`); the arrow comes back
+/// with the next desktop start-up's `desk_busy_off` (`deskmain.c:2074`).
+/// Before DESK62 only the window-to-window branch handed its answer back, so a
+/// drop on a desktop shortcut left the desktop running under `pro_exec`'s
+/// hourglass with the launch never started.
 pub fn fun_drag(wh: i16, dest_wh: i16, dobj: i16, mx: i16, my: i16, keystate: u16) -> bool {
+    // `exit_desktop = FALSE;   /* may be set to TRUE by fun_file2desk() */`
+    // (`deskfun.c:1304`).
+    EXIT_DESKTOP.store(false, Ordering::Relaxed);
     if wh != DESKWH {
         // Dragging FROM a window.
         if dest_wh != DESKWH && dest_wh != NIL {
-            return fun_win2win(wh, dest_wh, dobj, keystate);
+            fun_win2win(wh, dest_wh, dobj, keystate);
         } else if dobj == DROOT {
             // "dropping onto desktop surface" (`deskfun.c:1312-1319`): with
             // `CONF_WITH_DESKTOP_SHORTCUTS` this installs a shortcut; the
@@ -1681,7 +1702,8 @@ pub fn fun_drag(wh: i16, dest_wh: i16, dobj: i16, mx: i16, my: i16, keystate: u1
             fun_desk2desk(dobj, keystate);
         }
     }
-    false
+    // `return exit_desktop;` (`deskfun.c:1338`).
+    EXIT_DESKTOP.load(Ordering::Relaxed)
 }
 
 /// The Copy/Move operation a drop with `keystate` requests.
@@ -1930,15 +1952,15 @@ fn cstr_of(buf: &[u8]) -> String {
 }
 
 /// `fun_win2win` — copy/move between two windows, **or** launch the program
-/// the selection was dropped on (EmuTOS `deskfun.c:942-1001`). Returns
-/// `exit_desktop`.
-fn fun_win2win(src_wh: i16, dst_wh: i16, dst_obj: i16, keystate: u16) -> bool {
+/// the selection was dropped on (EmuTOS `deskfun.c:942-1001`, `static void`).
+/// A launch sets [`EXIT_DESKTOP`] (`:967`).
+fn fun_win2win(src_wh: i16, dst_wh: i16, dst_obj: i16, keystate: u16) {
     let Some(src_dir) = window_dir(src_wh) else {
-        return false;
+        return;
     };
     let entries = window_selected(src_wh);
     if entries.is_empty() {
-        return false;
+        return;
     }
 
     // `pda = i_find(dst_wh, dst_ob, &pdf, NULL);` (`deskfun.c:958`) and, when
@@ -1955,7 +1977,7 @@ fn fun_win2win(src_wh: i16, dst_wh: i16, dst_obj: i16, keystate: u16) -> bool {
                 //  pdw->w_pnode.p_spec, pdf->f_name, destpath); return;`
                 // (`:967-968`) — and nothing is copied or moved.
                 let dst_dir = window_dir(dst_wh).unwrap_or_default();
-                return super::main::do_aopen_drop(
+                let launched = super::main::do_aopen_drop(
                     pda.is_installed(),
                     &pda.pappl,
                     pda.appdir,
@@ -1964,6 +1986,8 @@ fn fun_win2win(src_wh: i16, dst_wh: i16, dst_obj: i16, keystate: u16) -> bool {
                     Some(destpath.as_bytes()),
                     dst_obj,
                 );
+                EXIT_DESKTOP.store(launched, Ordering::Relaxed);
+                return;
             }
         }
     }
@@ -1987,7 +2011,6 @@ fn fun_win2win(src_wh: i16, dst_wh: i16, dst_obj: i16, keystate: u16) -> bool {
         // `end_dialog` (`deskinf.c:363-378`).
         rebuild_window(dst_wh);
     }
-    false
 }
 
 /// `fun_win2desk` — drop a window selection onto a desktop icon (EmuTOS
@@ -2013,8 +2036,12 @@ fn fun_win2desk(src_wh: i16, dobj: i16, keystate: u16) {
 
 /// `fun_file2desk` — drop a file set onto a desktop icon (EmuTOS
 /// `deskfun.c:1004`): a Disk icon copies/moves to that drive's root, the Trash
-/// deletes (after confirmation). File/Folder-shortcut and Printer targets are
-/// Task #14. Returns `true` if a filesystem operation ran.
+/// deletes (after confirmation), a folder shortcut copies/moves into that
+/// folder, and a **program** shortcut (`AT_ISFILE`, `a_aicon >= 0`) launches
+/// the program with the first dropped item as its command tail, setting
+/// [`EXIT_DESKTOP`] (`deskfun.c:1034`). The printer is Task #14. Returns `true`
+/// if a filesystem operation ran — never for the launch (`operation` stays
+/// `-1`, so `ret = FALSE`, `:1080-1083`), so the caller rebuilds nothing.
 ///
 /// `icontype_src` is the type of the **source** icon — `None` for a window
 /// selection — and is passed to `fun_op` unchanged (`deskfun.c:1081`), which is
@@ -2068,7 +2095,12 @@ fn fun_file2desk(
             // association node — so the directory choice falls to the desktop
             // flag `G.g_appdir`, which is `do_aopen`'s `else` arm
             // (`desksupp.c:903-912`).
-            super::main::do_aopen_drop(false, &pappl, false, &dst_dir, &dst_name, Some(tail.as_bytes()), dobj);
+            // `exit_desktop = do_aopen(an_dest, TRUE, dobj, pathname,
+            //  filename_start(an_dest->a_pappl), tail);` — "set global so
+            // desktop will exit if do_aopen() succeeds" (`:1032-1034`).
+            let launched =
+                super::main::do_aopen_drop(false, &pappl, false, &dst_dir, &dst_name, Some(tail.as_bytes()), dobj);
+            EXIT_DESKTOP.store(launched, Ordering::Relaxed);
             false
         }
         // "dropping file on folder - copy or move" (`:1035-1040`).
@@ -2126,7 +2158,10 @@ fn fun_desk2win(dest_wh: i16, dobj: i16, _keystate: u16) {
                     tail.push_str(core::str::from_utf8(&e.name[..n]).unwrap_or(""));
                 }
                 let dst_dir = window_dir(dest_wh).unwrap_or_default();
-                super::main::do_aopen_drop(
+                // `exit_desktop = do_aopen(an_dest, TRUE, dobj,
+                //  wn_dest->w_pnode.p_spec, fn_dest->f_name, tail); return;`
+                // (`deskfun.c:1249-1250`).
+                let launched = super::main::do_aopen_drop(
                     pda.is_installed(),
                     &pda.pappl,
                     pda.appdir,
@@ -2135,6 +2170,7 @@ fn fun_desk2win(dest_wh: i16, dobj: i16, _keystate: u16) {
                     Some(tail.as_bytes()),
                     dobj,
                 );
+                EXIT_DESKTOP.store(launched, Ordering::Relaxed);
                 return;
             }
         }

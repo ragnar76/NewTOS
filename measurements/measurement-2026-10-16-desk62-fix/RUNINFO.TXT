@@ -1,0 +1,55 @@
+measurement-2026-10-16-desk62-fix -- DESK62 phase 2: the fix (programs/desktop/src/dir.rs, file-static EXIT_DESKTOP 1:1 after EmuTOS
+deskfun.c:61/967/1034/1249/1304/1338) verified red -> green with the phase-1 injector harness, plus fun_desk2win, plus the baselines.
+Cause and harness: measurements/measurement-2026-10-16-desk62/RUNINFO.TXT, docs/analysis/desk62-hourglass-after-drop-on-shortcut-2026-10-16.md.
+
+Base: main c5018c19 + the uncommitted fix (dir.rs, docs/api/desktop/deskfun.md). Host macOS, QEMU -M raspi4b, -append serial=on, one QEMU at
+a time, per-run APFS clones (cp -c) deleted after each run, base cards and scratch trees deleted at the end. Scratch = session scratchpad
+.../scratchpad/d62fix (CLAUDE_JOB_DIR unset in this session), never /tmp. No SD card, no Pi, nothing under /Volumes/BOOT* or NEWTOS*.
+
+1. METHOD (method/ = copies of the desk62 run's method, changed only as noted)
+   build.sh     + SRC=head: scratch tree from `git archive HEAD` (c5018c19 = pre-fix) instead of the working tree -> the "red" kernels.
+                W = scratchpad/d62fix.
+   run.sh       + BASE=<name>: another base card (d2w). W = scratchpad/d62fix.
+   seed.sh      + INF=<file>: another NEWDESK.INF.
+   NEWDESK-D2W.INF   NEWDESK.INF + a desktop shortcut "#X 00 02 FF 07   C:\README.TXT@ README.TXT@" (grid 0,2) for fun_desk2win.
+   drop-desk2win.script   drag that README.TXT shortcut (37,128) into the C:\ window onto the QED NAP row (277,103), release.
+   checks.sh    copy of measurement-2026-10-16-desk43-u10-test/method/checks.sh (baselines), label fix -> checks/fix-*.
+   Kernels (sha256, all with D62_ALL=1 trace + injector, rpi4 release):
+     kds       19251e9e.. (fixed tree, drop-shortcut.script)    kds-red   ec1d0724.. (HEAD, same script)
+     kdw       b6a91836.. (fixed tree, drop-window.script)
+     kd2w      015961cc.. (fixed tree, drop-desk2win.script)    kd2w-red  33275c30.. (HEAD, same script)
+   All with launch:QED=qed-quit.script (Ctrl-Q 15 s after QED's launch).
+
+2. RESULTS
+   a) Drop file on the desktop program shortcut (fun_win2desk -> fun_file2desk AT_ISFILE)
+      RED  kds-red (serial/ds-red-serial.log): shel_write(SHW_EXEC) -> graf_growbox -> evnt_multi; no appl_exit, no shell line;
+           screendumps/ds-red-2-drop-15s.png: hourglass on the shortcut, README TXT still highlighted in the window.
+      GREEN kds (serial/ds-serial.log): shel_write -> graf_growbox -> appl_exit (19) -> "[shell] sh_ldapp: desktop NEWDESK ... exited
+           with rc=0" -> "starting C:\QED.NAP", straight after the drop (desktop feed 54 of 69; the +20 s click and the +25 s double-click
+           of the script were never needed). ds-2-drop-4s.png: QED with window C:\README.TXT ("DESK62 test card"). After Ctrl-Q the desktop
+           restarts with graf_mouse(2) ... graf_mouse(0) (start-up desk_busy_off); ds-4-desktop-back.png: arrow, no selection left.
+           (The later script bytes then land on the restarted desktop -- harmless; the run quits 3 s after "desktop up"@2.)
+   b) Control: drop file on QED.NAP inside the window (fun_win2win) -- unchanged GREEN
+      kdw (serial/dw-serial.log): shel_write -> growbox -> appl_exit -> QED; dw-1-drop-4s.png QED with C:\README.TXT; dw-3-desktop-back.png arrow.
+   c) fun_desk2win: desktop shortcut README.TXT dragged onto QED.NAP in the window
+      RED  kd2w-red (serial/d2w-red-serial.log): shel_write -> growbox -> evnt_multi; d2w-red-3-drop-15s.png: hourglass over QED NAP,
+           the README.TXT shortcut stays selected -- the same defect on the second path (EmuTOS deskfun.c:1249).
+      GREEN kd2w (serial/d2w-serial.log): shel_write -> growbox -> appl_exit -> QED; d2w-2-drop-4s.png: QED with C:\README.TXT (the
+           shortcut's a_pappl as tail, deskfun.c:1247); d2w-4-desktop-back.png: arrow.
+   d) Selection highlight: the "README TXT stays highlighted" of phase 1 (ds-3) is gone after the fix only because the desktop now exits and
+      restarts (ds-4/d2w-4: nothing selected). It is still present in the RED dumps; not separately investigated.
+
+3. BASELINES (method/checks.sh fix on the shared tree with the fix; checks/fix-*)
+   host tests tos-api tos-types xtask 1374/0/1; SDK host 20/0/0;
+   fresh release build rpi4 / qemu-virt: tos-api 64, kernel 94, rc 0, 0 errors, desktop crate compiled 1 each;
+   clippy kernel rpi4 / qemu-virt / rpi4+selftest-desk: tos-api 76, kernel 125;
+   clippy programs: hello-gem+newtos-gem 0, newtos-gem no rt 0, desktop rpi4/qemu-virt/rpi4+selftest-desk 0, newdesk x3 0, newtos-gem pwk 0;
+   desktop without board fails at the compile_error! as intended (2 hits); desk-drift-probe TOTAL 0 (unsafe 20); emutos-consts 466/333/1/1/0/0;
+   desk-cite-list fns=479 cited=318 newtos=5 uncited=156; build-programs both boards 0 warning/error lines.
+   NAP sha256 (checks/fix-nap-sha256.txt): HELLOGEM unchanged (97f14224.. rpi4), NEWDESK changed (the fix).
+
+4. NOT DONE
+   Real Pi 4 (the user's acceptance). fun_desk2desk onto a program shortcut (missing branch, the lead tickets it). The bin/*.img kernels and
+   the release kernels of checks.sh are gitignored.
+
+Files: RUNINFO.TXT, method/, serial/ (ds, ds-red, dw, d2w, d2w-red), screendumps/, checks/.

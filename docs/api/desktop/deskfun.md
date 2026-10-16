@@ -553,7 +553,9 @@ fuer den `if (tail)`-Zweig, ueber den der gebaute Pfad in `do_aopen` ankommt
 Nachgebaut in `dir.rs`: `i_find_win` (der Fensterarm von `i_find`,
 `desksupp.c:1753-1770`, ueber `inf::app_afind_by_name` — dieselbe Aufloesung,
 die `win_icalc` dem Fenster gibt), `build_selected_path`, und der Zweig selbst;
-`fun_win2win` gibt jetzt `exit_desktop` zurueck und `fun_drag` reicht es durch.
+`fun_win2win` setzt `exit_desktop` und `fun_drag` gibt es zurueck (seit DESK62
+ueber den modulweiten Merker `EXIT_DESKTOP`, `deskfun.c:61,1304,1338`; ebenso
+`fun_file2desk`s `AT_ISFILE`-Zweig, `:1034`, und `fun_desk2win`, `:1249`).
 Die Startseite ist `main::do_aopen_drop` (`desksupp.c:884-986`, der
 `isapp`-Arm mit nicht-`NULL`-`tail`).
 
@@ -563,13 +565,17 @@ Fenster gibt, also stimmt der Zweig immer mit dem Bild auf dem Schirm ueberein.
 `build_selected_path` nimmt nur die **erste** gewaehlte Datei, egal wie viele
 gezogen wurden; auch das ist EmuTOS' eigene Schleife (ein `char destpath[]`).
 
-Benannte Abweichungen: EmuTOS verlaesst ueber `exit_desktop` den
-Desktop-Prozess, NewTOS startet geschachtelt (AES-Luecke G1) und gibt `false`
-zurueck; und weil NewTOS' Lader nur native AArch64-ELF nimmt (ADR-018), hat
+Benannte Abweichung: weil NewTOS' Lader nur native AArch64-ELF nimmt (ADR-018), hat
 `do_aopen_drop` zwei Antworten, die `do_aopen` nicht hat (m68k-Ziel, nicht
 natives Ziel). Der zweite Fall ist genau EmuTOS' Eigenheit, dass eine
 installierte Anwendung `a_aicon = IG_APPL` **und** ihre Dokumentmaske traegt
 und `app_afind_by_name` `a_pdata` zuerst prueft (`deskapp.c:1450-1454`).
+(Die fruehere zweite Abweichung — „NewTOS startet geschachtelt und gibt
+`false` zurueck" — gilt seit DESK43 U3 nicht mehr: auch NewTOS startet nur
+ueber `shel_write` plus Desktop-Ende, und `exit_desktop` wird wie in EmuTOS
+durchgereicht. Dass `fun_file2desk`/`fun_desk2win` den Wert bis DESK62
+verwarfen, war der Grund fuer die haengende Sanduhr nach einem Drop auf eine
+Desktop-Verknuepfung, `docs/analysis/desk62-hourglass-after-drop-on-shortcut-2026-10-16.md`.)
 
 Messung: `measurements/measurement-2026-09-23-desk19-desk20/` — dieselbe Karte, dieselbe
 Geste, ein Radioknopf Unterschied:
