@@ -5,13 +5,28 @@
 
 ## Current Phase
 
-### Stand 2026-10-13 — nach der OFAM, NewTOS 0.5
+### Stand 2026-10-17 — Desktop in EL0, Pi-Abnahme ausstehend
 
-Zweig `main`, Tag `v0.5` (`03b9025c`). Die OFAM (9.–10. Oktober) ist
-vorbei; der Vorrang „Vorfuehrbarkeit vor Konformitaet“ ist damit
-ausgelaufen. Vorgeschlagenes Ziel: der feste Stand `base-1`
-(`docs/analysis/inventory-2026-10-08.md` §3, Definition zur Bestaetigung
-durch den Anwender offen).
+Zweig `main`, Tag `v0.5` (`03b9025c`). Seit dem 13.10. in QEMU umgesetzt und
+abgenommen, **auf echter Pi 4 noch nicht gefahren**: FS10/FS11 (Zeichengeraete,
+Geraetetabelle, AUX = „Port ohne Kabel“), LIBC-MAIN, LIBC-TTY, LIBC-FSTAT,
+MEM05 (wachsender MD-Vorrat, Grenze je Prozess, mintlib-Hunks bis 16 MiB),
+PROC05/PROC06 (Exitcodes wie EmuTOS), **DESK43 U5a–U9-5: der Desktop bootet als
+EL0-Programm NEWDESK** (Rust, ins Kernel-Image eingebettet; `desk=kernel` in
+`cmdline.txt` waehlt den eingebauten Desktop bis zur Pi-Abnahme), DESK58/59/60,
+T16. Vorgeschlagenes Ziel weiterhin `base-1`
+(`docs/analysis/inventory-2026-10-08.md` §3, Definition offen).
+
+**Naechster Schritt mit dem Anwender: Pi-Abnahme (DESK43 U9-6).** Karte: neuer
+Kernel **und alle libc-Programme neu gelinkt** (seit LIBC-MAIN aufgestaut).
+Pruefliste: `measurements/measurement-2026-10-15-desk43-acceptance/RUNINFO.TXT`
+(HW-Checkliste) plus Stichprobe umgelenkte Ausgabe (LIBC-FSTAT) und
+Ctrl-C-Kind (PROC06). Danach DESK43 U10 (Aufraeumen, Schalter weg).
+
+**Agenten-Scratch:** Job-Verzeichnis (`$CLAUDE_JOB_DIR/tmp`) bzw. Scratchpad,
+**nichts unter `/tmp`**; QEMU-Sockets relativ im Laufverzeichnis
+(Anwenderwunsch 2026-10-16). Lange QEMU-Serien nur am Netzteil (Akku-Schlaf
+verfaelscht Zeiten); Screendumps an Logmarken, ein QEMU zur Zeit.
 
 **Auf echter Pi 4 abgenommen:** Boot, Desktop, TeraDesk (Start und sauberes
 Beenden), QED aus TeraDesk heraus, EmuCON, **USB-Maus samt Mausrad**,
@@ -40,22 +55,25 @@ Offen daraus: [MEM05](../TASK/MEM05.md), Stufe 2b (`Pexec` 100+), `asid=on` auf 
 > der naechste Bau kommt aus warmem Zwischenspeicher — die grosse
 > „Removed … files“-Zahl ist dann der Debug-Baum.
 
-**Desktop:** ADR-022 — `kernel/src/desk/` wird **1:1 gegen EmuTOS** gebaut,
-durch die AES-Falle, ohne Umgehungen. Die DESK43-Reihe hat U1–U4 abgenommen
-(Driftprobe 47 → 32, die Linie des Plans ist erreicht); U5–U10 kommen nach
-dem Termin; X03 ist erledigt (Driftprobe 31).
+**Desktop:** ADR-022 — der Desktop wird **1:1 gegen EmuTOS** gebaut, durch die
+AES-Falle, ohne Umgehungen. Seit DESK43 U8b ist er die Bibliothek
+`programs/desktop/` (nur `newtos-gem` + `tos-types`, Umgehung = Compilerfehler),
+seit U9 laeuft er als EL0-Programm NEWDESK. Rust-Programme fuer NewTOS:
+`programs/` (Laufzeit `newtos-gem`, Bau `cargo xtask build-programs`).
+Driftprobe 4 = die vier Kernel→Desktop-Aufrufe, die U10 entfernt.
+**APITEST-Basislinie: 109/0/5** (seit PROC06).
 
-**Offen (Stand 2026-10-13):**
+**Offen (Stand 2026-10-17):**
 
-- P1: **DESK43** (Desktop in EL0): U5a, U6a, U5b, U7, U8a, U6b, U8b, U9-0 … U9-5 erledigt (Desktop bootet in EL0), offen U9-6 Pi-Abnahme, dann U10 → U10.
+- P1: **DESK43** (Desktop in EL0): U5a … U9-5 erledigt und in QEMU abgenommen; offen **U9-6 Pi-Abnahme**, dann U10.
 - P2: **MEM02** (`Mxalloc` ignoriert `MX_PREFTTRAM`),
   **PROC03** (Desktop/AES als EL0-Prozess), **FS06**, **ARCH02**, **DESK48**,
   **DESK57**, PORT02 (zView-Bewertung).
 - P3 / Erweiterungen: ARCH03 Stufe 2b, **SND01/SND02** (Ton), SDL01, RTC01,
-  BALL01, FS05, REF03, T15, DESK49, DESK51–DESK56, **CON01** (Spaltenzaehler/Typeahead), LIBC-IOCTL, LIBC-FSTAT, MEM07–MEM10, MEM06 (Idee),
+  BALL01, FS05, REF03, T15, DESK49, DESK51–DESK56, **CON01** (Spaltenzaehler/Typeahead), **CON02** (`Cconws` folgt Umlenkung nicht), FS12 (26 Laufwerke), FS13, LIBC-IOCTL, LIBC-BUF, DESK61, MEM07–MEM10, MEM06 (Idee),
   IO01 (Idee: AUX/MIDI/PRN-Treiber).
 - Erledigt seit dem 30.09., hier frueher als offen gefuehrt: MEM03, MEM04,
-  PROC01, PROC02, PORT09, GUI07, ARCH03 (bis auf das Obige), FS10, FS11, LIBC-MAIN, LIBC-TTY, MEM05.
+  PROC01, PROC02, PORT09, GUI07, ARCH03 (bis auf das Obige), FS10, FS11, LIBC-MAIN, LIBC-TTY, LIBC-FSTAT, MEM05, PROC05, PROC06, SPEC01, DESK58, DESK59, DESK60, T16.
 
 **Serielle Ausgabe, seit 2026-10-02 (SER01):** auf der Pi standardmaessig
 **aus**; `serial=on` in `cmdline.txt` schaltet sie ein. QEMU-raspi4b-Laeufe
