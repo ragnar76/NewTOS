@@ -34,3 +34,15 @@ Strg+Alt+Entf geht noch nicht. Wäre aber manchmal sinnvoll.“* Ausloeser war
    im `OSHEADER` gueltig (behebt [X04](X04.md) ohne Aenderung an TeraDesk).
 
 [Gemeinsame Regeln](README.md) gelten.
+
+## Quellenbefund 2026-10-17 (Review `1d17eae8`)
+
+`docs/api/structures/osheader.md:128-132` und der Kommentar in
+`tos-api/src/bdos/process/loader.rs` (~1150) sagen „EmuTOS setzt `os_rsvl = 0`“ —
+**falsch**: `references/emutos/bios/startup.S:92-93` legt dort
+`os_res1: .dc.l _main` ab, und `reseth` (+4) ist ebenfalls `_main`. TeraDesk
+liest `*((long *) os_start + 4)`: auf m68k Offset 0x10 = `os_res1` = Neustart;
+auf LP64 (`long` = 8 Byte) Offset 0x20..0x27 (`os_root`/`os_kbshift`), daher
+`pc=0`. Nur +0x10 zu setzen behebt es also **nicht** — Entscheidung noetig
+(Toolchain-/Overlay-Weg wie bei anderen LP64-Struct-Fallen vs. Kern), bevor
+RST01 den Einsprung baut. Spec und Kommentar zuerst berichtigen.

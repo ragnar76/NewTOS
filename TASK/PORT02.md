@@ -1,6 +1,6 @@
 # PORT02 — Welche Anwendungen koennen wir bis zum Termin portieren?
 
-Status: **OFFEN** · Prioritaet: **P2** · Typ: Bewertung / Portierbarkeit — Anwenderwunsch 2026-09-25
+Status: **ERLEDIGT** 2026-10-17 ([Quittung](PORT02-STATUS-DONE.MD)) · Prioritaet: **P2** · Typ: Bewertung / Portierbarkeit — Anwenderwunsch 2026-09-25
 
 Abhaengigkeiten: [PORT01](PORT01.md) (Kommandozeile erreicht die Anwendung)
 

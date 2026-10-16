@@ -1,6 +1,6 @@
 # MEM09 — `memprot::on_alloc` ignoriert den Rueckgabewert von `record`
 
-Status: **OFFEN** · Prioritaet: **P3** · Typ: Robustheit — Nebenfund MEM05-Entwurf (2026-10-13)
+Status: **ERLEDIGT** 2026-10-17 ([Quittung](MEM09-STATUS-DONE.MD)) · Prioritaet: **P3** · Typ: Robustheit — Nebenfund MEM05-Entwurf (2026-10-13)
 
 Schlaegt `record` fehl (Tabelle voll), faellt der Block still auf `PROT_P`
 zurueck. MEM05 reserviert die Kapazitaet kuenftig vor `ffit`; dieser Fall

@@ -1,6 +1,6 @@
 # DESK56 — Zwei Wurfpfade in `dir.rs` verwerfen die Rueckgabe von `do_aopen_drop`
 
-Status: **OFFEN** · Prioritaet: **P3** · Typ: Abweichung von EmuTOS — Nebenfund aus [DESK50](DESK50.md)
+Status: **ERLEDIGT** 2026-10-17 ([Quittung](DESK56-STATUS-DONE.MD)) · Prioritaet: **P3** · Typ: Abweichung von EmuTOS — Nebenfund aus [DESK50](DESK50.md)
 
 Abhaengigkeiten: [DESK50](DESK50.md) (`do_wopen`/`do_diropen`, `w_obid`)
 
