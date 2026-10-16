@@ -29,14 +29,17 @@ use core::cell::RefCell;
 
 use tos_types::aes::{
     Grect, Object, TedInfo, ADJ3DSTD, DEFAULT, DESKWH, DISABLED, EDITABLE, EXIT, FL3DACT, FL3DBAK,
-    FL3DIND, G_BOX, G_BUTTON, G_FBOXTEXT, G_FTEXT, G_IBOX, G_STRING, LASTOB, MU_MESAG, MU_TIMER,
+    FL3DIND, G_BOX, G_BUTTON, G_FBOXTEXT, G_FTEXT, G_IBOX, G_STRING, HIDETREE, LASTOB, MU_MESAG, MU_TIMER,
     NIL, OUTLINED, RBUTTON, ROOT, SELECTABLE, SELECTED, TE_LEFT, TE_RIGHT, TOUCHEXIT,
 };
 use tos_types::error::EFILNF;
 use tos_types::Long;
 
 use newtos_gem::gemdos::{dos_close, dos_create, dos_gdrv, dos_open, dos_read, dos_sdrv, dos_write};
-use super::global::{self, gl_hchar, gl_wchar, Anode, DeskStatic, WSave, AF_ISEXEC, NUM_WNODES};
+use super::global::{
+    self, gl_hchar, gl_wchar, Anode, DeskStatic, WSave, AF_ISEXEC, BORDER_TEXT_COLOURS, DROOT, NUM_WNODES,
+    WOBS_START,
+};
 use super::icons;
 use super::model::{AType, DateFmt, DateOrder, Sort, TimeFmt, View};
 
@@ -910,6 +913,7 @@ fn prefs_to_env(
 /// cannot be re-saved from a stale in-memory copy.
 pub(super) fn reset() {
     *SESSION.borrow_mut() = None;
+    BG_WINDOW_SELECTED.store(false, core::sync::atomic::Ordering::Relaxed);
 }
 
 /// The bytes of a shell-buffer image up to its terminating NUL — EmuTOS's
@@ -3691,119 +3695,272 @@ pub(super) fn inf_pref() -> bool {
 
 // ── Set-background dialog (`inf_backgrounds`, `deskinf.c:825-921`) ───────────
 
-/// Options → Set background (`inf_backgrounds`): step the desktop background
-/// pattern (0-7) and colour (0-15); on OK apply to `g_patcol`, repaint the
-/// desktop, and persist to `NEWDESK.INF`. Returns whether the background
-/// changed. The screen the dialog covered is restored by `end_dialog`'s
-/// `form_dial(FMD_FINISH)`.
-pub(super) fn set_background() -> bool {
-    let cur = global::patcol_desktop();
-    let mut pat = (cur >> 4) & 0x07;
-    let mut col = cur & 0x0F;
+/// `SAMPLE_BORDER_FLAGS` (`deskinf.c:53-57`) — "Border flags for `BGSAMPLE`
+/// object in 'Set background' dialog: outside border, thickness=1, border
+/// colour black, text black."
+const SAMPLE_BORDER_FLAGS: u64 = 0x00ff_1100;
+/// `FILLPAT_MASK` (`include/obdefs.h:126`) — the fill-pattern bits of an
+/// `ob_spec` colour word.
+const FILLPAT_MASK: u64 = 0x0000_0070;
+/// `FILLCOL_MASK` (`include/obdefs.h:127`) — the fill-colour bits.
+const FILLCOL_MASK: u64 = 0x0000_000f;
 
-    static TITLE: &[u8] = b" Set Background \0";
-    static PAT_LBL: &[u8] = b"Pattern:\0";
-    static COL_LBL: &[u8] = b"Colour:\0";
-    static MINUS: &[u8] = b" - \0";
-    static PLUS: &[u8] = b" + \0";
-    static OK: &[u8] = b" OK \0";
-    static CANCEL: &[u8] = b" Cancel \0";
+/// `tree[BGWIN].ob_state & SELECTED` of `ADBKGND` between two calls of
+/// [`inf_backgrounds`]. EmuTOS's tree lives in RAM for the whole `deskmain`
+/// run (`desk_rs_init` copies it once per run, `deskmain.c:1980`,
+/// `desk_rsc.c:2568-2577`), so the *Desktop*/*Window* radio a user left the
+/// dialog with is the one it opens with next time. This tree is built on the
+/// stack per call, so that one bit of it is kept here and cleared with the
+/// rest of the run's state ([`reset`]).
+static BG_WINDOW_SELECTED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
 
-    // Mutable number buffers, updated + redrawn each step.
-    let mut patnum = [0u8; 8];
-    let mut colnum = [0u8; 8];
+/// `inf_backgrounds` (EmuTOS `deskinf.c:825-921`, `CONF_WITH_BACKGROUNDS`) —
+/// View → Set background…: the `ADBKGND` box with its live sample.
+///
+/// The `BGSAMPLE` box is redrawn with `draw_fld` before every `form_do`; a click
+/// on one of the eight pattern swatches (`BGPAT0..7`) copies that swatch's
+/// `FILLPAT_MASK` bits into the sample, a click on one of the sixteen colour
+/// swatches (`BGCOL0..15`) its `FILLCOL_MASK` bits, and the *Desktop*/*Window*
+/// radios switch which of the two candidates (`curdesk`/`curwin`) the sample
+/// shows and edits. On OK a changed desktop background is applied and
+/// repainted here (`:900-908`); a changed window background is put into every
+/// window box and reported with `TRUE` (`:910-916`), on which `do_viewmenu`
+/// answers `BACKGROUND_HAS_CHANGED` and the windows are repainted.
+///
+/// Source quirks kept as they are: the sample starts with
+/// `SAMPLE_BORDER_FLAGS`, but a click on *Desktop*/*Window* puts the plain
+/// candidate (no border) back into it; and because `curdesk`/`curwin` are
+/// taken from the sample after every turn, a confirmed swatch click carries
+/// the sample's border flags into `G.g_screen[…].ob_spec` (the next
+/// `set_background`, `deskapp.c:1306-1331`, writes the plain word again).
+///
+/// **Not reproduced: `set_aes_background(curdesk & 0xff)` (`:904`).** That is
+/// an AES-internal function (`aes/geminit.c:635-641`) the ROM desktop can call
+/// because it is linked into the AES; it sets the background the AES paints
+/// when a program is launched. The `NEWDESK` program has no call for it; the
+/// AES takes the byte from the `.INF` `#Q` line at its start
+/// (`tos-api/src/aes/init.rs`, `geminit.c:719-728`).
+///
+/// **Named deviation (DESK64, to be generalised by DESK65): the change is
+/// saved at once.** EmuTOS leaves writing the `.INF` to the user's next *Save
+/// desktop* (`inf_backgrounds` ends at `:919`); NewTOS calls `cnx_put();
+/// app_save(TRUE)` whenever OK changed either background — user decision
+/// 2026-10-17. `cnx_put()` first, as before every EmuTOS `app_save`
+/// (`deskmain.c:891,2154`), so the `#W` lines describe the windows on screen.
+pub(super) fn inf_backgrounds() -> bool {
+    let window_selected = BG_WINDOW_SELECTED.load(core::sync::atomic::Ordering::Relaxed);
+    let mut tree = adbkgnd_tree(gl_wchar(), gl_hchar(), global::gl_nplanes(), window_selected);
 
-    // Built at the origin; `start_dialog`'s `form_center` writes the centred
-    // `ob_x`/`ob_y` into the ROOT.
-    let (dw, dh) = (300i16, 180i16);
-
-    // Object indices.
-    const PAT_DN: i16 = 4;
-    const PAT_UP: i16 = 5;
-    const COL_DN: i16 = 8;
-    const COL_UP: i16 = 9;
-    const OK_OBJ: i16 = 10;
-
-    // 3D roles after `ADBKGND` (`desk_rsc.c:2230-2452`): `FL3DBAK` + `OUTLINED`
-    // ROOT, `FL3DACT` on `BGOK`/`BGCANCEL`, no flag on the `G_STRING` labels.
-    // `ADBKGND` has no stepper pair — it offers eight pattern and sixteen
-    // colour swatches as `TOUCHEXIT` `G_BOX`es — but `desk_rsc.c` does have
-    // stepper *gadgets*, and they are activators: `ADINSDSK`'s `ID_UP`/
-    // `ID_DOWN` and `ADINSWIN`'s `IW_UP`/`IW_DOWN` are
-    // `SELECTABLE | TOUCHEXIT | FL3DBAK | FL3DIND` = `FL3DACT`
-    // (`desk_rsc.c:990,996,2094,2100`). The four `- / +` buttons take that.
-    let mut tree = [
-        mk_root(BOX_SPEC, dw, dh, 11),
-        mk(G_STRING, 0, TITLE.as_ptr() as u64, 24, 14, dw - 48, 16, 2, -1, -1),
-        mk(G_STRING, 0, PAT_LBL.as_ptr() as u64, 24, 48, 72, 16, 3, -1, -1),
-        mk(G_STRING, 0, patnum.as_ptr() as u64, 104, 48, 40, 16, 4, -1, -1),
-        mk(G_BUTTON, SELECTABLE | EXIT | FL3DACT, MINUS.as_ptr() as u64, 160, 44, 44, 24, 5, -1, -1),
-        mk(G_BUTTON, SELECTABLE | EXIT | FL3DACT, PLUS.as_ptr() as u64, 214, 44, 44, 24, 6, -1, -1),
-        mk(G_STRING, 0, COL_LBL.as_ptr() as u64, 24, 84, 72, 16, 7, -1, -1),
-        mk(G_STRING, 0, colnum.as_ptr() as u64, 104, 84, 40, 16, 8, -1, -1),
-        mk(G_BUTTON, SELECTABLE | EXIT | FL3DACT, MINUS.as_ptr() as u64, 160, 80, 44, 24, 9, -1, -1),
-        mk(G_BUTTON, SELECTABLE | EXIT | FL3DACT, PLUS.as_ptr() as u64, 214, 80, 44, 24, 10, -1, -1),
-        mk(G_BUTTON, SELECTABLE | EXIT | DEFAULT | FL3DACT, OK.as_ptr() as u64, 30, 138, 90, 28, 11, -1, -1),
-        mk(G_BUTTON, SELECTABLE | EXIT | LASTOB | FL3DACT, CANCEL.as_ptr() as u64, 178, 138, 90, 28, 0, -1, -1),
-    ];
-    // The two number fields, refreshed whenever a step button was pressed.
-    let set_numbers = |pat: u8, col: u8, patnum: &mut [u8; 8], colnum: &mut [u8; 8]| {
-        let mut p = 0usize;
-        push_dec(patnum, &mut p, pat as u64);
-        patnum[p.min(patnum.len() - 1)] = 0;
-        let mut q = 0usize;
-        push_dec(colnum, &mut q, col as u64);
-        colnum[q.min(colnum.len() - 1)] = 0;
+    // "set the initially-displayed background pattern" (`:854-858`).
+    let Some((mut curdesk, mut curwin)) = global::with(|g| {
+        (g.g_screen[DROOT as usize].ob_spec, g.g_screen[(DROOT + 1) as usize].ob_spec)
+    }) else {
+        return false;
     };
-    set_numbers(pat, col, &mut patnum, &mut colnum);
+    tree[BGSAMPLE as usize].ob_spec =
+        (if tree[BGDESK as usize].ob_state & SELECTED != 0 { curdesk } else { curwin }) | SAMPLE_BORDER_FLAGS;
 
-    // `start_dialog(tree)` … loop of `form_do` … `end_dialog(tree)` — EmuTOS
-    // `inf_backgrounds` (`deskinf.c:862-896`). EmuTOS redraws only the changed
-    // sample field inside the loop (`draw_fld(tree, BGSAMPLE)`); with no
-    // per-field draw helper here the whole dialog is redrawn between turns, the
-    // way `ins_app_dialog` does on its retry path (`deskins.c:527`).
-    let tree_ptr = tree.as_ptr() as u64;
-    start_dialog(tree_ptr);
-    let committed = loop {
-        let clicked = super::form_do(tree_ptr, ROOT);
-        // Clear the pressed button's SELECTED bit so it does not stay inverted.
-        if let Some(o) = tree.get_mut(clicked as usize) {
-            o.ob_state &= !SELECTED;
+    // `start_dialog(tree); while(1) { draw_fld(tree, BGSAMPLE); ret =
+    // form_do(tree, ROOT); … } end_dialog(tree);` (`:860-896`).
+    // The tree's address is taken afresh for every AES call, so no raw
+    // pointer outlives a direct write to `tree` between two calls.
+    start_dialog(tree.as_mut_ptr() as u64);
+    let ret = loop {
+        super::dir::draw_fld(tree.as_mut_ptr() as u64, BGSAMPLE);
+        let ret = super::form_do(tree.as_mut_ptr() as u64, ROOT);
+        if ret == BGOK || ret == BGCANCEL {
+            tree[ret as usize].ob_state &= !SELECTED;
+            break ret;
         }
-        match clicked {
-            PAT_DN => pat = pat.saturating_sub(1),
-            PAT_UP => pat = (pat + 1).min(7),
-            COL_DN => col = col.saturating_sub(1),
-            COL_UP => col = (col + 1).min(15),
-            OK_OBJ => break true,
-            _ => break false, // Cancel / default
-        }
-        set_numbers(pat, col, &mut patnum, &mut colnum);
-        super::dir::draw_dial(tree_ptr);
+        bg_turn(&mut tree, ret, &mut curdesk, &mut curwin);
     };
-    end_dialog(tree_ptr);
+    end_dialog(tree.as_mut_ptr() as u64);
+    BG_WINDOW_SELECTED.store(tree[BGWIN as usize].ob_state & SELECTED != 0, core::sync::atomic::Ordering::Relaxed);
 
-    if !committed {
+    // "handle dialog exit" (`:898-918`).
+    if ret != BGOK {
         return false;
     }
-    let new = (pat << 4) | col;
-    if new == cur {
-        return false;
+    let mut desk_changed = false;
+    let mut win_changed = false;
+    // "check for desktop background change" (`:900-908`).
+    if global::with(|g| g.g_screen[DROOT as usize].ob_spec) != Some(curdesk) {
+        global::set_patcol_desktop((curdesk & 0xff) as u8);
+        global::with(|g| g.g_screen[DROOT as usize].ob_spec = curdesk);
+        let desk = global::with(|g| g.g_desk).unwrap_or_default();
+        super::redraw::do_wredraw(DESKWH, desk);
+        desk_changed = true;
     }
-    global::set_patcol_desktop(new);
-    // Push the new pattern/colour into DROOT's box `ob_spec` (the AES draws that
-    // box as the background), then repaint the exposed desktop and persist.
-    global::with(|g| g.sync_desk_background());
-    let desk = global::with(|g| g.g_desk).unwrap_or_default();
-    super::redraw::do_wredraw(DESKWH, desk);
-    // NewTOS persists the new background straight away; EmuTOS leaves that to
-    // the user's next Save desktop (`inf_backgrounds` ends at
-    // `deskinf.c:919`). Keep the invariant every EmuTOS `app_save` call has
-    // anyway — `cnx_put()` first (`deskmain.c:891,2154`) — so the `#W` lines
-    // written here describe the windows that are actually on screen.
-    super::main::cnx_put();
-    app_save(true);
-    true
+    // "check for window background change" (`:910-916`): every window box
+    // `DROOT+1 .. WOBS_START-1`, open or not.
+    if global::with(|g| g.g_screen[(DROOT + 1) as usize].ob_spec) != Some(curwin) {
+        global::set_patcol_window((curwin & 0xff) as u8);
+        global::with(|g| {
+            for obj in &mut g.g_screen[(DROOT + 1) as usize..WOBS_START as usize] {
+                obj.ob_spec = curwin;
+            }
+        });
+        win_changed = true;
+    }
+    // NEWTOS: named deviation (DESK64, generalised by DESK65) — save the new
+    // background at once instead of at the next *Save desktop*.
+    if desk_changed || win_changed {
+        super::main::cnx_put();
+        app_save(true);
+    }
+    win_changed
+}
+
+// ── `ADBKGND` object numbers (`desk_rsc.h:251-260`) ──────────────────────────
+//   0 ROOT · 1 title · 2 `Select:` · 3 radio box · 4 BGDESK · 5 BGWIN
+//   6 `Style:` · 7 `Color:` · 8 pattern box · 9..16 BGPAT0..7 · 17 BGSAMPLE
+//   18 colour box · 19..34 BGCOL0..15 · 35 BGOK · 36 BGCANCEL
+const BGDESK: i16 = 4;
+const BGWIN: i16 = 5;
+const BGPAT0: i16 = 9;
+const BGPAT7: i16 = 16;
+const BGSAMPLE: i16 = 17;
+const BGCOL0: i16 = 19;
+const BGCOL15: i16 = 34;
+const BGOK: i16 = 35;
+const BGCANCEL: i16 = 36;
+/// Number of objects in `ADBKGND` (`desk_rsc.c:2230-2452`, `TR19`).
+const ADBKGND_NOBS: usize = 37;
+
+/// The `ADBKGND` tree (`desk_rsc.c:2230-2452`) object for object, its
+/// coordinates resolved for a `cw` x `ch` character cell and its colour
+/// swatches hidden the way `inf_backgrounds` hides them for `nplanes`
+/// (`deskinf.c:832-852`); `window_selected` picks the radio that starts
+/// `SELECTED` (see [`BG_WINDOW_SELECTED`]).
+fn adbkgnd_tree(cw: i16, ch: i16, nplanes: i16, window_selected: bool) -> [Object; ADBKGND_NOBS] {
+    // `switch(gl_nplanes)` (`deskinf.c:832-847`): the first colour the screen
+    // does not have. The pair index is [`global::patcol_index`], the same switch.
+    let unused: i16 = match nplanes {
+        1 => 2,
+        2 => 4,
+        _ => 16,
+    };
+
+    // ── strings: `ADBKGND`'s own (`desk_rsc.c:2230-2452`).
+    static TITLE: &[u8] = b"SET BACKGROUND\0";
+    static SELECT: &[u8] = b"Select:\0";
+    static DESKTOP: &[u8] = b"Desktop\0";
+    static WINDOW: &[u8] = b"Window\0";
+    static STYLE: &[u8] = b"Style:\0";
+    static COLOR: &[u8] = b"Color:\0";
+    static OK: &[u8] = b"OK\0";
+    static CANCEL: &[u8] = b"Cancel\0";
+
+    // ── geometry: `ADBKGND`'s own, cell for cell, resolved the way
+    //    `rsrc_obfix` resolves it (`fix_chpos`, `aes/gemrslib.c:53-83`:
+    //    `LOBYTE * cell + (signed)HIBYTE`). The two labels' packed row `1030`
+    //    is `(4 << 8) | 6` = row 6 + 4 px. At 8 x 16 the box is 304 x 256.
+    let cell = |x: i16, y: i16, w: i16, h: i16| (x * cw, y * ch, w * cw, h * ch);
+    let place = |o: &mut Object, (x, y, w, h): (i16, i16, i16, i16)| {
+        o.ob_x = x;
+        o.ob_y = y;
+        o.ob_width = w;
+        o.ob_height = h;
+    };
+
+    // 3D roles follow `ADBKGND` object for object: the ROOT is `FL3DBAK` +
+    // `OUTLINED`, the radios `BGDESK`/`BGWIN` are `FL3DIND` (a radio that is
+    // also `EXIT` stays an indicator), `BGOK`/`BGCANCEL` are `FL3DBAK |
+    // FL3DIND` = [`FL3DACT`]; the three panel boxes, the swatches, the sample
+    // and the `G_STRING`s carry none.
+    let mut tree = [mk(0, 0, 0, 0, 0, 0, 0, -1, -1, -1); ADBKGND_NOBS];
+    // 0 ROOT — `ob_spec` 69888 = `(1 << 16) | 0x1100` ([`BOX_SPEC`]), 38 x 16.
+    tree[0] = mk_root(BOX_SPEC, 38 * cw, 16 * ch, BGCANCEL);
+    // 1 title, 2 `Select:`.
+    tree[1] = mk(G_STRING, 0, TITLE.as_ptr() as u64, 0, 0, 0, 0, 2, -1, -1);
+    place(&mut tree[1], cell(12, 1, 14, 1));
+    tree[2] = mk(G_STRING, 0, SELECT.as_ptr() as u64, 0, 0, 0, 0, 3, -1, -1);
+    place(&mut tree[2], cell(2, 4, 7, 1));
+    // 3 the radio box (`4352` = `0x1100`), children 4..5.
+    tree[3] = mk(G_BOX, 0, BORDER_TEXT_COLOURS, 0, 0, 0, 0, 6, BGDESK, BGWIN);
+    place(&mut tree[3], cell(15, 4, 21, 1));
+    tree[4] = mk(G_BUTTON, SELECTABLE | EXIT | RBUTTON | FL3DIND, DESKTOP.as_ptr() as u64, 0, 0, 0, 0, BGWIN, -1, -1);
+    place(&mut tree[4], cell(0, 0, 11, 1));
+    tree[5] = mk(G_BUTTON, SELECTABLE | EXIT | RBUTTON | FL3DIND, WINDOW.as_ptr() as u64, 0, 0, 0, 0, 3, -1, -1);
+    place(&mut tree[5], cell(12, 0, 9, 1));
+    // 6 `Style:`, 7 `Color:` — row 6 + 4 px.
+    tree[6] = mk(G_STRING, 0, STYLE.as_ptr() as u64, 0, 0, 0, 0, 7, -1, -1);
+    place(&mut tree[6], cell(2, 6, 12, 1));
+    tree[6].ob_y += 4;
+    tree[7] = mk(G_STRING, 0, COLOR.as_ptr() as u64, 0, 0, 0, 0, 8, -1, -1);
+    place(&mut tree[7], cell(24, 6, 12, 1));
+    tree[7].ob_y += 4;
+    // 8 the pattern box, children 9..16; 9..16 BGPAT0..7, `ob_spec`
+    // `0xff1100 | (k << 4) | (k != 0)` (`16716032`, `16716049`, …,
+    // `16716145`): pattern k, BGPAT0 in white (hollow), the rest in black.
+    tree[8] = mk(G_BOX, 0, BORDER_TEXT_COLOURS, 0, 0, 0, 0, BGSAMPLE, BGPAT0, BGPAT7);
+    place(&mut tree[8], cell(2, 8, 12, 2));
+    for k in 0..8i16 {
+        let i = (BGPAT0 + k) as usize;
+        let spec = SAMPLE_BORDER_FLAGS | ((k as u64) << 4) | u64::from(k != 0);
+        let next = if k == 7 { 8 } else { BGPAT0 + k + 1 };
+        tree[i] = mk(G_BOX, TOUCHEXIT, spec, 0, 0, 0, 0, next, -1, -1);
+        place(&mut tree[i], cell(3 * (k % 4), k / 4, 3, 1));
+    }
+    // 17 BGSAMPLE (`16716033` = `0xff1101`; `inf_backgrounds` overwrites it).
+    tree[17] = mk(G_BOX, 0, 0x00ff_1101, 0, 0, 0, 0, 18, -1, -1);
+    place(&mut tree[17], cell(17, 8, 4, 2));
+    // 18 the colour box, children 19..34; 19..34 BGCOL0..15, `ob_spec`
+    // `0xff1170 | k` (`16716144` … `16716159`): solid fill in colour k.
+    tree[18] = mk(G_BOX, 0, BORDER_TEXT_COLOURS, 0, 0, 0, 0, BGOK, BGCOL0, BGCOL15);
+    place(&mut tree[18], cell(24, 8, 12, 4));
+    for k in 0..16i16 {
+        let i = (BGCOL0 + k) as usize;
+        let spec = SAMPLE_BORDER_FLAGS | 0x70 | k as u64;
+        let next = if k == 15 { 18 } else { BGCOL0 + k + 1 };
+        tree[i] = mk(G_BOX, TOUCHEXIT, spec, 0, 0, 0, 0, next, -1, -1);
+        place(&mut tree[i], cell(3 * (k % 4), k / 4, 3, 1));
+    }
+    // 35 BGOK, 36 BGCANCEL.
+    tree[35] = mk(G_BUTTON, SELECTABLE | DEFAULT | EXIT | FL3DACT, OK.as_ptr() as u64, 0, 0, 0, 0, BGCANCEL, -1, -1);
+    place(&mut tree[35], cell(7, 14, 9, 1));
+    tree[36] = mk(G_BUTTON, SELECTABLE | EXIT | LASTOB | FL3DACT, CANCEL.as_ptr() as u64, 0, 0, 0, 0, 0, -1, -1);
+    place(&mut tree[36], cell(22, 14, 9, 1));
+    align_title(&mut tree, TITLE.len() as i16 - 1);
+
+    // The radio pair: `BGDESK` is `SELECTED` in the resource; a later call
+    // starts with whichever the previous one left selected.
+    tree[if window_selected { BGWIN } else { BGDESK } as usize].ob_state = SELECTED;
+
+    // "hide colours that are not available in the current resolution"
+    // (`deskinf.c:850-852`).
+    for obj in &mut tree[(BGCOL0 + unused) as usize..=BGCOL15 as usize] {
+        obj.ob_flags |= HIDETREE;
+    }
+    tree
+}
+
+/// One turn of `inf_backgrounds`' loop after `form_do` returned `ret` (not
+/// `BGOK`/`BGCANCEL`) — `deskinf.c:875-893`: a radio puts its candidate into
+/// the sample, a pattern / colour swatch replaces the sample's
+/// `FILLPAT_MASK` / `FILLCOL_MASK` bits, and the sample then becomes the
+/// candidate of the selected radio. A `ret` that is none of these (a
+/// double-click's `0x8000` bit, an unnamed object) changes nothing but that
+/// last step, as in the source.
+fn bg_turn(tree: &mut [Object; ADBKGND_NOBS], ret: i16, curdesk: &mut u64, curwin: &mut u64) {
+    let s = BGSAMPLE as usize;
+    if ret == BGDESK {
+        tree[s].ob_spec = *curdesk;
+    } else if ret == BGWIN {
+        tree[s].ob_spec = *curwin;
+    } else if (BGPAT0..=BGPAT7).contains(&ret) {
+        tree[s].ob_spec &= !FILLPAT_MASK;
+        tree[s].ob_spec |= tree[ret as usize].ob_spec & FILLPAT_MASK;
+    } else if (BGCOL0..=BGCOL15).contains(&ret) {
+        tree[s].ob_spec &= !FILLCOL_MASK;
+        tree[s].ob_spec |= tree[ret as usize].ob_spec & FILLCOL_MASK;
+    }
+
+    if tree[BGDESK as usize].ob_state & SELECTED != 0 {
+        *curdesk = tree[s].ob_spec;
+    } else {
+        *curwin = tree[s].ob_spec;
+    }
 }
 
 // ── Desktop-configuration dialog (`inf_conf`, `deskinf.c:925-1246`) ─────────
@@ -4677,4 +4834,109 @@ fn contains_subslice(hay: &[u8], needle: &[u8]) -> bool {
         return needle.is_empty();
     }
     hay.windows(needle.len()).any(|w| w == needle)
+}
+
+/// Set-background self-test (DESK64): the `ADBKGND` tree [`inf_backgrounds`]
+/// builds, checked against `desk_rsc.c:2230-2452` at an 8 x 16 cell — the
+/// sibling links, the `ob_spec` words of the swatches and the sample, the 3D
+/// flags, the resolved geometry, the `HIDETREE` per plane count
+/// (`deskinf.c:832-852`) — and the sample arithmetic of one loop turn
+/// ([`bg_turn`], `deskinf.c:875-893`). Pure: no AES call, nothing on `C:`.
+/// Run by [`super::selftest::run_once`] in a `selftest-desk` build only.
+// NEWTOS: self-test (DESK64); EmuTOS's desktop has no self-tests.
+pub fn selftest_backgrounds() {
+    use super::selftest::tprintln;
+
+    tprintln!("[desk-bkgnd] ADBKGND / inf_backgrounds self-test");
+    let mut pass = 0u32;
+    let mut fail = 0u32;
+    let mut check = |name: &str, cond: bool| {
+        if cond {
+            pass += 1;
+            tprintln!("[desk-bkgnd]  PASS {}", name);
+        } else {
+            fail += 1;
+            tprintln!("[desk-bkgnd]  FAIL {}", name);
+        }
+    };
+
+    let t = adbkgnd_tree(8, 16, 16, false);
+
+    // Sibling chains: every parent's children run head → … → tail and the
+    // tail's `ob_next` points back at the parent (`objc_add` shape).
+    let chain_ok = |parent: usize, head: i16, tail: i16| {
+        let mut o = head;
+        let mut n = 0;
+        while o != tail && n < ADBKGND_NOBS {
+            o = t[o as usize].ob_next;
+            n += 1;
+        }
+        o == tail && t[parent].ob_head == head && t[parent].ob_tail == tail && t[tail as usize].ob_next == parent as i16
+    };
+    check("links: ROOT 1..36", chain_ok(0, 1, BGCANCEL) && t[BGCANCEL as usize].ob_flags & LASTOB != 0);
+    check("links: radio box 3 = 4..5", chain_ok(3, BGDESK, BGWIN));
+    check("links: pattern box 8 = 9..16", chain_ok(8, BGPAT0, BGPAT7));
+    check("links: colour box 18 = 19..34", chain_ok(18, BGCOL0, BGCOL15));
+
+    // `ob_spec` words, as the resource writes them (decimal).
+    check("ob_spec: ROOT 69888", t[0].ob_spec == 69888);
+    check("ob_spec: panels 3/8/18 4352", [3, 8, 18].iter().all(|&i| t[i].ob_spec == 4352));
+    check("ob_spec: BGPAT0 16716032, BGPAT1 16716049, BGPAT7 16716145",
+        t[9].ob_spec == 16716032 && t[10].ob_spec == 16716049 && t[16].ob_spec == 16716145);
+    check("ob_spec: BGSAMPLE 16716033", t[17].ob_spec == 16716033);
+    check("ob_spec: BGCOL0 16716144, BGCOL15 16716159", t[19].ob_spec == 16716144 && t[34].ob_spec == 16716159);
+
+    // Flags and states (`desk_rsc.c:2232-2452`).
+    check("flags: ROOT FL3DBAK + OUTLINED", t[0].ob_flags == FL3DBAK && t[0].ob_state == OUTLINED);
+    check("flags: BGDESK/BGWIN SELECTABLE|EXIT|RBUTTON|FL3DIND",
+        [BGDESK, BGWIN].iter().all(|&i| t[i as usize].ob_flags == SELECTABLE | EXIT | RBUTTON | FL3DIND));
+    check("state: BGDESK SELECTED, BGWIN NORMAL", t[4].ob_state == SELECTED && t[5].ob_state == 0);
+    check("flags: swatches TOUCHEXIT only",
+        (BGPAT0..=BGPAT7).chain(BGCOL0..=BGCOL15).all(|i| t[i as usize].ob_flags == TOUCHEXIT));
+    check("flags: BGSAMPLE NONE", t[17].ob_flags == 0);
+    check("flags: BGOK SELECTABLE|DEFAULT|EXIT|FL3DACT", t[35].ob_flags == SELECTABLE | DEFAULT | EXIT | FL3DACT);
+    check("flags: BGCANCEL SELECTABLE|EXIT|LASTOB|FL3DACT", t[36].ob_flags == SELECTABLE | EXIT | LASTOB | FL3DACT);
+
+    // Geometry at 8 x 16 (`rsrc_obfix`).
+    let geo = |i: usize| (t[i].ob_x, t[i].ob_y, t[i].ob_width, t[i].ob_height);
+    check("geometry: ROOT 304x256", geo(0) == (0, 0, 304, 256));
+    check("geometry: title centred (304-14*8)/2 = 96, row 1", geo(1) == (96, 16, 112, 16));
+    check("geometry: Style:/Color: at row 6 + 4 px", t[6].ob_y == 100 && t[7].ob_y == 100 && t[7].ob_x == 192);
+    check("geometry: BGSAMPLE 136,128 32x32", geo(17) == (136, 128, 32, 32));
+    check("geometry: BGPAT5 3,16 in its box", geo(14) == (24, 16, 24, 16));
+    check("geometry: BGCOL15 72,48 in its box", geo(34) == (72, 48, 24, 16));
+    check("geometry: BGOK 56,224 72x16, BGCANCEL 176,224", geo(35) == (56, 224, 72, 16) && geo(36) == (176, 224, 72, 16));
+
+    // HIDETREE per plane count (`deskinf.c:832-852`).
+    let hidden = |t: &[Object; ADBKGND_NOBS]| {
+        (BGCOL0..=BGCOL15).filter(|&i| t[i as usize].ob_flags & HIDETREE != 0).count()
+    };
+    let t1 = adbkgnd_tree(8, 16, 1, false);
+    let t2 = adbkgnd_tree(8, 16, 2, false);
+    check("HIDETREE: 16 planes none, 1 plane BGCOL2..15, 2 planes BGCOL4..15",
+        hidden(&t) == 0 && hidden(&t1) == 14 && t1[20].ob_flags & HIDETREE == 0 && t1[21].ob_flags & HIDETREE != 0
+            && hidden(&t2) == 12 && t2[22].ob_flags & HIDETREE == 0 && t2[23].ob_flags & HIDETREE != 0);
+    let tw = adbkgnd_tree(8, 16, 16, true);
+    check("radio carried over: Window selected", tw[4].ob_state == 0 && tw[5].ob_state == SELECTED);
+
+    // One loop turn at a time (`deskinf.c:875-893`).
+    let mut t = t;
+    let (mut curdesk, mut curwin) = (0x1143u64, 0x1140u64);
+    t[17].ob_spec = curdesk | SAMPLE_BORDER_FLAGS;
+    bg_turn(&mut t, BGPAT0 + 2, &mut curdesk, &mut curwin);
+    check("turn: pattern 2 → sample/curdesk 0xff1123", t[17].ob_spec == 0xff_1123 && curdesk == 0xff_1123 && curwin == 0x1140);
+    bg_turn(&mut t, BGCOL0 + 5, &mut curdesk, &mut curwin);
+    check("turn: colour 5 → 0xff1125", t[17].ob_spec == 0xff_1125 && curdesk == 0xff_1125);
+    bg_turn(&mut t, (0x8000u16 as i16) | BGPAT0, &mut curdesk, &mut curwin);
+    check("turn: double-click bit changes nothing", t[17].ob_spec == 0xff_1125 && curdesk == 0xff_1125);
+    // `form_do` moves the radio before it returns `BGWIN`.
+    t[4].ob_state = 0;
+    t[5].ob_state = SELECTED;
+    bg_turn(&mut t, BGWIN, &mut curdesk, &mut curwin);
+    check("turn: Window → sample = curwin, border flags gone", t[17].ob_spec == 0x1140 && curwin == 0x1140);
+    bg_turn(&mut t, BGCOL0 + 3, &mut curdesk, &mut curwin);
+    check("turn: colour 3 on Window → curwin 0x1143, curdesk kept",
+        curwin == 0x1143 && curdesk == 0xff_1125);
+
+    tprintln!("[desk-bkgnd] ADBKGND self-test: {} passed, {} failed", pass, fail);
 }

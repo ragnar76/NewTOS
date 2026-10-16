@@ -44,7 +44,8 @@ const MODE_SCA: u16 = MODE_RSHIFT | MODE_LSHIFT | MODE_CTRL | MODE_ALT;
 // `do_viewmenu` change bits (EmuTOS `deskmain.c:93-96`), fed to `desk_all`.
 const VIEW_CHANGED: u16 = 0x0001;
 const SORT_CHANGED: u16 = 0x0002;
-const SIZETOFIT_CHANGED: u16 = 0x0004;
+const BACKGROUND_CHANGED: u16 = 0x0004;
+const SIZETOFIT_CHANGED: u16 = 0x0008;
 
 /// `static BOOL restart_desktop;` (`deskmain.c:359`) — *"TRUE iff we need to
 /// restart the desktop"*. Set by [`do_read_inf`] (`:921`), cleared at the top
@@ -2508,25 +2509,12 @@ fn do_viewmenu(item: Item) -> u16 {
     // (`deskmain.c:823-828`) — `BACKGRND` (46) is a *View* item, so its arm
     // belongs in this function (DESK21). It runs outside the `global::with`
     // above because the dialog issues AES traps and cannot hold the desktop
-    // lock.
-    //
-    // **Named deviation in the predicate, not in the placement.** EmuTOS's
-    // `inf_backgrounds` returns TRUE only when the **window** background
-    // changed (`deskinf.c:910-916`); a *desktop* background change it applies
-    // and repaints itself with `do_wredraw(DESKWH, &G.g_desk)` and then
-    // returns FALSE (`:900-908`). NewTOS's stand-in offers only the desktop
-    // half — the `#Q` window bucket is round-tripped but has no consumer — and
-    // its `true` means exactly that desktop change, which
-    // [`super::inf::set_background`] has already repainted the same way. So
-    // the EmuTOS-equivalent `rc` for every outcome this dialog can produce is
-    // `0`, and `BACKGROUND_HAS_CHANGED` has no NewTOS counterpart to set: a
-    // `desk_all` here would repaint every window for a change that touched
-    // none of them.
-    if item == Item::SetBackground {
-        // `end_dialog`'s `form_dial(FMD_FINISH)` repaints exactly the
-        // dialog's rectangle and re-asks the windows it covered — no
-        // whole-desktop composite (G7).
-        super::inf::set_background();
+    // lock. `inf_backgrounds` is TRUE only when the **window** background
+    // changed (`deskinf.c:910-916`); a desktop change it has already applied
+    // and repainted itself (`:900-908`). `desk_all(BACKGROUND_CHANGED)` then
+    // repaints every window (`win_shwall`, `deskmain.c:438-447`).
+    if item == Item::SetBackground && super::inf::inf_backgrounds() {
+        return BACKGROUND_CHANGED;
     }
     bits
 }
@@ -2543,8 +2531,9 @@ fn set_sort(g: &mut global::DeskState, sort: super::model::Sort) -> u16 {
 
 /// `desk_all` (EmuTOS `deskmain.c:438`) — the View-menu → redraw pipeline:
 /// re-sort every window (`SORT_CHANGED`), rebuild every window's view
-/// (`VIEW`/`SORT`/`SIZETOFIT`), then repaint every window's content. The
-/// self-clearing white item-root box makes `win_shwall`'s `do_wredraw` erase
+/// (`VIEW`/`SORT`/`SIZETOFIT`), then repaint every window's content
+/// (`BACKGROUND` alone reaches only that last step). The
+/// self-clearing window-background item-root box makes `win_shwall`'s `do_wredraw` erase
 /// the old view before laying the new one — **this is the path that makes the
 /// view-switch residue reproducible and structurally fixes it (D2/R2)**.
 fn desk_all(bits: u16) {

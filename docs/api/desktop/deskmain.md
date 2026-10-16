@@ -1237,10 +1237,11 @@ way it was saved.
   message changed a window (`WM_TOPPED`/`WM_FULLED`/`WM_MOVED`/
   `WM_SIZED` set `change`, `:1352-1353`); and the desktop epilog
   (`main::desktop_relinquish`, `:2154`).
-* `inf::set_background` also runs `cnx_put()` before its `save_desktop()`
+* `inf::inf_backgrounds` also runs `cnx_put()` before its `app_save(TRUE)`
   — NewTOS persists a background change immediately where EmuTOS leaves
-  it to the next Save desktop, and the invariant "`app_save` is always
-  preceded by `cnx_put`" (`:891`, `:2154`) is kept.
+  it to the next Save desktop (named deviation, user decision 2026-10-17,
+  DESK64; to be generalised in DESK65), and the invariant "`app_save` is
+  always preceded by `cnx_put`" (`:891`, `:2154`) is kept.
 
 **Named deviations, four:**
 
@@ -1599,19 +1600,16 @@ not:
   it was 20. The board run measures exactly that: `box 2 abs (112,19) 160x160`
   before, `184x192` after.
 
-**One named deviation, in the predicate rather than the placement.** EmuTOS's
-arm is `case BACKGRND: if (inf_backgrounds()) rc = BACKGROUND_HAS_CHANGED;`,
-and `inf_backgrounds` returns TRUE only when the **window** background changed
+**The predicate since DESK64 (2026-10-17): as EmuTOS.** The arm is
+`case BACKGRND: if (inf_backgrounds()) rc = BACKGROUND_HAS_CHANGED;`, and
+`inf_backgrounds` returns TRUE only when the **window** background changed
 (`deskinf.c:910-916`); a *desktop* background change it applies and repaints
 itself with `do_wredraw(DESKWH, &G.g_desk)`, then returns FALSE (`:900-908`).
-NewTOS's `ADBKGND` stand-in offers only the desktop half — the `#Q` window
-bucket is round-tripped through the file but has no consumer — and its `true`
-means exactly that desktop change, which `inf::set_background` has already
-repainted the same way. So the EmuTOS-equivalent `rc` for every outcome this
-dialog can produce is `0`; `BACKGROUND_HAS_CHANGED` has no NewTOS counterpart
-to set, and a `desk_all` here would repaint every window for a change that
-touched none of them. The window-background half of `ADBKGND` remains a gap,
-unchanged by DESK21.
+`main::do_viewmenu` now returns `BACKGROUND_CHANGED` (0x0004, and
+`SIZETOFIT_CHANGED` moved to EmuTOS's 0x0008, `deskmain.c:93-96`) on TRUE, and
+`desk_all` repaints every window (`win_shwall`). Until DESK64 the dialog was a
+desktop-only stand-in whose `true` meant the desktop change and the arm set
+nothing; that deviation is gone.
 
 Measured: `measurements/measurement-2026-09-23-desk16-desk17-desk21/`, both drop-downs
 before and after.

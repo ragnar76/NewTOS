@@ -182,10 +182,11 @@ impl DeskState {
         // Reset DROOT's item tree and reposition it to the desktop work rect.
         let d = self.g_desk;
         self.obj_wfree(DROOT, d.x, d.y, d.w, d.h);
-        // Refresh DROOT's box `ob_spec` from the persisted background byte
-        // (EmuTOS `deskapp.c:1327`); the AES draws this box as the screen
-        // background, so a NEWDESK.INF `#Q` change picks up here.
-        self.sync_desk_background();
+        // `set_background()` (`deskapp.c:1349` → `:1306-1331`): DROOT's and
+        // every window box's `ob_spec` from the persisted background bytes;
+        // the AES draws these boxes as the screen and window backgrounds, so
+        // a NEWDESK.INF `#Q` change picks up here.
+        self.set_background();
 
         for i in 0..self.g_ahead.len() {
             let pa = &self.g_ahead[i];

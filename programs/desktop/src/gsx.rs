@@ -115,6 +115,21 @@ pub(super) fn small_font_cell() -> (i16, i16) {
     (small.cell_w, small.cell_h)
 }
 
+/// `gsx_nplanes()` (`aes/gemgsxif.c:497-501`) — the screen's plane count,
+/// `intout[4]` of `vq_extnd(handle, 1)`, which the AES stores as `gl_nplanes`
+/// (`aes/gemgraf.c:395`). The ROM desktop reads that global
+/// (`deskinf.c:832`, `deskapp.c:1311`); an application asks the same
+/// workstation the same question.
+///
+/// `0` without a workstation (see [`handle`]).
+pub(super) fn gsx_nplanes() -> i16 {
+    let h = handle();
+    if h <= 0 {
+        return 0;
+    }
+    vdi::vq_extnd(h, 1)[4]
+}
+
 /// `gsx_sclip(pt)` (`aes/gemgraf.c:91-105`) — set the workstation clip
 /// rectangle to `r`, or switch clipping off when `r` is degenerate.
 pub(super) fn gsx_sclip(r: Grect) {

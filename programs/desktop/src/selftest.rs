@@ -5,7 +5,9 @@
 //! [`super::ins::selftest`] (Install devices / Remove icon on the model),
 //! [`super::dir::selftest`] (the file-operation backend on `C:\DESKT9\`),
 //! [`super::inf::selftest`] (`NEWDESK.INF` save→read round trip) and
-//! [`super::inf::selftest_install`] (Install-application association) —
+//! [`super::inf::selftest_install`] (Install-application association),
+//! [`super::inf::selftest_backgrounds`] (DESK64, the `ADBKGND` tree and the
+//! sample arithmetic of `inf_backgrounds`, pure) —
 //! plus the `act_chg` `DISABLED`-guard check [`super::act::selftest`]
 //! (DESK59, state only, nothing on `C:`) and the `valid_drive` range check
 //! [`super::main::selftest`] (DESK58, pure, synthetic drive maps) — and they are always compiled, so
@@ -88,5 +90,6 @@ pub(super) fn run_once() {
     super::dir::selftest();
     super::inf::selftest();
     super::inf::selftest_install();
+    super::inf::selftest_backgrounds();
     tprintln!("[desk-selftest] done");
 }

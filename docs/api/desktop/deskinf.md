@@ -487,7 +487,7 @@ Call sites, one for one with the source:
 |---|---|---|
 | New folder / Set file mask / Search name box | `fun_mkdir` `start_dialog`+`form_do`+`end_dialog` (`deskfun.c:697,734`), `fun_mask` `inf_show` (`:655`) | `dlg::edit_name` → `inf_show(tree, ROOT)` |
 | Show Info / rename | `inf_file_folder` → `inf_show` (`deskinf.c:574`) | `inf::inf_file_folder` → `inf_show(tree, ROOT)` |
-| Set background | `inf_backgrounds` `start_dialog`/`draw_fld`-loop/`end_dialog` (`deskinf.c:862-896`) | `inf::set_background` → `start_dialog` / loop with `dir::draw_dial` / `end_dialog` |
+| Set background | `inf_backgrounds` `start_dialog`/`draw_fld`-loop/`end_dialog` (`deskinf.c:862-896`) | `inf::inf_backgrounds` → `start_dialog` / loop with `dir::draw_fld(tree, BGSAMPLE)` / `end_dialog` (DESK64) |
 | Install application | `ins_app_dialog` `start_dialog`/`draw_dial`-retry/`end_dialog` (`deskins.c:504,527,597`) | `insapp::ins_app_dialog`, same shape |
 
 Three consequences, all of them the point of the change:
@@ -520,12 +520,35 @@ partial refresh (EmuTOS says so at `deskinf.c:371-378`). NewTOS's drain
 is the same loop over `evnt_multi(MU_TIMER|MU_MESAG, …)` +
 `main::hndl_msg`.
 
-**One named deviation:** EmuTOS's `inf_backgrounds` redraws only the
-changed sample field between two `form_do` turns (`draw_fld(tree,
-BGSAMPLE)`, `deskdir.c:127`); NewTOS redraws the whole dialog with
-`draw_dial`, the way `ins_app_dialog`'s retry path does
-(`deskins.c:527`). There is no per-field draw helper yet (it needs
-`objc_offset`, opcode 44, which the desktop does not bind).
+**Set background since DESK64 (2026-10-17).** `inf::inf_backgrounds` builds
+`ADBKGND` object for object (`desk_rsc.c:2230-2452`, `desk_rsc.h:251-260`:
+the `BGDESK`/`BGWIN` radios, eight `BGPAT` and sixteen `BGCOL` `TOUCHEXIT`
+swatches, the `BGSAMPLE` box, `BGOK`/`BGCANCEL`) and runs the source's loop:
+`draw_fld(tree, BGSAMPLE)` before every `form_do`, the sample's
+`FILLPAT_MASK`/`FILLCOL_MASK` bits taken from the clicked swatch, colours
+`unused..15` `HIDETREE`d per `gl_nplanes` (`deskinf.c:832-852`; the desktop
+asks `vq_extnd(handle, 1)` for the plane count, `gsx::gsx_nplanes`). On OK a
+changed desktop background is applied and repainted in the function, a changed
+window background goes into every window box and returns TRUE →
+`BACKGROUND_HAS_CHANGED` → `desk_all` (`deskmain.c:824-827,438-447`). The
+window boxes are `G_BOX`es whose `ob_spec` `set_background`
+(`deskapp.c:1306-1331`) and the dialog set; `win_bldview` no longer forces a
+white spec on them. The radio a user leaves selected is kept for the next call
+of the same desktop run (EmuTOS's RAM tree, `desk_rs_init` once per `deskmain`).
+
+Two named differences remain:
+
+1. **Saved at once (deviation, user decision 2026-10-17, DESK64; to be
+   generalised in DESK65).** EmuTOS writes the `.INF` only on the next *Save
+   desktop* (`inf_backgrounds` ends at `deskinf.c:919`). NewTOS calls
+   `cnx_put(); app_save(TRUE)` whenever OK changed either background —
+   `cnx_put` first, as before every EmuTOS `app_save` (`deskmain.c:891,2154`).
+2. **No `set_aes_background(curdesk & 0xff)` (`deskinf.c:904`).** It is an
+   AES-internal function (`aes/geminit.c:635-641`) that the ROM desktop can
+   call because it is linked into the AES; it sets the background the AES
+   paints when a program is launched. The `NEWDESK` program has no AES call
+   for it; the AES reads the byte from the `.INF` `#Q` line when it starts
+   (`tos-api/src/aes/init.rs`, `geminit.c:719-728`). Open point, not decided.
 
 Covered by `tos-api/tests/aes_desk_dialog_chain.rs` (placement, the
 untouched surroundings, and the scope of the restore, all through the
@@ -1189,9 +1212,11 @@ one convention with **no exception anywhere in the file** (`FL3DACT` is spelled
 Two of those rows settle questions this ticket would otherwise have had to
 reason its way to: a radio button that also carries `EXIT` is still an
 **indicator** (`ADBKGND:2254`), and a stepper gadget is an **activator**
-(`ADINSDSK:990`). NewTOS's Install-Application flavour buttons and its
-Set-background `-`/`+` buttons are exactly those two cases, so they take
-`FL3DIND` and `FL3DACT` from the resource rather than by analogy.
+(`ADINSDSK:990`). NewTOS's Install-Application flavour buttons and the
+Set-background radios `BGDESK`/`BGWIN` (since DESK64 the `ADBKGND` tree
+itself; the `-`/`+` stepper buttons of the earlier stand-in are gone) are
+exactly those cases, so they take `FL3DIND` and `FL3DACT` from the resource
+rather than by analogy.
 
 `desk_rsc.c` also sets `0x4000` / `0x8000` in some `ob_flags`. Those are
 resource-editor bits: **no** EmuTOS AES code reads a flag above `SUBMENU`

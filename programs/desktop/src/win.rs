@@ -14,7 +14,7 @@
 use alloc::vec::Vec;
 
 use tos_types::aes::{
-    Grect, IconBlk, DESKWH, G_BOX, G_ICON, G_STRING, NIL, SELECTED, WA_DNLINE, WA_DNPAGE,
+    Grect, IconBlk, DESKWH, G_ICON, G_STRING, NIL, SELECTED, WA_DNLINE, WA_DNPAGE,
     WA_LFLINE, WA_LFPAGE, WA_RTLINE, WA_RTPAGE, WA_UPLINE, WA_UPPAGE,
 };
 
@@ -25,18 +25,6 @@ use super::model::{DateFmt, FNode, PNode, TimeFmt, View, LEN_LABEL};
 /// `LEN_FNODE` (`deskwin.h:36`) — the fixed formatted text-line width in
 /// characters; the `V_TEXT` item's own extent is `LEN_FNODE * char_w`.
 pub const LEN_FNODE: i16 = 48;
-
-/// The `ob_spec` colour word for a window's item-root box: solid-white
-/// interior, **no** border (border thickness 0 in bits 16-23; colour word
-/// `0x0070` = `gr_crack` border 0 / text 0 / pattern IP_SOLID(7) / inside
-/// WHITE(0)). Making the root a filled box means `objc_draw(g_screen, w_root)`
-/// **clears the window work area to white before laying the items on top** —
-/// so every content redraw (scroll, view/sort switch via `desk_all`) is
-/// self-erasing and leaves no stale-icon residue, exactly as GEM's window
-/// root object does (the AES `draw_frame` comment: "the app clears the work
-/// area on every content redraw"). The desktop `DROOT` keeps its `G_IBOX`
-/// (its background is the pattern fill, not white).
-const WORK_BG_SPEC: u64 = 0x0000_0070;
 
 /// `w_flags` bit marking `DeskState::windows.desktop` (`WN_DESKTOP`).
 pub const WN_DESKTOP: u16 = 0x0001;
@@ -328,14 +316,12 @@ impl DeskState {
         //    and mark every file "not displayed" (f_obid = NIL).
         let w_root = self.windows.slots[slot].w_root;
         self.obj_wfree(w_root, work.x, work.y, work.w, work.h);
-        // Make the item-root a solid-white borderless box so `objc_draw`
-        // clears the work area before drawing the items — self-erasing content
-        // redraws (no scroll / view-switch residue). See [`WORK_BG_SPEC`].
-        {
-            let root = &mut self.g_screen[w_root as usize];
-            root.ob_type = G_BOX;
-            root.ob_spec = WORK_BG_SPEC;
-        }
+        // The item-root keeps the `G_BOX` and the window-background `ob_spec`
+        // it has had since `obj_init`/`set_background` (`deskobj.c:143-147`,
+        // `deskapp.c:1325-1326`; `obj_wfree` only moves it, `deskobj.c:187-
+        // 211`): `objc_draw` of that box clears the work area in the window
+        // background before the items are drawn — self-erasing content redraws
+        // (no scroll / view-switch residue).
         for f in &mut self.windows.slots[slot].w_pnode.p_flist {
             f.f_obid = NIL;
         }
@@ -633,7 +619,7 @@ impl DeskState {
     /// EmuTOS's blit fast-path (copy the still-valid strip, redraw only the
     /// freshly-exposed edge) is a performance optimisation whose *result* is
     /// identical to a full rebuild+redraw; NewTOS always rebuilds the view (the
-    /// self-clearing white root box makes the redraw residue-free) — a clean
+    /// self-clearing window-background root box makes the redraw residue-free) — a clean
     /// reimplementation of the observable contract, not the m68k blit trick.
     fn win_blt(
         &mut self,

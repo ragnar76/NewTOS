@@ -142,12 +142,13 @@ const EMPTY_OBJ: Object = Object {
 // pattern/colour byte can be read/written (EMUDESK.INF `#Q` load/save, the
 // Set-Background dialog) without borrowing `DeskState`. This byte
 // is the single source of truth that feeds `DROOT`'s box `ob_spec` via
-// [`DeskState::sync_desk_background`] — the AES then draws that box as the screen
+// [`DeskState::set_background`] — the AES then draws that box as the screen
 // background (`WF_NEWDESK`/`w_drawdesk`). Six bytes:
-// `[desk0, win0, desk1, win1, desk2, win2]`, pattern+colour each; NewTOS is a
-// >2-plane display, so it uses the index-4/5 pair. Defaults are the EmuTOS
-// `#Q` defaults (IP_4PATT + green desktop). Reading/writing `NEWDESK.INF`
-// lands in `inf.rs` (Task #9).
+// `[desk0, win0, desk1, win1, desk2, win2]`, pattern+colour each; the pair in
+// use is picked by [`patcol_index`] from `gl_nplanes`, exactly as EmuTOS picks
+// `n`/`index` (`deskapp.c:1311-1322`, `deskinf.c:832-847`). Defaults are the
+// EmuTOS `#Q` defaults (IP_4PATT + green desktop). Reading/writing
+// `NEWDESK.INF` lands in `inf.rs` (Task #9).
 static G_PATCOL: [AtomicU8; 6] = [
     AtomicU8::new(0x41),
     AtomicU8::new(0x40),
@@ -157,17 +158,57 @@ static G_PATCOL: [AtomicU8; 6] = [
     AtomicU8::new(0x40),
 ];
 
-/// The current desktop background byte (`g_patcol[2].desktop`): high nibble =
-/// AES inside-pattern index, low nibble = VDI colour.
-pub fn patcol_desktop() -> u8 {
-    G_PATCOL[4].load(Ordering::Acquire)
+/// `gl_nplanes` — the screen's colour-plane count. The ROM desktop reads the
+/// AES global (`gl_nplanes = gsx_nplanes()`, `aes/gemgraf.c:395`); an
+/// application cannot, so [`super::deskmain`] asks the same workstation the
+/// same question (`vq_extnd(handle, 1)` → `intout[4]`, `gsx_nplanes`,
+/// `aes/gemgsxif.c:497-501`) via [`super::gsx::gsx_nplanes`]. `0` until the
+/// first `deskmain` sets it, which [`patcol_index`] treats like EmuTOS's
+/// `default:` arm.
+static GL_NPLANES: AtomicI16 = AtomicI16::new(0);
+
+/// `gl_nplanes` as [`set_gl_nplanes`] recorded it.
+pub fn gl_nplanes() -> i16 {
+    GL_NPLANES.load(Ordering::Relaxed)
 }
 
-/// Set the desktop background byte for the current (>2-plane) bucket
-/// (`g_patcol[2].desktop`), written by the Set-background dialog
-/// ([`super::inf::set_background`]).
+/// Record `gl_nplanes` (see [`GL_NPLANES`]).
+pub fn set_gl_nplanes(n: i16) {
+    GL_NPLANES.store(n, Ordering::Relaxed);
+}
+
+/// The `g_patcol[]` pair for the current screen depth — EmuTOS's
+/// `switch(gl_nplanes) { case 1: 0; case 2: 1; default: 2; }`
+/// (`deskapp.c:1311-1322`, `deskinf.c:832-847`).
+pub fn patcol_index() -> usize {
+    match gl_nplanes() {
+        1 => 0,
+        2 => 1,
+        _ => 2,
+    }
+}
+
+/// The current desktop background byte (`g_patcol[index].desktop`): high
+/// nibble = AES inside-pattern index, low nibble = VDI colour.
+pub fn patcol_desktop() -> u8 {
+    G_PATCOL[2 * patcol_index()].load(Ordering::Acquire)
+}
+
+/// The current window background byte (`g_patcol[index].window`).
+pub fn patcol_window() -> u8 {
+    G_PATCOL[2 * patcol_index() + 1].load(Ordering::Acquire)
+}
+
+/// `G.g_patcol[index].desktop = v` — written by the Set-background dialog
+/// ([`super::inf::inf_backgrounds`], `deskinf.c:905`).
 pub fn set_patcol_desktop(v: u8) {
-    G_PATCOL[4].store(v, Ordering::Release);
+    G_PATCOL[2 * patcol_index()].store(v, Ordering::Release);
+}
+
+/// `G.g_patcol[index].window = v` — written by the Set-background dialog
+/// ([`super::inf::inf_backgrounds`], `deskinf.c:913`).
+pub fn set_patcol_window(v: u8) {
+    G_PATCOL[2 * patcol_index() + 1].store(v, Ordering::Release);
 }
 
 /// Overwrite all six background pattern/colour bytes
@@ -743,7 +784,7 @@ impl DeskState {
         // `deskapp.c:1327`). The AES draws this box — and the icon children under
         // it — as the screen background via `w_drawdesk` (`WF_NEWDESK`). The
         // low-byte fill is refreshed from the persisted byte by
-        // [`DeskState::sync_desk_background`].
+        // [`DeskState::set_background`].
         screen[DROOT as usize] = Object {
             ob_next: NIL,
             ob_head: NIL,
@@ -760,7 +801,12 @@ impl DeskState {
 
         // One empty box per possible window (indices 2..=last_box), the last
         // carrying LASTOB. Their rects are set by `win_alloc` when a window
-        // opens (Task #6).
+        // opens (Task #6). Each is `gl_sampob[1]` — a `G_BOX` with colour word
+        // `0x1100` (`deskobj.c:39,143-147`) — whose `ob_spec` [`set_background`]
+        // later fills with the window background (`deskapp.c:1325-1326`); the
+        // box is what clears a window's work area on every content redraw.
+        //
+        // [`set_background`]: DeskState::set_background
         for i in 0..NUM_WNODES {
             let idx = 2 + i;
             let is_last = i == NUM_WNODES - 1;
@@ -768,10 +814,10 @@ impl DeskState {
                 ob_next: NIL,
                 ob_head: NIL,
                 ob_tail: NIL,
-                ob_type: G_IBOX,
+                ob_type: G_BOX,
                 ob_flags: if is_last { LASTOB } else { 0 },
                 ob_state: 0,
-                ob_spec: 0,
+                ob_spec: BORDER_TEXT_COLOURS,
                 ob_x: 0,
                 ob_y: 0,
                 ob_width: 0,
@@ -874,13 +920,19 @@ impl DeskState {
         r.ob_height = h;
     }
 
-    /// Refresh `DROOT`'s box colour word from the persisted desktop
-    /// pattern/colour byte (EmuTOS `deskapp.c:1327`:
-    /// `G.g_screen[DROOT].ob_spec = G.g_patcol[n].desktop | BORDER_TEXT_COLOURS`).
-    /// The AES draws `DROOT` (via `WF_NEWDESK`/`w_drawdesk`) as the screen
-    /// background, so this makes a background-pattern change visible on the next
-    /// redraw. Called from `app_blddesk` (build) and the Set-Background dialog.
-    pub fn sync_desk_background(&mut self) {
+    /// `set_background` (EmuTOS `deskapp.c:1306-1331`, `CONF_WITH_BACKGROUNDS`)
+    /// — "Set desktop (& window) background pattern/colour": every window box
+    /// `DROOT+1 .. WOBS_START-1` gets `G.g_patcol[n].window |
+    /// BORDER_TEXT_COLOURS`, `DROOT` gets `G.g_patcol[n].desktop |
+    /// BORDER_TEXT_COLOURS`. The AES draws `DROOT` (via `WF_NEWDESK`/
+    /// `w_drawdesk`) as the screen background and each window box under that
+    /// window's items, so this makes a background change visible on the next
+    /// redraw. Called from `app_blddesk` (`deskapp.c:1349`).
+    pub fn set_background(&mut self) {
+        let window = patcol_window() as u64 | BORDER_TEXT_COLOURS;
+        for obj in &mut self.g_screen[(DROOT + 1) as usize..WOBS_START as usize] {
+            obj.ob_spec = window;
+        }
         self.g_screen[DROOT as usize].ob_spec = patcol_desktop() as u64 | BORDER_TEXT_COLOURS;
     }
 }

@@ -318,6 +318,9 @@ fn deskmain() -> bool {
     gsx::set_handle(gh.handle);
     let (gl_wschar, gl_hschar) = gsx::small_font_cell();
     global::set_cell_metrics(gh.wchar, gh.hchar, gl_wschar, gl_hschar);
+    // `gl_nplanes` (`aes/gemgraf.c:395`), read by `set_background` and
+    // `inf_backgrounds` to pick the `g_patcol[]` pair (`deskapp.c:1311`).
+    global::set_gl_nplanes(gsx::gsx_nplanes());
 
     // `wind_get_grect(DESKWH, WF_WXYWH, &G.g_desk)` — the desktop work area,
     // straight after `appl_init` and `graf_handle` exactly as EmuTOS orders it
