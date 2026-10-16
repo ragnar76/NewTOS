@@ -130,7 +130,30 @@ der Schnitt steht und der Anwender ihn gesehen hat.
 | U9-1/2 NEWDESK | **fertig** 2026-10-14 (`de03a50f`) — EL0-Desktop eingebettet, per `#Z` lauffaehig |
 | U9-3..5 Umstieg | **fertig** 2026-10-15 (`b3b1fc54`) — Standard EL0-NEWDESK, `desk=kernel` als Rueckfall |
 | U9-6 Pi-Abnahme | **fertig** 2026-10-16 — echte Pi 4, Kern `f73bb075` (sha256 `2a90feda…`), Anwender: alles ohne Fehler; Nebenfund [DESK62](DESK62.md) (alt) |
-| U10 | offen |
+| U10 Loeschen | **fertig** 2026-10-16 (`0a3b9be9`) — Kernel ohne Desktop-Abhaengigkeit, `desk=kernel` weg, Ladefehler → EmuCON (D6-d), tote Fenster-API weg; Driftprobe **4 → 0**; offen: ADR, Tester-Lauf, Pi |
+
+## U10 — Loeschen (2026-10-16, `0a3b9be9`)
+
+Beleg: `measurements/measurement-2026-10-16-desk43-u10/RUNINFO.TXT`.
+
+- **Weg:** `kernel/Cargo.toml` haengt nicht mehr an `desktop` und
+  `newtos-gem` (neuer xtask-Hosttest `the_kernel_does_not_link_the_desktop`);
+  Boot-Argument `desk=kernel` (`bootargs::DESK_KERNEL`), die
+  Desktop-Auswahl im `sh_ldapp`, `desktop::reset()` im A106-Neustart;
+  in `tos-api` die toten `save_windows`/`restore_windows` (samt Tabelle)
+  und `wm_new_keep_desktop` samt den zwei A96-Tests.
+- **D6-d nach U10:** ein nicht ladbarer NEWDESK wird einmal versucht, dann
+  laeuft EmuCON (Alpha-Modus ueber `sh_chgrf`, Grund auf Bildschirm und
+  Seriell); jeder weitere DESKTOP-Durchgang laedt nicht neu (D6-c). In QEMU
+  raspi4b gezeigt, inklusive zweitem Durchgang nach `exit`.
+- **Bleibt (geprueft, nicht geloescht):** `KERNEL_DTA` (EmuCON und die
+  Selbsttests rufen GEMDOS aus EL1), `pd::DESKTOP` als Identitaet des
+  Kernel-Kontexts (Name historisch), der Kernel-Park (Bootpfad
+  `wait_for_accs`). Begruendungen „Desktop = EL1“ in Kernel, `tos-api`,
+  `programs/` und Werkzeugen gegen die Quelle geprueft und berichtigt (G7).
+- **Offen:** ADR zum Abschluss des Umzugs (Anwenderentscheidung, Review §3.2
+  Zeile U10), Umbenennung `pd::DESKTOP`, Tester-Lauf (APITEST, qemu-virt,
+  Serien), Pi-Gegenprobe des EmuCON-Rueckfalls.
 
 ## Hardware-Abnahme U9-6 (2026-10-16)
 

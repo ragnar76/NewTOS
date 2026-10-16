@@ -1,0 +1,60 @@
+measurement-2026-10-16-desk43-u10 -- DESK43 U10: the kernel's built-in desktop and the boot switch desk=kernel removed;
+a NEWDESK load error falls back to EmuCON (D6-d after U10) and is not retried (D6-c).
+Base HEAD 602815a4 (main), change = commit 0a3b9be9. Host macOS, QEMU raspi4b only. No SD card, no Pi, nothing under
+/Volumes/BOOT* or NEWTOS*. Scratch: the session scratchpad (trees, kernels, card, sockets), nothing under /tmp.
+SOURCE_DATE_EPOCH 1791979200 (checks) / 1792152000 (scratch kernels). One QEMU at a time.
+
+RESULT: drift probe 4 -> 0; build warnings and clippy counts unchanged (tos-api 64 / kernel 94 both boards, clippy 76/125
+for rpi4, qemu-virt, rpi4+selftest-desk); host tests 1376/0/1 -> 1374/0/1 (three tests of removed things gone, one guard
+added); SDK host tests 20/0/0. QEMU raspi4b: EL0 NEWDESK comes up; a NEWDESK with a broken ELF header is loaded once,
+the console EmuCON takes over with the reason on screen, and after EmuCON's `exit` the DESKTOP arm declines to load it
+again and returns to EmuCON. APITEST not run here (Tester).
+
+1. CHANGE (commit 0a3b9be9)
+   kernel: Cargo dependency on `desktop` and `newtos-gem` gone (features board-*/selftest-desk no longer forward to the
+   desktop crate; selftest-desk stays as the switch xtask hands to NEWDESK); bootargs DESK_KERNEL + its test gone;
+   lib.rs: select_desktop call and the A106 desktop::reset gone; shell_loop.rs: DESKTOP_PATH/select_desktop/
+   kernel_desktop_in_use/run_kernel_desktop gone, is_desktop_caller only the launched child, new DESKTOP_LOAD_ERROR +
+   run_console_instead_of_desktop (sh_isgem FALSE + sh_chgrf -> alpha, EmuCON with the reason, set_default_desktop);
+   shell.rs: run_console_without_desktop (banner + "No desktop: NEWDESK could not be loaded (GEMDOS error N).").
+   tos-api: window.rs save_windows/restore_windows + SAVE table + wm_new_keep_desktop removed; tests: aes_a96 loses its
+   two A96 tests (8 -> 6), aes_app_return_descriptor / aes_launch_boundary_reset drop the handoff calls (assertions
+   unchanged). programs: desktop::reset private (one caller, the Read-.INF restart). xtask: test
+   the_kernel_does_not_link_the_desktop (new), desktop_takes_the_board_and_selftest_features (was ..._kernel_...).
+   Comments that called the desktop an EL1 caller corrected against the source in kernel/, tos-api/, programs/, tools/.
+
+2. STATIC CHECKS (method/checks.sh on a clean copy of 602815a4 = checks/base-*, and on the changed tree = checks/u10-*)
+   host tests 1376/0/1 -> 1374/0/1. Per binary (checks/*-host-per-binary.txt): only aes_a96_zombie_windows 8 -> 6; the
+   xtask binary stays 96 = -1 (kernel_bootargs::tests::desk_kernel_is_a_whole_token, bootargs.rs is compiled into xtask)
+   +1 (programs_tests::the_kernel_does_not_link_the_desktop).
+   release build rpi4 / qemu-virt: tos-api 64, kernel 94, 0 errors (both, before and after); "Compiling desktop" 2 -> 1
+   per board (only the NEWDESK program build).
+   clippy kernel rpi4 / qemu-virt / rpi4+selftest-desk: tos-api 76, kernel 125 (all three, before and after).
+   programs clippy (desktop + newdesk per board, desktop+selftest-desk, hello-gem+newtos-gem, newtos-gem no rt): 0 lines.
+   xtask clippy --tests: 8 warnings, all pre-existing. drift probe TOTAL 4 -> 0 (unsafe 20 unchanged);
+   desk-cite-list 479/318/5/156 unchanged. sdk/run-host-tests.sh 20/0/0.
+
+3. QEMU raspi4b (method/runs.sh, run.py: socket serial so text can be sent, QMP dumps at serial marks; -append serial=on)
+   Card: method/make-card.sh, 64 MiB FAT16 with C:\README.TXT only, sha256 41d0ce64...b479f; per run an APFS clone,
+   deleted. Kernels (method/build-kernels.sh, rpi4 release, scratch copies of the tree):
+     k   = the tree at 0a3b9be9            sha256 9904620879e1908c1fc635e430d7446531affd550d4284115af7955b8aabbcfc
+     kc  = k + embedded NEWDESK with zeroed ELF header (NEWDESK-BAD.NAP 9b7228c5...)  3277e4269082cbc4a354cb811c0a3d53df5a9dc01fc80b7d9229ac0aac45b8f1
+     kx  = kc + scratch instrument U10-TEMP: at the first fallback only, the IKBD codes of `exit`+Return are fed
+           before EmuCON starts                                         96f91a1ae7193367aa800f595705cd3e27dd0eded5c21d23600b689fbef0d26c
+   k-desk: "[shell] sh_ldapp: starting desktop NEWDESK", "[launch] EL0: slot 0 entry 0x1a08000", "[desk] desktop up
+     (1 drives)" at t=15 s; no "[shell] desktop: ..." boot-choice line any more. screendumps/k-desk-desktop.png: the
+     EL0 desktop (menu bar, DISK C, TRASH, PRINTER, arrow).
+   kc-fail: "[launch] load failed: LoadFailed(Parse(BadMagic))", "[shell] desktop NEWDESK could not be loaded (rc=-66)
+     -- not retried; falling back to the console (EmuCON)", banner + "No desktop: NEWDESK could not be loaded (GEMDOS
+     error -66)." + "C:\>" on serial; screendumps/kc-fail-emucon.png: alpha screen, no pointer, the same three lines.
+     FINDING (pre-existing, not this unit): text sent on the QEMU serial line does not reach the console on raspi4b --
+     `exit` and `dir` gave no echo (kc-fail-emucon-again/-dir.png = the same screen; the "not started" wait timed out,
+     run rc=1). Hence kx.
+   kx-again: "[u10] fed `exit` + Return", "C:\> exit", then "[shell] sh_ldapp: starting desktop (none: load failed)",
+     "[shell] desktop NEWDESK not started: its load failed earlier this boot (rc=-66) -- the console (EmuCON) instead",
+     banner + reason again; exactly ONE "load failed" in the log (D6-c). screendumps/kx-again-emucon-second.png,
+     kx-again-end.png (+10 s, unchanged).
+   All three logs: 0 [EXC], 0 PANIC.
+
+4. NOT DONE HERE: qemu-virt boot, APITEST (109/0/5 baseline), the views/series pixel comparison, memprot modes,
+   real Pi (EmuCON fallback and desktop on hardware) -- verification handoff to the Tester.
