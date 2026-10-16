@@ -1,0 +1,58 @@
+measurement-2026-10-17-desk64 -- DESK64: View -> Set background is EmuTOS' inf_backgrounds with the ADBKGND tree (deskinf.c:825-921,
+desk_rsc.c:2230-2452): BGSAMPLE redrawn by draw_fld before every form_do, 8 pattern + 16 colour TOUCHEXIT swatches, BGDESK/BGWIN
+radios, window background applied (window boxes G_BOX with g_patcol.window, BACKGROUND_HAS_CHANGED -> desk_all). Kept by user decision:
+the immediate save (cnx_put + app_save), named deviation, generalised later in DESK65.
+
+Code: commit 9172349c (programs/desktop/src/{inf,global,win,main,app,gsx,lib,selftest}.rs, docs/api/desktop/{deskinf,deskmain}.md).
+Host macOS, QEMU -M raspi4b -append serial=on, one QEMU at a time, per-run APFS clones (cp -c) of one base card, deleted after
+each run; base cards and scratch tree deleted at the end. Scratch = session scratchpad .../scratchpad/d64 (CLAUDE_JOB_DIR unset), never
+/tmp. No SD card, no Pi, nothing under /Volumes/BOOT* or NEWTOS*.
+
+1. METHOD (method/)
+   run-hatari-adbkgnd.sh  REFERENCE: pinned EmuTOS references/emutos/etos512us.img on Hatari 2.6.1 Falcon030, VGA, truecolor
+                          (EMUDESK.INF #E .. 00 1C), headless; EMUDESK.INF #K slot 21 (BACKGRND, deskmain.c:226-227) = 'B' -> Ctrl+B
+                          opens ADBKGND (Hatari's fifo has no mouse move). Pattern of measurement-2026-09-20-a79 hatari-falcon-reference.
+   seed.sh / NEWDESK.INF  base card: FAT16 64 MiB, one window C:\*.* (28,2 48x20), #Q EmuTOS defaults, #K slot 21 = 'B'. INF=<file>
+                          seeds another INF (run kr).
+   build.sh               scratch kernel rpi4 release, tools/inject-arm.py --tag d64 desktop=<script> (gitignored bin/).
+   bkgnd.script           injector: park, Ctrl+B, click BGPAT2, BGCOL2 (red), BGWIN, BGCOL5 (cyan), BGOK, then double-click
+                          the Hard disk icon (a second C:\ window). Object centres from adbkgnd_tree at 8x16, dialog at (168,121).
+   run.sh / mdrive.py     QMP screendumps keyed on the injector's feed-line count; after the run the clone's NEWDESK.INF is read
+                          with mtools (serial/<tag>-NEWDESK-after.INF).
+   cmp-dialog.py          pixel comparison reference vs NewTOS (colour-quantised, offset searched; writes *-diff.png).
+   build-selftest.sh      selftest-desk kernel + launch:NEWDESK=st-launch.script (Return for the DELETE box); SRC=head = control.
+   checks.sh              baselines (copy of the desk62-fix checks.sh), label fix -> checks/fix-*.
+   Kernels (sha256): kb 6bc37127.. (tree + bkgnd.script)  ks 345718fe.. (tree, selftest-desk)  ks-head 5e5e191b.. (git archive HEAD = d4a42dc8, pre-
+   change, selftest-desk)  fix a0767fe7.. / virt-fix b594df31.. (checks.sh release builds).
+
+2. RESULTS
+   a) Reference vs NewTOS (screendumps/ref-hatari-falcon-tc-1-adbkgnd.png vs kb-1-dialog.png, both 640x480 content at offset 0,0;
+      diff kb-1-dialog-diff.png). Same box (169,122)-(470,375), same object positions, radios, swatches, sample, buttons, 3D bevel.
+      Inside the dialog below the title (rect 166,150-474,380) 835 of 70840 px differ, all accounted for:
+        - title: EmuTOS left-aligns and underlines (CONF_WITH_ALT_DESKTOP_GRAPHICS), NewTOS centres -- known, TASK/GUI05;
+        - the two mouse pointers (different positions);
+        - swatch BGPAT6: EmuTOS pattern 6 rows = FFFF/AAAA, NewTOS = FFFF/EEEE.../BBBB (tos-api/src/aes/object.rs IP_PATTERNS[6]
+          = [0xEEEE,0xFFFF,0xBBBB,0xFFFF]) -- an AES pattern-table defect, out of scope, reported to the lead.
+      Desktop dither outside the dialog differs in phase only (not compared).
+   b) Live sample (kb-1..5): Ctrl+B -> dialog with sample = desktop (green IP_4PATT, outside border). BGPAT2 click -> sample pattern 2
+      green (kb-2, pixels {green,white}); BGCOL2 -> red (kb-3, {red,white}); Window radio -> sample = window bg 0x1140 white
+      (kb-4; the 1-px outside border stays from the earlier draw: draw_fld clips to the object, same as EmuTOS); BGCOL5 -> cyan (kb-5).
+   c) After OK (kb-6): desktop repainted red pattern 2 (pixels {red,white}), the open C:\ window repainted with cyan pattern 4
+      (BACKGROUND_HAS_CHANGED -> desk_all). Second window opened afterwards (kb-7): cyan too.
+   d) Immediate save: serial/kb-NEWDESK-after.INF "#Q 41 40 43 40 22 45" (was 43 40). Boot with that INF (run kr): desktop red,
+      window cyan from boot (set_background in app_blddesk), dialog sample red pattern 2 (kr-0, kr-1).
+   e) Self-tests (serial/ks-serial.log): "[desk-bkgnd] ADBKGND self-test: 30 passed, 0 failed"; all others 64 PASS / 1 FAIL, the FAIL
+      "[desk-ins] Trash and Printer survive Install devices" is card-dependent (this card's INF has no printer icon): the HEAD control
+      ks-head on the same card fails the same check (serial/ks-head-serial.log). "[desk-selftest] done".
+
+3. BASELINES (checks-fix-summary.txt, checks/fix-*): host tests 1374/0/1; SDK host 20/0/0; fresh release build rpi4 / qemu-virt:
+   tos-api 64, kernel 94, 0 errors, desktop crate compiled 1 each; clippy kernel rpi4/qemu-virt/rpi4+selftest-desk: tos-api 76,
+   kernel 125; clippy programs 0 everywhere (desktop x3, newdesk x3, newtos-gem); desk-drift-probe TOTAL 0, unsafe 20;
+   emutos-consts 474/345/1/1/0/0 (the new ADBKGND constants matched); cite fns=488 cited=326.
+
+4. NOT DONE / OPEN
+   Real Pi 4 (user's acceptance). set_aes_background(curdesk & 0xff) (deskinf.c:904) is AES-internal; the NEWDESK program has no call
+   for it, the AES takes #Q at its start -- open point for the lead. Window-background pattern rendering in 1/2-plane modes not run
+   (board has 16 planes).
+
+Files: RUNINFO.TXT, checks-fix-summary.txt, method/, serial/, screendumps/, checks/. bin/*.img gitignored.

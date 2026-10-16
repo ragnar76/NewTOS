@@ -1,6 +1,6 @@
 # DESK64 — Hintergrund-Dialog: zeigt EmuTOS eine Vorschau von Farbe und Muster?
 
-Status: **OFFEN (Frage)** · Prioritaet: **P3** · Typ: Konformitaetsfrage — Befund des Anwenders auf echter Pi 4 (2026-10-16)
+Status: **ERLEDIGT (QEMU), Pi-Abnahme offen** · Prioritaet: **P3** · Typ: Konformitaetsfrage — Befund des Anwenders auf echter Pi 4 (2026-10-16)
 
 ## Beobachtung
 
@@ -32,3 +32,18 @@ Quellen: `docs/api/desktop/`, `docs/analysis/`, EmuTOS unter `references/`.
 ## Ergebnis (2026-10-16, Researcher)
 
 **Abweichung: ja.** EmuTOS hat `BGSAMPLE` (`desk_rsc.c:2334`) und zeichnet es pro Auswahl per `draw_fld` neu (`deskinf.c:866-891`). NewTOS baut einen eigenen Stepper-Dialog ohne Vorschau, Swatches und Window-Umschalter (`programs/desktop/src/inf.rs:3699-3808`). Ursache im Desktop, nicht in AES/VDI. Kein Bildbeleg erzeugt (nur Quelle). Details und Fix-Vorschlag: `docs/analysis/desk64-background-preview-2026-10-16.md`.
+
+## Abschluss — 2026-10-17
+
+Status: **ERLEDIGT (QEMU), committet (`9172349c`).** Auftrag (Anwender
+2026-10-17): Dialog 1:1 nach EmuTOS bauen. `inf::inf_backgrounds` baut
+`ADBKGND` Objekt fuer Objekt (`desk_rsc.c:2230-2452`, 3D-Flags wie dort) und
+faehrt die Schleife aus `deskinf.c:825-921`: `draw_fld(BGSAMPLE)` vor jedem
+`form_do`, Muster/Farbe aus dem angeklickten Feld, `HIDETREE` je
+`gl_nplanes`. Fensterhintergrund wird angewendet (Fensterboxen `G_BOX` mit
+`g_patcol.window`, `BACKGROUND_HAS_CHANGED` → `desk_all`). Das sofortige
+Speichern bleibt als benannte Abweichung (Anwenderentscheidung, verallgemeinert
+in [DESK65](DESK65.md)). Offen: `set_aes_background` (AES-intern, kein Aufruf
+fuer das Programm NEWDESK); Muster 6 der AES weicht von EmuTOS ab (Nebenfund).
+Quittung: [DESK64-STATUS-DONE.MD](DESK64-STATUS-DONE.MD); Belege
+`measurements/measurement-2026-10-17-desk64/RUNINFO.TXT`.

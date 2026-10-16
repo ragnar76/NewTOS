@@ -1,0 +1,4 @@
+kernel v0.5.0 (/Volumes/Daten/Development/PiRusTOS/kernel)
+├── tos-api v0.5.0 (/Volumes/Daten/Development/PiRusTOS/tos-api)
+├── tos-types v0.5.0 (/Volumes/Daten/Development/PiRusTOS/tos-types)
+└── xhci v0.9.2
