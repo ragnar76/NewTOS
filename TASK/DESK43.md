@@ -151,9 +151,13 @@ Beleg: `measurements/measurement-2026-10-16-desk43-u10/RUNINFO.TXT`.
   Kernel-Kontexts (Name historisch), der Kernel-Park (Bootpfad
   `wait_for_accs`). Begruendungen „Desktop = EL1“ in Kernel, `tos-api`,
   `programs/` und Werkzeugen gegen die Quelle geprueft und berichtigt (G7).
-- **Offen:** ADR zum Abschluss des Umzugs (Anwenderentscheidung, Review §3.2
-  Zeile U10), Umbenennung `pd::DESKTOP`, Tester-Lauf (APITEST, qemu-virt,
-  Serien), Pi-Gegenprobe des EmuCON-Rueckfalls.
+- **Erledigt nachgezogen (2026-10-16, Anwender ja):** ADR-026 in
+  `docs/MEMORY.md` (`01555c8d`); `pd::DESKTOP` → `pd::KERNEL_CONTEXT`
+  (`d11ed66b`).
+- **Offen:** Tester-Lauf (APITEST, qemu-virt, Serien), Pi-Gegenprobe des
+  EmuCON-Rueckfalls; veralteter Abschnitt `docs/api/aes/window-graphics.md`
+  ~1224–1240 (beschreibt die in U10 geloeschten `wm_new_keep_desktop`/
+  `desktop_resume`).
 
 ## Hardware-Abnahme U9-6 (2026-10-16)
 

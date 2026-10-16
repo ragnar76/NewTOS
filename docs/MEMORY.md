@@ -2309,8 +2309,8 @@ U10.
   estimate ~41 ms vs 6 ms at EL1, U9 acceptance run 2026-10-15; not yet measured on the Pi).
 - Neutral: `KERNEL_DTA` stays, because EmuCON at EL1 and the self-tests use
   it. This corrects the plan v2 draft, which listed it for deletion.
-  `pd::DESKTOP` is the kernel context's identity; its rename is a separate
-  task.
+  `pd::DESKTOP`, the kernel context's AES identity, is renamed
+  `pd::KERNEL_CONTEXT` (`d11ed66b`).
 - Not yet run on real hardware: the EmuCON fallback, the NEWDESK panic
   prompt, `memprot=verify` with the desktop up (`TASK/DESK43.md`,
   "Hardware-Abnahme U9-6").
