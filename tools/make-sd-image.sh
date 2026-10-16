@@ -352,6 +352,24 @@ else
   echo "note: sdk/libm/build/mathtst.NCP not built; C:\\MATHTST.NCP skipped"
 fi
 
+# Mxalloc pool proof (TASK/MEM02): MXPROBE.NCP asks Mxalloc for every pool mode
+# (MX_STRAM/TTRAM/PREFSTRAM/PREFTTRAM), classifies each block against phystop,
+# writes/reads it from EL0, checks refusal and fallback, one PASS/FAIL line per
+# check over Cconws -- see sdk/libc/tests/mxprobe.c. Copied in if already built
+# (`sdk/libc/build-libc.sh sdk/libc/tests/mxprobe.c sdk/libc/build/MXPROBE.NCP`).
+# Set SD_MXPROBE_AUTO=1 to also drop it into \AUTO\ for a serial-verifiable run.
+MXPROBE_NCP="$SCRIPT_DIR/../sdk/libc/build/MXPROBE.NCP"
+if [ -f "$MXPROBE_NCP" ]; then
+  cp "$MXPROBE_NCP" "$V/MXPROBE.NCP"
+  echo "installed C:\\MXPROBE.NCP (Mxalloc pool proof)"
+  if [ "${SD_MXPROBE_AUTO:-0}" = "1" ]; then
+    cp "$MXPROBE_NCP" "$V/AUTO/MXPROBE.NCP"
+    echo "  + \\AUTO\\MXPROBE.NCP (runs at boot)"
+  fi
+else
+  echo "note: sdk/libc/build/MXPROBE.NCP not built; C:\\MXPROBE.NCP skipped"
+fi
+
 # LDG proof (TASK/LDG-M1): EX_LIB.NLD is LDG's unmodified demo library ex_lib
 # built as a native LDG module (`.NLD`, ADR-018 addendum: not startable by
 # double-click -- the desktop shows it as a document); LDGTEST.NCP is the

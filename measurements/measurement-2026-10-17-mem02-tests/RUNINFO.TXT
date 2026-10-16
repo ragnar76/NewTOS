@@ -1,0 +1,81 @@
+  MEM02 close-out -- host tests of all four Mxalloc modes + QEMU probe MXPROBE in the tree
+===========================================================================================
+
+Ticket: TASK/MEM02.md, section "Neubewertung 2026-10-17".  New acceptance (user 2026-10-17): host tests for all
+four Mxalloc modes (incl. MX_TTRAM without a TT pool -> 0) plus the QEMU probe MXPROBE; the Ball demo is NOT an
+acceptance criterion.  The defect itself was already fixed by ARCH03 stage 1 (a9279fe9, VA = PA); cause and the
+pre-ARCH03 counter-run: docs/analysis/mem02-mxalloc-pools-2026-10-17.md,
+measurements/measurement-2026-10-17-mem02/RUNINFO.TXT.  NO product-code change in this run.
+
+Base: main, HEAD 21a44e10 plus the uncommitted MEM02 files below (the shared tree, built and tested in place).
+Host macOS, QEMU 11.0.2.  No device, no SD card, nothing under /Volumes/BOOT* or NEWTOS* touched (the scratch card's
+volume is MXBASE).  Scratch = session scratchpad; base card + per-run APFS clone deleted after the run.
+
+
+1. WHAT WAS ADDED (copied from the immutable run measurement-2026-10-17-mem02/method, which stays untouched)
+---------------------------------------------------------------------------------------------------------
+tos-api/tests/mem02_mxalloc_modes.rs    3 tests: size queries (-1) per mode incl. unknown mode masked to ST,
+                                        each mode's 64 KiB block from its pool (+ MX_PREFTTRAM|F_PROT_G),
+                                        forcing modes refuse / PREFST falls back to TT, pools restored.
+                                        rustfmt applied; header cites arch03_shared_space.rs for what that file
+                                        already covers (one ST/TT block each, Malloc, Mshrink/Mfree) -- no
+                                        duplicate test, this file is the four-mode matrix.
+tos-api/tests/mem02_mxalloc_no_alt.rs   1 test: no alternate RAM -> MX_TTRAM 0 (size and block), PREFTT takes ST.
+                                        Own binary (pools are seeded once per process).
+sdk/libc/tests/mxprobe.c                the probe, self-contained (puthex/check/checkhex folded in from the run's
+                                        common.h; probe logic unchanged).  Build path = the libc-linked probe
+                                        convention (clocktest.c, setjmptst.c):
+                                          sdk/libc/build-libc.sh sdk/libc/tests/mxprobe.c sdk/libc/build/MXPROBE.NCP
+tools/make-sd-image.sh                  registers C:\MXPROBE.NCP "copied in if already built" from
+                                        sdk/libc/build/MXPROBE.NCP; SD_MXPROBE_AUTO=1 also drops it into \AUTO\.
+
+sha256 of the sources as tested:
+9146947ea9f9e05da7df59878200e01abd2769b8d24ac02e9feb6f4b15a3952a  tos-api/tests/mem02_mxalloc_modes.rs
+7d05669c9275a2297c43e7cdbbe6e4c7cd314ba4cbba01aaa3e80c2b3ea860d3  tos-api/tests/mem02_mxalloc_no_alt.rs
+81f6cf3f86779f246e1c6502d80df6305da84d50291e2c7809c52755d47d8f70  sdk/libc/tests/mxprobe.c
+
+
+2. STATIC CHECKS (method/checks.sh m02t; checks/m02t-*)
+---------------------------------------------------------------------------
+  host tests tos-api tos-types xtask   1378 / 0 / 1        (baseline 1374/0/1, +4 = 3 + 1 new tests)
+  release build rpi4 / qemu-virt       tos-api 64, kernel 94 both, rc 0, 0 errors   (baseline 64/94)
+      fresh: cargo clean -p kernel -p tos-api -p desktop -p newtos-gem --target aarch64-unknown-none-softfloat
+      --release before each board; rpi4 log compiles tos-api + kernel, qemu-virt compiles kernel (tos-api is
+      board-independent, warnings replayed from cache -- as in measurement-2026-10-16-desk43-u10-test).
+  clippy kernel rpi4 / qemu-virt       tos-api 76, kernel 125 both                   (baseline 76/125)
+  sh tools/desk-drift-probe.sh -v      TOTAL 0                                       (baseline 0)
+  SDK host tests                       20 / 0 / 0                                    (baseline 20/0/0)
+  probe build (checks/mxprobe-build.txt): libc failures 9 = expected-failures.txt, 0 new; LINK OK, 52768 bytes.
+
+
+3. QEMU RUN (method/make-card.sh + method/run.sh; serial/on-serial.log)
+---------------------------------------------------------------------------
+qemu-system-aarch64 -M raspi4b -display none -append "serial=on" (memprot default = on; serial shows
+"[mm] memory protection ON"), kernel = the fresh rpi4 release build of section 2, card = 64 MiB FAT16 MXBASE with
+C:\AUTO\MXPROBE.NCP only, run on an APFS clone (cp -c) of the base card; both deleted afterwards.
+
+RESULT: MXPROBE: PASS -- 29 "ok" lines, 0 FAIL, 0 [EXC]/PANIC.
+  phystop 0x00e00000, ramtop 0x39800000
+  Mxalloc(-1, ST/TT/PREFST/PREFTT) = 0x00a00000 / 0x37e76000 / 0x37e76000 / 0x37e76000, Malloc(-1) 0x37e76000
+  MX_STRAM 64K 0x00400000 ST | MX_TTRAM 0x0198a000 alt | MX_PREFSTRAM 0x00410000 ST | MX_PREFTTRAM 0x0199a000 alt
+  MX_PREFTTRAM|F_PROT_G 0x019aa000 alt | MX_PREFTTRAM 2025K 0x019ba000 alt | all EL0 write/read-back ok
+  MX_STRAM > ST largest -> 0 | MX_TTRAM > TT largest -> 0 | MX_PREFSTRAM > ST largest -> 0x01bb5000 alt (fallback)
+  identical, address for address, to the "on" row of measurement-2026-10-17-mem02 (HEAD 6b8b88cb).
+Only memprot on was run (the brief asked for one run under on); off/strict are in the earlier run.
+
+
+4. SHA256 (images/binaries are not kept here)
+---------------------------------------------------------------------------
+f3469669d833ee9bdc48fc35ec4d0928700e641d0aa4a6ed244accf4977f699d  kernel8 (rpi4 --release, section 2)
+7bb0d491eb2d6c89676ed64325ac3c97af87d406695a02852c532b45ea577e81  MXPROBE.NCP (sdk/libc/tests/mxprobe.c)
+b98eb9e8e31ec185c14e9c3e64f61000aca71bd959793533511ea1e809b38ba5  sdk/libc/libc.a it was linked against
+56dc47caa228aa344136278d81290422e4e0646cea1e14be0ca67e4771eb2c6e  base.img (deleted after the run)
+
+
+5. METHOD
+---------------------------------------------------------------------------
+method/checks.sh <label>                 static checks (BIN_DIR=<scratch> for the kernel image copy)
+method/make-card.sh <img> <MXPROBE.NCP>  base card (from the earlier run's make-card.sh, without the Ball demo)
+method/run.sh <kernel> <base> <tag> "<append>"   one raspi4b boot on an APFS clone, stops at the probe verdict
+
+Not run: real Pi 4 (HW-only: same probe from C:\AUTO\ would answer with the Pi's ramtop 0x2FE00000).
