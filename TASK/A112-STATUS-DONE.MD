@@ -37,3 +37,10 @@ Accessory, TeraDesk, QED pixelgleich zu HEAD (ein Zeiger-Timing-Race).
   Aufruf frueher, mehrere in anderer Reihenfolge. Anwenderentscheidung offen.
 * Ausserhalb: `input::own_mouse()` prueft nicht den Aufrufer (M1/M2 fuer
   Nicht-Besitzer); A113, A114.
+
+## Pi-Abnahme (2026-10-17)
+
+Kern aus `f2c68a31` (sha256 `bff063c5…`). Anwender auf echter Pi 4: Desktop,
+SYSACC, TeraDesk, QED ohne Rueckschritt, Menue-Stillstand unveraendert —
+*„soweit alles bestätigt, keine bugs“*. Ein Accessory mit eigenem Timer war
+nicht auf der Karte; der Fall selbst ist nur in QEMU belegt.

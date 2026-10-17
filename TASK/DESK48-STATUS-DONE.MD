@@ -61,3 +61,9 @@ benannte Abweichung von EmuTOS (`deskfun.c` `fun_file2any` ruft
 `desk_clear(DESKWH)` innerhalb der `win_isel`-Schleife, daher nur das erste),
 eingetragen in `docs/COMPATIBILITY.md`. Die bekannten Restpunkte oben gehen nach
 [DESK67](DESK67.md).
+
+## Pi-Abnahme (2026-10-17)
+
+Kern aus `f2c68a31` (sha256 `bff063c5…`): Markierung verschwindet nach
+Fensterwechsel, mehrere Desktopsymbole werden alle verarbeitet, zwei Fenster
+auf demselben Verzeichnis zeigen beide die neue Datei. Anwender: *„keine bugs“*.

@@ -40,3 +40,9 @@ Belege: `measurements/measurement-2026-10-17-arch02/RUNINFO.TXT`.
 * Lauf auf der echten Pi 4 (Sonde aus `C:\AUTO\`).
 * Nicht von der Sonde gefahren, nur gelesen: Kind endet durch Absturz, Ctrl-C oder `Ptermres` (derselbe Arm von `finish_terminate`).
 * Bekannt und ausserhalb: Upcalls (`etv_term`, `kbdvec`) sichern die FP-Register des unterbrochenen Codes nicht (`docs/api/xbios/22-kbdvbase.md` C3).
+
+## Pi (2026-10-17)
+
+Kern aus `f2c68a31` (sha256 `bff063c5…`) auf echter Pi 4 ohne Rueckschritt im
+Alltag (Anwender). Die Sonde `FPPEXEC` selbst ist auf der Pi **nicht**
+gefahren — der Nachweis der FP-Register bleibt QEMU.
