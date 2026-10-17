@@ -1,8 +1,8 @@
 # DESK48 — Vier weitere `redraw_desktop()`-Stellen, die EmuTOS nicht hat
 
-Status: **OFFEN** · Prioritaet: **P2** · Typ: Konformitaet / Laufzeit — aus [GUI06](GUI06.md), bewusst zurueckgestellt
+Status: **ERLEDIGT** 2026-10-17 (QEMU, `f2f127a7`; echte Pi offen) — [Quittung](DESK48-STATUS-DONE.MD) · Prioritaet: **P2** · Typ: Konformitaet / Laufzeit — aus [GUI06](GUI06.md), bewusst zurueckgestellt
 
-Abhaengigkeiten: — · **nicht vor dem OFAM-Termin anfassen** (Begruendung unten)
+Abhaengigkeiten: — · ~~nicht vor dem OFAM-Termin anfassen~~ (Termin 9./10. Oktober vorbei)
 
 ## Warum zurueckgestellt und nicht erledigt
 
