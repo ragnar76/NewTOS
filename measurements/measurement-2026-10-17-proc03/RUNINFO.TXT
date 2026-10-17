@@ -1,0 +1,26 @@
+measurement-2026-10-17-proc03 -- TASK/PROC03 (Neufassung): read-only probe of the parent chain, environment and
+current directory per launch path on HEAD 7d79f4a4 (no product code touched, nothing committed).
+Researcher run, 2026-10-17. QEMU -M raspi4b, -append serial=on (strict run: serial=on memprot=strict), host macOS.
+No SD card, Pi or TT touched. Scratch = session scratchpad .../p3 (tree = git archive HEAD, own target dir; card = private
+64 MiB FAT16 image from method/mkcard.sh, label P3PRB; per-run APFS clone, deleted after each run; image removed afterwards).
+
+method/p3probe.c   one source, roles P3AUTO.NCP (C:\AUTO\), P3Z.NAP (#Z, Pexec kid, shel_write -> P3Z2.NAP), P3ACC.NAC (accessory + Pexec kid)
+method/build-p3.sh builds the roles through the libc/gemlib path of the ported apps (sdk/libc/libc.a, gemlib.a as in the tree)
+method/mkcard.sh, p3.inf, runts.sh, runts-mode.sh, common.h (copied/adapted from measurement-2026-10-17-a113-test and -10-06-pparent)
+sha256 kernel8.img (HEAD 7d79f4a4, release rpi4, SOURCE_DATE_EPOCH=1792152000): fed8a4207f06fa3cea236ac1ae54ed258e49c1f97c29c800cf749feb948a6cdc
+sha256 P3AUTO.NCP c1ff8c59...  P3Z.NAP = P3Z2.NAP a8fca1ab...  P3ACC.NAC decddbed...
+
+serial/p3-on.log      default memprot (ON), 60 s;  serial/p3-strict.log  memprot=strict, 50 s. Both: no EXC/PANIC, identical chains.
+
+RESULT (p3-on.log, line numbers)
+ AUTO  :54-75   self PD 0x01970000 parent 0x00267000 (initial_basepage stand-in: lowtpa/hitpa 0, p_parent 0, env 00 00, p_uft ff ff fe fd ff ff, curdrv 02)
+               own env 00 00..., own p_curdrv byte (PD+0x37) 00. Pexec kid parent == caller PD (YES).
+ ACC   :83-107  parent 0, env "PATH=\0C:\\\0\0" (AES env copy); Pexec kid from the accessory: parent == accessory PD (YES).
+ Z     :112-146 self parent 0x00267100 (AES stand-in: lowtpa=self hitpa=+0x100 tbase 0 tlen 0) -> 0x00267000 (initial) -> 0. 3 levels.
+               shel_envrn -> 0x00267216 (AES env +0x16). Pexec kid parent == caller (YES).
+ Z2    :150-165 (started by shel_write after Z ended) identical chain to Z.
+ CWD   AUTO :63-74 and Z :125-136: parent Dsetpath('\SUB'); kid sees '\SUB' (inherits), kid Dsetpath('\'); after Pexec returns the PARENT's Dgetpath is '' (root).
+       EmuTOS: p_curdir per process (bdos/fsdir.c:1129-1145, proc.c:401-409) -> parent would still read '\SUB'. = PROC04 point 2, now measured.
+ NOT probed: NEWDESK's own p_parent (embedded binary; from code launch.rs:252 -> set_kernel_parent -> AES stand-in), EmuCON Pexec (EL1 caller -> AES stand-in by code,
+       exceptions.rs:2155 / pexec.rs:515), desktop double-click launch (same launch() as #Z).
+EmuTOS comparison and conclusions: TASK/PROC03.md, section "Neufassung (2026-10-17, Entwurf)".
