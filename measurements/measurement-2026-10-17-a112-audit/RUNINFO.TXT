@@ -1,0 +1,76 @@
+A112 — independent audit of AES event wake-up (evnt_multi and single waits)
+============================================================================
+
+Date:    2026-10-17
+Who:     independent auditor agent, briefed WITHOUT the A112/A113/A25 tickets,
+         analyses, probes or commit messages (user request: "kein
+         Ausgangspunkt"). Question given: do evnt_multi and the single
+         event waits wake under the same conditions as EmuTOS, while the
+         caller is blocked, with several AES processes present?
+Kernel:  cargo xtask build --board rpi4 --release from clean HEAD fa904644,
+         sha256 15c99e0550d79fdbe1b4b8020c06ef500a0252e40229f591d4ddc0873c2b301f
+         (binary not kept).
+Target:  QEMU raspi4b, -append serial=on, FAT16 image per run (APFS clone),
+         main program started via NEWDESK.INF "#Z 01 C:\MAIN.NAP@",
+         accessories as .NAC in C:\.
+
+method/
+  evprobe.c       probe source, one file, role chosen by #define
+  r_*.c           role wrappers (MAIN, MAIN3 = MAIN_LATE, ACCA..ACCD)
+  m4/r_*.c        run 4 roles (POLL main, ACCD_FAST)
+  mkimg.sh        builds the FAT16 image with the given files + #Z line
+  run.sh          QEMU run, serial to file
+  runts.sh        same, every serial line host-timestamped (run4b)
+  NOTE: evprobe.c is the final state of the file (09:34). ROLE_POLL and
+  ACCD_FAST were added for run 4; runs 1-3 were built from the same file
+  before those two roles existed. The ACCD period is evnt_timer(1000);
+  a comment in the source says 4000, which is wrong.
+
+serial/
+  run1.log   ACCA loops evnt_multi(MU_TIMER, 250): no tick in 75 s,
+             only the apid line.                                      -> F1
+  run2.log   MAIN loops evnt_multi(MU_MESAG|MU_TIMER, 1000), ACCD ticks
+             with evnt_timer: MAIN returns twice (0x10, 0x20), then stalls
+             > 60 s while ACCD keeps ticking.                          -> F1
+  run3.log   ACCB waits evnt_multi(MU_MESAG), ACCC evnt_mesag, both with a
+             window; MAIN opens/closes a covering window: ACCC gets
+             WM_REDRAW at once, ACCB never (50 s).                     -> F2
+  run4.log   first poll run (untimestamped).
+  run4b.log  MAIN polls evnt_multi(MU_TIMER,0) / appl_yield /
+             evnt_timer(0) for 22.8 s (20.13-42.95): ACCD with
+             evnt_timer(1000) runs 0 times (EmuTOS: ~22).              -> F3
+  All logs: "[acc] launching ... AC_CLOSE seen by all: false"     -> A114
+
+Findings (auditor, verbatim substance)
+  Core cause: evnt_multi always sleeps on wait_input() whatever the flags
+    (tos-api/src/aes/event.rs:717); messages wake only wait_mesg
+    (pd.rs:436,461,474-476), timers only CLASS_TIMER keys
+    (sched.rs:788-794); a sleeper that is not the spinning process is
+    only re-checked on input (sched.rs:545-563,781-784).
+    EmuTOS arms each event with iasync (gemevlib.c:231-263); sender wakes
+    via aqueue->azombie->signal->drl (gemqueue.c:85-125,
+    gemasync.c:35-77); timer via adelay/tchange->evremove
+    (geminput.c:496ff, gemflag.c:32-64).
+  F1 high, run   MU_TIMER of a blocked non-running evnt_multi never fires.
+  F2 high, run   MU_MESAG of a blocked non-running evnt_multi not woken by
+                 another process's message.
+  F3 medium, run AES calls never yield: EmuTOS super() dsptch()es after
+                 every call (gemsuper.c:452-464, gemdisp.c:74-79,180-254);
+                 NewTOS aes::dsptch only pumps input (mod.rs:784-792),
+                 appl_yield returns 1 (appl.rs:399-401). Side finding:
+                 evnt_timer(0) waits >= 1 tick in EmuTOS
+                 (geminput.c:500-501), returns at once in NewTOS
+                 (event.rs:870-873).
+  F4 low, source A resumed evnt_multi re-runs the immediate checks
+                 (pass = 0, event.rs:453,585-596,626-629); EmuTOS checks
+                 once at arm time (gemevlib.c:184-203, geminput.c:446-483).
+  Spec error     docs/api/aes/event.md edge case 2 (~823) says a 0 ms
+                 timer fires "immediately without yielding" — wrong on
+                 both counts.
+  No divergence  single waits evnt_mesag / evnt_timer / appl_read wake
+                 correctly from other processes (run2/3/4b); a running or
+                 sole evnt_multi gets timer and message (run3 loops 1-7).
+  Not reproduced (no input device in QEMU): wake by key/button/rectangle;
+                 masking by mouse movement on real hardware.
+
+Result: confirms the A112 defect independently and widens it (F1-F3).

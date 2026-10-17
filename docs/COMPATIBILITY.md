@@ -825,6 +825,16 @@ in hunks that keep doubling up to 16 MiB instead of stopping at 32 KiB
 so a large heap needs tens of blocks, not thousands; a program calling
 `_mallocChunkSize()` is unaffected.
 
+**Dragging several desktop icons processes all of them** — user decision,
+2026-10-17 (DESK48, option b). EmuTOS' `fun_file2any` calls
+`desk_clear(DESKWH)` inside the `win_isel` loop of
+`fun_desk2desk`/`fun_desk2win` (`references/emutos/desk/deskfun.c:1187`), so
+after the first icon nothing is selected any more and only the **first** of
+several dragged desktop icons is copied/moved. NewTOS keeps processing every
+selected icon and deselects once after the loop
+(`programs/desktop/src/dir.rs`). Desktop-internal behaviour, no interface: no
+program can observe it.
+
 ## EmuTOS is the reference, not the template
 
 CLAUDE.md Rule 1 says EmuTOS source *is* the spec. Through this charter that

@@ -53,3 +53,11 @@ QEMU raspi4b, IKBD-Injektor, AES-Spur je Aktion, Vergleich gegen HEAD `d35da475`
   geaenderten Objekte.
 * Vorbestehend, in HEAD gleich: nach dem Toppen eines Fensters ueber einem frisch geoeffneten bleibt dessen freigelegter Teil
   ungezeichnet (`open-b-folderopen.png`, AES-Luecke #123).
+
+## Anwenderentscheidung (2026-10-17)
+
+Mehrere gezogene Desktopsymbole: **alle verarbeiten (b)**, wie bisher —
+benannte Abweichung von EmuTOS (`deskfun.c` `fun_file2any` ruft
+`desk_clear(DESKWH)` innerhalb der `win_isel`-Schleife, daher nur das erste),
+eingetragen in `docs/COMPATIBILITY.md`. Die bekannten Restpunkte oben gehen nach
+[DESK67](DESK67.md).
