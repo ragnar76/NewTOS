@@ -1,0 +1,27 @@
+measurement-2026-10-17-x01 -- Tester: independent acceptance of TASK/X01 (Super/Supexec/SuperToUser overlay in
+sdk/libc/overlay/include/mint/osbind.h) against HEAD a2d6dcc2, tree clean at start. No product/SDK source touched, nothing committed.
+Host macOS; QEMU -M raspi4b only (-append serial=on [memprot=strict|off]); one QEMU at a time; per-run APFS clones (cp -c), deleted after;
+cards = 64 MiB MBR+FAT16, label X01T (private mount point, never a real card). Scratch = scratchpad .../x01 (kernels, cards, programs; not kept).
+SDK build outputs under sdk/apps/*/build and sdk/libc/build are gitignored (rebuilt in place by the SDK scripts).
+
+1 PROBE RERUN (09-14 probes SX01..SX10 = group SUPER of sdk/apps/apitest/apitest.c, BATCH mode via C:\APITEST.CFG)
+  APITEST.NCP rebuilt fresh (sdk/apps/apitest/build-apitest.sh; build-libc.sh re-extracts mintlib) sha 9e4ca9e6... (bit-identical to a113-test build).
+  Kernel: fresh `git archive a2d6dcc2` scratch tree, touch tos-api/kernel roots, cargo xtask build --board rpi4 --release (method/build-kernels.sh), kernel8 plain sha 4e9b62db...
+  3 runs (serial=on / memprot=strict / memprot=off): SUPER 17/0/0, TOTAL 109/0/5 each; 0 [FAIL]; 0 EXC/PANIC; 5 SKIP = BC26-30 (no key).
+  SX01..SX10 identical expectations to 09-14 (Super(1L)=0, token, SX04 os_version=0x0404, Supexec=0x5EC0FFEE calls=1, get_cookie_adr=0x5F0, NTOS=0x100).
+  Differences vs 09-14: token 0x0199C770 (was 0x003FFEE0, SP_EL0, address differs with the newer TPA layout); new probes SX11..SX17 (Setcookie mirror now live,
+  jar slot pitch 8) all OK; total 109 (was 92). C:\APITEST.LOG extracted from the card after run 3: serial/APITEST-api-plain-r3.LOG (same SUPER 17/0/0).
+2 SDK host tests: sdk/run-host-tests.sh -> 20 passed / 0 failed / 0 skipped (checks/sdk-host-tests.log). cargo xtask test -> 1411 passed / 0 failed / 1 ignored (checks/xtask-test-summary.txt).
+3 TERADESK: sdk/apps/build-teradesk.sh fresh against current SDK, rc 0, "undefined symbols in the final image: 0"; DESKTOP.NAP 318016 B sha 0afa291c... (reproducible: 2nd build identical).
+  (pre-existing in-tree build was 4d6605c7..., same size; 09-14 record 900b9ab0... 282096 B -- not comparable, HEAD moved.) QED.NAP not rebuilt (ticket: unchanged, doesn't reach the functions).
+  QEMU: kernel with scripted IKBD injector (tools/inject-arm.py, launch:DESKTOP=scripts/td.script, desktop=scripts/s1.script), card with C:\Apps\TERADESK\*, NEWDESK.INF '#Z 01 C:\Apps\TERADESK\DESKTOP.NAP@'.
+  Serial: "starting C:\Apps\TERADESK\DESKTOP.NAP" -> TeraDesk window (screendumps/td-t1) -> File menu -> Quit dialog (td-t4) -> click Quit -> "[launch] returned (program Pterm'd)",
+  "exited with rc=0", NEWDESK restarts, "[desk] desktop up (1 drives)" (td-t5), EmuDESK then answers the s1 script (window, menus, dialogs). 0 EXC/PANIC. Run: serial/td-serial.log.
+  The "No application is installed" alert in td-w2 is the s1 script double-clicking NEWDESK.INF, not a defect.
+4 KERNEL SIDE: scratch probe method/rawtrap.c (raw svc via newtos.h, bypasses the overlay) as C:\AUTO\RAWTRAP.NCP: GEMDOS 0x20 with 1L/0L/ptr -> 0xFFFFFFE0 (-32 EINVFN);
+  XBIOS 0x26 -> 0x00000026 (=38), callee not run. serial/raw-plain-serial.log.
+
+NOT RUN: TeraDesk Quit->Shutdown/Reboot (main.c:2090/2118, would reach lobo()), force_mediach (file.c:945/969), video dialog (video.c:289/318): no input on raspi4b beyond the scripted
+  injector and these need real-HW consequences; real Pi 4. qemu-virt board not built/booted in this run (no Rust changed; HEAD kernel only built for rpi4). No before/after pixel diff
+  (09-14 pixels not comparable on HEAD a2d6dcc2). clippy not run (no Rust in scope).
+Files: RUNINFO.TXT, method/, scripts/, serial/, screendumps/, checks/ (sha256-artifacts.txt). Images/kernels/binaries not kept.
