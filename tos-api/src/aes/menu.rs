@@ -1137,10 +1137,10 @@ struct Accs {
     ///
     /// EmuTOS stores `rlr`, the descriptor of the process *making the call*,
     /// not the `pid` argument (`gemmnlib.c:805`) — the argument is only
-    /// validity-checked (`pid >= 0`, `:798`). NewTOS must do the same and for
-    /// a sharper reason: every application in the chain reports pid **0**
-    /// (`appl::reported_pid`, A56), so the argument could not identify an
-    /// accessory even in principle.
+    /// validity-checked (`pid >= 0`, `:798`). NewTOS does the same: the
+    /// argument is a *reported* pid (`appl::reported_pid` — 0 for the chain,
+    /// 2, 3, … for an accessory, A56/A113), not an identity, and EmuTOS never
+    /// resolves it.
     owner: UnsafeCell<[usize; NUM_ACCS]>,
     /// `acc_display[]` — display slot → menu id, rebuilt by
     /// [`build_menuid_lookup`] after every registration.
@@ -1580,8 +1580,10 @@ pub(super) fn mn_selected_ext(tree: *mut Object, item: i16) -> [i16; 3] {
 /// therefore carries the id in `msg[4]`. The asymmetry is EmuTOS's and is
 /// contract (`docs/api/aes/accessories.md` §3).
 ///
-/// `msg[1]` is `rlr->p_pid`, the *sender's* pid — here the terminating
-/// application's, which for every NewTOS application is the chain pid 0.
+/// `msg[1]` is `rlr->p_pid`, the *sender's* pid — the caller of `appl_exit`
+/// (`appl::reported_pid` of the caller): 0 for a member of the application
+/// chain, the accessory's own pid (2, 3, …) if an accessory calls
+/// `appl_exit` (`gemmnlib.c:747`, spec `application.md` `appl_exit` step 2).
 ///
 /// EmuTOS's submenu half (`dos_free(gl_submenu)`, `:751-756`) has no NewTOS
 /// counterpart: the submenu table is a static array, not an allocation

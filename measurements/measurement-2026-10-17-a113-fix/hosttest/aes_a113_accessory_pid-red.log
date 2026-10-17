@@ -1,0 +1,106 @@
+   Compiling tos-api v0.5.0 (/private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/a113/headtree/tos-api)
+   Compiling tos-types v0.5.0 (/private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/a113/headtree/tos-types)
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+note: but type `Vdipb` is only usable at visibility `pub(crate)`
+note: but type `Vdipb` is only usable at visibility `pub(crate)`
+note: but type `Vdipb` is only usable at visibility `pub(crate)`
+note: but type `Vdipb` is only usable at visibility `pub(crate)`
+note: but type `Vdipb` is only usable at visibility `pub(crate)`
+note: but type `Vdipb` is only usable at visibility `pub(crate)`
+note: but type `Vdipb` is only usable at visibility `pub(crate)`
+note: but type `Vdipb` is only usable at visibility `pub(crate)`
+    Finished `test` profile [optimized + debuginfo] target(s) in 3.27s
+     Running tests/aes_a113_accessory_pid.rs (/private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/a113/headtarget/debug/deps/aes_a113_accessory_pid-421065d578a71f83)
+running 6 tests
+test accessories_report_pids_in_load_order_and_appl_find_answers_them ... FAILED
+test a_forgotten_accessory_does_not_shift_the_others ... FAILED
+test a_program_reaches_an_accessory_and_the_reply_to_0_reaches_the_program ... FAILED
+test a_pid_beyond_the_loaded_accessories_is_refused ... ok
+test an_accessory_window_reports_the_accessory_as_owner_and_sender ... FAILED
+test pid_0_from_an_accessory_is_the_innermost_live_chain_member ... FAILED
+failures:
+---- accessories_report_pids_in_load_order_and_appl_find_answers_them stdout ----
+thread 'accessories_report_pids_in_load_order_and_appl_find_answers_them' (1518636) panicked at tos-api/tests/aes_a113_accessory_pid.rs:522:5:
+assertion `left == right` failed: the first accessory reports 2 (geminit.c:819, gempd.c:60-70)
+  left: (0, 0)
+ right: (2, 2)
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+---- a_forgotten_accessory_does_not_shift_the_others stdout ----
+thread 'a_forgotten_accessory_does_not_shift_the_others' (1518633) panicked at tos-api/tests/aes_a113_accessory_pid.rs:686:5:
+assertion `left == right` failed: the third accessory reports 4
+  left: 0
+ right: 4
+---- a_program_reaches_an_accessory_and_the_reply_to_0_reaches_the_program stdout ----
+thread 'a_program_reaches_an_accessory_and_the_reply_to_0_reaches_the_program' (1518635) panicked at tos-api/tests/aes_a113_accessory_pid.rs:555:5:
+assertion `left == right` failed: appl_write(2) is accepted
+  left: 0
+ right: 1
+---- an_accessory_window_reports_the_accessory_as_owner_and_sender stdout ----
+thread 'an_accessory_window_reports_the_accessory_as_owner_and_sender' (1518637) panicked at tos-api/tests/aes_a113_accessory_pid.rs:634:5:
+assertion `left == right` failed: WF_OWNER of ACCY's window, asked by ACCY (gemwmlib.c:1580)
+  left: 0
+ right: 3
+---- pid_0_from_an_accessory_is_the_innermost_live_chain_member stdout ----
+thread 'pid_0_from_an_accessory_is_the_innermost_live_chain_member' (1518638) panicked at tos-api/tests/aes_a113_accessory_pid.rs:249:9:
+assertion failed: sw.is_none_or(|s| s.completed)
+failures:
+    a_forgotten_accessory_does_not_shift_the_others
+    a_program_reaches_an_accessory_and_the_reply_to_0_reaches_the_program
+    accessories_report_pids_in_load_order_and_appl_find_answers_them
+    an_accessory_window_reports_the_accessory_as_owner_and_sender
+    pid_0_from_an_accessory_is_the_innermost_live_chain_member
+test result: FAILED. 1 passed; 5 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+error: test failed, to rerun pass `-p tos-api --test aes_a113_accessory_pid`

@@ -143,9 +143,7 @@ pub fn run_program_with_tail_rc(path: &[u8], tail: &[u8]) -> i32 {
 /// * **no `D.s_cmd`/`ad_stail` rewrite** — `aes_run_rom_program` creates the
 ///   basepage with an **empty** tail (`Pexec(PE_BASEPAGEFLAGS, PF_STANDARD,
 ///   "", NULL)`, `:575`) and leaves the shell's command pair alone, so
-///   `shel_read` answers during the desktop what it answered before;
-/// * no `[acc] launching …` report (it describes an application start after
-///   the previous one's `appl_exit`).
+///   `shel_read` answers during the desktop what it answered before.
 ///
 /// Returns what [`run_program_with_tail_rc`] returns: the desktop's exit code
 /// `0 … 65535`, or a negative load error (the desktop never ran).
@@ -200,21 +198,18 @@ fn launch(path: &[u8], name: &[u8], tail: &[u8], kind: Launch) -> i32 {
         busy_cursor(false);
     }
 
-    // Desk accessories: by this point the caller's `appl_exit` has posted
-    // `AC_CLOSE` to every registered one and blocked until each had seen it
-    // (EmuTOS `ap_exit` → `mn_cleanup` + `wait_for_accs(AP_ACCLOSE)`,
-    // `gemaplib.c:253-255`). Report the state on the serial console, because
-    // an accessory that does nothing with the message — the correct behaviour
-    // for one with no state tied to the dying application — leaves no other
-    // trace that it arrived.
-    let accs = tos_api::aes::acc::count();
-    if program && accs > 0 {
-        kprintln!(
-            "[acc] launching with {} accessory(s); AC_CLOSE seen by all: {}",
-            accs,
-            tos_api::aes::acc::all_have(tos_api::aes::acc::AP_ACCLOSE)
-        );
-    }
+    // Desk accessories: nothing to do here. The `AC_CLOSE` handshake belongs
+    // to the *previous* application's own `appl_exit` (EmuTOS `ap_exit` →
+    // `mn_cleanup` + `wait_for_accs(AP_ACCLOSE)`, `gemaplib.c:253-255`), which
+    // has completed before that program's `Pterm` brought the shell loop
+    // here — when it called `appl_exit` at all. The `#Z` autorun program is
+    // started with no `appl_exit` in front of it (`process_inf2` → `isauto`,
+    // `geminit.c:446-458`; `sh_main` → `AUTORUN_APP`, `gemshlib.c:629-645`),
+    // and so is any program after one that ended without it. No state
+    // readable here tells a completed round from none: `AP_ACCLOSE` is never
+    // cleared (`gemsuper.c:140,161`), so "every accessory has the bit" means
+    // "has seen one `AC_CLOSE` at some time". (A114: the serial report that
+    // stood here claimed a round before every launch and was removed.)
 
     let s = match slot(child.slot) {
         Some(s) => s,

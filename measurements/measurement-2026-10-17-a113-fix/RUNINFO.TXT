@@ -1,0 +1,84 @@
+measurement-2026-10-17-a113-fix -- TASK/A113 (accessory ap_id) + TASK/A114 (launch.rs comment/report): red against HEAD, fix, green.
+Spec: docs/api/aes/application.md "Pid assignment, accessories, and a failed load" + NewTOS contract (b) (commit fcfa4a0a),
+window-graphics.md WF_OWNER/msg[1], event.md, _state.md. EmuTOS reference as cited there (references/emutos/aes).
+Host macOS, QEMU raspi4b + qemu-virt. No SD card, no Pi, nothing under /Volumes/BOOT* or NEWTOS* (probe card volume EVPRB,
+APITEST card A113API, both disk images in scratch). Scratch = session scratchpad .../scratchpad/a113; per-run APFS clones
+(cp -c), deleted after each run. One QEMU at a time.
+
+KERNELS (cargo xtask build --board rpi4 --release; images not kept)
+  red   = HEAD dc3388d1, clean tree (sources touched to force a compile)  sha256 53fa355e6a0fad787728ad58e5050ea19e3f56a80818826a4456654e232aa0c6
+  green = the fix (uncommitted working tree)                             sha256 6282917b2f98ed538ff1e5edcaad16b1bf56b3586ffec778f92c54ccd27d4229
+          A final forced rebuild after all regression runs is byte-identical to the green image.
+  qemu-virt release ELF (green, virt smoke)                              sha256 cc2c64daf7a4749eaaa65d5bc399949b6a61eed7ac26cc5f09ce0d28a030011c
+
+1. QEMU PROBE (method/)
+   idprobe.c = copy of measurements/measurement-2026-10-17-a113-a114/method/idprobe/idprobe.c, extended: each accessory reads
+   WF_OWNER of its own window right after wind_open; MAIN additionally writes to pid 4 (>= totpds with two accessories) and
+   pid 1. r_*.c role wrappers, mkimg.sh unchanged copies; runts.sh = measurement-2026-10-17-a112-fix/method/runts.sh;
+   run-idprobe.sh builds the four roles with sdk/build.sh, one FAT16 image (ACCX.NAC ACCY.NAC MAIN.NAP SECOND.NAP,
+   NEWDESK.INF '#Z 01 C:\MAIN.NAP@'), one 45-s run. Probe binaries identical red/green (serial/probes-{red,green}.sha256).
+
+   RED (serial/idprobe-red.log, HEAD)                       GREEN (serial/idprobe-green.log, fix)
+   ACCX/ACCY appl_init ret+global[2]   0/0, 0/0             2/2, 3/3
+   MAIN appl_init                      0                    0; SECOND 0
+   appl_find ACCX/ACCY (MAIN, SECOND)  0/0                  2/3 (MAIN and SECOND); MAIN 0, SCRENMGR 1, NOSUCH -1 as before
+   WF_OWNER own window (ACCX, ACCY)    0, 0                 2, 3
+   accessory's own WM_REDRAW msg[1]    0, 0                 2 (ACCX), 3 (ACCY)
+   MAIN appl_write find(ACCX),         ret 1,1,0,0,1:       ret 1 each; ACCX gets 0x4000 twice (m4 0, 2), ACCY twice (m4 1, 3),
+     find(ACCY), 2, 3, 0               all three that       each replies appl_write(0) = 1; MAIN's evnt_multi reads four
+                                       returned 1 come      0x4001 with m1 = 2, 3, 2, 3 plus its own 0x4000 (m4 4) -- the
+                                       back into MAIN's     accessories never see their own reply
+                                       own queue; nothing
+                                       reaches an acc
+   MAIN appl_write(4) / (1)            0 / 1                0 / 1
+   appl_exit handshake (A114)          AC_CLOSE to both before appl_exit returns 1 -- unchanged in green (18.96 s AC_CLOSE,
+                                       18.97 s appl_exit ret); AC_CLOSE msg[1] = 0 (sender = the chain program), msg[3] = menu id
+   "[acc] launching ... AC_CLOSE       printed at both launches (false at #Z,  not printed any more (report removed, A114)
+    seen by all: ..."                  true at SECOND)
+   [EXC]/PANIC                         0                    0
+
+2. HOST TESTS (tos-api/tests/aes_a113_accessory_pid.rs, new, 6 cases)
+   accessories_report_pids_in_load_order_and_appl_find_answers_them, a_program_reaches_an_accessory_and_the_reply_to_0_reaches_
+   the_program, pid_0_from_an_accessory_is_the_innermost_live_chain_member, an_accessory_window_reports_the_accessory_as_owner_
+   and_sender, a_pid_beyond_the_loaded_accessories_is_refused, a_forgotten_accessory_does_not_shift_the_others.
+   RED: the final file in a `git archive dc3388d1` copy of the tree (scratch, own target dir): 1 passed / 5 failed, each on its
+        own assertion; the passing one (pid 4 / -1 / 17 refused with 0) is a guard that already held
+        (hosttest/aes_a113_accessory_pid-red.log). GREEN: 6 / 0 (hosttest/...-green.log).
+   No existing host test or kernel selftest needed a change: none registers an accessory and then expects 0 from it
+   (aes_key_owner.rs registers accessories but asserts key routing only; kernel/src/selftest_*.rs have no accessories).
+
+3. FIX (product code, uncommitted)
+   tos-api/src/aes/appl.rs   reported_pid = 2 + fixed accessory list position for an accessory (and a Pexec descendant of one:
+        EmuTOS keeps rlr across dos_exec), else 0. identity_of: 0 = the caller when the caller is a chain member, else the
+        innermost started (State::Running) non-accessory chain process (root = started slot without parent slot, followed down
+        its Pexec children), else the kernel context; 2+n = accessory n (the caller if it runs on it, else the innermost started
+        process on it); empty/beyond positions, 1, negatives = None. Stale doc comments (module, AP_CHAIN_PID, current_pid,
+        appl_find, appl_write incl. the A75 rationale, appl_read) updated.
+   tos-api/src/aes/acc.rs    position_of / at (fixed positions; forget_process empties in place, no renumbering); docs.
+   tos-api/src/aes/mod.rs    release_client: a released accessory slot leaves the accessory list (forget_process) and its
+        descriptor name is blanked (pd::clear_name), so the slot's next tenant inherits neither pid nor name; pid_of_slot doc.
+   tos-api/src/aes/pd.rs     clear_name.
+   tos-api/src/aes/menu.rs, window.rs   doc comments only (desk_ppd, mn_cleanup msg[1], WF_OWNER, send_redraw msg[1]).
+   kernel/src/launch.rs      A114: the "[acc] launching ... AC_CLOSE seen by all" report and its comment removed; the comment
+        now says why nothing is checked there (no appl_exit before #Z, AP_ACCLOSE never cleared).
+
+4. REGRESSION
+   host tests (cargo xtask test)              1391 / 0 / 1   (baseline 1385 / 0 / 1 + 6 new)        checks/host-tests.log
+   SDK host tests (sdk/run-host-tests.sh)     20 / 0 / 0     (baseline 20 / 0 / 0)                  checks/sdk-host-tests.log
+   release build rpi4 / qemu-virt             tos-api 64, kernel 94, rc 0 (baseline 64 / 94)         checks/build-*.log
+   clippy kernel rpi4 / qemu-virt             tos-api 76, kernel 125 (baseline 76 / 125); 0 hits on a changed line
+        (cargo clippy --package kernel --no-default-features --features board-<b> --lib)          checks/clippy-kernel-*.log
+   clippy new test file                       0 hits                                                 checks/clippy-tests.log
+   desk drift probe                           TOTAL 0                                                checks/drift.log
+   APITEST (#Z, QEMU raspi4b, memprot on)     red 109/0/5, green 109/0/5, 124 result lines each, 0 differing, 0 EXC/PANIC
+        (method/api-*.sh, copies of measurement-2026-10-17-a112-fix; checks/api-red-vs-green.txt, serial/api-*-on-serial.log,
+         screendumps/api-*-on.png not evaluated)
+   qemu-virt boot smoke (method/virt-smoke.sh) "[desk] desktop up" 1, 0 EXC/PANIC (serial/virt-smoke-serial.log)
+
+5. NOT RUN / OPEN
+   TeraDesk (AV protocol with accessories), QED, SYSACC, desktop with screendumps, real Pi 4: Tester / lead.
+   Not covered by a run: an accessory that Pexecs (its child now reports the accessory's pid, by reasoning from EmuTOS's rlr);
+   an accessory that terminates at runtime (host test 6 only).
+   A116 (blocking appl_write on a full foreign queue) untouched: full queue still returns 0 (A75).
+
+Files: RUNINFO.TXT; method/ (14 files); serial/ (8 files); hosttest/ (2 logs); checks/ (9 logs); screendumps/ (2).

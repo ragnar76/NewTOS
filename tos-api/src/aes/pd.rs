@@ -631,6 +631,21 @@ pub unsafe fn release(idx: usize) {
     }
 }
 
+/// Blank the name of identity `idx` — the slot of a desk accessory that has
+/// ended ([`super::release_client`], A113). NewTOS-only: EmuTOS's accessories
+/// never end, so their names stay for the session (`gempd.c:110-121`); a
+/// NewTOS accessory's slot is reused by the next process, which must not
+/// answer `appl_find` under the dead accessory's name.
+///
+/// # Safety
+/// Single trap / process-release path (no re-entrancy).
+pub unsafe fn clear_name(idx: usize) {
+    // SAFETY: caller upholds the single-path invariant.
+    if let Some(slot) = unsafe { by_index(idx) } {
+        slot.name = [b' '; AP_NAMELEN];
+    }
+}
+
 /// The 8-char `p_name` length (EmuTOS `aes/struct.h:111`, `AP_NAMELEN`).
 const AP_NAMELEN: usize = 8;
 

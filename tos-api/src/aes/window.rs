@@ -1820,12 +1820,13 @@ fn owner_of(handle: i16) -> Option<usize> {
 
 /// Post a `WM_REDRAW` for `rect` to `handle`'s owner process.
 ///
-/// `msg[1]` is the **caller's** pid (0, the application chain): `w_redraw`'s
-/// `ap_sendmsg` (`gemwmlib.c:904`) runs from `draw_change`, i.e. inside the
-/// application's own `wind_open`/`wind_close`/`wind_set` trap
-/// (`:1426,1453,1612`) or its `form_dial(FMD_FINISH)`, so `rlr` is the
-/// application, not the Screen Manager (spec § "AES process identity and
-/// pid", contract (b)). Every path into this function is such a trap; the
+/// `msg[1]` is the **caller's** pid (0 for a member of the application chain,
+/// the accessory's 2, 3, … for an accessory): `w_redraw`'s `ap_sendmsg`
+/// (`gemwmlib.c:904`) runs from `draw_change`, i.e. inside the caller's own
+/// `wind_open`/`wind_close`/`wind_set` trap (`:1426,1453,1612`) or its
+/// `form_dial(FMD_FINISH)`, so `rlr` is the caller, not the Screen Manager
+/// (spec § "AES process identity and pid", contract (b), A113). Every path
+/// into this function is such a trap; the
 /// control-manager hook ([`intercept`]) posts no redraws.
 fn send_redraw(handle: i16, rect: Grect) {
     let Some(owner) = owner_of(handle) else {
@@ -3860,11 +3861,12 @@ pub fn wind_get(pb: &Aespb) {
             WF_OWNER => {
                 let (owner, open) = (w.owner, w.open);
                 // `pwin->w_owner->p_pid` (`:1580`): the owner's **reported**
-                // pid, computed from the stored identity — 0 for every
-                // application window, whichever slot owns it (`wm_create`
-                // → `w_setup(rlr, …)`, `:1377`, storing `w_owner`, `:212`;
-                // spec § "AES process identity and pid", contract (b)); 0 as
-                // well for an unowned window (the
+                // pid, computed from the stored identity — 0 for a window a
+                // chain member created, whichever slot owns it, the
+                // accessory's pid (2, 3, …) for one an accessory created
+                // (`wm_create` → `w_setup(rlr, …)`, `:1377`, storing
+                // `w_owner`, `:212`; spec § "AES process identity and pid",
+                // contract (b), A113); 0 as well for an unowned window (the
                 // desktop window before `WF_NEWDESK`, EmuTOS `wm_init`'s
                 // `rlr`, `:1255,1290`), as it has always reported.
                 let owner = usize::try_from(owner).map_or(0, super::appl::reported_pid);

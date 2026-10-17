@@ -11,11 +11,14 @@
 //! accessory list) and [`wait_for_accs`], the barrier both `run_accs_and_desktop`
 //! (`geminit.c:737`) and `ap_exit` (`gemaplib.c:255`) block on.
 //!
-//! NewTOS has no reserved pid range — an accessory's AES identity is the GEMDOS
-//! slot its process got (`aes/pd.rs`, A62) — so the list is explicit here, filled
-//! by the kernel-side loader ([`register_process`]). That is a **mechanism**
-//! difference only: what a program can observe (which processes the barrier
-//! waits for, and that it gives up after `WAIT_TIMEOUT` passes) is EmuTOS's.
+//! NewTOS has no reserved descriptor range — an accessory's AES identity is the
+//! GEMDOS slot its process got (`aes/pd.rs`, A62) — so the list is explicit
+//! here, filled by the kernel-side loader ([`register_process`]) after each
+//! successful load, in load order. That is a **mechanism** difference only:
+//! what a program can observe is EmuTOS's — which processes the barrier waits
+//! for, that it gives up after `WAIT_TIMEOUT` passes, and the pid an accessory
+//! reports, `2 + its position in this list` (`appl::reported_pid`, A113;
+//! `geminit.c:236-257,819`).
 //!
 //! The loading half (`count_accs`/`load_one_acc`/`load_accs`/`free_accs`) is
 //! kernel-side in `kernel/src/accs.rs`: it needs the ELF loader and the
@@ -105,8 +108,11 @@ pub fn register_process(idx: usize) {
 }
 
 /// Forget accessory process `idx` — used when a loaded accessory terminates
-/// (EmuTOS's never do, `docs/api/aes/accessories.md` §4 point 6) so the
-/// barriers below stop waiting for a process that is gone.
+/// (EmuTOS's never do, `docs/api/aes/accessories.md` §4 point 6; called from
+/// [`super::release_client`] and the kernel's `free_accs`) so the barriers
+/// below stop waiting for a process that is gone. The entry is emptied **in
+/// place**: the other accessories keep their positions and therefore their
+/// pids ([`position_of`]).
 pub fn forget_process(idx: usize) {
     // SAFETY: single AES/boot path.
     for e in unsafe { table() }.iter_mut() {
@@ -121,6 +127,26 @@ pub fn processes() -> impl Iterator<Item = usize> {
     // SAFETY: single AES/boot path; the returned values are plain indices.
     let t = *unsafe { table() };
     t.into_iter().filter(|e| *e != usize::MAX)
+}
+
+/// The position of identity `idx` in the accessory list — EmuTOS's
+/// `D.g_acc[n]`, i.e. the `n` of pid `2 + n` (`aes/geminit.c:236-257`,
+/// `gempd.c:60-70`; spec `docs/api/aes/application.md` "Pid assignment,
+/// accessories, and a failed load"). Positions are fixed for the session: an
+/// entry [`register_process`] filled keeps its index, and [`forget_process`]
+/// empties it in place, so a forgotten accessory never renumbers the others.
+/// `None` when `idx` is no loaded accessory.
+pub(super) fn position_of(idx: usize) -> Option<usize> {
+    // SAFETY: single AES/boot path; read only.
+    unsafe { table() }.iter().position(|e| *e == idx)
+}
+
+/// The identity of the accessory at list position `n` (the inverse of
+/// [`position_of`]), or `None` for a position beyond [`NUM_ACCS`] or one no
+/// loaded accessory holds.
+pub(super) fn at(n: usize) -> Option<usize> {
+    // SAFETY: single AES/boot path; read only.
+    unsafe { table() }.get(n).copied().filter(|e| *e != usize::MAX)
 }
 
 /// Is identity `idx` a loaded desk accessory — an `AESPD` of its own

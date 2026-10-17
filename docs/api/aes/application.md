@@ -243,21 +243,21 @@ meaning "the currently running client"; both were wrong against
   window is owned by whoever ran `wm_init` (`:1255,1290`), pid 0 in the
   normal path.
 
-> **NewTOS state vs. this contract (A113, 2026-10-17 — Auditor measurement
-> `measurements/measurement-2026-10-17-a113-a114/serial/idprobe1.log`).**
-> What is written above is the EmuTOS contract. `tos-api/src/aes/appl.rs`
-> (`reported_pid`, `identity_of`, `:214-238`) still reports 0 for every client
-> including accessories and resolves target 0 to the *caller*; the measured
-> consequences are ap_id 0/0/0 for ACCX/ACCY/MAIN, `appl_find` 0 for both
-> accessories, `appl_write(2|3)` → 0 with nothing delivered, `msg[1] = 0` in an
-> accessory's `WM_REDRAW`. That is a **defect against this spec** (A113), not an
-> allowed deviation. **Inference, not EmuTOS source:** the identity ↔ value
-> mapping a NewTOS needs is `reported_pid` = 2 + the accessory's position among
-> the *successfully loaded* accessories (else 0 for GEMDOS slots/kernel
-> context, 1 only as a stamp for SCRENMGR) and `identity_of(0)` = the
-> **innermost live chain member that is not an accessory**, which is the
-> per-slot analogue of "one shared queue"; `identity_of(0)` = "the caller" is
-> only right while the caller is itself a chain member.
+> **NewTOS state vs. this contract (A113, 2026-10-17).** Before the A113 fix
+> `tos-api/src/aes/appl.rs` reported 0 for every client including accessories
+> and resolved target 0 to the *caller* (measured:
+> `measurements/measurement-2026-10-17-a113-a114/serial/idprobe1.log`). Since
+> the fix (`measurements/measurement-2026-10-17-a113-fix/`) `reported_pid` =
+> 2 + the accessory's fixed position among the successfully loaded
+> accessories (a forgotten accessory leaves a hole, nothing shifts), else 0;
+> 1 only as the SCRENMGR stamp. `identity_of(0)` = the caller when it is a
+> chain member, otherwise the innermost live chain member that is not an
+> accessory; `identity_of(2+n)` = accessory n (or the innermost process it
+> `Pexec`ed); a hole, 1, negative values and `pid >= totpds` resolve to
+> nothing (`appl_write` returns 0, NewTOS choice, see point 4 above).
+> **Inference, not EmuTOS source:** a process `Pexec`ed by an accessory
+> reports the accessory's pid, because EmuTOS does not change `rlr` across
+> `dos_exec`.
 
 ### Consequences for A39 / A28 / H02 / H05 (reasoned, not re-derived here)
 

@@ -980,6 +980,19 @@ pub fn close_client_if_open(slot: usize) {
 /// (A62 report §8). Called from `bdos::process::pterm::release_slot`, next to
 /// the slot's other per-process side tables.
 pub fn release_client(slot: usize) {
+    // A desk accessory that ends (EmuTOS's never do, `docs/api/aes/
+    // accessories.md` §4 point 6) leaves the accessory list here, so the
+    // barriers stop waiting for it and its pid (`2 + position`) stops
+    // resolving — the slot's next tenant is no accessory and must not inherit
+    // that pid (A113). Its entry is emptied in place: the others keep their
+    // pids. Its name goes too: left in the descriptor it would make
+    // `appl_find` answer the chain's 0 for a dead accessory (or for whatever
+    // `Pexec` child takes the slot next without being named).
+    if acc::is_process(slot) {
+        acc::forget_process(slot);
+        // SAFETY: as `pd::release` below.
+        unsafe { pd::clear_name(slot) };
+    }
     // SAFETY: single-CPU process-release context under the BDOS giant lock;
     // no GEM trap is in flight for the slot being released.
     unsafe { pd::release(slot) };
@@ -1000,9 +1013,10 @@ pub fn release_client(slot: usize) {
 
 /// The AES pid NewTOS **reports** for the program in GEMDOS process-table slot
 /// `slot` — the value that program gets from `appl_init`
-/// (`appl::reported_pid`): 0, the application chain's pid, for every slot
-/// (spec § "AES process identity and pid", contract (b), A56). A value, not
-/// an identity: the descriptor is keyed by `slot` itself (A62).
+/// (`appl::reported_pid`): 0, the application chain's pid, for every chain
+/// slot, and 2, 3, … for a desk accessory (and its `Pexec` descendants) in
+/// load order (spec § "AES process identity and pid", contract (b), A56/A113).
+/// A value, not an identity: the descriptor is keyed by `slot` itself (A62).
 pub fn pid_of_slot(slot: usize) -> i16 {
     appl::reported_pid(slot)
 }
