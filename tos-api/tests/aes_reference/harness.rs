@@ -914,6 +914,88 @@ fn sweep_3d_look(pb: &mut Pb) {
     }
 }
 
+// ── the application's message queue: state no declared reset sweeps ──────
+
+/// `evnt_multi`'s event bits (`aes/gemlib.h`).
+const MU_MESAG: i16 = 0x10;
+const MU_TIMER: i16 = 0x20;
+
+/// How many quick checks [`sweep_message_queue`] issues before it calls the
+/// queue stuck. The AES pipe holds `QUEUE_SIZE` = 128 bytes
+/// (`aes/struct.h`), at most eight standard 16-byte messages; anything that
+/// still answers `MU_MESAG` after many times that is not a queue being
+/// drained.
+const DRAIN_LIMIT: usize = 64;
+
+/// Empty the application's message queue, through the AES' own dequeue.
+///
+/// **Why this exists at all, and why it is not a [`Reset`].** Same nature as
+/// [`sweep_3d_look`] and the trailing reset: a harness-only device the dumper
+/// does not need, because it runs a table once, in order, on a freshly
+/// started AES, while cargo runs one `#[test]` per case in an arbitrary order
+/// inside one process. The table's declared reset does not cover it either:
+/// `wm_new` closes and deletes windows and clears the `wind_update` locks
+/// (`aes/gemwmlib.c:1874-1892`) and leaves the queue alone, so whatever a
+/// case's window traffic posted to the application — the `WM_REDRAW` that
+/// opening a window sends its owner (`w_redraw`'s `ap_sendmsg`,
+/// `aes/gemwmlib.c:887-904`) — is still there for the next case to read.
+///
+/// Measured, not assumed: with `tosdump/cases/aes-m07-parameter.tsv` in the
+/// binary and no such sweep, `cases_m07_parameter` next to `cases_m05_addrin`
+/// alone turned case 69 (`MU_MESAG|MU_TIMER`, quick-check timer) red, or case
+/// 70 if it ran first, answering `int_out[0] = 0x30` (resp. `0x32`) where the
+/// TT answered `0x20` (`0x22`): the message was the `WM_REDRAW` for window 1's
+/// work area that an m05 case's `wind_open` prelude had posted. Round 2
+/// leaves the same message behind from every case that opens a window; it
+/// only did not show because libtest's default order runs `cases_m07_*`
+/// before `cases_r2_*`: with `--shuffle`, m07 next to `cases_r2_wind` was red
+/// on five of five runs, cases 69 and 70 both.
+///
+/// **It is done through `evnt_multi`'s quick checks**, not by reaching into
+/// `tos_api::aes`' process descriptors: `MU_MESAG|MU_TIMER` with a zero
+/// `MT_LOCOUNT/MT_HICOUNT` sets `MU_TIMER` before the wait block, so the call
+/// always returns, and the message quick check right after it dequeues one
+/// message — `ev_mesag` — whenever `p_qindex > 0` (`aes/gemevlib.c:214-226`).
+/// One message per call; the sweep ends on the first call that answers
+/// `MU_TIMER` alone. `MME_PBUFF` is buffer 0, so the 16 bytes land in a
+/// harness buffer that the next [`Pb::poison`] lays over again.
+///
+/// **The price, stated.** A case table can no longer measure a message that
+/// *a previous case* posted; whatever a case reads from the queue it has to
+/// post in its own preludes. And every case now starts and ends with at least
+/// one quick-check `evnt_multi`, which sets `AP_MESAG` on the application's
+/// descriptor (`gemsuper.c:147-148`) — a flag no table measures, and one the
+/// first `evnt_multi(MU_MESAG)` of any table sets anyway. The cases still run
+/// in parallel, serialised by [`AES_LOCK`] as before.
+fn sweep_message_queue(pb: &mut Pb) {
+    const PLANT: [Plant; 1] = [Plant { kind: Kind::AddrIn, slot: 0, buffer: 0 }];
+    for _ in 0..DRAIN_LIMIT {
+        pb.poison();
+        // MU_FLAGS, then fifteen zeros: no clicks, two empty MOBLKs and
+        // MT_LOCOUNT/MT_HICOUNT = 0 -- the quick-check timer
+        // (`gemevlib.c:216-220`). IN_LEN 16, because a word outside it is
+        // not the zero written here.
+        pb.intin[..16].fill(0);
+        pb.intin[0] = MU_MESAG | MU_TIMER;
+        pb.plant(&PLANT);
+        pb.call(25, 16, 1, 1, 0);
+        let what = pb.intout[0];
+        assert_eq!(
+            what & MU_TIMER,
+            MU_TIMER,
+            "the message-queue sweep's quick check did not report MU_TIMER (int_out[0] = \
+             0x{what:04X}) -- a zero tmcount must fire before the wait block"
+        );
+        if what & MU_MESAG == 0 {
+            return;
+        }
+    }
+    panic!(
+        "the message-queue sweep still read a message after {DRAIN_LIMIT} quick checks -- \
+         the queue holds at most eight"
+    );
+}
+
 /// One case table and the dump taken from it — what a generated case module
 /// declares once and every one of its cases is checked against.
 ///
@@ -1532,6 +1614,7 @@ pub fn check(table: &Table, case: &Case) {
     //     it. Not the dumper's doing — see `sweep_3d_look` for why cargo's
     //     arbitrary case order needs it and what it costs.
     sweep_3d_look(&mut pb);
+    sweep_message_queue(&mut pb);
 
     // 0b. the reset the table declares (`tosdump/core/runner_aes.c:150-154`),
     //    ahead of the preludes, so a prelude establishes state on top of a
@@ -1609,6 +1692,7 @@ pub fn check(table: &Table, case: &Case) {
     //    it red as well, and the first failure is the only one worth reading.
     table.reset.run(&mut pb);
     sweep_3d_look(&mut pb);
+    sweep_message_queue(&mut pb);
     or.finish();
 
     if !diffs.is_empty() {
