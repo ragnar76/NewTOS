@@ -1,0 +1,42 @@
+measurement-2026-10-17-rst01-test -- Tester: independent regression test of the UNCOMMITTED RST01 (+X04) working tree against HEAD b8245e5c.
+Scope: PM-watchdog restart, Ctrl+Alt+Del / Ctrl+Alt+RShift+Del in the key decoder, OSHEADER reset stub (reseth/os_res1 -> Ssystem 2021),
+separate LShift/RShift bits (Kbshift), TeraDesk overlay sdk/overlays/teradesk/main.c. No product code touched, nothing committed/stashed/checked out
+(tree snapshot sha256 before/after identical: checks/tree-snapshot.sha256). Host macOS, QEMU -M raspi4b (+ virt for the USB path), -append serial=on
+[memprot=..]; one QEMU at a time; per-run APFS clones (cp -c), deleted after each run; cards = 64 MiB FAT16 (labels RST1/T113/A113API, never a real card).
+Scratch .../scratchpad/rst01t (kernels, cards, trees; deleted afterwards, sha256 in checks/sha256-artifacts.txt).
+Kernels: fresh `git archive b8245e5c` trees (+ the uncommitted kernel/ tos-api/ files for the working-tree side "wt"), `cargo xtask build --board rpi4 --release`,
+own target dirs, SOURCE_DATE_EPOCH=1792152000. The developer's kbd/kbdw/plain/td kernels, APITEST/RSTPROBE programs and the TeraDesk build are bit-identical
+(same sha256) to measurement-2026-10-17-rst01.
+
+1 RE-RUN OF THE FIX RUNS (method/ copied from measurement-2026-10-17-rst01; env.sh -> own scratch)
+  kbdw Ctrl+Alt+Del, -no-reboot: "[reset] ... (Warm) requested" + "PM watchdog full reset", QEMU exits by itself rc 0.      serial/kbdw-noreboot-serial.log
+  kbdw without -no-reboot: 3 boots, 2 resets, desktop up again (screendumps/kbdw-reboot-second-boot-desktop.png viewed).   serial/kbdw-reboot-serial.log
+  kbd (Ctrl+LShift+Alt+Del, Ctrl+Alt+Del-BREAK only, Ctrl+Alt+RShift+Del): ONE reset, the Cold one, after the negatives.    serial/kbd-noreboot-serial.log
+  RSTPROBE via Supexec(os_res1) (memprot default/strict/off): reseth=os_res1=0xA40, insn 0xD280FCA0, "(Cold) requested", exit. serial/probe-noreboot-*-serial.log
+  TeraDesk Reboot (Quit dialog viewed: screendumps/td-reboot-noreboot-q1-quit-dialog.png), -no-reboot: OSHEADER reset entry -> exit; w/o -no-reboot:
+    TeraDesk starts again (screendumps/td-reboot-b-second-boot-teradesk.png, serial/td-reboot-b-serial.log). The injector re-arms on every boot, so it
+    reboots TeraDesk a 3rd time -- script artefact. (td-reboot-serial.log is the first take; its 2nd-boot dump was taken mid-reset and was discarded.)
+  qemu-virt (release, own build, raw binary via llvm-objcopy as xtask's Image path; an ELF -kernel boots WITHOUT DTB/USB, discarded): USB-HID Ctrl+Alt+Del
+    -> "[reset] keyboard Ctrl+Alt+Del (Warm) requested" + "no restart mechanism on this board; ignored", QEMU keeps running.  serial/virt-cad-bin*-serial.log
+2 NEGATIVE CASES / SHIFT / KBSHIFT
+  kbn (desktop armed, scripts/kbn.script from method/gen_extra.py): Delete alone, Ctrl+Del, Alt+Del, LShift+Del, RShift+Del, Ctrl+RShift+Del, Alt+RShift+Del,
+    Ctrl+LShift+Alt+Del, Ctrl+LShift+RShift+Alt+Del, plain typing h e l -> NO reset line; the final positive control Ctrl+Alt+Del -> Warm reset.  serial/kbn-wt-serial.log
+  virt USB-HID (method/run-virt3.py): delete / ctrl+delete / alt+delete / shift+ctrl+alt+delete / a / shift+a / shift_r+a -> no reset line;
+    ctrl+alt+shift_r+delete -> "(Cold) requested"; ctrl+alt+delete -> "(Warm) requested".                                     serial/virt-keys-serial.log
+  Kbshift probe (method/kbprobe.c NAP, BIOS Kbshift(-1) via svc #13, injected make/break): wt: LShift 0x02, RShift 0x01, both 0x03, LShift up -> 0x01, Ctrl 0x04,
+    Alt 0x08, releases -> 0x00.  HEAD (control): RShift reports 0x02, both shifts held then LShift up -> 0x00 (the old single flag).  serial/kbprobe-{wt,head}-serial.log
+  QED typing (scripts/qt.script: Ctrl+N, then H(LShift) e L(RShift) l o space W(LShift) o R(RShift) l d Q(both Shifts)), screendump viewed: "HeLlo WoRldQ" on wt and
+    on HEAD, pixel-identical (bbox None); qt2 variant (no Left/Delete) shows "...Qx" (x was typed), qt (x, Left, Delete alone) removes it again, 0 reset.
+    screendumps/qedtype-{wt,head}-typed.png, qedtype2-wt-typed-x-kept.png
+3 APITEST (method/m113/api-*.sh, APITEST.NCP 9e4ca9e6, #Z autorun): head and wt, memprot on/strict/off: TOTAL 109/0/5 in all six, SUPER 17/0/0, 0 [FAIL],
+  0 EXC/PANIC, result lines head-vs-wt: 0 differing (mode strings verified in the logs).                                          serial/api-{head,wt}-*-serial.log
+4 INTERACTIVE A/B (method/m113/matrix.sh = a113-test matrix with paths adapted; kd-head vs kd-wt, injector scripts scripts/m113 = a113-test's s1/td/q; TeraDesk
+  rebuilt fresh from sdk/overlays/teradesk/main.c by sdk/apps/build-teradesk.sh, SYSACC.NAC 812ddd57, QED.NAP not rebuilt, taken from the tree build, sha in checks)
+  desk 18/18 identical, acc (SYSACC) 18/18, td (TeraDesk start, File menu, Ctrl-W, Quit -> desktop, S1) 24/24, qed (datei menu, Ctrl-Q -> desktop, S1) 20/21:
+  qed a1-desktop-info-dialog differed once (head: dialog drawn; wt: menu already closed, dialog not yet drawn; next frame a2 identical). Two repeats of the
+  head/wt qed pair (screendumps-rep/): 21/21 identical both times -> timing race of the 0.8 s dump, not reproducible. checks/pixcmp-*.txt
+  Serial volume identical to a113-test: desk 236/236, acc 260/260 (sched-switch 12/12), td 319/319, qed 291/291 lines head/wt; 0 EXC/PANIC in every run.
+5 HOSTTESTS: cargo xtask test 1418 passed / 0 failed / 1 ignored (checks/xtask-test-full.log, bios_reset 6 tests ok); sdk/run-host-tests.sh 20/0/0 (checks/sdk-host-tests.log).
+NOT RUN: real Pi 4 (real PM watchdog, firmware re-boot, USB re-enumeration with keys held, cache effects), clippy/rustc-warning delta (not requested; build
+  warnings 94/64 as in the dev run), qemu-virt dev profile, TeraDesk "Shutdown", TeraDesk side-by-side against a HEAD-built DESKTOP.NAP (the overlay exists only in the
+  working tree; both kernels ran the same overlay-built NAP), Ctrl+Alt+Del while an app (QED/TeraDesk) is in front.

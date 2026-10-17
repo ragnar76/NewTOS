@@ -1,0 +1,26 @@
+# RST01 keyboard combination, armed on "[desk] desktop up" (tools/inject-arm.py desktop=).
+# <ticks after arm> <IKBD byte>; Atari scancodes: Ctrl 0x1D, LShift 0x2A, RShift 0x36, Alt 0x38, Delete 0x53 (break |0x80).
+# 1) Ctrl+LShift+Alt+Del: LShift excluded (EmuTOS ikbd.c:736) -> must NOT reset.
+400 0x1D
+410 0x2A
+420 0x38
+430 0x53
+440 0xD3
+450 0xB8
+460 0xAA
+470 0x9D
+# 2) Ctrl+Alt with only the Delete BREAK code (0xD3): raw-byte compare (ikbd.c:735) -> must NOT reset.
+600 0x1D
+610 0x38
+620 0xD3
+630 0xB8
+640 0x9D
+# 3) Ctrl+Alt+RShift+Del -> cold reset (ikbd.c:738-741).
+800 0x1D
+810 0x38
+820 0x36
+830 0x53
+840 0xD3
+850 0xB6
+860 0xB8
+870 0x9D

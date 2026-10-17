@@ -1,0 +1,23 @@
+RST01 files over b8245e5c:
+  kernel/src/arch/aarch64/mmu.rs
+  kernel/src/drivers/bcm2711/mod.rs
+  kernel/src/drivers/bcm2711/pm.rs
+  kernel/src/host_env.rs
+  kernel/src/ikbd.rs
+  kernel/src/lib.rs
+  kernel/src/reset.rs
+  tos-api/src/bdos/process/loader.rs
+  tos-api/src/bios/mod.rs
+  tos-api/src/bios/reset.rs
+  tos-api/src/gemdos/ssystem.rs
+  tos-api/src/host.rs
+  tos-api/tests/bios_reset.rs
+  tos-api/tests/gemdos_ssystem_cpuinfo.rs
+  tos-api/tests/gemdos_ssystem_sysinfo.rs
+fed8a4207f06fa3cea236ac1ae54ed258e49c1f97c29c800cf749feb948a6cdc  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/rst01t/bin/kernel8-plain.img
+inject-arm.py: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/rst01t/trees/kbd: tag [kd], desktop (21 bytes)
+91e21ad4c3abb45ac34f14dac7d06f9562e523767b79ad8f11bffd86c3e67407  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/rst01t/bin/kernel8-kbd.img
+inject-arm.py: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/rst01t/trees/kbdw: tag [kd], desktop (6 bytes)
+e16c9b0850a48162d146f8974bffaad072f7bf2be7b7914a74c335cbb5da21d2  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/rst01t/bin/kernel8-kbdw.img
+inject-arm.py: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/rst01t/trees/td: tag [kd], launch:DESKTOP (37 bytes)
+9c681b807fd5a093470fca17664005f4a91e7f91b1ec4e7bc731b536796e0b52  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/rst01t/bin/kernel8-td.img

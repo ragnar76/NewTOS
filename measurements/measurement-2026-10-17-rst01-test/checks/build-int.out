@@ -1,0 +1,12 @@
+inject-arm.py: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/rst01t/trees/kd-head: tag [kd], launch:DESKTOP (77 bytes), desktop (180 bytes), launch:QED (49 bytes)
+d9976f26b6c26b3282e95e5e2cffd2187ee95bc7c1a14e0e1340d56287638491  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/rst01t/bin/kernel8-kd-head.img
+inject-arm.py: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/rst01t/trees/kt-head: tag [kd], launch:QED (42 bytes)
+16f545ec526ed7a4784ba2f984b22cf544b697ca0c02d606536759a2ae471eb3  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/rst01t/bin/kernel8-kt-head.img
+inject-arm.py: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/rst01t/trees/kb-head: tag [kd], launch:KBPROBE (12 bytes), desktop (60 bytes)
+d5b12781d2e7b800f76b903897611160ec8e21ec38dc8df06852ec71a5521faa  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/rst01t/bin/kernel8-kb-head.img
+inject-arm.py: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/rst01t/trees/kd-wt: tag [kd], launch:DESKTOP (77 bytes), desktop (180 bytes), launch:QED (49 bytes)
+16d6c63181030806eb9d9fffe3394938937de9909e96505196ad4308badf7d1a  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/rst01t/bin/kernel8-kd-wt.img
+inject-arm.py: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/rst01t/trees/kt-wt: tag [kd], launch:QED (42 bytes)
+32bd713d5599df8daa2777e422e7fd4a269e70f02e39f1178ae8c69635851182  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/rst01t/bin/kernel8-kt-wt.img
+inject-arm.py: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/rst01t/trees/kb-wt: tag [kd], launch:KBPROBE (12 bytes), desktop (60 bytes)
+1fad06b0c5767a0c1138a8af61bc3bf842c409986b0aa05690f6289d8b0f26b6  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/rst01t/bin/kernel8-kb-wt.img
