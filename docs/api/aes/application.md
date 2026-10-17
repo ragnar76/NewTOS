@@ -433,10 +433,15 @@ Rückweg" the source shows.** `aqueue` services the request at once (`doq` +
 `signal(e)` (`gemasync.c:64-69,77`), which ORs the event's mask into
 `p_evflg` (`gemasync.c:35-40`) *before* `mwait` runs its
 `!(mask & p_evflg)` test (`gemasync.c:120`) — so that test is already false
-and `dsptch()` is never reached. `ev_block` then returns `apret(code)`'s
+and `mwait` does not call `dsptch()`. (That is `mwait`'s own dispatch only:
+every AES call still ends in `super()`'s `dsptch()`, `gemsuper.c:458-462` —
+see [`event.md`](./event.md) "Wake conditions and dispatch", point 3. Corrected
+A112, 2026-10-17: this paragraph used to say the call never touches `dsptch()`.)
+`ev_block` then returns `apret(code)`'s
 extracted `e_return` (`gemasync.c:182-214`, extraction at `:208`) — **1**.
 So an `appl_read` on a non-empty queue, and an `appl_write` on a queue with
-room, both return immediately with `1`, never touching `dsptch()`.
+room, both return with `1` without blocking in `mwait` (the trap's closing
+`dsptch()` still runs).
 
 **Who wakes a blocked call.** After servicing the *current* request, `aqueue`
 also checks the *complementary* wait list and — unconditionally, without
@@ -627,7 +632,10 @@ build.
 | `int_out[0]` | return: `TRUE` (1) — `ret` is left at its initial `TRUE` (`gemsuper.c:85`) |
 
 Cooperatively yields the CPU to any other ready AES process by calling
-`dsptch()` (the run-list dispatcher). If `CONF_WITH_PCGEM` is 0, opcode 17
+`dsptch()` (the run-list dispatcher). This is not special to `appl_yield`: every AES call
+ends in `dsptch()` (`gemsuper.c:458-462`), so `appl_yield` dispatches twice per
+call (the arm at `:116-118`, then the fall-through); round-robin order in
+[`event.md`](./event.md) "Wake conditions and dispatch". If `CONF_WITH_PCGEM` is 0, opcode 17
 falls to the `default` arm and returns `-1` (see [`_dispatcher.md`](./_dispatcher.md)).
 
 ## `appl_exit` (19)

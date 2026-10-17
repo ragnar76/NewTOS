@@ -20,7 +20,10 @@
 > rectangle semantics; the button clicks/mask/state packing; the 16-byte standard
 > message; the double-click-rate speed range (0..4) and its table; the
 > `EV_KRET` scancode|ascii key encoding; the multi-event "which fired" bitmask
-> return. **Reference (NewTOS reimplements freely):** `ev_block`/`iasync`/`mwait`/
+> return. **Also contract (A112, "Wake conditions and dispatch"):** which event
+> wakes a blocked call regardless of which process runs, that every AES call
+> yields, and the `evnt_timer(0)` = one tick rule.
+> **Reference (NewTOS reimplements freely):** `ev_block`/`iasync`/`mwait`/
 > `apret`/`acancel`, the `EVB`/`QPB` event blocks, the fork queue (`forker`/
 > `forkq`), the `gl_mowner`/`p_cda` cooperative-scheduler internals, and the
 > `xrat`/`yrat`/`button`/`mtrans`/`pr_*` global mirrors — these are the EmuTOS
@@ -194,7 +197,13 @@ and the delivered `msg[0] == AC_CLOSE` it also sets `AP_ACCLOSE`.
    > loop" for the resulting **contract**: the click that selects a bar item
    > is never delivered to the application as `MU_BUTTON`.
 4. **Quick-check timer:** if `tmcount == 0` the timer is already "expired" →
-   `MU_TIMER` fires immediately (**a 0-ms timer is a poll**, `:216-220`).
+   `MU_TIMER` is set in the result without arming anything (`:216-220`), so
+   this call does not *block* on the timer. **This is not "the call does not
+   yield"** — the trap ends in `dsptch()` regardless (see "Wake conditions and
+   dispatch" below) — **and it holds only for `tmcount == 0` exactly**: a
+   non-zero count below `gl_ticktime` divides to 0 ticks and `adelay` turns that
+   into **1** tick (`gemevlib.c:259`, `geminput.c:500-501`). The same 0 as
+   `evnt_timer(0)` is **not** a poll (see `evnt_timer`).
 5. **Quick-check message:** if the caller's pipe is non-empty (`p_qindex > 0`)
    or a control-manager fast-path message is pending (`p_msg.action >= 0`),
    deliver it with `ev_mesag(mebuff)` and mark `MU_MESAG` (`:222-229`).
@@ -266,6 +275,126 @@ and the delivered `msg[0] == AC_CLOSE` it also sets `AP_ACCLOSE`.
 `ev_rets` reports the transition-time snapshot (`pr_xrat`/`pr_yrat`/`pr_button`)
 when a button transition is pending (`mtrans > 1`), otherwise the live
 `xrat`/`yrat`/`button`; `EV_KS` is always the live `kstate` (`gemevlib.c:42-58`).
+
+### Wake conditions and dispatch — contract (A112, 2026-10-17; re-extracted from source)
+
+Which event wakes a blocked call, **independent of which process is running at
+that moment**, and the rule that every AES call yields, are *observable* — a
+program sees another program's timer/message arrive while it is itself
+running — so they are contract, not scheduler internals. The mechanisms
+(`EVB`, `nrl`/`drl`/`rlr`, fork ring) stay reference.
+
+**1. Every wait arms one `EVB` per requested event and sleeps on the union.**
+`ev_multi` calls `iasync()` once per set flag (`gemevlib.c:235-259`), each
+chaining an `EVB` with `e_mask = flag` onto `rlr->p_evlist`
+(`gemasync.c:130-148`), then `mwait(flags)` sets `p_evwait = flags` and — only
+if none of those bits is already in `p_evflg` — marks the process `WAITIN` and
+calls `dsptch()` (`gemasync.c:117-127`; it lands on `nrl` via `mwait_act`,
+`gemdisp.c:82-93`). The single waits are the same with one flag:
+`ev_block` = `mwait(iasync(code, arg))` + `apret` (`gemevlib.c:64-69`).
+There is **no** single "input" wake key: each event has its own source (table).
+
+**2. The wake itself is `signal()`** (`gemasync.c:35-61`), called by
+`azombie()` (`:64-78`) when an `EVB` completes: it ORs the event's mask into
+the owner's `p_evflg`, and if the owner is **not** `rlr` and
+`p_evflg & p_evwait != 0` it moves the owner from `nrl` to `drl`
+(`:46-59`). `schedule()` then appends everything on `drl` to `rlr`
+(`gemdisp.c:193-197`). Any process can be the one that completes the `EVB`
+(`signal` names `e->e_pd`, not the caller), and `forker()` runs with
+`rlr = -1` (`gemdisp.c:107-108`), so a completion made from the fork ring
+wakes its owner whenever an awaited bit is set.
+
+| Call (flag) | Armed by | Completed at arm time (tested once) | Wake source while blocked |
+|---|---|---|---|
+| `evnt_keybd` / `MU_KEYBD` | `akbin` (`geminput.c:486-493`) | a key is already in the caller's own `p_cda->c_q` | `kchange` → `post_keybd(gl_mowner->p_cda, ch)` (`geminput.c:288-308`): **only if the caller is the key/mouse owner**. `kchange` is a fork queued by `chkkbd` (`gemdisp.c:158-178`), which runs in `schedule()` (`:191`) and at the head of `ev_multi` (`gemevlib.c:169`) |
+| `evnt_button` / `MU_BUTTON` | `abutton` (`geminput.c:545-565`) | `downorup(button, parm)` on the live level — ownership-blind | `post_button(gl_mowner, …)` (`:463-483`) from `bchange` (`:344`), `b_delay` and `set_mown` (`:233`): owner only |
+| `evnt_mouse` / `MU_M1`, `MU_M2` | `amouse` (`geminput.c:568-587`) | `in_mrect` at the instant of arming — ownership-blind | `post_mouse(gl_mowner, …)` (`:446-456`) from `mchange` (`:390`) and `set_mown` (`:231`): owner only |
+| `evnt_mesag` / `MU_MESAG` | `ev_mesag` → `ap_rdwr` → `aqueue(FALSE,…)` (`gemevlib.c:100-117`, `gemaplib.c:69-89`, `gemqueue.c:85-125`) | the caller's pipe is non-empty (`qready = p_qindex > 0`, `gemqueue.c:99`); or the `p_msg.action >= 0` `WM_ARROWED` shortcut (`gemevlib.c:102-114`) | a successful **write into the caller's own pipe by any process** — `appl_write`/`ap_sendmsg` → `aqueue(TRUE,…)` services the parked reader on `p_qdq` (`gemqueue.c:104-118`). Not input, not the owner |
+| `evnt_timer` / `MU_TIMER` | `adelay` (`geminput.c:496-542`) | **never** (see "0-ms timers") | the tick handler `tikcod` counts `CMP_TICK` down (`gemdosif.S:389-396`); at 0 it `forkq`s `tchange` (`:398-401`), which pulls expired `EVB`s off `dlr` via `evremove` → `azombie` → `signal` (`gemflag.c:32-68`). Independent of owner and of the running process — it needs only a `forker()` pass (see point 4) |
+
+Notes on the table:
+
+* **Only keyboard, button and mouse are owner-gated.** A blocked `MU_MESAG` or
+  `MU_TIMER` is woken whoever owns the mouse and whoever runs; a process that
+  waits on `MU_MESAG | MU_TIMER` is therefore never "waiting for input".
+* The `p_msg.action` shortcut needs no wake: `handle_arrow_msg` sets it only
+  when the target is **not** `WAITIN`, and sends a real `ap_sendmsg` message
+  when it is (`gemctrl.c:120-132`).
+* A write that finds the pipe full parks on `p_qnq` (`MU_SDMSG`) and is woken
+  by the next successful read of that pipe (`gemqueue.c:96-118`); the details
+  are in [`application.md`](./application.md).
+* On wake, `ev_multi` does **not** re-test any condition. `which = mwait(flags)`
+  is simply `p_evflg` — every `EVB` that completed before the process actually
+  resumed — then `acancel(flags)` drops the still-pending ones and ORs in the
+  already-`COMPLETE` ones (`gemevlib.c:261-264`, `gemasync.c:217-243`); results
+  come from each `EVB`'s `e_return` via `apret` (`:270-290`). So several bits can
+  be set in one return even from a blocking call.
+
+**3. Every AES call gives up the CPU.** The trap enters `super()`
+(`gemdosif.S:258`); for selector 200 it runs `xif()` and **falls through** to
+`dsptch()`, for 201 it runs only `dsptch()` (`gemsuper.c:454-466`). So a call
+that returned without blocking — `appl_read` on a non-empty pipe, an
+`evnt_multi` whose quick checks fired, `evnt_timer`'s own completion, `graf_mkstate` —
+still ends in `dsptch()`. (`mwait`'s own `dsptch()` is skipped when the event is
+already complete, `gemasync.c:120-124`; `super()`'s is not skippable.)
+`dsptch()` is a no-op only when `indisp` is already set
+(`gemasm.S:129-132`, i.e. when called from fork-ring code).
+
+`disp()` (`gemdisp.c:221-253`): takes the running process off the head of `rlr`
+(`:226-227`); if it is `WAITIN` it goes to `nrl` unless an awaited bit is already
+set (`mwait_act`, `:82-93`), otherwise `disp_act` appends it to the **end** of
+`rlr` (`insert_process`: "find the end", `gempd.c:133-145`); then it drains the
+fork ring (`forker`) and runs `schedule()`, which polls the keyboard and appends
+`drl` to `rlr`, spinning until `rlr` or the fork ring is non-empty
+(`gemdisp.c:181-205`); finally `switchto(rlr->p_uda)` resumes the **head** of `rlr`
+(`:252`).
+
+* **Order = round robin over `rlr`.** The caller of `dsptch()` goes to the back,
+  processes already on `rlr` run first in list order, processes woken during
+  this pass (`drl`) are appended **behind the caller** (the caller is inserted by
+  `disp_act` before `schedule()` runs, `gemdisp.c:231-243`). If the caller is
+  alone on `rlr`, it is resumed at once and the woken process runs at the caller's
+  *next* `dsptch()`. (Inferred from the list handling above: `drl` is a push-front
+  stack — `signal`, `gemasync.c:56-57`; `iprocess`, `gempd.c:125-128` — so several
+  processes woken in one pass join `rlr` in reverse wake order.)
+* **A process that never calls the AES never dispatches.** There is no
+  preemption: the fork ring and the tick work (`tchange`, mouse/key forks) only
+  run inside `disp()` or at the head of `ev_multi`. A program that polls with
+  AES calls therefore feeds the others; one that polls without any does not.
+* **`appl_yield` (17, `CONF_WITH_PCGEM`)** is `dsptch()` and nothing else
+  (`gemsuper.c:115-119`); since `super()` dispatches again afterwards the call
+  yields twice — observable only as extra latency. Returns the default `TRUE`.
+
+**4. Who runs `forker()`** (and so delivers input and timer expiry): `disp()`
+(`gemdisp.c:239-244`) on every dispatch, and the head of `ev_multi`
+(`gemevlib.c:169-170`). `ev_button`/`ev_mouse`/`ev_block` have no pre-drain
+(`gemevlib.c:84-94,123-128`) and rely on the dispatch.
+
+**5. When the immediate conditions are tested.** *Once, at arm time — never
+again after a resume.* `ev_multi` runs its quick checks (`gemevlib.c:172-229`)
+and, only if they found nothing, arms each event, and each `iasync` arm tests its
+own condition once more as the table shows (`gemasync.c:149-176`). From then on
+a condition is satisfied only by a `post_*`/`aqueue`/`tchange` completion; after
+`mwait` returns, no button level, rectangle, pipe or key queue is looked at
+again (`gemevlib.c:261-290`). Differences between the two arm-time tests:
+the quick check of button/rectangles is owner-gated (`rlr == gl_mowner`,
+`:185`), the `abutton`/`amouse` arm is not; message and key tests exist in both.
+Only a *new* AES call arms and tests again.
+
+**6. 0-ms timers.** The two forms differ:
+
+* `evnt_timer(0)` → `ev_timer` → `ev_block(MU_TIMER, 0/gl_ticktime)`
+  (`gemevlib.c:134-137`) → `adelay`, whose first statement is `if (c == 0L) c = 1L`
+  (`geminput.c:500-501`). It always arms a real one-tick delay and sleeps until
+  the next tick completes it through `tchange`. Not a poll; elapsed time is the
+  next tick boundary (0..1 tick periods — inferred: `tikcod` decrements on each
+  tick, `gemdosif.S:392-396`).
+* `evnt_multi(MU_TIMER, …, 0 ms)`: `tmcount == 0` completes `MU_TIMER` in the quick
+  check, nothing is armed, **no blocking** (`gemevlib.c:216-220`). Still ends in
+  `dsptch()` via `super()`. Other requested events that are already satisfied
+  are reported in the same return; none that are not are armed.
+* Any non-zero `tmcount` below one tick (`ms/gl_ticktime == 0`) is armed as
+  **one tick** (`gemevlib.c:259` + `geminput.c:500-501`).
 
 ### The button state an event reports (`mtrans` / `pr_*`) — contract (LDG-M3 B1, 2026-10-06)
 
@@ -679,9 +808,14 @@ handshake `appl_exit` waits on.
 
 Waits the given number of **milliseconds** (a 32-bit count assembled hi:lo).
 Internally the ms count is divided by `gl_ticktime` (ms per system tick,
-`geminit.c:704`) to get a tick count for `ev_block(MU_TIMER, …)`. A count of
-**0 ms returns immediately** (see the `evnt_multi` quick-check; the same
-0-is-a-poll rule applies).
+`geminit.c:704`) to get a tick count for `ev_block(MU_TIMER, …)`. **A count of 0 ms does
+not return immediately** (corrected A112, 2026-10-17): `adelay` raises a tick
+count of 0 to 1 (`if (c == 0L) c = 1L`, `geminput.c:500-501`), so
+`evnt_timer(0)` — like any count below one `gl_ticktime` — arms a real
+one-tick delay and sleeps until the next tick completes it
+(`gemflag.c:32-68`). Only `evnt_multi` with `MU_TIMER` and `tmcount == 0`
+exactly is a poll (quick check, `gemevlib.c:216-220`). See "Wake conditions
+and dispatch", point 6.
 
 ### `evnt_dclick` (26)
 
@@ -754,7 +888,7 @@ successful wait/query:
 |-----------|-----------------|----------------|
 | `evnt_keybd` — always returns a key code | `gemsuper.c:127` | key code (never negative) |
 | `evnt_button` — returns click count (may be 0 if the delay window closes) | `gemevlib.c:84-94` | click count ≥ 0 |
-| `evnt_multi` — returns the fired-event mask (never 0 in practice: it blocks until something fires, or a 0-ms timer/poll fires immediately) | `gemevlib.c:293` | `MU_*` mask |
+| `evnt_multi` — returns the fired-event mask (never 0 in practice: it blocks until something fires, or a `tmcount == 0` timer completes it in the quick check) | `gemevlib.c:293` | `MU_*` mask |
 | `void` waits (`evnt_mouse`/`evnt_mesag`/`evnt_timer`) | `gemsuper.c:85` | 1 (`crysbind` default `ret`) |
 | any opcode not compiled (n/a here — all 20–26 present) | `gemsuper.c:406-417` | -1 |
 
@@ -802,9 +936,17 @@ dispatcher's unsupported-opcode → `-1` path (see [`_dispatcher.md`](./_dispatc
 - **`evnt_mouse` enter vs leave:** `int_in[0]=0` over a rect fires when the
   cursor moves **inside** it; `int_in[0]=1` fires when it moves **outside** —
   `in_mrect` = `m_out != inside(x,y,rect)` (`geminput.c:76-79`).
-- **`evnt_timer` poll:** `evnt_timer(0)` (`int_in[0]=int_in[1]=0`) returns
-  immediately; `evnt_multi` with `MU_TIMER` and a 0-count fires `MU_TIMER`
-  without blocking (`gemevlib.c:216-220`).
+- **`evnt_timer(0)` is one tick, not a poll** (corrected A112): it arms a
+  one-tick delay and returns after the next tick (`gemevlib.c:136`,
+  `geminput.c:500-501`). `evnt_multi` with `MU_TIMER` and `tmcount == 0` fires
+  `MU_TIMER` from the quick check without blocking (`gemevlib.c:216-220`), but
+  the trap still ends in `dsptch()` (`gemsuper.c:458-462`).
+- **Wake independent of the running process:** a process blocked in
+  `evnt_multi(MU_TIMER)` or `evnt_multi(MU_MESAG)` while another AES process
+  runs (and calls the AES) is woken by its tick expiry / by the message another
+  process wrote, not by input (`gemflag.c:32-68`, `gemqueue.c:104-118`,
+  `gemasync.c:35-61`); `MU_KEYBD`/`MU_BUTTON`/`MU_M1/M2` only while it owns the
+  mouse (`geminput.c:288-308,446-483`).
 - **`evnt_mesag` delivery + AC_CLOSE:** after a message is delivered, the
   16-byte buffer holds it and `AP_MESAG` is set; if `msg[0] == AC_CLOSE`,
   `AP_ACCLOSE` is also set (`gemsuper.c:137-140`).
@@ -820,9 +962,18 @@ dispatcher's unsupported-opcode → `-1` path (see [`_dispatcher.md`](./_dispatc
    The single-event keyboard wait puts the code in `RET_CODE`; only
    `evnt_multi` uses the `EV_KRET` (`int_out[5]`) slot (`gemsuper.c:127` vs
    `gemevlib.c:179`). Programs must read the right slot per call.
-2. **A 0-count timer is a poll.** `evnt_timer(0)` and `evnt_multi` with a 0-ms
-   `MU_TIMER` fire immediately without yielding — the idiom for a non-blocking
-   "check for events now" (`gemevlib.c:216-220`).
+2. **A 0-count timer is a poll only in `evnt_multi`, and even then it yields.**
+   *(Corrected A112, 2026-10-17: the earlier text said `evnt_timer(0)` and
+   `evnt_multi` with a 0-ms `MU_TIMER` "fire immediately without yielding";
+   both halves were wrong.)* `evnt_multi` with `tmcount == 0` completes
+   `MU_TIMER` in its quick check and does not block (`gemevlib.c:216-220`) —
+   the idiom for "check for events now" — but every AES call, this one
+   included, ends in `dsptch()` (`gemsuper.c:458-462`), so other ready
+   processes run before the caller resumes. `evnt_timer(0)` is **not** a poll:
+   `ev_timer` → `ev_block(MU_TIMER, 0)` → `adelay` raises 0 to 1
+   (`gemevlib.c:134-137`, `geminput.c:500-501`) and the caller sleeps until the
+   next tick. A non-zero `evnt_multi` count under one `gl_ticktime` is likewise
+   armed as one tick (`gemevlib.c:259`).
 3. **`MU_M3` (0x100) cannot be requested by an application.** The dispatcher
    masks `MU_FLAGS & MU_TOSVALID` (0x3F) before calling `ev_multi`, so the
    third rectangle is internal to the menu-extension code only
@@ -987,7 +1138,11 @@ dispatcher's unsupported-opcode → `-1` path (see [`_dispatcher.md`](./_dispatc
   packet feeds `evnt_mouse`/`evnt_button`); the timer from the frame/`CNTPCT`
   clock (cf. XBIOS `Vsync`). Messages come from the per-process 16-byte pipe
   shared with `appl_write` (see [`application.md`](./application.md)).
-- **The wait mechanics are free; the flag model + arrays are contract.**
+- **The wait mechanics are free; the flag model + arrays are contract — and so
+  is the wake set** (A112): a blocked `evnt_multi` must be woken by *each* armed
+  event's own source (timer expiry, a message another process wrote, owner-gated
+  input), not by one shared input key, and each AES call must yield afterwards.
+  See "Wake conditions and dispatch".
   `ev_block`/`iasync`/`mwait`/`apret`/`acancel` and the fork queue are EmuTOS
   cooperative-scheduler internals — NewTOS parks the calling process on its own
   scheduler. What must match exactly: the `MU_*` bit values, the `int_in`/
