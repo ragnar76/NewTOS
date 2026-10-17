@@ -1,0 +1,66 @@
+A113 + A114 — cause analysis runs (auditor, no product code changed)
+====================================================================
+
+Date:    2026-10-17
+Who:     auditor agent (root cause first, no fix)
+Kernel:  cargo xtask build --board rpi4 --release from clean HEAD 58b407eb
+         (kernel/tos-api sources touched to force a fresh compile),
+         sha256 cb9ffdf73a0dd166dfd326d8e16d66710e4c2108cad7dd9eb5fa0d83234a208e
+         (binary not kept; all binary hashes in method/sha256.txt).
+Target:  QEMU raspi4b, -append serial=on, 64 MiB FAT16 image per probe set,
+         APFS clone per run (deleted after), NEWDESK.INF "#Z 01 C:\MAIN.NAP@",
+         accessories as .NAC in C:\. Probes built with sdk/build.sh.
+
+method/
+  a114-rerun/run.sh   the A112-audit run.sh with a per-run clone name (so the
+                      four runs could go in parallel). Probe sources unchanged:
+                      measurements/measurement-2026-10-17-a112-audit/method/
+                      (evprobe.c, r_*.c, m4/r_*.c, mkimg.sh), rebuilt as is.
+                      Sets: run1 ACCA+ACCB+ACCC+MAIN, run2 ACCA..ACCD+MAIN_LATE,
+                      run3 ACCB+ACCC+MAIN, run4 ACCD_FAST+POLL (as MAIN.NAP).
+  idprobe/            new probe idprobe.c (roles by #define: ROLE_ACC with
+                      ACCTAG X/Y, ROLE_MAIN, ROLE_SECOND), mkimg.sh (copy of
+                      the A112-audit one), runts.sh (host-timestamped serial).
+                      Card: ACCX.NAC ACCY.NAC MAIN.NAP SECOND.NAP NEWDESK.INF.
+                      MAIN: appl_find of all names, WF_OWNER of handles 1..6,
+                      appl_write to {find(ACCX), find(ACCY), 2, 3, 0}, collects
+                      replies, then shel_write(SHW_EXEC,"C:\SECOND.NAP") and
+                      appl_exit. Accessories: appl_init, menu_register,
+                      appl_find, one window, evnt_mesag loop, reply to 0x4000
+                      via appl_write(msg[1]). SECOND: appl_init, appl_find,
+                      appl_exit.
+                      idprobe.c is the final state: idprobe2 differs from
+                      idprobe1 only in MAIN/SECOND printing the appl_exit
+                      return before Pterm and returning 0x40/0x50 + it.
+  sha256.txt          hashes of kernel8.img and every probe binary (the
+                      MAIN.NAP/SECOND.NAP hashes are the idprobe2 build).
+
+serial/
+  a114-rerun-run{1..4}.log  A114 step 1: every run still prints
+        "[acc] launching with N accessory(s); AC_CLOSE seen by all: false"
+        at the #Z start (and "wait_for_accs(AP_MESAG): timed out", because
+        none of those probe accessories waits for a message before its
+        first evnt_timer / never waits at all).
+  idprobe1.log / idprobe2.log
+        - every AES client reports ap_id 0: ACCX, ACCY, MAIN, SECOND
+          (appl_init ret and global[2]).
+        - appl_find("ACCX    ")/("ACCY    ") = 0 from MAIN and from the
+          accessories; "MAIN    " = 0 while MAIN runs, -1 once SECOND runs;
+          "SCRENMGR" = 1; unknown = -1.
+        - MAIN appl_write(0) = 1 three times — all three messages come back
+          into MAIN's own queue (m4 = 0, 1, 4); appl_write(2) = 0,
+          appl_write(3) = 0; no accessory ever receives 0x4000, no reply.
+        - accessory's own WM_REDRAW carries msg[1] = 0.
+        - WF_OWNER of handles 1..6 after the #Z start: all closed (the AES
+          re-inits the windows before sh_ldapp, as EmuTOS's wm_init in
+          sh_main does).
+        - MAIN appl_exit: both accessories get AC_CLOSE (msg[1]=0,
+          msg[3] = menu id 0 / 1) BEFORE appl_exit returns 1 (rc=65 in
+          idprobe2); the launch of SECOND then reports "AC_CLOSE seen by
+          all: true"; SECOND's appl_exit repeats the handshake (rc=81).
+
+Result: A114 — not a defect of the handshake; the "false" at the #Z start
+is EmuTOS behaviour (no appl_exit precedes an autorun program); the
+launch.rs comment/diagnostic is what is wrong. A113 — confirmed: all
+accessories report ap_id 0 and cannot be addressed; full analysis in the
+auditor report for A113/A114.
