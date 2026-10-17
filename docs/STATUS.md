@@ -66,7 +66,7 @@ Driftprobe 0 seit U10: der Kernel linkt den Desktop nicht mehr.
 
 - P1: keins. **DESK43** ist bis U10 erledigt und auf der Pi abgenommen (Tester PASS `d0e5afa5`, ADR-026); offen nur die Pi-Gegenprobe des EmuCON-Rueckfalls (braucht Kern mit defektem NEWDESK).
 - P2: **PROC03** (Desktop-Haelfte durch DESK43 geliefert; offen AES-PD als echter
-  Prozess, Ticket umformulieren) — einziger offener P2-Punkt.
+  Prozess) — neu gefasst 2026-10-17, Anwender 2026-10-18: Elternkette, `Pterm` ueber `p_parent`, `run`/Accessory-`Malloc` und Verzeichnis je PD (PROC04 Punkt 2) EmuTOS-treu; in Arbeit.
 - P3 / Erweiterungen: ARCH03 Stufe 2b, **SND01/SND02** (Ton), SDL01, RTC01,
   REF03, T15, DESK49, DESK51–DESK55, **CON01** (Spaltenzaehler/Typeahead), **CON02** (`Cconws` folgt Umlenkung nicht), FS12 (26 Laufwerke), FS14 (Frename ueber Verzeichnisgrenzen), LIBC-IOCTL, LIBC-BUF, DESK61, DESK63 (Verknuepfung auf Verknuepfung), DESK65 (sofort speichern, Erweiterung), DESK66 (Hintergrund an die AES melden), DESK67 (Reste aus DESK48), A115 (Bereitliste wie EmuTOS `rlr`), A116 (`appl_write` auf volle fremde Queue blockiert in EmuTOS), RST02 (Warmstart EmuTOS-treu), INPUT02 (Ctrl+Alt+Del bei haengendem Programm), MEM07, MEM08, MEM10, MEM06 (Idee),
   IO01 (Idee: AUX/MIDI/PRN-Treiber).

@@ -24,7 +24,7 @@ Beleg: `measurements/measurement-2026-10-06-post-e9/RUNINFO.TXT`,
 
 ## Neufassung (2026-10-17, Entwurf)
 
-Status: **ENTWURF, wartet auf Anwenderentscheidung (Fragen am Ende)** · Prioritaet: **P2** · Typ: Abweichung von EmuTOS (beobachtbar + intern, getrennt gekennzeichnet)
+Status: **IN ARBEIT — Anwender 2026-10-18: alles EmuTOS-treu (siehe Ende)** · Prioritaet: **P2** · Typ: Abweichung von EmuTOS (beobachtbar + intern, getrennt gekennzeichnet)
 
 Beleg: `measurements/measurement-2026-10-17-proc03/RUNINFO.TXT` (QEMU-Sonde auf HEAD `7d79f4a4`, on und strict); EmuTOS-Pin `1a7484ab`.
 
@@ -105,3 +105,24 @@ Erwartung EmuTOS (aus den zitierten Quellen, Kette in Zeigern; `X` = Programm):
 2. B4 (`Pterm` ueber `p_parent` statt `parent_slot`): beobachtbar nur fuer Programme, die ihr eigenes `p_parent` umbiegen; keine im SDK. Parken oder Probe bauen?
 3. B5 (`*os_run`/`Malloc`-Besitzer eines Accessory = Vordergrundprogramm): EmuTOS-treu nachbilden oder bewusst bei "Accessory besitzt sein Malloc" bleiben (FreeMiNT-Richtung)? Das entscheidet auch, ob Stufe 3 noetig wird.
 4. AES-PD-Felder `p_hitpa`/`p_tbase`: Platzhalterwerte erfinden (Quelle fehlt: `exec_os` hat keine Entsprechung) oder als Abweichung durch Fehlen dokumentiert lassen?
+
+## Anwenderentscheidung (2026-10-18)
+
+Anwender: *„bau es so, dass es wie auch im EmuTOS ist, sonst besteht die
+Gefahr, dass wir Probleme bekommen beim Portieren von Apps“*. Damit gilt fuer
+alle Fragen aus §7: **EmuTOS-treu**.
+
+1. Stufe 1 (accdesk- und EmuCON-PD, Spec-Berichtigung): ja.
+2. B4: `Pterm` kehrt ueber `p_parent` zurueck wie `bdos/proc.c:609`.
+3. B5: `run`/`*os_run` und `Malloc`-Besitz eines Accessorys wie EmuTOS
+   (`bdos/iumem.c:134` `m_own = run`). Folge (EmuTOS-Fallstrick): Speicher,
+   den ein Accessory waehrend eines Programms holt, gehoert dem Programm und
+   wird mit dessen `Pterm` frei. Damit wird Stufe 3 (`run` ausserhalb der
+   EL0-Prozesse, AES-/accdesk-PD als Besitzer) noetig — erst analysieren.
+4. AES-PD-Felder: so, wie EmuTOS sie ausweist; wo ohne AES-TPA nicht
+   darstellbar, Analyse vorlegen statt Werte zu erfinden.
+5. Stufe 2 (Verzeichnis/Laufwerk je PD, PROC04 Punkt 2) wird mitgezogen —
+   einzige Luecke mit gemessener Wirkung, gleiche Begruendung (Portierung).
+
+Reihenfolge (seriell): Spec fuer alles → Stufe 1 + B4 → PROC04 Punkt 2 →
+Analyse Stufe 3/B5 → Bau Stufe 3/B5. Jeweils rot/gruen + unabhaengiger Tester.
