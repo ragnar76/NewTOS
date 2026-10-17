@@ -110,7 +110,11 @@ fixed (TeraDesk's boot-time version check). (Supersedes finding S3; the earlier
 
 ### `reseth` (0x04)
 
-C-language reset handler. Called via `os_entry`'s branch.
+Reset handler pointer. EmuTOS: `.dc.l _main` (`bios/startup.S:82-83`),
+the same target as `os_entry` (`bra.s _main`, `:78-79`) and `os_res1`
+(+0x10, `:92-93`). Also used by EmuTOS itself as `swv_vec` after
+monitor change (`bios/bios.c:552`, called at `bios/screen.c:1329`).
+See `docs/api/bios/_reset-warm-cold.md` §3.
 
 ### `os_beg` (0x08)
 
@@ -125,11 +129,22 @@ up). On Atari hardware: end of OS RAM workspace, before any video
 RAM. On NewTOS: end of kernel BSS, start of available RAM for user
 processes.
 
-### `os_rsvl` (0x10)
+### `os_rsvl` (0x10) — EmuTOS' `os_res1`
 
-Reserved. On classic TOS, was the AES entry point address.
-EmuTOS sets `os_rsvl = 0` (AES entry is reached via `os_magic →
-gm_init`).
+Reserved in the typedef (`biosdefs.h`; "was UI entry"). **CORRECTED
+2026-10-17 (TASK/RST01, X04): the previous text here said "EmuTOS sets
+`os_rsvl = 0`". That is wrong.** The assembly definition stores
+`os_res1: .dc.l _main` (`bios/startup.S:92-93`), and `reseth` (+0x04) is
+`_main` as well (`startup.S:82-83`). `_main` is `bra.w _realmain`
+(`startup.S:115-116`), i.e. the full restart path. A program that jumps
+to `os_beg+0x10` (TeraDesk's `*((long *) os_start + 4)` on m68k, where
+`long` = 4 bytes: `sdk/apps/teradesk/main.c:2096`) therefore **restarts
+the machine** on EmuTOS; the AES entry is reached via `os_magic → gm_init`,
+not through this field. The startup comment (`startup.S:84-87`, "os_end and
+os_res1 below are never used") only says EmuTOS does not read the field
+itself. Full restart semantics: `docs/api/bios/_reset-warm-cold.md` §3.
+The same three entry points (`os_entry`, `reseth`, `os_res1`) all end in
+`_main`.
 
 ### `os_magic` (0x14)
 

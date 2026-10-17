@@ -241,6 +241,10 @@ Compendium/Profibuch oder eine reale TOS4-Maschine, nicht eine Vermutung.
 
 ## 5. `resvalid`/`resvector`/`memvalid`/`memval2` — der Warm-Reset-Mechanismus (TeraDesk-Beleg)
 
+> Ergaenzung 2026-10-17 (RST01): `warm_reset`/`cold_reset`, Tastenkombination und
+> der OSHEADER-Einsprung `os_res1`/`reseth` -> `_main` stehen in
+> `docs/api/bios/_reset-warm-cold.md`.
+
 Das Gap-Dokument listet `$420` (`memvalid`), `$43a` (`memval2`), `$426`
 (`resvalid`), `$42a` (`resvector`) als von TeraDesk bei **Shutdown/Reset**
 gelesen. Quellbefund, was diese vier tatsächlich tun:

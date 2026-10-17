@@ -150,7 +150,7 @@ rts` -> `void kbd_int(UBYTE scancode)` (`bios/ikbd.c:725`). Das Byte ist ein
 **IKBD-Scancode**: Bit 7 gesetzt = Break (`KEY_RELEASED 0x80`, `ikbd.c:48`,
 `:777`), sonst Make. `kbd_int` (`ikbd.c:725-910`) macht der Reihe nach:
 
-1. Ctrl-Alt-Del / Ctrl-Alt-RShift-Del -> `warm_reset()`/`cold_reset()` (`:732-742`);
+1. Ctrl-Alt-Del / Ctrl-Alt-RShift-Del -> `warm_reset()`/`cold_reset()` (`:734-747`; exact key-state conditions in `docs/api/bios/_reset-warm-cold.md` §2);
 2. Scancodes `0x37,0x5e,0x5f,0x59,0x5a,0x5c,0x5d` (`CONF_WITH_EXTENDED_MOUSE`) ->
    `mousexvec(scancode)` und **Rueckkehr** (`:748-760`);
 3. Break (`:777`): Modifier-Bits loeschen (`:779-806`), Alt-Release mit
