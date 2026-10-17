@@ -2317,21 +2317,41 @@ pub(super) fn win_sinfo(handle: i16, check_selected: bool) {
 }
 
 /// `desk_clear` (EmuTOS `desk/desksupp.c:121-153`) — deselect everything in
-/// window `wh` and refresh its info line.
+/// window `wh`, **redraw what changed**, and refresh its info line.
 ///
-/// The state half is [`DeskState::desk_clear`] (the `act_allchg(…, FALSE)`
-/// call, `:147`); the second half is `win_sinfo(pw, TRUE)` for anything but
-/// the desktop (`:150-153`), which is how a deselect puts the directory's byte
-/// count back in place of a selection count. Returns whether anything changed,
-/// for the caller's repaint decision.
+/// ```c
+/// if (wh != DESKWH) { pw = win_find(wh); if (pw) root = pw->w_root; }
+/// if (root == DROOT) wh = DESKWH;
+/// wind_get_grect(wh, WF_WXYWH, &c);
+/// act_allchg(wh, root, 0, &gl_rfull, &c, FALSE);
+/// if (wh != DESKWH) win_sinfo(pw, TRUE);
+/// ```
 ///
-/// [`DeskState::desk_clear`]: super::global::DeskState::desk_clear
-pub(super) fn desk_clear(wh: i16) -> bool {
-    let changed = global::with(|g| g.desk_clear(wh)).unwrap_or(false);
+/// `act_allchg(…, FALSE)` ([`DeskState::act_allchg_clear`]) clears the
+/// selection and ends with `do_wredraw(wh, &a)` over the union of the objects
+/// that were deselected (`deskact.c:552-555`) — the drawing half, so no caller
+/// needs a whole-desktop repaint to make a cleared selection disappear
+/// (DESK48). `win_sinfo(pw, TRUE)` then puts the directory's byte count back in
+/// place of a selection count.
+///
+/// [`DeskState::act_allchg_clear`]: super::global::DeskState::act_allchg_clear
+pub(super) fn desk_clear(wh: i16) {
+    // `root = pw->w_root` for a live window, else `DROOT` — and then the
+    // handle is forced to the desktop "for safety" (`desksupp.c:128-141`).
+    let root = global::with(|g| g.win_find(wh).map(|w| w.w_root)).flatten();
+    let (wh, root) = match root {
+        Some(r) if wh != DESKWH && r != DROOT => (wh, r),
+        _ => (DESKWH, DROOT),
+    };
+    // `wind_get_grect(wh, WF_WXYWH, &c);` (`:144`)
+    let c = wind_get_work(wh);
+    // `act_allchg(wh, root, 0, &gl_rfull, &c, FALSE);` (`:147`)
+    if let Some(a) = global::with(|g| g.act_allchg_clear(wh, root, c)).flatten() {
+        redraw::do_wredraw(wh, a);
+    }
     if wh != DESKWH {
         win_sinfo(wh, true);
     }
-    changed
 }
 
 /// `fun_search` (EmuTOS `deskfun.c:560`, `CONF_WITH_SEARCH`) — File → Search:
@@ -2630,6 +2650,73 @@ fn do_close_folder() {
         });
         do_fopen(handle, 0, &pspec, &ptitle, false);
     }
+}
+
+/// `refresh_drive` (EmuTOS `desksupp.c:1696-1715`) — "called (after a format
+/// or delete) to redisplay any windows associated with the specified drive
+/// letter":
+///
+/// ```c
+/// for (pw = G.g_wfirst; pw; pw = pw->w_next)
+///     if (pw->w_id && pw->w_pnode.p_spec[0] == drive) {
+///         fun_close(pw, CLOSE_TO_ROOT);   /* what Atari TOS does */
+///         refresh_window(pw, FALSE);
+///     }
+/// ```
+///
+/// `fun_close(pw, CLOSE_TO_ROOT)` (`deskfun.c:862-893`) keeps the file part
+/// of `p_spec` and drops every folder (`strcpy(pathname+3, fname)`), then
+/// `w_setpath` (`deskfun.c:809-825`): `pw->w_cvrow = 0` and
+/// `do_fopen(pw, 0, pathname, FALSE)`, inside `desk_busy_on`/`desk_busy_off`.
+/// The `graf_shrinkbox` of `w_setpath` is not built (no binding yet, as in
+/// [`do_close_folder`]; TASK/DESK51). The caller is the desktop arm of
+/// `fun_del` (DESK48: it used to end in a whole-desktop `redraw_desktop`).
+pub(super) fn refresh_drive(drive: u8) {
+    let handles = global::with(|g| {
+        g.windows
+            .zorder
+            .iter()
+            .map(|&s| &g.windows.slots[s])
+            .filter(|w| w.w_id != DESKWH && w.w_pnode.p_spec.as_bytes().first() == Some(&drive))
+            .map(|w| w.w_id)
+            .collect::<Vec<i16>>()
+    })
+    .unwrap_or_default();
+    for handle in handles {
+        // `fun_close(pw, CLOSE_TO_ROOT)`.
+        pro::desk_busy_on();
+        let spec = global::with(|g| g.win_find(handle).map(|w| w.w_pnode.p_spec.clone())).flatten();
+        if let Some(spec) = spec {
+            let fname = &spec[spec.rfind('\\').map_or(0, |i| i + 1)..];
+            let mut root = String::from(&spec[..spec.len().min(3)]);
+            let title = root.clone();
+            root.push_str(fname);
+            // `w_setpath(pw, pathname)`: `pw->w_cvrow = 0;` then
+            // `do_fopen(pw, 0, pathname, FALSE)`.
+            global::with(|g| {
+                if let Some(slot) = g.win_slot(handle) {
+                    g.windows.slots[slot].w_cvrow = 0;
+                }
+            });
+            do_fopen(handle, 0, &root, &title, false);
+        }
+        pro::desk_busy_off();
+        refresh_window(handle);
+    }
+}
+
+/// `refresh_window(pw, FALSE)` (EmuTOS `desksupp.c:1666-1693`) — re-read the
+/// window's directory in place: `do_fopen(pw, 0, pw->w_pnode.p_spec, FALSE)`
+/// ("make sure we don't open a new window"). The `force_mediach` arm (a
+/// floppy `Rwabs` media change) is not reached: the only caller passes
+/// `FALSE`, and NewTOS has no floppy drives.
+fn refresh_window(handle: i16) {
+    let spec = global::with(|g| g.win_find(handle).map(|w| w.w_pnode.p_spec.clone())).flatten();
+    let Some(spec) = spec else {
+        return; // `if (!pw->w_id) return;` — nothing to refresh
+    };
+    let title = String::from(&spec[..=spec.rfind('\\').unwrap_or(0)]);
+    do_fopen(handle, 0, &spec, &title, false);
 }
 
 /// File → Cycle windows (EmuTOS `BTOPITEM`, `deskmain.c:711-717`) — bring the
@@ -3499,23 +3586,28 @@ pub fn fun_msg_mn_selected(title: Title, item: Item) {
     hndl_menu(item, title_obj);
 }
 
-/// Deselect every window (and the desktop), repainting those that changed
-/// (EmuTOS `desk_clear_all`).
+/// `desk_clear_all` (EmuTOS `desksupp.c:160-169`) — deselect every open
+/// window, then the desktop:
+///
+/// ```c
+/// for (pw = G.g_wfirst; pw; pw = pw->w_next)
+///     if (pw->w_id) desk_clear(pw->w_id);
+/// desk_clear(DESKWH);
+/// ```
+///
+/// Each [`desk_clear`] redraws only the objects it deselected; there is no
+/// per-window or desktop-wide repaint of its own (DESK48 — until then this
+/// ran `win_shwall` plus `do_wredraw(DESKWH, …)` on every window change).
+/// The walk is the `G.g_wfirst` chain, i.e. the z-order from the top.
 fn desk_clear_all() {
-    let (handles, n) = open_handles();
-    let mut any_win = false;
-    for &handle in &handles[..n] {
-        if desk_clear(handle) {
-            any_win = true;
-        }
+    let handles = global::with(|g| {
+        g.windows.zorder.iter().map(|&s| g.windows.slots[s].w_id).filter(|&id| id != DESKWH).collect::<Vec<i16>>()
+    })
+    .unwrap_or_default();
+    for handle in handles {
+        desk_clear(handle);
     }
-    let any_desk = desk_clear(DESKWH);
-    if any_win {
-        redraw::win_shwall();
-    }
-    if any_desk {
-        redraw::do_wredraw(DESKWH, g_desk());
-    }
+    desk_clear(DESKWH);
 }
 
 /// Rebuild + repaint the topped window (EmuTOS ESC `refresh_window`).

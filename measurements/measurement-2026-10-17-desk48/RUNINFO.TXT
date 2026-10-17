@@ -1,0 +1,89 @@
+measurement-2026-10-17-desk48 -- DESK48: the desktop's remaining whole-desktop redraw_desktop() calls after file operations replaced by
+EmuTOS' own repaint: desk_clear with its drawing half (act_allchg(..., FALSE) -> do_wredraw over the deselected objects, desksupp.c:122-153,
+deskact.c:480-555), desk_clear_all as EmuTOS' plain loop (desksupp.c:160-169), fun_rebld(path) over every window on the path
+(deskfun.c:173-191) at every EmuTOS call site, fun_selectall's WM_REDRAW of its own window (deskfun.c:627-630), refresh_drive +
+desk_clear(DESKWH) in fun_del's desktop case (deskfun.c:1404-1413, desksupp.c:1696-1715). "Replacement before removal": each
+redraw_desktop() went only after its EmuTOS replacement was in place.
+
+Base: main d35da475 + the change (committed with this run) (programs/desktop/src/{act,main,dir,redraw,selftest}.rs, docs/api/desktop/{deskfun,deskwin}.md).
+Host macOS, QEMU -M raspi4b -append serial=on, one QEMU at a time, per-run APFS clones (cp -c) of one base card, deleted after each run;
+base card and scratch tree deleted at the end. Scratch = session scratchpad .../scratchpad/d48 (CLAUDE_JOB_DIR unset), never /tmp.
+No SD card, no Pi, nothing under /Volumes/BOOT* or NEWTOS*.
+
+1. METHOD (method/)
+   seed.sh / NEWDESK.INF  base card: FAT16 64 MiB, C:\README.TXT, C:\SUB\NOTE.TXT, C:\SUB\OTHER.TXT; INF with three text-view windows
+                          W1 C:\ (80..352 x 32..224), W2 C:\ (368..640 x 32..224), W3 C:\SUB\ (80..352 x 256..448, topped) and a desktop
+                          shortcut NOTE.TXT -> C:\SUB\NOTE.TXT (grid 0,2). Layout: screendumps/cal-1-desk.png.
+   d48-trace.py           scratch-only AES trace at kernel/src/shell_loop.rs observe_desktop_gem_call: one "[d48] aes op=<n> in=<int_in 0..5>"
+                          line per desktop call of menu_bar(30), objc_draw(42: start, depth, clip x y w h), form_dial(51), form_alert(52),
+                          graf_mouse(78). redraw_desktop()'s signature is form_dial(FMD_FINISH) with little rect 0 and big rect x 0
+                          ("op=51 in=3,0,0,0,0,0") followed by menu_bar(1); a dialog's end_dialog has its own x (157) there.
+   gen.py                 high-level injector spec (*.spec) -> tools/inject-arm.py script (*.script); "mark" prints the feed-byte count the
+                          screendump steps key on. Drag steps of 12 px, as the desk62 scripts.
+   build.sh               scratch kernel rpi4 release + trace + injector (desktop=<script>); SRC=head = git archive HEAD (d35da475), the
+                          pre-change control ("-red"). The tree build touches every source after the rsync: the first w2w kernel had
+                          silently reused the HEAD build's desktop artefacts (rsync keeps mtimes, target/ is kept) -- caught by identical
+                          traces, rebuilt; sel, built before any HEAD build, came out byte-identical when rebuilt with the fix (not affected).
+   run.sh / mdrive.py     QMP screendumps keyed on the injector's feed-line count; CARDLS=1 lists C:\ and C:\SUB\ of the clone (mtools).
+   segtrace.py            splits a run's [d48] lines per scripted action -> serial/<tag>-trace.txt.
+   pxdiff.py              pixel diff of two dumps -> serial/pxdiff-new-vs-red.txt.
+   build-selftest.sh      selftest-desk kernel (+ st-launch.script, Return for the DELETE box); SRC=head = control.
+   checks.sh              baselines (copy of the desk64 checks.sh), label fix -> checks/fix-*, checks-fix-summary.txt.
+   Kernels (sha256, rpi4 release, gitignored bin/): sel d2ffd9c6.. / sel-red f122b748..; w2w caba59af.. / w2w-red 8c9dbe6d..;
+   desk 89975642.. / desk-red 5b19458b..; open e06b6aff.. / open-red db67348e..; ks cc1614d5.. / ks-head f9b28d35.. (selftest-desk);
+   cal a26b2a44..; checks: fix 28ee6375.. / virt-fix a4f10f8c..; NEWDESK.NAP rpi4 9b9a562b.., qemu-virt 6bf74890...
+   Two rounds: the first behavioural round ran on the tree before the act_allchg self-test and before the trash-arm root path was
+   taken from the source path's first three bytes (it had a 'C' fallback); the new-side kernels were then rebuilt from the final
+   tree and all four scenarios re-run. Every dump is pixel-identical to the first round except w2w-c-dropped-late (118 px: the mouse
+   pointer had already moved on to W1's title), and every segmented trace is identical. The red kernels are HEAD and were not rebuilt.
+
+2. RESULTS (new = this change, red = HEAD; dumps screendumps/<tag>-<step>.png, traces serial/<tag>-trace.txt)
+   a) Selection (sel.spec)
+      b-cleared   click on the desktop with README selected in W1 -> hndl_button -> desk_clear_all.
+                  red: win_shwall, three objc_draws over all three work areas. new: ONE objc_draw (2, clip 96,112 233x16) = the README row.
+                  Pixels identical (pxdiff).
+      c-selall    Ctrl+A -> fun_selectall. red: form_dial(FMD_FINISH, whole screen) + menu_bar + 6 objc_draws (redraw_desktop).
+                  new: ONE objc_draw over W1's work area (81,74 248x127), no form_dial, no menu_bar. Pixels identical.
+      d-topped    click on W2's title -> WM_TOPPED -> desk_clear(G.g_cwin = W1). red: nothing drawn, W1's three rows STAY inverted although
+                  the info line already says "556 bytes used in 3 items." (sel-red-d-topped.png). new: one objc_draw over the three rows
+                  (96,76 233x52), W1 clean (sel-d-topped.png). 11184 px differ, all inside W1's rows.
+   b) Window -> window (w2w.spec)
+      b/c         NOTE dragged from W3 (C:\SUB\) into W1 (C:\), COPY FILE(S) OK.
+                  red: only W1 rebuilt; W2 (also C:\) still "556 bytes used in 3 items." without NOTE; W3's NOTE stays inverted
+                  (w2w-red-c-dropped-late.png). new: desk_clear(W3) draws the NOTE row, busy, W2 and W1 rebuilt (fun_rebld("C:\")), both
+                  "569 bytes used in 4 items." with NOTE (w2w-c-dropped-late.png).
+      d/e         README dragged from W1 onto the SUB folder row of W2, OK -> copy into C:\SUB\ (datype == AT_ISFOLD).
+                  red: W3 (C:\SUB\) not rebuilt (still 2 items, a half-inverted NOTE remnant), README in W1 stays inverted.
+                  new: README row deselected, W1+W2 rebuilt, then W3 rebuilt by fun_rebld(destpath): "45 bytes used in 3 items." with
+                  README (w2w-e-folder-late.png). No whole-screen form_dial in any new segment.
+   c) Desktop -> desktop and Delete from the desktop (desk.spec)
+      c-copied    shortcut NOTE.TXT dragged onto the Hard disk icon, OK -> fun_desk2desk copies C:\SUB\NOTE.TXT to C:\.
+                  red: redraw_desktop (whole-screen form_dial + menu_bar + 6 objc_draws); W1/W2 still show 3 items (not rebuilt), the
+                  shortcut stays inverted (desk-red-c-copied.png). new: fun_rebld("C:\") rebuilds W2 and W1 (4 items with NOTE), then
+                  desk_clear(DESKWH) redraws only the shortcut (objc_draw 1, clip 0,111 76x40) -> deselected (desk-c-copied.png).
+      f-deleted   shortcut selected, Ctrl+D, "Files", OK -> fun_del desktop case deletes C:\SUB\NOTE.TXT.
+                  red: redraw_desktop; W3 still lists NOTE, the shortcut stays inverted (desk-red-f-deleted.png). new: refresh_drive('C')
+                  closes every C: window to the root and re-reads it (W3 now "C:\", W1/W2/W3 each do_fopen twice: fun_close(CLOSE_TO_ROOT)
+                  + refresh_window, as EmuTOS), then desk_clear(DESKWH) deselects the shortcut (desk-f-deleted.png).
+                  Card after the run (serial/desk-card-card.txt, desk-red-card-card.txt): identical in both -- C:\NOTE.TXT present,
+                  C:\SUB\ holds only OTHER.TXT. The file operations are the same; only the repaint differs.
+   d) Regression basics (open.spec): double-click Hard disk -> new window; top W1 + double-click SUB -> same-window folder open.
+      new and red pixel-identical in both dumps, traces identical (open-trace.txt / open-red-trace.txt). Selection, select-all and the
+      drag-copy dialogs (sel a/b/c, w2w a/b-dialog, desk a/b) are pixel-identical new vs red as well; every differing dump differs only
+      where red leaves a stale highlight or a stale (not rebuilt) window (pxdiff-new-vs-red.txt).
+   e) Self-tests (serial/ks-serial.log vs ks-head-serial.log, same card): new "[desk-act] act_allchg(FALSE) self-test: 4 passed, 0 failed";
+      all else identical to HEAD: 94 PASS / 1 FAIL in both, the FAIL "[desk-ins] Trash and Printer survive Install devices" is the
+      card-dependent one desk64 recorded (no printer icon on this card). "[desk-selftest] done".
+
+3. BASELINES (checks-fix-summary.txt, checks/fix-*): host tests 1380/0/1; SDK host 20/0/0; fresh release build rpi4 / qemu-virt:
+   tos-api 64, kernel 94, 0 errors, desktop crate compiled 1 each; clippy kernel rpi4/qemu-virt/rpi4+selftest-desk: tos-api 76,
+   kernel 125; clippy programs 0 everywhere (desktop x3, newdesk x3, newtos-gem x3); desk-drift-probe TOTAL 0, unsafe 20;
+   emutos-consts 474/345/1/1/0/0; cite fns=493 cited=331 uncited=157 (desk64: 488/326/157).
+
+4. NOT DONE / OPEN
+   Real Pi 4 (the user's acceptance). EmuTOS processes only the FIRST of several selected desktop icons in fun_desk2desk/fun_desk2win
+   (fun_file2any's desk_clear(DESKWH) empties the selection win_isel walks); NewTOS keeps processing all and clears once after the
+   loop -- a decision for the user, not taken here. Pre-existing, unchanged by DESK48 (identical in red): after topping W1 over the newly
+   opened disk window, that window's uncovered part is not repainted (open-b-folderopen.png, the known AES WM_REDRAW gap #123).
+
+Files: RUNINFO.TXT, checks-fix-summary.txt, method/, serial/, screendumps/, checks/. bin/*.img gitignored.

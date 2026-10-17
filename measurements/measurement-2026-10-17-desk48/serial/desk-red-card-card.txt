@@ -1,0 +1,21 @@
+== mdir C:\
+ Volume in drive : is D48TEST    
+ Volume Serial Number is 85D0-09EB
+Directory for ::/
+
+NOTE     TXT        13 2026-10-17   2:01 
+README   TXT        18 2026-10-17   2:01 
+SUB          <DIR>     2026-10-17   2:01 
+NEWDESK  INF       538 2026-10-17   2:01 
+        4 files                 569 bytes
+                         66 889 728 bytes free
+
+== mdir C:\SUB
+ Volume in drive : is D48TEST    
+ Volume Serial Number is 85D0-09EB
+Directory for ::/SUB
+
+OTHER    TXT        14 2026-10-17   2:01 
+        1 file                   14 bytes
+                         66 889 728 bytes free
+

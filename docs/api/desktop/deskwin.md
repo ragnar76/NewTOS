@@ -445,7 +445,7 @@ full per protocol):
   | EmuTOS | NewTOS |
   |---|---|
   | `deskmain.c:982-983` (single click, after `act_bsclick`/`act_bdown`) | `main.rs` `hndl_button` |
-  | `desksupp.c:150-153` (`desk_clear`, and through it `desk_clear_all`) | `main.rs` `desk_clear`, the wrapper around the state half |
+  | `desksupp.c:150-153` (`desk_clear`, and through it `desk_clear_all`) | `main.rs` `desk_clear`, after the state half and (since DESK48) the drawing half of `act_allchg(…, FALSE)` |
   | `deskfun.c:380-382` (`mark_matching_fnodes`) | `main.rs` `search_current_window` |
   | `deskfun.c:627-631` (`fun_selall`) | `dir.rs` `fun_selectall` |
 

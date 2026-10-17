@@ -1,0 +1,21 @@
+sel-a-selected.png vs sel-red-a-selected.png: identical
+sel-b-cleared.png vs sel-red-b-cleared.png: identical
+sel-c-selall.png vs sel-red-c-selall.png: identical
+sel-d-topped.png vs sel-red-d-topped.png: 11184 px differ, bbox (96,76)-(328,127)
+w2w-a-selected.png vs w2w-red-a-selected.png: identical
+w2w-b-dialog.png vs w2w-red-b-dialog.png: identical
+w2w-b-dropped.png vs w2w-red-b-dropped.png: 4668 px differ, bbox (96,59)-(614,315)
+w2w-c-dropped-late.png vs w2w-red-c-dropped-late.png: 4786 px differ, bbox (96,43)-(614,315)
+w2w-d-dialog.png vs w2w-red-d-dialog.png: 1916 px differ, bbox (96,59)-(614,315)
+w2w-d-folder.png vs w2w-red-d-folder.png: 5402 px differ, bbox (90,130)-(328,349)
+w2w-e-folder-late.png vs w2w-red-e-folder-late.png: 5402 px differ, bbox (90,130)-(328,349)
+desk-a-selected.png vs desk-red-a-selected.png: identical
+desk-b-dialog.png vs desk-red-b-dialog.png: identical
+desk-c-copied.png vs desk-red-c-copied.png: 3112 px differ, bbox (2,59)-(614,150)
+desk-d-alert.png vs desk-red-d-alert.png: 1880 px differ, bbox (98,59)-(614,143)
+desk-e-confirm.png vs desk-red-e-confirm.png: 1880 px differ, bbox (98,59)-(614,143)
+desk-f-deleted.png vs desk-red-f-deleted.png: 6128 px differ, bbox (2,59)-(614,367)
+open-a-diskopen.png vs open-red-a-diskopen.png: identical
+open-b-folderopen.png vs open-red-b-folderopen.png: identical
+desk-f-deleted.png vs desk-card-f-deleted.png: identical
+desk-red-f-deleted.png vs desk-red-card-f-deleted.png: identical

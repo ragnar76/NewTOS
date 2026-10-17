@@ -156,9 +156,11 @@ pub(super) fn refresh_idt() {
 /// pseudo-window is **not** included — its surface is repainted by the AES
 /// `WF_NEWDESK` painter hook, exactly as EmuTOS's `win_shwall` skips `DESKWH`.
 ///
-/// Drives the per-window repaint for the View/Sort rebuild (`desk_all`) and the
-/// selection-clear fan-out (`desk_clear_all`): those change every window's
-/// content, so each open window's items must be re-laid.
+/// Drives the per-window repaint for the View/Sort rebuild (`desk_all`), which
+/// changes every window's content, so each open window's items must be
+/// re-laid. (The selection clear, `desk_clear_all`, no longer uses it: since
+/// DESK48 each `desk_clear` redraws only the objects it deselected, as
+/// EmuTOS's `act_allchg` does.)
 pub fn win_shwall() {
     // One outer cursor bracket around the whole fan-out — the per-window paints
     // go through `do_wredraw_nocursor`, so the cursor is never blinked back on

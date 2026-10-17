@@ -9,7 +9,8 @@
 //! [`super::inf::selftest_backgrounds`] (DESK64, the `ADBKGND` tree and the
 //! sample arithmetic of `inf_backgrounds`, pure) —
 //! plus the `act_chg` `DISABLED`-guard check [`super::act::selftest`]
-//! (DESK59, state only, nothing on `C:`) and the `valid_drive` range check
+//! (DESK59, state only, nothing on `C:`; it also runs the DESK48
+//! `act_allchg(…, FALSE)` redraw-rectangle check) and the `valid_drive` range check
 //! [`super::main::selftest`] (DESK58, pure, synthetic drive maps) — and they are always compiled, so
 //! a signature break fails the build. They are **run** only in a build with the kernel feature `selftest-desk`:
 //! [`super::deskmain`] calls [`run_once`] once, after its prolog, where the

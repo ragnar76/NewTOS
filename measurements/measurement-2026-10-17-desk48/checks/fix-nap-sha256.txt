@@ -1,0 +1,4 @@
+97f14224460fec87aeded7b50aeaf29eb1c0d9999f4c69a268e1b65b9d7f89d8  target/programs/rpi4/HELLOGEM.NAP
+f686f6ba620b42138b5a36143a15a96f24f58b5849bc692826a2f38ea5164cc0  target/programs/qemu-virt/HELLOGEM.NAP
+9b9a562b155768a5d429da0cba95813d4ed6ec2c8ed08c1318b80b30de55f6e7  target/programs/rpi4/NEWDESK.NAP
+6bf748908b6c69450662899d0658c44cfd44ed66d13ca4f852426c79de31db83  target/programs/qemu-virt/NEWDESK.NAP

@@ -153,6 +153,77 @@ impl DeskState {
         changed
     }
 
+    /// `act_allchg(wh, root, 0, &gl_rfull, pc, FALSE)` — the **clearing** arm of
+    /// EmuTOS `act_allchg` (`deskact.c:480-555`) as `desk_clear` calls it
+    /// (`desksupp.c:147`): deselect every item of `root` and every `FNODE` of
+    /// window `wh`, and return the screen rectangle that has to be redrawn —
+    /// the union of the extents of the objects whose `SELECTED` bit actually
+    /// went off, clipped to `pc` — or `None` when nothing visible changed.
+    /// The caller hands the rectangle to `do_wredraw(wh, …)` (`deskact.c:552-555`).
+    ///
+    /// ```c
+    /// if (!set) pn_clear(win_find(wh));                 /* all FNODEs */
+    /// rc_copy(pt, &w); rc_intersect(pc, &w);            /* pt = gl_rfull */
+    /// for (obj = tree[root].ob_head; obj > root; obj = tree[obj].ob_next) {
+    ///     o = obj extent + root offset, o.g_y += 1, o.g_h -= 1;
+    ///     if (rc_intersect(&w, &o) && root != act_chkobj(…, o)) {
+    ///         … newstate &= ~SELECTED;
+    ///         if (newstate != ob_state) { ob_state = newstate; a ∪= extent; }
+    ///     } else
+    ///         tree[obj].ob_state &= ~SELECTED;          /* no redraw */
+    /// }
+    /// if (rc_intersect(pc, &a)) do_wredraw(wh, &a);
+    /// ```
+    ///
+    /// `gl_rfull` is "the screen except the menu bar" (`gemgraf.c:63,424`),
+    /// which is the desktop's `G.g_desk`. An object outside the work area (or
+    /// one whose visible part misses its glyph and label) is cleared without
+    /// contributing to the redraw rectangle, exactly as in EmuTOS.
+    pub fn act_allchg_clear(&mut self, wh: i16, root: i16, pc: Grect) -> Option<Grect> {
+        // `pn_clear(win_find(wh))` — every FNODE, not only the visible ones.
+        if let Some(slot) = self.win_slot(wh) {
+            for f in &mut self.windows.slots[slot].w_pnode.p_flist {
+                f.f_selected = false;
+            }
+        }
+        let offx = self.g_screen[root as usize].ob_x;
+        let offy = self.g_screen[root as usize].ob_y;
+        // `rc_copy(pt, &w); rc_intersect(pc, &w);` with `pt == &gl_rfull`.
+        let w = super::redraw::rc_intersect(self.g_desk, pc);
+        let mut a: Option<Grect> = None;
+        let mut obj = self.g_screen[root as usize].ob_head;
+        while obj > root {
+            let (ox, oy, ow, oh) = {
+                let o = &self.g_screen[obj as usize];
+                (o.ob_x + offx, o.ob_y + offy, o.ob_width, o.ob_height)
+            };
+            // `o.g_y = o.g_y + offy + 1; o.g_h -= 1;` then
+            // `rc_intersect(&w, &o) && root != act_chkobj(tree,root,obj,o…)`,
+            // where `act_chkobj` sees the clipped `o`.
+            let probe = Grect { x: ox, y: oy + 1, w: ow, h: oh - 1 };
+            let hit = w
+                .and_then(|w| super::redraw::rc_intersect(w, probe))
+                .is_some_and(|o| self.rect_hits_obj(root, obj, o.x, o.y, o.w, o.h));
+            let state = self.g_screen[obj as usize].ob_state;
+            if hit {
+                if state & SELECTED != 0 {
+                    self.g_screen[obj as usize].ob_state = state & !SELECTED;
+                    // `if (a.g_w) rc_union(&o, &a); else rc_copy(&o, &a);`
+                    let ext = Grect { x: ox, y: oy, w: ow, h: oh };
+                    a = Some(match a {
+                        Some(u) => rc_union(ext, u),
+                        None => ext,
+                    });
+                }
+            } else {
+                self.g_screen[obj as usize].ob_state = state & !SELECTED;
+            }
+            obj = self.g_screen[obj as usize].ob_next;
+        }
+        // `if (rc_intersect(pc, &a)) do_wredraw(wh, &a);`
+        a.and_then(|a| super::redraw::rc_intersect(pc, a))
+    }
+
     /// Whether object `child`'s icon/text sub-rectangle overlaps the
     /// screen-absolute band `(sx, sy, sw, sh)` (helper for [`act_allchg_rect`]).
     fn rect_hits_obj(&self, root: i16, child: i16, sx: i16, sy: i16, sw: i16, sh: i16) -> bool {
@@ -304,6 +375,16 @@ fn in_rect(px: i16, py: i16, x: i16, y: i16, w: i16, h: i16) -> bool {
     px >= x && px < x + w && py >= y && py < y + h
 }
 
+/// `rc_union(p1, p2)` (EmuTOS `aes/gemrect.c`) — the smallest rectangle that
+/// holds both.
+fn rc_union(p1: Grect, p2: Grect) -> Grect {
+    let x = p1.x.min(p2.x);
+    let y = p1.y.min(p2.y);
+    let x1 = (p1.x + p1.w).max(p2.x + p2.w);
+    let y1 = (p1.y + p1.h).max(p2.y + p2.h);
+    Grect { x, y, w: x1 - x, h: y1 - y }
+}
+
 /// Rectangle-overlap test (exclusive right/bottom edges).
 #[allow(clippy::too_many_arguments)]
 fn rects_overlap(ax: i16, ay: i16, aw: i16, ah: i16, bx: i16, by: i16, bw: i16, bh: i16) -> bool {
@@ -386,4 +467,102 @@ pub fn selftest() {
         g.g_screen[o].ob_state = state0;
     });
     tprintln!("[desk-act] act_chg self-test: {} passed, {} failed", pass, fail);
+    selftest_allchg_clear();
+}
+
+/// `act_allchg(…, FALSE)` self-test (DESK48): the clearing arm `desk_clear`
+/// runs returns the extent of exactly the objects it deselected, clipped to
+/// `pc` (`deskact.c:480-555`). State only, on the first desktop icon; every
+/// desktop icon's `ob_state` is restored afterwards.
+///
+/// 1. One selected icon, `pc` = the desk area → `Some(its extent)` and the
+///    `SELECTED` bit is gone.
+/// 2. Nothing selected → `None` (no `do_wredraw`).
+/// 3. One selected icon, `pc` elsewhere on the desk → the bit is still
+///    cleared (`else tree[obj].ob_state &= ~SELECTED;`) but `None`: an object
+///    outside the work area adds nothing to the redraw rectangle.
+fn selftest_allchg_clear() {
+    use super::global;
+    use super::selftest::tprintln;
+
+    tprintln!("[desk-act] act_allchg(FALSE) self-test");
+    let mut pass = 0u32;
+    let mut fail = 0u32;
+    let mut check = |name: &str, cond: bool| {
+        if cond {
+            pass += 1;
+            tprintln!("[desk-act]  PASS {}", name);
+        } else {
+            fail += 1;
+            tprintln!("[desk-act]  FAIL {}", name);
+        }
+    };
+
+    let Some((obj, saved, desk)) = global::with(|g| {
+        let mut saved = Vec::new();
+        let mut c = g.g_screen[DROOT as usize].ob_head;
+        while c > DROOT {
+            saved.push((c, g.g_screen[c as usize].ob_state));
+            c = g.g_screen[c as usize].ob_next;
+        }
+        (g.g_screen[DROOT as usize].ob_head, saved, g.g_desk)
+    }) else {
+        return;
+    };
+    if obj <= DROOT {
+        check("the desktop had an icon to clear", false);
+        tprintln!("[desk-act] act_allchg(FALSE) self-test: {} passed, {} failed", pass, fail);
+        return;
+    }
+    let clear_all = |g: &mut DeskState| {
+        for &(c, st) in &saved {
+            g.g_screen[c as usize].ob_state = st & !SELECTED;
+        }
+    };
+
+    // (1) one selected icon, pc = the desk area.
+    let (r, ext, st) = global::with(|g| {
+        clear_all(g);
+        g.g_screen[obj as usize].ob_state |= SELECTED;
+        let ext = g.obj_extent(DROOT, obj);
+        let r = g.act_allchg_clear(DESKWH, DROOT, desk);
+        (r, ext, g.g_screen[obj as usize].ob_state)
+    })
+    .unwrap_or((None, None, SELECTED));
+    let want = ext.and_then(|e| super::redraw::rc_intersect(desk, e));
+    check("one selected icon: the redraw rectangle is its extent", r.is_some() && r == want);
+    check("one selected icon: SELECTED is cleared", st & SELECTED == 0);
+
+    // (2) nothing selected.
+    let r = global::with(|g| {
+        clear_all(g);
+        g.act_allchg_clear(DESKWH, DROOT, desk)
+    })
+    .flatten();
+    check("nothing selected: no redraw rectangle", r.is_none());
+
+    // (3) selected icon outside pc: cleared silently, no rectangle.
+    let (r, st) = global::with(|g| {
+        clear_all(g);
+        g.g_screen[obj as usize].ob_state |= SELECTED;
+        let e = g.obj_extent(DROOT, obj).unwrap_or(desk);
+        // A 1x1 work area at the far corner of the desk from the icon.
+        let pc = Grect {
+            x: if e.x > desk.x + desk.w / 2 { desk.x } else { desk.x + desk.w - 1 },
+            y: if e.y > desk.y + desk.h / 2 { desk.y } else { desk.y + desk.h - 1 },
+            w: 1,
+            h: 1,
+        };
+        let r = g.act_allchg_clear(DESKWH, DROOT, pc);
+        (r, g.g_screen[obj as usize].ob_state)
+    })
+    .unwrap_or((Some(desk), SELECTED));
+    check("icon outside the work area: SELECTED cleared without a redraw rectangle", r.is_none() && st & SELECTED == 0);
+
+    global::with(|g| {
+        for &(c, st) in &saved {
+            g.g_screen[c as usize].ob_state = st;
+        }
+    });
+    tprintln!("[desk-act] act_allchg(FALSE) self-test: {} passed, {} failed", pass, fail);
 }

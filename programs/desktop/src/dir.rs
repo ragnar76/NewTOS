@@ -1479,8 +1479,10 @@ pub fn fun_del() -> bool {
     // `fun_op(OP_DELETE, -1, &pw->w_pnode, NULL)` (`deskfun.c:1421`): the
     // source is a window, so no `icontype` and no `STDELDIS`.
     let done = fun_op(Op::Delete, None, &src_dir, &entries, None);
+    // `if (fun_op(…)) fun_rebld(pw->w_pnode.p_spec);` (`deskfun.c:1421-1422`)
+    // — every open window on this path, not only the current one (DESK48).
     if done {
-        rebuild_window(cwin);
+        fun_rebld(&src_dir);
     }
     done
 }
@@ -1504,18 +1506,36 @@ fn fun_del_desktop() -> bool {
     // raises `STDELDIS` once per **drive** on top of the
     // `wants_to_delete_files` answer above (EmuTOS asks both) and stays silent
     // for a shortcut.
+    //
+    // ```c
+    // item_found++;
+    // if (delete_ffd(path, pa->a_type)) refresh_drive(path[0]);
+    // …
+    // if (item_found) desk_clear(DESKWH);
+    // ```
+    // (`deskfun.c:1404-1413`) — each drive that lost files has its windows
+    // closed to the root and re-read, and the desktop selection is cleared
+    // with only the deselected icons redrawn. DESK48: this replaces the
+    // whole-desktop `redraw_desktop()` that used to end this function.
     let mut any = false;
+    let mut item_found = false;
     for src in desktop_selected_sources() {
+        item_found = true;
         if src.entries.is_empty() {
+            // `delete_ffd`: `if (pn->p_flist) … ret = fun_op(…)` — an empty
+            // directory deletes nothing and returns 0 (`deskfun.c:1352-1360`).
             continue;
         }
         let icontype = (src.atype == AType::Disk).then_some(AType::Disk);
         if fun_op(Op::Delete, icontype, &src.dir, &src.entries, None) {
             any = true;
+            if let Some(&drive) = src.dir.as_bytes().first() {
+                super::main::refresh_drive(drive);
+            }
         }
     }
-    if any {
-        super::redraw::redraw_desktop();
+    if item_found {
+        super::main::desk_clear(DESKWH);
     }
     any
 }
@@ -1572,6 +1592,16 @@ pub fn rename(old: &str, new: &str) -> bool {
 /// — it does **not** re-scan the directory (a rescan would reset `f_selected`).
 /// So this repaints the existing item objects (already flagged by
 /// [`DeskState::select_all`]) rather than calling [`rebuild_window`].
+///
+/// ```c
+/// win_sinfo(pw, TRUE);
+/// wind_get_grect(pw->w_id, WF_WXYWH, &gr);
+/// fun_msg(WM_REDRAW, pw->w_id, gr.g_x, gr.g_y, gr.g_w, gr.g_h);
+/// ```
+/// (`deskfun.c:627-630`). `fun_msg` runs `hndl_msg` synchronously, whose
+/// `WM_REDRAW` arm is `do_wredraw(handle, &G.g_rmsg[4])` (`deskmain.c:1268-1272`)
+/// — this window's work area and nothing else (DESK48: it used to be a
+/// whole-desktop `redraw_desktop`).
 pub fn fun_selectall() -> bool {
     let cwin = global::with(|g| g.g_cwin).unwrap_or(DESKWH);
     if cwin == DESKWH {
@@ -1581,7 +1611,8 @@ pub fn fun_selectall() -> bool {
     // `win_sinfo(pw, TRUE)` before the redraw (`deskfun.c:627-631`): the info
     // line now counts the whole selection.
     super::main::win_sinfo(cwin, true);
-    super::redraw::redraw_desktop();
+    let gr = super::wind_get_grect(cwin, WF_WXYWH);
+    super::redraw::do_wredraw(cwin, gr);
     true
 }
 
@@ -1992,24 +2023,36 @@ fn fun_win2win(src_wh: i16, dst_wh: i16, dst_obj: i16, keystate: u16) {
         }
     }
 
-    // Destination: into the dropped-on folder if it is one, else the window dir.
-    let dst_dir = dest_folder_dir(dst_wh, dst_obj).unwrap_or_else(|| window_dir(dst_wh).unwrap_or_default());
+    // Destination: into the dropped-on folder if it is one (`datype ==
+    // AT_ISFOLD`, `add_path(destpath, pdf->f_name)`, `deskfun.c:979-981`),
+    // else the window dir.
+    let folder = dest_folder_dir(dst_wh, dst_obj);
+    let dst_win_dir = window_dir(dst_wh).unwrap_or_default();
+    let dst_dir = folder.clone().unwrap_or_else(|| dst_win_dir.clone());
     let op = drag_op(keystate);
     // `fun_op(op, -1, &psw->w_pnode, destpath)` (`deskfun.c:985`).
     if fun_op(op, None, &src_dir, &entries, Some(&dst_dir)) {
         if src_wh != dst_wh {
             super::main::desk_clear(src_wh);
         }
+        // `if (op == OP_MOVE) fun_rebld(psw->w_pnode.p_spec);`
+        // `fun_rebld(pdw->w_pnode.p_spec);` (`deskfun.c:991-993`) — **every**
+        // open window on the source / destination path, not only the two
+        // windows of the drag (DESK48). That is the *whole* repaint EmuTOS does
+        // here: `fun_rebld` → `rebuild_window` → one `WM_REDRAW` over each
+        // rebuilt window's own rectangle. There is no whole-screen composite on
+        // this path; the area the copy dialog covered was already restored by
+        // its own `form_dial(FMD_FINISH)` in `end_dialog` (`deskinf.c:363-378`).
         if op == Op::Move {
-            rebuild_window(src_wh);
+            fun_rebld(&src_dir);
         }
-        // `fun_rebld(pdw->w_pnode.p_spec)` (`deskfun.c:995`) — and that is the
-        // *whole* repaint EmuTOS does here: `fun_rebld` → `rebuild_window` →
-        // one `WM_REDRAW` over each rebuilt window's own rectangle. There is no
-        // whole-screen composite on this path; the area the copy dialog covered
-        // was already restored by its own `form_dial(FMD_FINISH)` in
-        // `end_dialog` (`deskinf.c:363-378`).
-        rebuild_window(dst_wh);
+        fun_rebld(&dst_win_dir);
+        // "if we copied into a folder, we must redraw any windows with a
+        // matching path" — `if (datype == AT_ISFOLD) fun_rebld(destpath);`
+        // (`deskfun.c:994-998`).
+        if let Some(folder) = &folder {
+            fun_rebld(folder);
+        }
     }
 }
 
@@ -2027,10 +2070,11 @@ fn fun_win2desk(src_wh: i16, dobj: i16, keystate: u16) {
     // `fun_file2desk(&wn_src->w_pnode, -1, an_dest, obj, keystate)`
     // (`deskfun.c:1130`) — a window source carries no icon type.
     // `if (fun_file2desk(…)) fun_rebld(wn_src->w_pnode.p_spec);`
-    // (`deskfun.c:1129-1130`) — one rebuilt source window, one `WM_REDRAW` over
-    // its own rectangle, and nothing else. No whole-screen composite.
+    // (`deskfun.c:1129-1130`) — every open window on the source path, each
+    // one `WM_REDRAW` over its own rectangle, and nothing else (DESK48: it
+    // was the drag's own window only). No whole-screen composite.
     if fun_file2desk(dobj, None, &src_dir, &entries, keystate) {
-        rebuild_window(src_wh);
+        fun_rebld(&src_dir);
     }
 }
 
@@ -2065,7 +2109,10 @@ fn fun_file2desk(
     })
     .flatten();
 
-    match atype {
+    // `operation = -1;` … `switch (an_dest->a_type)` (`deskfun.c:1012-1078`):
+    // each copy/move/delete arm picks the operation and the `pathname` it
+    // targets — `"X:\\*.*"` or `"<folder>\\*.*"`, here as the directory.
+    let operation: Option<(Op, String)> = match atype {
         // "dropping something onto a file" (`deskfun.c:1021-1034`): only a
         // **program** takes a drop, and it takes it as a launch with the
         // dragged item as the command tail. `a_aicon < 0` means "not a
@@ -2101,17 +2148,19 @@ fn fun_file2desk(
             let launched =
                 super::main::do_aopen_drop(false, &pappl, false, &dst_dir, &dst_name, Some(tail.as_bytes()), dobj);
             EXIT_DESKTOP.store(launched, Ordering::Relaxed);
-            false
+            None
         }
-        // "dropping file on folder - copy or move" (`:1035-1040`).
+        // "dropping file on folder - copy or move" (`:1035-1040`):
+        // `strcpy(pathname, an_dest->a_pappl); strcat(pathname,"\\*.*");`
         AType::Folder => {
             let Some((_, pappl)) = dest else {
                 return false;
             };
             let mut dst = pappl;
             dst.push('\\');
-            fun_op(drag_op(keystate), icontype_src, src_dir, entries, Some(&dst))
+            Some((drag_op(keystate), dst))
         }
+        // `pathname[0] = LOBYTE(dicon->ib_char);` (`:1042-1045`)
         AType::Disk => {
             if !letter.is_ascii_uppercase() {
                 return false;
@@ -2119,7 +2168,7 @@ fn fun_file2desk(
             let mut dst = String::new();
             dst.push(letter as char);
             dst.push_str(":\\");
-            fun_op(drag_op(keystate), icontype_src, src_dir, entries, Some(&dst))
+            Some((drag_op(keystate), dst))
         }
         AType::Trash => {
             // With a *window* selection (`icontype_src == None`) EmuTOS skips
@@ -2127,15 +2176,37 @@ fn fun_file2desk(
             // icon (`deskfun.c:1049-1051`) — and the only question is the
             // `ADCPYDEL` box `dir_op` puts up, gated on *Confirm deletes*
             // (`deskdir.c:906`).
-            fun_op(Op::Delete, icontype_src, src_dir, entries, None)
+            //
+            // `pathname[0] = pn_src->p_spec[0];` (`deskfun.c:1054`) on the
+            // `"?:\\*.*"` template: the path the delete's `fun_rebld` gets
+            // is the **root of the source drive**.
+            // `src_dir` is `"X:\\…"`, so its first three bytes are that root.
+            let root = String::from(src_dir.get(..3).unwrap_or(src_dir));
+            Some((Op::Delete, root))
         }
         // The printer is Task #14 (`fun_print`).
         _ => {
             // `default: illegal_op_msg();` (`deskfun.c:1075-1076`).
             illegal_op_msg();
-            false
+            None
         }
+    };
+
+    // `if (operation >= 0) ret = fun_op(operation, icontype_src, pn_src,
+    //  pathname); else ret = FALSE;` (`deskfun.c:1080-1083`) — the delete
+    // takes no destination.
+    let Some((op, pathname)) = operation else {
+        return false;
+    };
+    let dst = (op != Op::Delete).then_some(pathname.as_str());
+    let ret = fun_op(op, icontype_src, src_dir, entries, dst);
+    // "if operation succeeded, rebuild any corresponding open windows" —
+    // `if (ret) fun_rebld(pathname);` (`deskfun.c:1085-1090`). DESK48: this
+    // rebuild of every window on the destination path was missing.
+    if ret {
+        fun_rebld(&pathname);
     }
+    ret
 }
 
 /// `fun_desk2win` — drag from the desktop to a window (EmuTOS `deskfun.c:1198`):
@@ -2194,10 +2265,16 @@ fn fun_desk2win(dest_wh: i16, dobj: i16, _keystate: u16) {
             any = true;
         }
     }
+    // `desk_clear(DESKWH)` — the last step of each `fun_file2any`
+    // (`deskfun.c:1191`), run here once after the loop (see `fun_desk2desk`).
+    if !sources.is_empty() {
+        super::main::desk_clear(DESKWH);
+    }
     // `if (copied) fun_rebld(wn_dest->w_pnode.p_spec);` (`deskfun.c:1253-1254`)
-    // — the destination window alone, repainted over its own rectangle.
+    // — every open window on the destination window's path, each repainted
+    // over its own rectangle (DESK48: it was the drop window alone).
     if any {
-        rebuild_window(dest_wh);
+        fun_rebld(&window_dir(dest_wh).unwrap_or_default());
     }
 }
 
@@ -2212,11 +2289,14 @@ fn fun_desk2desk(dobj: i16, keystate: u16) {
     .unwrap_or((AType::None, 0));
 
     let sources = desktop_selected_sources();
-    let mut any = false;
+    // Whether any source got as far as `fun_file2any`, whose last step is
+    // `desk_clear(DESKWH)` (`deskfun.c:1191`).
+    let mut reached = false;
     for src in sources {
         if src.sobj == dobj {
             continue; // `if (!source || (source == target)) continue;` (`:1278`)
         }
+        reached = true;
         let src_root = src.dir.clone();
         let entries = src.entries;
         if entries.is_empty() {
@@ -2229,12 +2309,18 @@ fn fun_desk2desk(dobj: i16, keystate: u16) {
         // source makes `dir_op` raise the whole-drive `STDELDIS` question; a
         // shortcut is an ordinary file or folder, so it passes `None`.
         let icontype = (src.atype == AType::Disk).then_some(AType::Disk);
-        let ran = match dtype {
+        // The `fun_file2desk` tail on success: `fun_rebld(pathname)`
+        // (`deskfun.c:1085-1090`) — every open window on the target path:
+        // the target drive's root for a disk, the source drive's root for the
+        // trash (`pathname[0] = pn_src->p_spec[0]`, `:1054`).
+        match dtype {
             AType::Disk if dletter.is_ascii_uppercase() => {
                 let mut dst = String::new();
                 dst.push(dletter as char);
                 dst.push_str(":\\");
-                fun_op(drag_op(keystate), icontype, &src_root, &entries, Some(&dst))
+                if fun_op(drag_op(keystate), icontype, &src_root, &entries, Some(&dst)) {
+                    fun_rebld(&dst);
+                }
             }
             AType::Trash => {
                 // `case AT_ISTRSH: if (icontype_src >= 0) if
@@ -2252,10 +2338,11 @@ fn fun_desk2desk(dobj: i16, keystate: u16) {
                 //
                 // The icon type *is* handed on, so `dir_op` raises `STDELDIS`
                 // for the drive behind it, as EmuTOS does after its own guard.
-                if wants_to_delete_files() {
-                    fun_op(Op::Delete, icontype, &src_root, &entries, None)
-                } else {
-                    false
+                if wants_to_delete_files() && fun_op(Op::Delete, icontype, &src_root, &entries, None) {
+                    // `pathname[0] = pn_src->p_spec[0]` on `"?:\\*.*"`: the
+                    // root of the source drive, the first three bytes of
+                    // `src_root` (`"X:\\…"`).
+                    fun_rebld(src_root.get(..3).unwrap_or(&src_root));
                 }
             }
             _ => {
@@ -2263,13 +2350,21 @@ fn fun_desk2desk(dobj: i16, keystate: u16) {
                 // reaches `illegal_op_msg()` for it too (`deskfun.c:1286` for
                 // a disk onto itself, `:1076` for anything else).
                 illegal_op_msg();
-                false
             }
-        };
-        any |= ran;
+        }
     }
-    if any {
-        super::redraw::redraw_desktop();
+    // `desk_clear(DESKWH)` — `fun_file2any`'s last step (`deskfun.c:1191`),
+    // EmuTOS's replacement for a repaint here: it deselects the desktop icons
+    // and redraws exactly the icons it deselected. DESK48: this replaces the
+    // whole-desktop `redraw_desktop()` that used to end this function.
+    //
+    // EmuTOS runs it inside the per-source loop, after *each* source; this
+    // runs it once after the loop: in EmuTOS the first `desk_clear(DESKWH)`
+    // empties the selection `win_isel` walks, so only the first selected icon
+    // is ever processed — an open point recorded in
+    // `TASK/DESK48-STATUS-DONE.MD`, not adopted here.
+    if reached {
+        super::main::desk_clear(DESKWH);
     }
 }
 
@@ -2384,13 +2479,33 @@ pub fn fun_rebld_marked() {
     }
 }
 
-/// `fun_rebld` — rebuild every open window whose directory equals `path`
-/// (EmuTOS `deskfun.c:173`). Used after a drop that changed a folder's
-/// contents in a window other than the source/destination.
+/// `fun_rebld` — rebuild every open window whose path equals `path`
+/// (EmuTOS `deskfun.c:173-191`):
+///
+/// ```c
+/// desk_busy_on();
+/// for (pwin = G.g_wfirst; pwin; pwin = pwin->w_next)
+///     if ((pwin->w_id) && (strcmp(pwin->w_pnode.p_spec, ptst)==0))
+///         rebuild_window(pwin);
+/// desk_busy_off();
+/// ```
+///
+/// The callers after a copy/move/delete (`fun_win2win`, `fun_win2desk`,
+/// `fun_file2desk`, `fun_desk2win`, `fun_desk2desk`, `fun_del`) pass the
+/// path, not a window handle — so a second window on the same directory is
+/// rebuilt too (DESK48). Matched on the directory, the form every NewTOS
+/// caller has. NewTOS keeps a window's file mask in `p_mask`, not in the
+/// file part of `p_spec`, so a window with its own mask on the same
+/// directory is rebuilt as well, where EmuTOS's `strcmp` on the whole
+/// `p_spec` would pass it over (same in [`fun_mark_for_rebld`]).
+/// The walk is the `G.g_wfirst` chain, i.e. the z-order from the top; the
+/// last window rebuilt is the one `desk_verify(…, TRUE)` leaves current.
 pub fn fun_rebld(path: &str) {
+    super::pro::desk_busy_on();
     let handles = global::with(|g| {
         let mut v: Vec<i16> = Vec::new();
-        for w in &g.windows.slots {
+        for &slot in &g.windows.zorder {
+            let w = &g.windows.slots[slot];
             if w.w_id != DESKWH && window_dir_of(&w.w_pnode.p_spec).as_deref() == Some(path) {
                 v.push(w.w_id);
             }
@@ -2401,6 +2516,7 @@ pub fn fun_rebld(path: &str) {
     for h in handles {
         rebuild_window(h);
     }
+    super::pro::desk_busy_off();
 }
 
 // ── desktop-state helpers ───────────────────────────────────────────────────

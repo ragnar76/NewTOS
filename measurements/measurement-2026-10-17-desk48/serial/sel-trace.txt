@@ -1,0 +1,41 @@
+== boot: 24 AES lines, whole-screen form_dial(FMD_FINISH)=1, dialog FMD_FINISH=0, menu_bar=2
+    [d48] aes op=30 in=1,0,0,0,0,0
+    [d48] aes op=78 in=2,0,0,0,0,0
+    [d48] aes op=78 in=0,0,0,0,0,0
+    [d48] aes op=78 in=2,0,0,0,0,0
+    [d48] aes op=78 in=0,0,0,0,0,0
+    [d48] aes op=78 in=2,0,0,0,0,0
+    [d48] aes op=78 in=0,0,0,0,0,0
+    [d48] aes op=78 in=256,0,0,0,0,0
+    [d48] aes op=51 in=3,0,0,0,0,0
+    [d48] aes op=42 in=4,8,81,298,248,127
+    [d48] aes op=42 in=3,8,369,74,248,127
+    [d48] aes op=42 in=2,8,81,74,248,127
+    [d48] aes op=30 in=1,0,0,0,0,0
+    [d48] aes op=78 in=257,0,0,0,0,0
+    [d48] aes op=78 in=0,0,0,0,0,0
+    [d48] aes op=78 in=256,0,0,0,0,0
+    [d48] aes op=42 in=2,8,81,74,248,127
+    [d48] aes op=78 in=257,0,0,0,0,0
+    [d48] aes op=78 in=256,0,0,0,0,0
+    [d48] aes op=42 in=3,8,369,74,248,127
+    [d48] aes op=78 in=257,0,0,0,0,0
+    [d48] aes op=78 in=256,0,0,0,0,0
+    [d48] aes op=42 in=4,8,81,298,248,127
+    [d48] aes op=78 in=257,0,0,0,0,0
+== a-selected: 3 AES lines, whole-screen form_dial(FMD_FINISH)=0, dialog FMD_FINISH=0, menu_bar=0
+    [d48] aes op=78 in=256,0,0,0,0,0
+    [d48] aes op=42 in=2,8,81,74,248,127
+    [d48] aes op=78 in=257,0,0,0,0,0
+== b-cleared: 3 AES lines, whole-screen form_dial(FMD_FINISH)=0, dialog FMD_FINISH=0, menu_bar=0
+    [d48] aes op=78 in=256,0,0,0,0,0
+    [d48] aes op=42 in=2,8,96,112,233,16
+    [d48] aes op=78 in=257,0,0,0,0,0
+== c-selall: 3 AES lines, whole-screen form_dial(FMD_FINISH)=0, dialog FMD_FINISH=0, menu_bar=0
+    [d48] aes op=78 in=256,0,0,0,0,0
+    [d48] aes op=42 in=2,8,81,74,248,127
+    [d48] aes op=78 in=257,0,0,0,0,0
+== d-topped: 3 AES lines, whole-screen form_dial(FMD_FINISH)=0, dialog FMD_FINISH=0, menu_bar=0
+    [d48] aes op=78 in=256,0,0,0,0,0
+    [d48] aes op=42 in=2,8,96,76,233,52
+    [d48] aes op=78 in=257,0,0,0,0,0

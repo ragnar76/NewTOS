@@ -632,6 +632,55 @@ aufgefrischt und bei EmuTOS nicht. Die Vergleichsform ist aelter als DESK31
 und liegt in `fun_rebld`; sie hier anders zu machen als dort waere die
 groessere Abweichung gewesen.
 
+### Ersatz vor Entfernung: kein `redraw_desktop()` mehr nach Dateioperationen (DESK48, 2026-10-17)
+
+EmuTOS zeichnet nach einer Dateioperation nie den ganzen Desktop neu. Es hat
+zwei Werkzeuge, und NewTOS baut jetzt beide nach, bevor es die
+Vollbildaufrufe entfernt:
+
+1. **`desk_clear` zeichnet selbst** (`desksupp.c:122-153`): `act_allchg(wh,
+   root, 0, &gl_rfull, &c, FALSE)` loescht die Auswahl und endet mit
+   `do_wredraw(wh, &a)` ueber die Vereinigung der Objekte, deren `SELECTED`
+   tatsaechlich wegfiel, geschnitten mit der Arbeitsflaeche
+   (`deskact.c:480-555`). NewTOS: `main::desk_clear` →
+   `DeskState::act_allchg_clear` (`act.rs`) → `redraw::do_wredraw`. Bis DESK48
+   fehlte diese Zeichenhaelfte; jeder Aufrufer ohne eigenes Neuzeichnen liess
+   die Markierung stehen — sichtbar beim Fensterwechsel (`WM_TOPPED` →
+   `desk_clear(G.g_cwin)`) und nach jedem Ziehen (`desk_clear(src_wh)`).
+   `desk_clear_all` ist wieder EmuTOS' Schleife (`desksupp.c:160-169`), ohne
+   `win_shwall` und ohne `do_wredraw(DESKWH, …)`.
+2. **`fun_rebld(path)` baut jedes Fenster mit diesem Pfad neu**
+   (`deskfun.c:173-191`, mit `desk_busy_on/off`, Lauf ueber `G.g_wfirst`). Die
+   Aufrufer reichen einen Pfad, kein Fensterhandle: `fun_win2win`
+   (`:991-998`, Quelle bei Move, Ziel, und bei einem Ordner als Ziel auch
+   `destpath`), `fun_win2desk` (`:1129-1130`), `fun_file2desk` (`:1085-1090`,
+   das Ziel: Laufwerkswurzel, Ordner, beim Papierkorb die Wurzel des
+   Quelllaufwerks), `fun_desk2win` (`:1253-1254`) und der Fensterfall von
+   `fun_del` (`:1421-1422`). Vorher baute NewTOS nur das eine Fenster des
+   Wurfs neu; ein zweites Fenster auf demselben Verzeichnis blieb veraltet.
+
+Damit fielen vier Vollbildaufrufe: `fun_selectall` (jetzt `do_wredraw` ueber
+die Arbeitsflaeche, `:627-630`), `fun_desk2desk` (jetzt `fun_rebld` des Ziels
+und `desk_clear(DESKWH)`, `fun_file2any` `:1191`), und der Desktopfall von
+`fun_del`, der jetzt EmuTOS' `refresh_drive(path[0])` je geloeschtem Laufwerk
+und `desk_clear(DESKWH)` aufruft (`:1404-1413`; `refresh_drive`
+`desksupp.c:1696-1715` schliesst jedes Fenster dieses Laufwerks zur Wurzel —
+„what Atari TOS does" — und liest es neu ein; `main::refresh_drive`,
+`main::refresh_window`).
+
+**Offener Punkt, nicht uebernommen.** EmuTOS ruft `desk_clear(DESKWH)` am Ende
+von `fun_file2any`, also **innerhalb** der `win_isel`-Schleife von
+`fun_desk2desk` und `fun_desk2win`. Danach ist auf dem Desktop nichts mehr
+ausgewaehlt, und `win_isel(G.g_screen, DROOT, sobj)` findet keinen weiteren
+Eintrag: EmuTOS verarbeitet von mehreren gezogenen Desktopsymbolen nur das
+**erste**. NewTOS ruft `desk_clear(DESKWH)` einmal nach der Schleife und
+verarbeitet weiter alle; ob dieses EmuTOS-Verhalten uebernommen wird, ist eine
+Entscheidung des Anwenders (`TASK/DESK48-STATUS-DONE.MD`).
+
+Die Pfadvergleichsform (Verzeichnis statt ganzem `p_spec`, siehe oben) gilt
+fuer `fun_rebld` unveraendert. Messung:
+`measurements/measurement-2026-10-17-desk48/RUNINFO.TXT`.
+
 ### `illegal_op_msg` und `wants_to_delete_files` (DESK31, 2026-09-25)
 
 Beide betreffen Aufrufstellen in dieser Datei; die Begruendung steht bei der
