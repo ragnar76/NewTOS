@@ -67,7 +67,7 @@ Driftprobe 0 seit U10: der Kernel linkt den Desktop nicht mehr.
 - P1: keins. **DESK43** ist bis U10 erledigt und auf der Pi abgenommen (Tester PASS `d0e5afa5`, ADR-026); offen nur die Pi-Gegenprobe des EmuCON-Rueckfalls (braucht Kern mit defektem NEWDESK).
 - P2: **PROC03** (Desktop-Haelfte durch DESK43 geliefert; offen AES-PD als echter
   Prozess, Ticket umformulieren),
-  **A112** (`evnt_multi(MU_MESAG)` sieht Selbstnachricht nicht? Frage), **X01** (`Supexec`: entschieden 2026-10-17, offen Tester), **RST01** (Neustart: Warm/Kalt, Ctrl+Alt+Del), **X04** (TeraDesk „Reboot“ springt auf 0, folgt aus RST01), **M08** (Harness `aes-m07-parameter.tsv`).
+  **A112** (`evnt_multi` schlaeft nur auf Eingabe; Ursache belegt), **A113** (Accessories melden ap_id 0), **X01** (`Supexec`: entschieden 2026-10-17, offen Tester), **RST01** (Neustart: Warm/Kalt, Ctrl+Alt+Del), **X04** (TeraDesk „Reboot“ springt auf 0, folgt aus RST01), **M08** (Harness `aes-m07-parameter.tsv`).
 - P3 / Erweiterungen: ARCH03 Stufe 2b, **SND01/SND02** (Ton), SDL01, RTC01,
   REF03, T15, DESK49, DESK51–DESK55, **CON01** (Spaltenzaehler/Typeahead), **CON02** (`Cconws` folgt Umlenkung nicht), FS12 (26 Laufwerke), FS14 (Frename ueber Verzeichnisgrenzen), LIBC-IOCTL, LIBC-BUF, DESK61, DESK63 (Verknuepfung auf Verknuepfung), DESK65 (sofort speichern, Erweiterung), DESK66 (Hintergrund an die AES melden), MEM07, MEM08, MEM10, MEM06 (Idee),
   IO01 (Idee: AUX/MIDI/PRN-Treiber).
