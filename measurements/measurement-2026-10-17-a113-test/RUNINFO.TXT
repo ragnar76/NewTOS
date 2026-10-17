@@ -1,0 +1,29 @@
+measurement-2026-10-17-a113-test -- Tester: independent regression test of the uncommitted A113/A114 fix (tos-api/src/aes/{appl,acc,mod,pd,menu,window}.rs,
+kernel/src/launch.rs, docs/api/aes/application.md, tos-api/tests/aes_a113_accessory_pid.rs) against HEAD dc3388d1.
+Host macOS, QEMU -M raspi4b only (-append serial=on [+ memprot=off|strict]); no qemu-virt run, no SD card, no Pi, nothing under /Volumes/BOOT*/SYSTEM/TOOLS.
+No product code touched, nothing committed/stashed/checked out. Scratch = scratchpad .../t113 (trees/cards/kernels deleted afterwards); per-run cards = APFS clones (cp -c), deleted after each run; one QEMU at a time.
+The a113-fix and a112-test run dirs were only read (their method/ scripts COPIED here; env.sh/mkcard.sh/build-*.sh adapted: scratch t113, HEADREV dc3388d1, label T113).
+
+Kernels (cargo xtask build --board rpi4 --release, fresh scratch trees with own target dirs, SOURCE_DATE_EPOCH=1792152000; green = rsync copy of the working tree, head = git archive dc3388d1):
+  plain-green 4e9b62db74af...  plain-head 2ed00ec93458...  kd-green e439db16971d...  kd-head 22a102b99ac8...   (full list + cards + programs: checks/sha256-kernels-cards-programs.txt)
+  (plain-head == a112-test plain-green: HEAD contains the A112 fix.) kd-* = same trees + tools/inject-arm.py (desktop=s1, launch:DESKTOP=td, launch:QED=q).
+
+1. PROBE RUNS (method/run-idprobe.sh, 45 s, plain kernels; probes sha256 identical to the fix run: serial/probes-{green,head}.sha256)
+   green log text (timestamps stripped) IDENTICAL to a113-fix/serial/idprobe-green.log; head log IDENTICAL to a113-fix/serial/idprobe-red.log. Expectations of the fix RUNINFO confirmed:
+   ACCX/ACCY appl_init 2/3 (head 0/0), appl_find 2/3, WF_OWNER own window 2/3, WM_REDRAW msg[1] 2/3, MAIN appl_write -> accessories answered (four 0x4001 m1=2,3,2,3 + own 0x4000),
+   appl_write(4)=0, (1)=1, AC_CLOSE to both before appl_exit returns (18.96/18.97 -> 18.98 s), "[acc] launching ... AC_CLOSE seen" 0 in green / 2 in head, 0 EXC/PANIC.
+2. APITEST (method/api-*.sh; APITEST.NCP rebuilt from the tree 9e4ca9e6..): memprot on/off/strict, head and green: TOTAL 109/0/5 in all six, 124 result lines each, 0 differing (checks/api-red-vs-green.txt),
+   0 EXC/PANIC; modes verified in the logs ("memory protection OFF (boot argument `memprot=off`)", "ON (strict)"). 5 SKIPs = BC26-30 (no key).
+3. INTERACTIVE (method/matrix.sh, same scripts/*.spec as a112-test, screendumps keyed to injector feed lines, 0.8 s after the step; head vs green pixel compare, checks/pixcmp-*.txt):
+   desk (no accessory)                      18/18 byte-identical
+   acc  (C:\ACC\SYSACC.NAC; Desk item 3 -> System Info dialog, Return)  18/18 identical (viewed: checks/sheet-acc.png: dialog renders, closes, desktop responds afterwards)
+   td   (TeraDesk by #Z: window, File menu, Ctrl-W, Quit dialog, Quit -> desktop, S1 afterwards)  24/24 identical (viewed: checks/sheet-td-qed.png)
+   qed  (QED by #Z: Datei menu, click outside, Ctrl-Q -> desktop, S1 afterwards)                 21/21 identical (viewed)
+   accA (probe accessory printing to console, ACCA ticks)  17/18 identical, c1-window-closed differs (console text lines of the probe; checks/accA-c1.png). Repeat run (screendumps-rep/): head vs head
+        18/18 differ, green vs green 13/18 differ => the accA screens are wall-clock-dependent probe console output, not a UI difference (as in a112-test).
+   Menu-open freeze (sanctioned deviation): ACCA lines while the Desk menu is held open (15 s guest): head 0, green 0 (switches 1/1) -- unchanged.
+   All 10 runs + 2 repeats: 0 [EXC], 0 PANIC, every run reached "[desk] desktop up"/last mark, rc 0; serial volume desk 236/236, acc 260/260 (sched-switch 12/12), accA 384/384, td 319/319, qed 291/291 (head/green).
+4. Accessory terminating at runtime / launched twice: NOT RUN (not trivial with the existing probes).
+
+NOT RUN / OPEN: qemu-virt board, host cargo tests/clippy (fix run did them), accessory Pexec child, accessory exit at runtime, SYSACC Save/Cancel buttons, TeraDesk/QED beyond window/menu/quit, real Pi 4.
+Files: RUNINFO.TXT; method/; scripts/; serial/ (idprobe-*, api-*, <card>-<side>-serial.log); screendumps/ (204) + screendumps-rep/; checks/. Images/kernels not kept, sha256 in checks/.

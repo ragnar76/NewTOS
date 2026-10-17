@@ -1,0 +1,24 @@
+screendump {'return': {}}
+run api-red-on: 336 serial lines; end: 1; desktop up: 0; EXC/PANIC: 0
+screendump {'return': {}}
+run api-red-off: 336 serial lines; end: 1; desktop up: 0; EXC/PANIC: 0
+screendump {'return': {}}
+run api-red-strict: 336 serial lines; end: 1; desktop up: 0; EXC/PANIC: 0
+screendump {'return': {}}
+run api-green-on: 336 serial lines; end: 1; desktop up: 0; EXC/PANIC: 0
+screendump {'return': {}}
+run api-green-off: 336 serial lines; end: 1; desktop up: 0; EXC/PANIC: 0
+screendump {'return': {}}
+run api-green-strict: 336 serial lines; end: 1; desktop up: 0; EXC/PANIC: 0
+mode on: red  TOTAL 109 0 5 
+mode on: green TOTAL 109 0 5 
+mode on: result lines red 124 green 124, differing: 0
+mode on: EXC/PANIC red 0 green 0
+mode off: red  TOTAL 109 0 5 
+mode off: green TOTAL 109 0 5 
+mode off: result lines red 124 green 124, differing: 0
+mode off: EXC/PANIC red 0 green 0
+mode strict: red  TOTAL 109 0 5 
+mode strict: green TOTAL 109 0 5 
+mode strict: result lines red 124 green 124, differing: 0
+mode strict: EXC/PANIC red 0 green 0
