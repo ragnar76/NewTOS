@@ -1,0 +1,55 @@
+measurement-2026-10-17-a112 -- A112 (does evnt_multi(MU_MESAG) see a self-sent / already-queued message, and one that arrives while
+it waits?), phase 1: cause first, product code unchanged.
+Host macOS, QEMU raspi4b only. Tree: main at 76d01f48 (clean). No SD card, no Pi, nothing under /Volumes/BOOT* or NEWTOS*.
+Scratch (tree copy, cards) = session scratchpad; per-run card = APFS clone (cp -c) of one base image per variant (volume A112C), deleted
+afterwards. One QEMU at a time. `-append serial=on [memprot=off]`. Analysis: docs/analysis/a112-evnt-multi-mesag-2026-10-17.md.
+
+KERNEL   fresh rpi4 release build of a scratch copy of the tree (method/make-scratch.sh; cargo xtask build --board rpi4 --release,
+         SOURCE_DATE_EPOCH 1791979200; tos-api 64 / kernel 94 warnings, rc 0). bin/kernel8-a112.img sha256
+         c582909a64d7dc58f0739aec2864ef5316a79e6c0857a282bdede462e6f4c174 -- byte-identical to the A25 kernel
+         (measurement-2026-10-17-a25/bin/kernel8-a25.img; db5880a8..76d01f48 touch docs/TASK only). Image gitignored.
+PROBES   sdk/examples/a112mesg.c -> bin/A112MESG.NAP (default build, card without accessory) and bin/A112MSGA.NAP (same source with
+         -DA112_ACC via a one-line #define/#include wrapper, card WITH the accessory); sdk/examples/a112acc.c -> bin/A112ACC.NAC
+         (companion desk accessory, loaded by the AES from C:\*.NAC). All built by method/run-all.sh with sdk/build.sh; sha256 in
+         method/sha256.txt. The program is started by the #Z autorun line of C:\NEWDESK.INF (method/make-card.sh).
+METHOD   method/run-all.sh: runs noacc-on, noacc-off (memprot=off), acc-on, acc-off; 40 s each, one screendump at 40 s (only to see
+         the run ended; not evaluated).
+
+CASES (every evnt_multi clears intin[0..15], flags = MU_MESAG|MU_TIMER = 0x0030, timer intin[14]/[15], 16-byte buffer addrin[0]):
+   E  empty queue, evnt_multi(500 ms)                         expect 32           (no-acc build only: it sleeps)
+   A  appl_write(self,16) then evnt_multi(1000 ms)             expect 16 + bytes
+   B  appl_write(self,16) then evnt_mesag                      expect 1 + bytes
+   C  appl_write(self,16), appl_init again, evnt_multi         expect 16 + bytes   (the A25 attempt-2 sequence)
+   D  two appl_write(self,16), two evnt_multi                  expect 16, 16, FIFO order
+   F  wind_create+wind_open (AES queues WM_REDRAW in our own trap), evnt_multi  expect 16, msg0=20, msg3=handle
+   G  no acc: evnt_multi(5000 ms) with nothing coming          expect 32
+   G1 acc: evnt_mesag; the accessory opens+closes a full-screen window -> AES posts WM_REDRAW to us from ANOTHER process
+                                                               expect 1, msg0=20, msg3=our handle
+   G2 acc: evnt_multi(5000 ms); the accessory repeats the window cycle 10 ticks later
+                                                               expect 16 (WM_REDRAW) -- or at least 32 after 5 s
+
+RESULT (serial/a112-<run>-serial.log; memprot on and off identical):
+   noacc-on / noacc-off: E A B C D F G all PASS, "A112: RESULT PASS", program exited rc=0.
+       -> an already-queued message (self-sent via appl_write, or queued by the AES during our own wind_open) IS seen by
+          evnt_multi(MU_MESAG) on entry; evnt_mesag too; a second appl_init in between changes nothing; FIFO order kept.
+   acc-on / acc-off: A B C D F G1 PASS. G2: "A112: G2 entering evnt_multi(MU_MESAG|MU_TIMER, 5000)", then the accessory's
+       "A112ACC: cycle 2: own window 2 opened+closed" (the WM_REDRAW for our window is posted), then NOTHING from the program for
+       the rest of the 40 s run: neither the message nor the 5000 ms timer ends the evnt_multi. (The accessory's own
+       "A112ACC: message 20 handle 2" is the WM_REDRAW its own wind_open queued for its window 2 -- expected.)
+       -> DEFECT: a program waiting in evnt_multi is woken neither by a message posted by another process nor by its own
+          MU_TIMER deadline once another AES process ran during the wait.
+
+HISTORY (honest record): serial/run1-first-revision/ = first probe revision (no -DA112_ACC variant; the same program on both cards,
+   binaries since rebuilt, not kept). noacc runs: identical PASS. acc runs: the program printed "A112: init ap_id=0" and then
+   hung in case E (pure evnt_multi(MU_MESAG|MU_TIMER, 500) on an empty queue) while the accessory (evnt_timer loop) ran:
+   "[sched] switch -> slot 0" and nothing more from the program. Same defect, timer-only form: a 500 ms timer never expires
+   while a peer is runnable. The revision was then split so the acc card skips E and reaches G1/G2.
+
+A25 EARLIER OBSERVATION: measurement-2026-10-17-a25/serial/attempt2-evnt_multi-observation/*.log print
+   "evnt_multi events=32 (MU_MESAG=1 MU_TIMER=32)": that probe revision used MU_MESAG = 1. 1 is MU_KEYBD
+   (tos-types/src/aes.rs:367; EmuTOS include/aesdefs.h:256); MU_MESAG is 0x0010 (aes.rs:375; aesdefs.h:260). It waited for
+   MU_KEYBD|MU_TIMER, so "timer only" was the correct answer. PROBE ERROR, not an AES defect (case A/C here, with 0x0010, PASS).
+
+NOT COVERED: no real Pi / TT; no host test (proposed in the analysis; a red host test is not committed in phase 1); the
+   pre-existing appl_write pid mapping (every client reports pid 0, appl_write(0) = the caller) means an accessory cannot
+   appl_write to the program at all -- the "another process" message here is therefore AES-posted (WM_REDRAW), see analysis.
