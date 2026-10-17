@@ -410,13 +410,27 @@ whose caller owns them too) survives, and its EmuTOS tag passes to that owner.
 With one owner per block, the only case EmuTOS has, the result is identical
 (`docs/api/gemdos/memory/49-mfree.md`, "several owners").
 
+TASK/PROC03 spec (2026-10-18, user decision "as EmuTOS"): `Pterm` must return
+through `p_parent` as `bdos/proc.c:609,616` does, and `run` follows EmuTOS
+(unchanged while an accessory or AES code executes, the accdesk/AES/EmuCON PDs
+as `run` in kernel context). The EmuTOS facts — what the resumed save area is,
+what happens when a program changed its own `p_parent` (unguarded; a started
+process's `p_parent` can only be changed by code with write access to the PD),
+the `Pterm` of an accessory terminating `run` — and the points the Developer
+must decide are in
+[`_run-ownership-curdir.md`](./_run-ownership-curdir.md) §2 and §6.3 (D-5).
+NewTOS keys the parent's saved context by the child (`parent_slot`,
+`tos-api/src/bdos/process/pterm.rs:246-260`); EmuTOS keys it by the PD that
+was `run` at the last trap #1 (`bdos/rwa.S:188-224,262-267`).
+
 TASK/PROC02 (2026-10-06): the file half of `ixterm` (`bdos/proc.c:116-123`) —
 `xclose` of every `p_uft[i] > 0`, then of every `sft[]` entry owned by the
 dying PD — runs in `terminate_inner` (`Pterm`, `Pterm0`, `Ptermres`) before
 the memory sweep (`file::close_process_files`). Before PROC02 files a process
 left open stayed open after its `Pterm`. The current-directory half
 (`decr_curdir_usage`) has no counterpart: NewTOS keeps no per-PD current
-directories.
+directories (**to be added by PROC04 point 2**, decided 2026-10-18; the EmuTOS
+facts are in [`_run-ownership-curdir.md`](./_run-ownership-curdir.md) §4).
 
 TASK/PROC06 (2026-10-16): the exit code is masked once in the shared
 terminate tail. `finish_terminate` (`kernel/src/arch/aarch64/exceptions.rs`)

@@ -241,6 +241,11 @@ no-mediach guarantees.
 
 (Empty during Phase 00.)
 
+**2026-10-18 (TASK/PROC03/PROC04 point 2):** the PD read is `run`'s (the PD in
+front, see `../process/_run-ownership-curdir.md` §1.3, §4.3); a child's
+`Dsetpath` must not change the parent's `Dgetpath` result — NewTOS's global
+directory does today (`TASK/PROC03.md` B3).
+
 PHASE-05: identical output format (leading `\`, no drive letter, `""` at root),
 `EDRIVE` + empty buffer on error, and no media-change check. The DND-chain walk
 is a free NewTOS implementation choice; the string format and error behaviour are

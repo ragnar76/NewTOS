@@ -272,6 +272,13 @@ to the AES like `Mfree`), unknown address → `EIMBA`. Exercised by the
 stage-1 probe `P34PAR.NAP` (`Pexec 3` → `Mshrink` of the child's TPA →
 `Pexec 4`, `measurements/measurement-2026-10-05-arch03-1/`).
 
+> **OPEN CONFLICT (2026-10-18, TASK/PROC03 spec):** the owner rule below
+> contradicts EmuTOS (no check, `bdos/umem.c:170-229`) and the 2026-10-18
+> "as EmuTOS" decision for accessory-originated calls — see the note in
+> [`49-mfree.md`](./49-mfree.md) and
+> [`../process/_run-ownership-curdir.md`](../process/_run-ownership-curdir.md)
+> §3.4, §6.3 D-8.
+
 ### NewTOS: several owners, and only an owner frees (ARCH03 stage 2d, plan E15)
 
 Decision E15 (user, 2026-10-04: "wie empfohlen"): **FreeMiNT's rule** — a block

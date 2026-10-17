@@ -167,5 +167,9 @@ No error is possible.
 
 (Empty during Phase 00.)
 
+**2026-10-18 (TASK/PROC03/PROC04 point 2):** reads `run->p_curdrv` (the PD in
+front, not necessarily the caller — `../process/_run-ownership-curdir.md` §1.3,
+§4).
+
 PHASE-05: read the per-process current-drive field; return zero-extended 0-based
 index. Trivial once `p_curdrv` exists in the kernel `Process`.

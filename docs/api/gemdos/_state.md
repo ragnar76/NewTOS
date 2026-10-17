@@ -32,8 +32,11 @@ needs the calling process's path, DTA, file-handle table, current dirs/drive, or
 memory ownership.
 
 **Lifecycle / writers:**
-- Initialised at boot to the descriptor of the bootstrap process (EmuTOS shell
-  or AUTO program).
+- Initialised at GEMDOS boot to the static `initial_basepage`
+  (`bdos/bdosmain.c:339`) — not to a shell or AUTO program; the full timeline
+  (AUTO PDs, AES PD, accdesk PD, desktop/EmuCON/program PDs; unchanged while an
+  accessory or AES code executes) is in
+  [`process/_run-ownership-curdir.md`](./process/_run-ownership-curdir.md) §1.
 - `proc_go` (`bdos/proc.c:575`, reached by `Pexec` modes 0/4/6) sets
   `run = child` when launching.
 - `xterm`/`x0term`/`xtermres` (`bdos/proc.c:609`) set `run = run->p_parent`
@@ -49,15 +52,20 @@ is actually launched via `Pexec(4/6)`. `Pterm` walks exactly one link
 **parent's** saved-D0 slot `p_parent->p_dreg[0]` (offset 0x68). The boot process
 (`initial_basepage`, `bdos/bdosmain.c:78`) has `p_parent == NULL`; EmuTOS does
 not guard a `Pterm` from it (would deref NULL). The AES and the AUTO programs
-are its children, the desktop and its programs the AES's
-([`process/_parent-and-environment.md`](./process/_parent-and-environment.md)). **Contract:** `p_parent` at offset 0x24 and `p_dreg[0]` at 0x68 are the
+are its children; the desktop and its programs are children of the **accdesk
+PD**, which is the AES PD's child (**corrected 2026-10-18**: this line said "the
+AES's"; chains in
+[`process/_parent-and-environment.md`](./process/_parent-and-environment.md) §1.1). **Contract:** `p_parent` at offset 0x24 and `p_dreg[0]` at 0x68 are the
 observable way a child's exit code reaches its parent's `Pexec`. The full
 basepage byte layout is in `docs/api/structures/basepage.md` and
 `docs/api/gemdos/process/4b-pexec.md` (PD table).
 
 NewTOS: same `run` pointer + parent link, mapped to the kernel's `Process`
 struct; a sentinel init PD catches `Pterm` from the top-level shell instead of
-dereferencing a NULL parent.
+dereferencing a NULL parent. Today `Pterm` returns through the child slot's
+`parent_slot`, not through `p_parent`, and `RUN` is `null` in kernel context;
+the 2026-10-18 decision (TASK/PROC03) requires EmuTOS's `run`/`p_parent`
+semantics — see `process/_run-ownership-curdir.md` §2 and §6.
 
 ### Process-owned resources released at termination
 

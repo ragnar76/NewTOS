@@ -700,12 +700,20 @@ the pool, as on TOS.
 
 **`p_parent` and the environment as on EmuTOS, through two stand-in PDs**
 (TASK/PPARENT, user decision 2026-10-06 "Way A"). EmuTOS's `run` while the
-BIOS runs the AUTO folder is `initial_basepage`, from the AES on the AES's PD
-(`bdos/bdosmain.c:337-342`, `bios/bios.c:685-695,855-866`); NewTOS runs the AES
-and the desktop in the kernel, so both PDs exist as read-only stand-ins in a
-published kernel page with EmuTOS's field contents. An AUTO program's
+BIOS runs the AUTO folder is `initial_basepage`, while the AES initialises the
+AES PD, and from then on the **accdesk PD** (the process `gem_main` makes with
+the AES PD as parent, `aes/geminit.c:894`, `aes/gemshlib.c:570-581`) between
+programs — the AES PD is *not* the parent of the desktop or of `#Z`/desktop
+programs (`bdos/bdosmain.c:337-342`, `bios/bios.c:685-695,855-866`,
+`aes/gemshlib.c:600-611,645`; **corrected 2026-10-18, TASK/PROC03**: this
+paragraph named the AES PD). NewTOS runs the AES and the desktop in the kernel,
+so `initial_basepage` and the AES PD exist as read-only stand-ins in a
+published kernel page with EmuTOS's field contents; the accdesk and EmuCON PDs
+are specified (`docs/api/gemdos/process/_parent-and-environment.md` §2.3-2.4)
+and not built yet. An AUTO program's
 `p_parent` is the `initial_basepage` stand-in, a desktop / `#Z` program's the
-AES-PD stand-in, an accessory's 0 (never `proc_go`ed, `bdos/proc.c:370,541`);
+AES-PD stand-in **today (EmuTOS: the accdesk PD — a deviation until PROC03
+stage 1)**, an accessory's 0 (never `proc_go`ed, `bdos/proc.c:370,541`);
 every process gets an environment (`alloc_env`, `bdos/proc.c:413-432`; the
 AES's is `default_env` `"PATH=\0X:\\\0"`, `bios/bios.c:626-636`), and
 `shel_envrn` searches the AES-PD stand-in's. **Observable differences:** the
@@ -713,7 +721,8 @@ stand-ins are read-only to programs, never the running process (`*os_run`
 during the desktop is unchanged), the AES PD has `p_hitpa = p_lowtpa + 0x100`
 and `p_tbase = 0` (no AES TPA, no AES code in the user address space), and a
 `Pexec` from the in-kernel EmuCON gets the AES-PD stand-in as parent where
-EmuTOS has an EmuCON PD (`TASK/PROC03.md` is the real AES/desktop process).
+EmuTOS has an EmuCON PD, whose own parent is the accdesk PD
+(`TASK/PROC03.md`).
 Spec: `docs/api/gemdos/process/_parent-and-environment.md`.
 
 **`PRGFLAGS` travel in an ELF note** (ARCH03 stage 2a, plan E8b, user

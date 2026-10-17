@@ -1,19 +1,28 @@
-# `p_parent` and the environment of every process (TASK/PPARENT)
+# `p_parent` and the environment of every process (TASK/PPARENT, corrected by TASK/PROC03)
 
 > Spec extraction, cross-cutting `Pexec` / basepage / AES. Source: EmuTOS @
-> `1a7484ab` (`references/emutos`). User decision 2026-10-06: **Way A** —
-> two stand-in PDs (`TASK/ARCH03-POSTE9-STATUS-UNFINISHED.MD` §1; Way B, the
-> desktop/AES as a real EL0 process, is `TASK/PROC03.md`).
+> `1a7484ab` (`references/emutos`).
+> **Re-validated 2026-10-18 (TASK/PROC03).** The first version of this file
+> (TASK/PPARENT, 2026-10-06, "Way A") said the AES PD is the parent of the
+> desktop and of every `#Z`/desktop-started program. **That was wrong.** The
+> parent is a *third* PD, the **accdesk PD**, and a program started from the
+> EmuCON has a *fourth*, the **EmuCON PD**. Corrections are marked
+> **CORRECTION**. User decision 2026-10-18: NewTOS follows EmuTOS here
+> ("alles EmuTOS-treu", `TASK/PROC03.md`). The companion file for `run`,
+> memory ownership and the per-PD current directory is
+> [`_run-ownership-curdir.md`](./_run-ownership-curdir.md).
 
 > **Contract vs. reference** — see [`docs/COMPATIBILITY.md`](../../../COMPATIBILITY.md).
-> **Contract:** the value of `p_parent` (0x24) and the content of the block
-> `p_env` (0x2C) names for every way a process is started; that the PD
-> `p_parent` names is a readable basepage. mintlib's start-up code tells a
-> desk accessory by `p_parent == 0` (`startup/crt0.S:52-56`), `getppid`
-> falls back to `p_parent` (`unix/getppid.c:22`).
-> **Reference:** where the stand-in PDs live, how they are published, which
-> internal pointer the kernel keeps as "`run` while kernel code is on the
-> stack".
+> **Contract:** the value of `p_parent` (0x24) for every way a process is
+> started, i.e. the *whole chain* a program can walk (depth and the
+> readable content of each PD on it); the content of the block `p_env`
+> (0x2C) names; that the PD `p_parent` names is a readable basepage.
+> mintlib tells a desk accessory by `p_parent == 0` (`startup/crt0.S:52-56`),
+> `getppid` falls back to `p_parent>>8` (`unix/getppid.c:22`).
+> **Reference:** where the stand-in PDs live, how they are published, the
+> saved-register area (`p_dreg`/`p_areg`), the `p_curdir[]` index bytes.
+> Labels: **(read)** = stated by the cited code; **(inferred)** = reasoned
+> from cited code.
 
 ## 1. EmuTOS: where `p_parent` comes from
 
@@ -27,68 +36,151 @@ p->p_parent = run;
 `bzero(p, sizeof(PD))`), so a PD that never passes `proc_go` keeps
 `p_parent == 0`. `proc_go` runs for `PE_LOADGO`, `PE_GO` and `PE_GOTHENFREE`
 (`bdos/proc.c:238-248,358-359`); `PE_LOAD`, `PE_BASEPAGE` and
-`PE_BASEPAGEFLAGS` never call it.
+`PE_BASEPAGEFLAGS` never call it, and `proc_go` **overwrites** any value a
+loader put there beforehand.
 
-`run` at each start:
+`run` at each start (the writes to `run`, and its value over time, are in
+[`_run-ownership-curdir.md`](./_run-ownership-curdir.md) §1):
 
 | Start | `run` when it is started → `p_parent` | Source |
 |---|---|---|
 | GEMDOS initialisation | `run = &initial_basepage` (a static `PD`, `bdos/bdosmain.c:78`) | `bdos/bdosmain.c:337-342` |
 | AUTO program | `Pexec(PE_LOADGO, "\AUTO\…", "", NULL)` from the BIOS: `&initial_basepage` | `bios/bios.c:685-695` |
-| The AES (`exec_os`, the default ROM shell) | `Pexec(PE_BASEPAGEFLAGS, PF_STANDARD, "", default_env)` + `Pexec(PE_GO)` from the BIOS: `&initial_basepage` | `bios/bios.c:855-866` |
-| The ROM desktop (EmuDesk), EmuCON | `aes_run_rom_program`: `Pexec(PE_BASEPAGEFLAGS, PF_STANDARD, "", NULL)` + `dos_exec(PE_GOTHENFREE)` from the AES process: **the AES PD** | `aes/gemshlib.c:569-580` |
-| A program the desktop asked for / the `#Z` autorun program | the desktop has terminated (`shel_write` + exit), `sh_ldapp` → `dos_exec(PE_LOADGO, D.s_cmd, ad_stail, ad_envrn)` from the AES process: **the AES PD** | `aes/gemshlib.c:624-645` |
-| Desk accessory | `pgmld` → `Pexec(PE_LOAD, pname, "", NULL)`, then `pstart` — never `proc_go`: **0** | `util/gemdos.c:29-47`, `aes/geminit.c:236-257`, `bdos/proc.c:370` |
-| Child of a program (`Pexec` 0/4/6 from a running program) | the caller's PD | `bdos/proc.c:541` |
+| The AES (`exec_os` = `ui_start`) | `Pexec(PE_BASEPAGEFLAGS, PF_STANDARD, "", default_env)` + `Pexec(PE_GO)` from the BIOS: `&initial_basepage` | `bios/bios.c:855-866`, `bios/endrom.c:31` |
+| **accdesk PD** (accessories + desktop shell, one PD per AES start) | `gem_main` → `aes_run_rom_program(accdesk_start)`: `Pexec(PE_BASEPAGEFLAGS, PF_STANDARD, "", NULL)` + `dos_exec(PE_GOTHENFREE)` with `run` = the **AES PD**: `p_parent` = AES PD | `aes/geminit.c:894`, `aes/gemshlib.c:570-581` |
+| **CORRECTION** — the ROM desktop (`deskstart`) | `sh_ldapp` runs in the accdesk process: `aes_run_rom_program(deskstart)` with `run` = **accdesk PD** | `aes/gemshlib.c:600-611`; `accdesk_start` → `run_accs_and_desktop` → `sh_main`, `aes/gemstart.S:139-160`, `aes/geminit.c:739` |
+| **CORRECTION** — EmuCON (`CONSOLE_APP`, `WITH_CLI`) | `aes_run_rom_program(coma_start)` from `sh_ldapp`: `run` = **accdesk PD** | `aes/gemshlib.c:614-620` |
+| **CORRECTION** — a program the desktop asked for / the `#Z` autorun program | `sh_ldapp` → `dos_exec(PE_LOADGO, D.s_cmd, ad_stail, ad_envrn)` with `run` = **accdesk PD** (the desktop has already terminated; between programs `run` is accdesk) | `aes/gemshlib.c:645`, `bdos/proc.c:541` |
+| Desk accessory | `pgmld` → `Pexec(PE_LOAD, pname, "", NULL)` with `run` = accdesk PD, then `pstart` — never `proc_go`: **0** | `util/gemdos.c:29-47`, `aes/geminit.c:236-257`, `bdos/proc.c:370` |
+| Child of a program (`Pexec` 0/4/6) | `run` — **the caller's PD for a program; for a call made by an accessory or by AES code `run` is the PD in front, not the accessory** (`_run-ownership-curdir.md` §1.3) | `bdos/proc.c:541` |
+| Program started by EmuCON (`Pexec(0, path, cmdline, NULL)`) | `run` = **EmuCON PD** | `cli/cmdexec.c:52` |
+| Early console (`BOOTFLAG_EARLY_CLI`, `WITH_CLI`) / `COMMAND.PRG` (`cmdload`) | `&initial_basepage` (not the default boot) | `bios/bios.c:834-843,850-855` |
 
-`dos_exec` is a plain `trap #1` `Pexec` (`aes/gemstart.S:169-226`); the AES
-does not switch GEMDOS's `run`, so while the AES (or a program launched by it)
-calls GEMDOS, `run` is the AES PD or that program.
+**Why the accdesk PD exists** (read): `run_accs_and_desktop` "runs under a
+separate process which terminates on shutdown or resolution change … This
+ensures that all memory allocated to or by desk accessories is automatically
+freed on resolution change" (`aes/geminit.c:646-652`). `accdesk_start` first
+`Mshrink`s its own block and switches to supervisor mode
+(`aes/gemstart.S:139-158`), calls `run_accs_and_desktop` and ends with
+`Pterm0` (`:160-163`); `gem_main` loops back to `aes_restart` and a fresh
+accdesk PD whenever `gl_changerez` is set (`aes/gemstart.S:121-124`).
 
-## 2. EmuTOS: what the two PDs contain
+`dos_exec` is a plain `trap #1` `Pexec` (`aes/gemstart.S:169-243`); the AES
+does not switch GEMDOS's `run`.
 
-### `initial_basepage` (`bdos/bdosmain.c:78`, static, zero-initialised)
+### 1.1 The `p_parent` chain per start path (read; chain depth = the number of
+PDs from the program to the 0 terminator, counted including the program)
 
-| Field | Value | Source |
+| Start | Chain (child → … → 0) | Depth |
 |---|---|---|
-| everything | 0 (BSS) | `bdos/bdosmain.c:78` |
-| `p_flags` | `PF_STANDARD` (7) | `bdos/bdosmain.c:340` |
-| `p_env` | `&double_nul` = `{0, 0}` (an empty environment) | `bdos/bdosmain.c:81,341` |
-| `p_uft[0..5]` | `default_handle` = `H_Console, H_Console, H_Aux, H_Print, H_Console, H_Console` = `-1, -1, -2, -3, -1, -1` | `bdos/console.c:60-68,107-112`, `bdos/console.h:23-25` (`stdhdl_init`, `bdos/bdosmain.c:347`) |
-| `p_curdrv` | `bootdev` (`Dsetdrv(bootdev)` while `run` is this PD) | `bios/bios.c:827` |
-| `p_parent` | 0 (it is the root) | BSS |
+| AUTO program | AUTO → `initial_basepage` → 0 | 3 |
+| the AES PD | AES → `initial_basepage` → 0 | 3 |
+| accdesk PD | accdesk → AES → `initial_basepage` → 0 | 4 |
+| ROM desktop, `#Z`/desktop-started program, `shel_write` program | X → **accdesk → AES → `initial_basepage` → 0** | 5 |
+| EmuCON PD | EmuCON → accdesk → AES → `initial_basepage` → 0 | 5 |
+| program started by EmuCON | X → EmuCON → accdesk → AES → `initial_basepage` → 0 | 6 |
+| `Pexec` child of any program X (not an accessory) | child → X → (chain of X) | |
+| `Pexec` child called from an accessory while program P is in front | child → **P** → (chain of P) | |
+| accessory | 0 | 1 |
 
-Later writes by the BIOS that are not boot-time constants (the `Fsetdta(&dta)`
-of `autoexec`, the `dirtbl` index `ckdrv` enters into `p_curdir[]`) are
-dynamic state and not part of the stand-in contract.
+The NewTOS ticket draft's table (`TASK/PROC03.md` §6) matches this except for
+the accessory-`Pexec` row, where it said "caller" and the source says `run`.
 
-### The AES PD (`bios/bios.c:862-865`)
+## 2. EmuTOS: what the four PDs contain
 
-Created by `Pexec(PE_BASEPAGEFLAGS, (char *)PF_STANDARD, "", default_env)`
-(`xexec` mode 7, `bdos/proc.c:212-236`), then `p_tbase = exec_os`,
-`p_tlen = p_dlen = p_blen = 0`, then `Pexec(PE_GO)` (`proc_go`).
+Kind column: **S** fixed by source; **D** dynamic (depends on memory/boot/drive
+state or on later use); **I** m68k save area (`include/asmpd.h:25-29`),
+internal. "NewTOS" column: how far it can be represented without an AES TPA —
+**yes**, **partly** (value defined by the source but not reproducible
+literally), **no**.
 
-| Field | Value | Source |
-|---|---|---|
-| `p_lowtpa` | the PD itself | `init_pd_fields`, `bdos/proc.c:373` |
-| `p_hitpa` | `p + max` — `max` the largest free block `alloc_tpa` took | `bdos/proc.c:220,374` |
-| `p_tbase` | `exec_os` (the AES entry in the ROM) | `bios/bios.c:863` |
-| `p_tlen`, `p_dlen`, `p_blen` | 0 | `bios/bios.c:864` |
-| `p_dbase`, `p_bbase` | 0 (`bzero`) | `bdos/proc.c:370` |
-| `p_xdta` | `&p->p_cmdlin` | `bdos/proc.c:375` |
-| `p_parent` | `run` = `&initial_basepage` | `bdos/proc.c:541` |
-| `p_flags` | `PF_STANDARD` (7) | `bdos/proc.c:234`, `bios/bios.c:862` |
-| `p_env` | a copy of `default_env` (`alloc_env(PF_STANDARD, default_env)`) | `bdos/proc.c:215,376,413-432` |
-| `p_uft` | inherited from `run`: a handle `> 0` is `ixforce`d, every other copied — here the six default handles | `init_pd_files`, `bdos/proc.c:388-399` |
-| `p_curdir[]`, `p_curdrv` | inherited from `run` (`p_curdrv` = `bootdev`) | `bdos/proc.c:401-409` |
-| `p_cmdlin` | `""` (one NUL) | `bdos/proc.c:378-384` |
-| `p_lddrv`, fills | 0 | `bdos/proc.c:370` |
+### 2.1 `initial_basepage` (`bdos/bdosmain.c:78`, static, BSS)
 
-`gemstart.S` then `Mshrink`s its own TPA (`aes/gemstart.S:60-69`, which does
-not touch the PD) and stores `p_env` as `ad_envrn` (`aes/gemstart.S:78-96`):
-**the AES environment `ad_envrn` *is* the AES PD's `p_env`.**
+| Field | Value | Kind | NewTOS | Source |
+|---|---|---|---|---|
+| `p_lowtpa`, `p_hitpa`, `p_tbase`, `p_tlen`, `p_dbase`, `p_dlen`, `p_bbase`, `p_blen` | 0 | S | yes | BSS |
+| `p_xdta` | 0 until the BIOS `Fsetdta(&dta)` (`bios/bios.c:713,728`), then a pointer into the BIOS stack frame that no longer exists | D | partly (0) | `bdos/fsmain.c:405` |
+| `p_parent` | 0 (root) | S | yes | BSS |
+| `p_flags` | `PF_STANDARD` (7) | S | yes | `bdos/bdosmain.c:340` |
+| `p_env` | `&double_nul` = `{0, 0}` | S | yes | `bdos/bdosmain.c:81,341` |
+| `p_uft[0..5]` | `-1,-1,-2,-3,-1,-1` (`default_handle`) | S | yes | `bdos/console.c:60-68,107-112`, `bdos/console.h:23-25`, `stdhdl_init` `bdos/bdosmain.c:347` |
+| `p_lddrv` | 0 (declared, never written in EmuTOS) | S | yes | `include/bdosdefs.h:85` (grep: no writer) |
+| `p_curdrv` | `bootdev` (`Dsetdrv(bootdev)` while it is `run`) | S | yes | `bios/bios.c:827` |
+| `p_curdir[]` | root slot of the boot drive (created by the BIOS' `Fsfirst("\AUTO\*.PRG")`, `ckdrv`), others 0 unless used | D, reference | partly | `bdos/fsdrive.c:112-132`, `bios/bios.c:713-728` |
+| `p_cmdlin`, `p_dreg`, `p_areg` | 0 (BSS); the register area is overwritten by every trap #1 while it is `run` | I | no (not needed) | `bdos/rwa.S:188-206` |
 
-### `default_env` (`bios/bios.c:77-80,626-636`)
+### 2.2 The AES PD (`bios/bios.c:861-865`)
+
+Created by `Pexec(PE_BASEPAGEFLAGS, PF_STANDARD, "", default_env)` (mode 7,
+`bdos/proc.c:212-236`), then `p_tbase = exec_os`, `p_tlen = p_dlen = p_blen =
+0`, then `Pexec(PE_GO)` (`proc_go`).
+
+| Field | Value | Kind | NewTOS | Source |
+|---|---|---|---|---|
+| `p_lowtpa` | the PD itself | S | yes | `bdos/proc.c:373` |
+| `p_hitpa` | `p + max`, `max` = the largest free block `alloc_tpa` took at that moment (pool and size depend on RAM state) — **left unchanged** by the `Mshrink` to 0x100 that `ui_start` does at once | D | partly — see `_run-ownership-curdir.md` §6.3 D-2 | `bdos/proc.c:220,374,460-502`, `aes/gemstart.S:59-69`, `bdos/umem.c:170-229` (no basepage write) |
+| `p_tbase` | `exec_os` = `ui_start`, the AES entry in the ROM image | S (meaning) | no (D-1) | `bios/bios.c:534,863`, `bios/endrom.c:31` |
+| `p_tlen`, `p_dlen`, `p_blen` | 0 | S | yes | `bios/bios.c:864` |
+| `p_dbase`, `p_bbase` | 0 | S | yes | `bdos/proc.c:370` |
+| `p_xdta` | `&p_cmdlin` at creation; later the AES' own `dos_sdta(&D.g_dta)` (while `run` = AES PD, `aes/geminit.c:273,810`) | D | partly (D-3) | `bdos/proc.c:375` |
+| `p_parent` | `&initial_basepage` | S | yes | `bdos/proc.c:541` |
+| `p_flags` | `PF_STANDARD` (7) | S | yes | `bdos/proc.c:234` |
+| `p_env` | a 12-byte copy of `default_env`; **this block is `ad_envrn`** (`save_ad_envrn` is restored on every AES restart) | S | yes | `bdos/proc.c:215,376,413-432`, `aes/gemstart.S:78-97` |
+| `p_uft` | copied from `initial_basepage`: the six default handles | S | yes | `bdos/proc.c:391-398` |
+| `p_lddrv` | 0 | S | yes | — |
+| `p_curdrv`, `p_curdir[]` | inherited from `initial_basepage` at creation; afterwards changed by the AES running as this PD (rez change `dos_sdrv(bootdev)`, `aes/geminit.c:796-801`) | D | partly (the byte yes, `p_curdir[]` reference) | `bdos/proc.c:401-409` |
+| `p_cmdlin` | `""` at creation; **afterwards the `shel_write` command-tail buffer**: `ad_stail` = this PD + 0x80 (`aes/gemstart.S:54-57`), written by `sh_write` (`aes/gemshlib.c:170,191`) and read by `sh_read` (`:105`) | D | yes, if the AES writes the tail into the stand-in (D-4) | as given |
+| `p_dreg`, `p_areg` | the AES' pending `dos_exec` context (it is `run` when it calls `Pexec`) | I | no | `bdos/rwa.S:188-206` |
+| block | owner `initial_basepage` (`set_owner(p, run)`, `PE_GO` keeps it); block shrunk to 0x100 by `ui_start` | reference | — | `bdos/proc.c:229-230`, `aes/gemstart.S:59-69` |
+
+### 2.3 The accdesk PD (`aes/gemshlib.c:570-581`) — **new in this spec**
+
+`pd = Pexec(PE_BASEPAGEFLAGS, PF_STANDARD, "", NULL); pd->p_tbase = entry;
+dos_exec(PE_GOTHENFREE, NULL, pd, NULL)`, with `run` = AES PD, `entry` =
+`accdesk_start`. `aes_run_rom_program` does **not** zero `p_tlen/p_dlen/p_blen`
+explicitly (the BIOS variant does) — they are 0 because `init_pd_fields`
+`bzero`ed the PD.
+
+| Field | Value | Kind | NewTOS | Source |
+|---|---|---|---|---|
+| `p_lowtpa` | the PD itself | S | yes | `bdos/proc.c:373` |
+| `p_hitpa` | `p + max` (largest free block at creation); the block is `Mshrink`ed to 0x100 by `accdesk_start`, the field is not | D | partly (D-2) | `bdos/proc.c:374`, `aes/gemstart.S:143-152` |
+| `p_tbase` | `accdesk_start` (`aes/gemstart.S:139`) | S (meaning) | no (D-1) | `aes/gemshlib.c:575-576` |
+| `p_tlen`, `p_dlen`, `p_blen`, `p_dbase`, `p_bbase` | 0 | S | yes | `bdos/proc.c:370` |
+| `p_xdta` | `&p_cmdlin`; the AES' `dos_sdta` calls while `run` = accdesk change it | D | partly (D-3) | `bdos/proc.c:375` |
+| `p_parent` | the AES PD | S | yes | `bdos/proc.c:541` |
+| `p_flags` | `PF_STANDARD` (7) | S | yes | `bdos/proc.c:234`, `aes/gemshlib.c:575` |
+| `p_env` | a copy of the **AES PD's** `p_env` (`env == NULL` → `run->p_env`), 12 bytes | S | yes | `bdos/proc.c:419-420,421-429` |
+| `p_uft` | copied from the AES PD: the six default handles | S | yes | `bdos/proc.c:391-398` |
+| `p_curdrv`, `p_curdir[]` | copied from the AES PD at creation, then **rewritten by the shell on every launch** (`set_drvdir`, `run` = accdesk) | D | the byte yes; `p_curdir[]` reference — **mutable state** | `bdos/proc.c:401-409`, `aes/gemshlib.c:526-554` |
+| `p_cmdlin` | `""` | S | yes | `bdos/proc.c:378-384` |
+| `p_dreg`, `p_areg` | the pending context of the AES `dos_exec`s it makes | I | no | `bdos/rwa.S:188-206` |
+| block | owner **itself** (`PE_GOTHENFREE` `set_owner(p,p)`, also the env); shrunk to 0x100 | reference | — | `bdos/proc.c:238-243` |
+| lifetime | from `gem_main:894` to the `Pterm0` after `run_accs_and_desktop` — shutdown or resolution change; **a new PD per AES start** | S | — | `aes/gemstart.S:121-124,160-163` |
+
+While it is `run` (between programs, during accessory initialisation) the AES
+executes GEMDOS calls as this PD (`_run-ownership-curdir.md` §1.2).
+
+### 2.4 The EmuCON PD (`WITH_CLI`; `aes/gemshlib.c:614-620`) — **new in this spec**
+
+Same creation as 2.3 with `entry = coma_start`, `run` = accdesk PD. Differences:
+
+| Field | Value | Kind | NewTOS | Source |
+|---|---|---|---|---|
+| `p_tbase` | `coma_start` (`cli/cmdasm.S:22`) | S (meaning) | no (D-1) | `aes/gemshlib.c:618`, `bios/endrom.c:33` |
+| `p_parent` | accdesk PD | S | yes | `bdos/proc.c:541` |
+| `p_env` | a copy of accdesk's `p_env` (= the AES environment); `coma_start` stores it in `_environment` and EmuCON only reads it | S | yes | `bdos/proc.c:419-420`, `cli/cmdasm.S:40-44`, `cli/cmdmain.c:223-245` |
+| `p_curdrv`, `p_curdir[]` | accdesk's, which `sh_chdef` has just set from `sh_cdir` (`set_drvdir`, `aes/gemshlib.c:545-548`); then EmuCON's own `cd`/`d:` change **this PD's** (`cli/cmdint.c:250-255,567`) | D | **mutable state** | `bdos/proc.c:401-409` |
+| `p_hitpa` | `p + max`; block shrunk to 0x100 by `coma_start` | D | partly (D-2) | `cli/cmdasm.S:26-37` |
+| block | owner itself (`PE_GOTHENFREE`); freed when EmuCON ends (`Pterm0`, `cli/cmdasm.S:48-49`) | reference | — | `bdos/proc.c:238-243` |
+| lifetime | one PD per console start; `run` = EmuCON PD while EmuCON executes and while it `Pexec`s programs | S | — | `aes/gemshlib.c:614-622` |
+
+**The ROM desktop's PD** (`deskstart`) is built the same way (parent accdesk,
+`p_tbase = deskstart`, env copy of accdesk's). NewTOS's desktop is the EL0
+process NEWDESK (ADR-026), a real PD; its parent must be the accdesk
+stand-in, its environment a copy of the accdesk stand-in's.
+
+### 2.5 `default_env` (`bios/bios.c:77-80,626-636`)
 
 ```c
 #define ENV_SIZE 12        /* sufficient for standard PATH=^X:\^^ (^=nul byte) */
@@ -111,106 +203,100 @@ bytes (`bdos/proc.c:150-159`), `alloc_env` copies `(11 + 1) & ~1 = 12`
 `alloc_env(flags, env)` (`bdos/proc.c:413-432`) runs for every load and
 basepage mode: `env == NULL` → a copy of `run->p_env`, otherwise a copy of
 `env`, size `(envsize + 1) & ~1`, in ST-RAM or (with `PF_TTRAMLOAD`) TT-RAM
-preferred. So:
+preferred.
 
-| Start | `env` argument | environment content |
+| Start | `env` argument / `run` | environment content |
 |---|---|---|
 | AUTO program | `NULL`, `run` = `initial_basepage` | `{0, 0}` (2 bytes) |
 | The AES | `default_env` | `default_env` (12 bytes) |
-| ROM desktop, EmuCON | `NULL`, `run` = AES PD | copy of `ad_envrn` |
-| Desktop / `#Z` program | `ad_envrn` | copy of `ad_envrn` (12 bytes) |
-| Desk accessory | `NULL`, `run` = AES PD | copy of `ad_envrn` (12 bytes) |
-| Child of a program | `NULL` → the caller's `p_env`, else the caller's block | as given |
+| accdesk PD | `NULL`, `run` = AES PD | copy of the AES PD's `p_env` (= `ad_envrn`) |
+| ROM desktop, EmuCON | `NULL`, `run` = **accdesk PD** (CORRECTION: was "AES PD") | copy of accdesk's `p_env` (same bytes) |
+| Desktop / `#Z` program | `ad_envrn` passed explicitly (`run` = accdesk) | copy of `ad_envrn` (12 bytes) |
+| Desk accessory | `NULL`, `run` = **accdesk PD** (CORRECTION: was "AES PD") | copy of accdesk's `p_env` (12 bytes) |
+| Program started by EmuCON | `NULL`, `run` = EmuCON PD | copy of EmuCON's `p_env` |
+| Child of a program | `NULL` → the caller's (the `run`'s) `p_env`, else the given block | as given |
 
-## 4. NewTOS mapping (Way A)
+The bytes are identical for every row that copies the AES environment: nothing
+in the AES or in EmuCON writes the environment (`ad_envrn` is only read,
+`aes/gemshlib.c:338-347`; EmuCON only reads, `cli/cmdmain.c:223-245`).
 
-NewTOS has no AES process and no `initial_basepage`: the desktop (`desk/`) and
-the AES run in the kernel and `RUN` is `null` while kernel code is on the
-stack. Way A gives the observable contract of §1–§3 with **two stand-in PDs**
-(`tos-api/src/bdos/process/standin.rs`):
+## 4. NewTOS mapping
 
-- **Where.** One page-aligned kernel page holding, in this order, the
-  `initial_basepage` stand-in (+0x000), the AES-PD stand-in (+0x100),
-  `double_nul` (+0x200) and the AES environment (+0x210, `ENV_SIZE` = 12
-  bytes). It is published to every process at VA = PA, read-only
-  (`usermem::expose`, `PROT_PR`, ADR-023), so its address is a 32-bit user
-  address that every process can read under `memprot=on`, `off` and
-  `strict` — the same way the AES environment page was published before.
-  A kernel page and not a pool block: it is no process's memory, so no `Pterm`
-  and no `free_all_owned` can ever reach it, and the pools keep their size.
-- **Content.** As §2, with the values NewTOS has no counterpart for:
-  `initial_basepage.p_curdrv` and the AES PD's = `bootdev`
-  (`bdos::fs::drive::boot_drive`, the same derivation as the `$446` system
-  variable); the AES PD's `p_hitpa = p_lowtpa + 0x100` (there is no AES TPA:
-  its "memory" is its basepage) and `p_tbase = 0` (there is no AES code in
-  the user address space). These two are deviations by absence, not choices.
-- **The kernel's `run`.** "`run` while kernel code is on the stack" is the
-  `initial_basepage` stand-in until the AES starts — EmuTOS `exec_os`, which
-  follows `autoexec` (`bios/bios.c:840-866`); in NewTOS right after
-  `launch::run_auto_folder` — and the AES-PD stand-in from then on
-  (`standin::kernel_run`). `RUN` itself stays `null`: the stand-ins are never
-  the running process, own no memory and are never an owner tag; `*os_run`,
-  `parent_slot` and the return path of `Pterm` are unchanged.
-- **`p_parent`.** `pexec::set_parent` writes the caller's PD, or, when the
-  caller is no process (`current()` is `null`), `standin::kernel_run()`. The
-  kernel launcher (`kernel/src/launch.rs`, AUTO / desktop / `#Z`) writes it
-  the same way before the program's first instruction. Accessories are
-  started by the scheduler and keep the loader's 0.
-- **Environment.** `EnvSpec::Inherit` copies `run->p_env`; with no running
-  process that is the kernel `run` stand-in's environment (`double_nul`
-  before the AES, the AES environment after it). The kernel launcher and
-  the accessory loader inherit (EmuTOS: `NULL` from AUTO and `pgmld`,
-  `ad_envrn` — the AES PD's `p_env` — from `sh_ldapp`).
-- **`shel_envrn`.** `ad_envrn` is the AES-PD stand-in's `p_env`: `shel_envrn`
-  searches that block and hands an EL0 program its published user address
-  (the in-kernel desktop: the kernel address). For `"PATH="` the answer is
-  the NUL after the `=` (`gemshlib.c:338-347`); gemlib's `mt_shel_envrn`
-  steps over it (`a_shel_envrn.c:40-50`), so a gemlib program sees `"X:\"`.
-  The built-in `"PATH=C:\;"` default it searched before had no EmuTOS
-  source and is gone.
+### 4.1 Way A as built (reference; superseded by §4.2 for the chain)
 
-### What follows for programs (observable)
+NewTOS has no AES process and no `initial_basepage`: the AES and the shell run
+in the kernel and `RUN` is `null` while kernel code is on the stack. Way A
+(`tos-api/src/bdos/process/standin.rs`) gives two stand-in PDs in one kernel
+page, `initial_basepage` (+0x000), the AES PD (+0x100), `double_nul` (+0x200)
+and the AES environment (+0x210, `ENV_SIZE` = 12 bytes), published read-only
+at VA = PA to every process (`usermem::expose`, `PROT_PR`, ADR-023):
+a kernel page, so no `Pterm`/`free_all_owned` can reach it. Content as §2.1-2.2
+with: `p_curdrv` = `bootdev`, AES PD `p_hitpa = p_lowtpa + 0x100`, `p_tbase = 0`
+(deviations by absence). `standin::kernel_run()` is `initial_basepage` until
+`enter_aes()` and the AES PD from then on; `pexec::set_parent` writes the
+caller's PD, or `kernel_run()` when `current()` is `null`
+(`tos-api/src/bdos/process/pexec.rs:498-519`); the kernel launcher does the same
+before the first instruction (`kernel/src/launch.rs:252`); accessories keep
+the loader's 0 (`kernel/src/accs.rs:201-216`). `EnvSpec::Inherit` with no
+running process copies the `kernel_run()` stand-in's environment.
+
+### 4.2 Required by the 2026-10-18 decision (target contract)
+
+* The chain of §1.1 for every start path: **desktop, `#Z`, `shel_write` and
+  NEWDESK programs have `p_parent` = accdesk stand-in**; the accdesk stand-in's
+  `p_parent` = AES stand-in; AES → `initial_basepage` → 0. Two more
+  stand-ins: **accdesk** (always, from `enter_aes()`), **EmuCON PD** (one per
+  console start; the in-kernel EmuCON is this PD: it is `kernel_run()` while it
+  executes and the parent of what it `Pexec`s).
+* `kernel_run()` from `enter_aes()` on is the accdesk stand-in between programs
+  and while the shell does AES work (EmuTOS `run`, §1.2); the AES stand-in is
+  `run` only during AES initialisation (`aes/geminit.c:753-894`) and after
+  accdesk ends.
+* Fields per §2 with the **partly/no** entries decided by the Developer
+  (`_run-ownership-curdir.md` §6.3 D-1…D-4, D-6). The stand-ins hold **mutable**
+  state (drive/directory, `p_cmdlin` tail, `p_xdta`): the read-only constant
+  page of Way A cannot remain the only representation (kernel-writable, EL0
+  read-only is enough for chain readers).
+* Environments per §3: accdesk's and EmuCON's = copies of the AES environment
+  (12 bytes each, own blocks readable by EL0).
+* `shel_envrn` still searches the **AES PD's** `p_env` (`ad_envrn`,
+  `aes/gemstart.S:78-97`, `aes/gemshlib.c:338-347`), gemlib's `mt_shel_envrn`
+  steps over the NUL after `PATH=` (`a_shel_envrn.c:40-50`).
+
+### 4.3 What a program sees (observable)
 
 | Start | `p_parent` | `p_env` content |
 |---|---|---|
 | AUTO program | `initial_basepage` stand-in | `00 00` |
-| Desktop launch, `#Z` program (TeraDesk, QED, APITEST, …) | AES-PD stand-in | `PATH=\0X:\\\0\0` (12 bytes, X = boot drive) |
+| Desktop launch, `#Z` program (TeraDesk, QED, APITEST, …), NEWDESK | **accdesk** stand-in | `PATH=\0X:\\\0\0` (12 bytes, X = boot drive) |
 | Desk accessory | 0 | `PATH=\0X:\\\0\0` |
-| `Pexec` child of a program | the caller's PD | the caller's `p_env` copy, or the given block |
-| `Pexec` from EmuCON (in-kernel, EL1) | AES-PD stand-in (deviation: EmuTOS has an EmuCON PD, NewTOS's EmuCON is no process — `TASK/PROC03.md`) | the AES environment (as EmuTOS: EmuCON's own environment is a copy of `ad_envrn`) |
+| `Pexec` child of a program | the caller's PD (accessory case: the PD in front, `_run-ownership-curdir.md` §1.3) | the caller's `p_env` copy, or the given block |
+| `Pexec` from EmuCON | **EmuCON** stand-in | the EmuCON stand-in's environment (= AES copy) |
 
-The stand-in chain is readable to the end: the AES-PD stand-in's `p_parent`
-is the `initial_basepage` stand-in, whose `p_parent` is 0.
-
-### The SDK start-up code
-
-mintlib's accessory test (`startup/crt0.S:46-62`): `a0 != 0` (the AES hands an
-accessory its basepage in `a0`; for a program `a0` is 0) **and**
-`a0->p_parent == 0`. NewTOS passes the basepage in `x0` on every path
-(`sdk/libc/crt0.S`), so the first half always holds and the test is
-`p_parent == 0`. `sdk/libc/newtos-arch/heap_init.c` (`__libc_crtinit`) and
-`sdk/crt0.S` use exactly that test; the `EGSBF` heuristic (a failed `Mshrink`
-meant "accessory") is gone, and the `Mshrink` result is ignored as mintlib
-ignores it (`crtinit.c:227-247`).
+Chain read from a `#Z` program: accdesk → AES → `initial_basepage` → 0.
 
 ## Edge cases
 
-1. A program reads its own `p_parent` chain: AES stand-in → initial stand-in →
-   0, no fault in any protection mode (the page is published read-only).
-2. A program writes into a stand-in: the page is read-only for EL0, the write
-   faults (EmuTOS has no protection; a write into the AES PD would corrupt
-   EmuTOS). Not observed in any ported application.
+1. A program reads its own `p_parent` chain: it must not fault in any
+   protection mode (every stand-in is published readable); expected depth in
+   §1.1.
+2. A program writes into a stand-in: EmuTOS has no protection (a write into the
+   AES PD would corrupt it). NewTOS: read-only for EL0, the write faults.
 3. `PE_LOAD` + `PE_GO` from a kernel caller: `p_parent` is set at `PE_GO`
-   (`proc_go`), not at load — unchanged.
-4. A `Pexec` child of an accessory: in NewTOS the accessory is a running
-   process, so its PD becomes the child's `p_parent`; in EmuTOS an accessory
-   is no GEMDOS process and `run` is still the AES PD. A pre-existing
-   deviation of the process model, not touched by Way A (`TASK/PROC03.md`).
+   (`proc_go`), not at load.
+4. **CORRECTION.** A `Pexec` child called from an accessory: EmuTOS has no
+   GEMDOS process for an accessory; `run` is the PD in front (the desktop's,
+   EmuCON's, a program's, or accdesk's between programs), **not "the AES PD"**
+   as this file said; the child's `p_parent` is that PD
+   (`bdos/proc.c:541`, `_run-ownership-curdir.md` §2.2). NewTOS today writes the
+   accessory's own PD (`TASK/PROC03.md` §1); the target is `run`.
+5. mintlib's accessory test (`startup/crt0.S:46-62`): `a0->p_parent == 0`;
+   `sdk/libc/newtos-arch/heap_init.c` and `sdk/crt0.S` use that test.
 
 ## Related
 
+- [`_run-ownership-curdir.md`](./_run-ownership-curdir.md) — `run`, ownership, cwd per PD.
 - [`4b-pexec.md`](./4b-pexec.md) — NewTOS notes, "Kernel-launched programs".
-- [`../../structures/basepage.md`](../../structures/basepage.md) — `p_parent`,
-  `p_env`.
+- [`../../structures/basepage.md`](../../structures/basepage.md) — `p_parent`, `p_env`.
 - [`../../aes/scrap-shell.md`](../../aes/scrap-shell.md) — `shel_envrn`.
 - [`../../aes/accessories.md`](../../aes/accessories.md) — accessory start.

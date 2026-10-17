@@ -572,6 +572,15 @@ PHASE-06 D4/D5 status (2026-06-16):
   launcher writes `p_parent` as `proc_go` would (`initial_basepage` /
   AES-PD stand-in); an accessory keeps 0. Before PPARENT kernel launches had
   `p_env = 0` and `p_parent = 0`.
+  **Corrected 2026-10-18 (TASK/PROC03):** in EmuTOS the parent of a desktop /
+  `#Z` / `shel_write` program is the **accdesk PD**, not the AES PD, and the
+  parent of a program started from EmuCON is the **EmuCON PD**
+  (`_parent-and-environment.md` §1, §2.3-2.4). What is built today (AES-PD
+  stand-in as parent, EmuCON having no PD) is a deviation until PROC03 stage 1;
+  the target is that spec. A `Pexec` child called from an accessory has `run`
+  (the PD in front) as `p_parent`, not the accessory
+  (`_run-ownership-curdir.md` §1.3, §2.2). `Pterm` resumes the PD named by
+  `p_parent` at `Pterm` time (`_run-ownership-curdir.md` §2).
 - **Standard handles (TASK/PROC02, 2026-10-06).** `init_pd_files`'s handle
   half (`bdos/proc.c:391-398`) runs for every PD the loader completes —
   `Pexec` 0/3 and the kernel launches after the image is in place, 5/7 after
@@ -582,7 +591,10 @@ PHASE-06 D4/D5 status (2026-06-16):
   now start with `-1,-1,-2,-3,-1,-1` (before: six `-1`; `Fread`/`Fwrite` treat
   every negative handle as the console, so nothing visible changes there).
   `p_curdir[]`/`p_curdrv` stay out: the current drive and paths are global in
-  NewTOS, not per PD. A child's `Pterm` closes its redirected standard handles
+  NewTOS, not per PD. **Superseded 2026-10-18:** PROC04 point 2 is pulled in
+  by the PROC03 decision — per-PD drive/directory, inherited at creation
+  (`init_pd_files` second half, `bdos/proc.c:401-409`); spec
+  `_run-ownership-curdir.md` §4. A child's `Pterm` closes its redirected standard handles
   and the `sft[]` entries it owns (`ixterm`, `docs/api/gemdos/process/4c-pterm.md`).
 - I-cache: invalidate the loaded **text range** with `dc cvau`+`ic ivau`+
   `dsb ish`+`isb` (same text-only scope as EmuTOS).

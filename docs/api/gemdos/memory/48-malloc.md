@@ -178,6 +178,18 @@ from "MD pool exhausted"; both surface as NULL.
    returns `max(m_length)` over the free list (`bdos/iumem.c:66-74`). A program
    wanting total free space must walk the list itself; there is no such call.
 
+4a. **The owner is `run`, which is not always "the caller".** `m_own = run`
+   (`bdos/iumem.c:134`); while an accessory (or AES code) executes, `run` is
+   the PD in front — the desktop, EmuCON, a program, or the accdesk PD between
+   programs — and so is `run->p_flags`' `PF_TTRAMMEM` for the pool choice
+   (`bdos/umem.c:120`). A block an accessory `Malloc`s therefore dies with that
+   owner's `Pterm`, except what it allocates during initialisation, which
+   `wait_for_accs(AP_MESAG)` makes belong to the accdesk PD
+   (`aes/geminit.c:569-598,736-739`). Full model:
+   [`../process/_run-ownership-curdir.md`](../process/_run-ownership-curdir.md)
+   §1.3, §3. (Decision 2026-10-18: NewTOS follows this; NewTOS today tags the
+   accessory itself.)
+
 4. **No length header / no ownership check on later free.** The returned pointer
    is the raw region start; `Mfree` (0x49) matches only on `m_start` and does
    **not** verify `m_own`. See [`49-mfree.md`](49-mfree.md).

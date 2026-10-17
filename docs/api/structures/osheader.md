@@ -223,8 +223,8 @@ convention.
 `os_run` is a static link-time pointer to the GEMDOS variable `run`
 (`bios/startup.S:110-111`, `.dc.l _run`), which lives in the **BDOS**
 layer, not BIOS: `run = &initial_basepage;` at GEMDOS boot
-(`bdos/bdosmain.c:339`), `run = (PD *)p;` on every `Pexec`
-(`bdos/proc.c:575`), `run = run->p_parent;` on `Pterm`
+(`bdos/bdosmain.c:339`), `run = (PD *)p;` on every `proc_go`, i.e. `Pexec` modes 0/4/6 (`PE_LOAD`/`PE_BASEPAGE*`
+leave `run` alone; `bdos/proc.c:575`), `run = run->p_parent;` on `Pterm`
 (`bdos/proc.c:609`). Verified this pass (`docs/api/bios/_boot-init.md`
 §4).
 

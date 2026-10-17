@@ -234,6 +234,14 @@ returns `EPTHNF` (not `EFILNF`). Compendium documents only `EPTHNF` generically.
 
 (Empty during Phase 00.)
 
+**2026-10-18 (TASK/PROC03/PROC04 point 2):** `run` here is the PD in front, not
+necessarily the caller — an accessory's `Dsetpath` changes the front program's
+directory; the AES shell changes the accdesk PD's directory before every launch
+and EmuCON's `cd` changes the EmuCON PD's (`../process/_run-ownership-curdir.md`
+§1.3, §4.3-4.4). NewTOS today keeps the directory global, so a child's
+`Dsetpath` changes its parent's (measured, `measurements/measurement-2026-10-17-proc03/`);
+the per-PD model with inheritance at creation is required.
+
 PHASE-05: preserve the per-process/per-drive current-directory model and the
 "prefix ≠ current drive" semantics. The `dirtbl[]` reference-counting is a free
 NewTOS implementation choice; the observable contract is the resolved path and

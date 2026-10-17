@@ -84,16 +84,24 @@ The PD that was `run` when this one was **started** — written only by
 `proc_go` (`bdos/proc.c:541`, `p->p_parent = run`); `init_pd_fields`
 zeroes it before (`bdos/proc.c:370`). So: an AUTO program and the AES
 get `&initial_basepage` (`bios/bios.c:685-695,855-866`,
-`bdos/bdosmain.c:337-342`), the desktop and every program it or the
-`#Z` line starts get the AES PD (`aes/gemshlib.c:569-580,645`), a desk
-accessory — loaded with `PE_LOAD`, never `proc_go`ed — keeps **0**
-(`util/gemdos.c:29-47`), a `Pexec` child gets its caller's PD.
-`initial_basepage` itself has `p_parent == 0`. mintlib tells an
+`bdos/bdosmain.c:337-342`), the AES gets `&initial_basepage` too, the desktop
+and every program it or the `#Z` line starts get the **accdesk PD** — the
+process `aes_run_rom_program(accdesk_start)` makes with the AES PD as its
+parent (`aes/geminit.c:894`, `aes/gemshlib.c:570-581,606,645`) — so their
+chain is program → accdesk → AES PD → `initial_basepage` → 0; a program started
+by EmuCON has the **EmuCON PD** (`cli/cmdexec.c:52`, `aes/gemshlib.c:614-620`) in
+front of accdesk; a desk accessory — loaded with `PE_LOAD`, never `proc_go`ed —
+keeps **0** (`util/gemdos.c:29-47`); a `Pexec` child gets `run` — its caller's PD,
+except that a call made by an accessory has `run` = the PD in front
+([`_run-ownership-curdir.md`](../gemdos/process/_run-ownership-curdir.md) §1.3). `initial_basepage` itself has
+`p_parent == 0`. (**Corrected 2026-10-18, TASK/PROC03:** earlier text named
+the AES PD as the parent of the desktop and its programs.) mintlib tells an
 accessory by `p_parent == 0` (`startup/crt0.S:52-56`). On
 `Pterm`/`Pterm0`/`Ptermres`, control returns to `p_parent`'s context.
 
-NewTOS: the two PDs the kernel has no process for are stand-ins in a
-published read-only kernel page — see
+NewTOS: the PDs the kernel has no process for (`initial_basepage`, the AES PD
+and, per the 2026-10-18 decision, the accdesk and EmuCON PDs) are stand-ins in
+a published kernel page — see
 [`../gemdos/process/_parent-and-environment.md`](../gemdos/process/_parent-and-environment.md)
 (TASK/PPARENT, Way A).
 
@@ -124,7 +132,9 @@ an AUTO program a copy of `initial_basepage`'s empty `{0, 0}`
 (`bdos/bdosmain.c:81,341`), the AES a copy of `default_env`
 `"PATH=\0X:\\\0\0"` (`bios/bios.c:77-80,626-636,862`), the desktop,
 its programs and the accessories a copy of the AES's (`ad_envrn`,
-`aes/gemstart.S:78-96`, `aes/gemshlib.c:645`, `util/gemdos.c:34`). Details:
+`aes/gemstart.S:78-96`, `aes/gemshlib.c:645`, `util/gemdos.c:34`; for the
+desktop and the accessories the copy is of the accdesk PD's block, which is a
+copy of the AES's, `bdos/proc.c:419-420`). Details:
 [`../gemdos/process/_parent-and-environment.md`](../gemdos/process/_parent-and-environment.md).
 
 ### `p_uft[6]` (0x30)
@@ -261,8 +271,9 @@ emulator (Phase 10+).
   (EmuTOS `p_lowtpa = p`, `bdos/proc.c:372`). That address is the process's
   **PD pointer**: `Pexec(PE_LOAD)` returns it, `p_parent` holds the parent's
   (set when the child is started, EmuTOS `proc_go`, `bdos/proc.c:541`; for
-  a program the kernel starts the `initial_basepage` / AES-PD stand-in,
-  TASK/PPARENT — `0` before it), the OSHEADER's `os_run` points at a
+  a program the kernel starts the `initial_basepage` / AES-PD stand-in today,
+  TASK/PPARENT — `0` before it; the target after TASK/PROC03 is the accdesk
+  stand-in for desktop/`#Z` programs, [`_parent-and-environment.md`](../gemdos/process/_parent-and-environment.md) §4.2), the OSHEADER's `os_run` points at a
   page-0 cell (`0x5B8`) holding it, and the entry gets it in `x0`. All
   address fields (`p_lowtpa`, `p_hitpa`, `p_tbase`, `p_dbase`, `p_bbase`,
   `p_xdta`, `p_env`) are addresses every process can read. Until stage 1 the
