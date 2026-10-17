@@ -1,0 +1,7 @@
+A25: start
+A25: appl_init #1 ap_id=0
+A25: appl_write(self,16) rc=1
+A25: appl_init #2 ap_id=0
+A25: appl_read rc=1
+A25: message words differing from the 16 bytes sent: 0
+A25: RESULT PASS

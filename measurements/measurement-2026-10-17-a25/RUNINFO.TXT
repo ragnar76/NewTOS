@@ -1,0 +1,35 @@
+measurement-2026-10-17-a25 -- A25 (appl_init re-registration keeps messages and flags), real-program run of the re-call case.
+Host macOS, QEMU raspi4b only. Tree: main at db5880a8 (clean). No SD card, no Pi, nothing under /Volumes/BOOT* or NEWTOS*.
+Product code unchanged. New test code: sdk/examples/a25reinit.c. Scratch (tree, cards, build log) = session scratchpad; per-run card =
+APFS clone (cp -c) of one base image (volume A25C), deleted afterwards. One QEMU at a time. `-append serial=on [memprot=...]`.
+
+KERNEL   fresh rpi4 release build of a scratch copy of the tree (method/make-scratch.sh; cargo xtask build --board rpi4 --release,
+         SOURCE_DATE_EPOCH 1791979200; tos-api 64 / kernel 94 warnings, rc 0). bin/kernel8-a25.img sha256
+         c582909a64d7dc58f0739aec2864ef5316a79e6c0857a282bdede462e6f4c174 (image itself gitignored).
+PROBE    sdk/examples/a25reinit.c -> bin/A25REINI.NAP (sdk/build.sh), sha256 5eb6ce22b85e467710f1d30cd1d764b013d4bd9832992e07f3341845c43c675a.
+         GEM .NAP started by the #Z autorun line of C:\NEWDESK.INF (method/make-card.sh). Steps: appl_init -> appl_write(own pid, 16 bytes,
+         8 distinct words) -> appl_init again -> appl_read(16 bytes, only reached after the write returned 1) -> compare -> appl_exit.
+         Result lines go to serial (Cconws) and C:\A25REINI.LOG (read back from the run card: logs/).
+METHOD   method/run-all.sh (probe in on/off/strict + control "on" with the second appl_init removed by sed).
+
+RESULT: PASS in all three modes. Per mode (serial/a25-<mode>-serial.log, logs/A25REINI-<mode>.LOG identical):
+   A25: appl_init #1 ap_id=0
+   A25: appl_write(self,16) rc=1
+   A25: appl_init #2 ap_id=0           (same ap_id both times)
+   A25: appl_read rc=1
+   A25: message words differing from the 16 bytes sent: 0     (all 16 bytes exact)
+   A25: RESULT PASS                    ([shell] ... exited with rc=0)
+   modes: on (default, "memory protection ON"), off (memprot=off, "memory protection OFF"), strict (memprot=strict, "ON (strict)").
+   Control (no re-call, mode on): same six lines, PASS. The control passing says the probe's read path works; it does not by itself prove the
+   probe is red on the pre-fix kernel (not built; host test pd.rs/tests/aes_appl_init.rs is the red->green evidence, as agreed).
+   Screendumps screendumps/a25-<mode>-shot (25 s, 640x480, taken only to see the run ended; not evaluated).
+
+HISTORY (honest record, logs kept): serial/void-attempt1-io-between and serial/attempt2-evnt_multi-observation hold two earlier runs of an earlier
+   probe revision that observed the message with evnt_multi(MU_MESAG|MU_TIMER, 1000 ms) instead of appl_read: RESULT FAIL in on/off/strict AND in
+   the control without the re-call (events=32, i.e. timer only, no MU_MESAG). attempt1 also did Cconws/Fwrite between write and read, attempt2 did not;
+   same result. A control with appl_read and no re-call passed (attempt2/ctl2-on). So the evnt_multi miss is independent of the re-call and of A25;
+   it is NOT investigated here (could be probe misuse or a separate defect in the evnt_multi MU_MESAG path for a self-posted message).
+   The final probe uses appl_read, as the ticket and the host test do.
+
+NOT COVERED: no real Pi / TT (the ticket's physical run is replaced by the QEMU run per the 2026-10-17 review); AP_MESAG/AP_OPEN flag
+   preservation is not observable from a program and is covered by the pd.rs unit test only; no pre-fix kernel run.
