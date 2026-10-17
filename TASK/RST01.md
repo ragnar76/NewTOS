@@ -46,3 +46,26 @@ auf LP64 (`long` = 8 Byte) Offset 0x20..0x27 (`os_root`/`os_kbshift`), daher
 `pc=0`. Nur +0x10 zu setzen behebt es also **nicht** — Entscheidung noetig
 (Toolchain-/Overlay-Weg wie bei anderen LP64-Struct-Fallen vs. Kern), bevor
 RST01 den Einsprung baut. Spec und Kommentar zuerst berichtigen.
+
+## Spec und Hardware (2026-10-17, `9b773120`)
+
+`docs/api/bios/_reset-warm-cold.md` (EmuTOS `warm_reset`/`cold_reset`,
+Tastenkombination `ikbd.c:734-747`, OSHEADER-Einspruenge alle → `_main`),
+`docs/hardware/pm-watchdog-reset.md` (Pi-4-Neustart per PM-Watchdog: **nicht**
+im BCM2711-Datenblatt, belegt nur durch Circle `lib/sysinit.cpp:231-241`,
+`bcm2835.h:261-269`; QEMU `bcm2835_powermgt.c` bildet dieselben Register nach),
+`docs/api/structures/osheader.md` berichtigt (`os_res1 = _main`).
+
+## Anwenderentscheidungen (2026-10-17)
+
+1. **Kalt** (Ctrl+Alt+RShift+Del, TeraDesk „Reboot“): echter Pi-Neustart ueber
+   den PM-Watchdog. Restrisiko Quellenlage (Circle, nicht Datenblatt) bewusst
+   getragen; zuerst Kurzlauf in QEMU, dann Pi.
+2. **Warm** (Ctrl+Alt+Del): vorerst wie kalt. Der EmuTOS-treue Warmstart
+   (Sysvars bleiben) → eigenes Ticket [RST02](RST02.md).
+3. **Daten:** wie EmuTOS — nur Cache leeren, keine Puffer schreiben.
+4. **TeraDesk:** LP64-Fix als Overlay (`sdk/overlays/teradesk/main.c`, feste
+   32-Bit-Breiten fuer `os_start`, `+0x10` und die Magic-Pokes); Kern legt den
+   Einsprung EmuTOS-treu bei `+0x00`/`+0x04`/`+0x10`.
+5. Tastaturen (Standard, nicht gefragt): IKBD und USB im gemeinsamen Pfad,
+   Bedingung exakt wie `ikbd.c:734-747` (Make-Code 0x53, Ctrl+Alt, nicht LShift).

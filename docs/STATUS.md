@@ -69,7 +69,7 @@ Driftprobe 0 seit U10: der Kernel linkt den Desktop nicht mehr.
   Prozess, Ticket umformulieren),
   **RST01** (Neustart: Warm/Kalt, Ctrl+Alt+Del), **X04** (TeraDesk „Reboot“ springt auf 0, folgt aus RST01).
 - P3 / Erweiterungen: ARCH03 Stufe 2b, **SND01/SND02** (Ton), SDL01, RTC01,
-  REF03, T15, DESK49, DESK51–DESK55, **CON01** (Spaltenzaehler/Typeahead), **CON02** (`Cconws` folgt Umlenkung nicht), FS12 (26 Laufwerke), FS14 (Frename ueber Verzeichnisgrenzen), LIBC-IOCTL, LIBC-BUF, DESK61, DESK63 (Verknuepfung auf Verknuepfung), DESK65 (sofort speichern, Erweiterung), DESK66 (Hintergrund an die AES melden), DESK67 (Reste aus DESK48), A115 (Bereitliste wie EmuTOS `rlr`), A116 (`appl_write` auf volle fremde Queue blockiert in EmuTOS), MEM07, MEM08, MEM10, MEM06 (Idee),
+  REF03, T15, DESK49, DESK51–DESK55, **CON01** (Spaltenzaehler/Typeahead), **CON02** (`Cconws` folgt Umlenkung nicht), FS12 (26 Laufwerke), FS14 (Frename ueber Verzeichnisgrenzen), LIBC-IOCTL, LIBC-BUF, DESK61, DESK63 (Verknuepfung auf Verknuepfung), DESK65 (sofort speichern, Erweiterung), DESK66 (Hintergrund an die AES melden), DESK67 (Reste aus DESK48), A115 (Bereitliste wie EmuTOS `rlr`), A116 (`appl_write` auf volle fremde Queue blockiert in EmuTOS), RST02 (Warmstart EmuTOS-treu), MEM07, MEM08, MEM10, MEM06 (Idee),
   IO01 (Idee: AUX/MIDI/PRN-Treiber).
 - Erledigt seit dem 30.09., hier frueher als offen gefuehrt: MEM03, MEM04,
   PROC01, PROC02, PORT09, GUI07, ARCH03 (bis auf das Obige), FS10, FS11, LIBC-MAIN, LIBC-TTY, LIBC-FSTAT, MEM05, PROC05, PROC06, SPEC01, DESK58, DESK59, DESK60, T16, ARCH02, DESK48, A112, A113, A114, M08, X01.
