@@ -390,14 +390,57 @@ pub fn appl_find(pb: &Aespb) {
     pb.set_ret(pid);
 }
 
+/// One flag per AES identity: its `appl_yield` has performed its own
+/// `dsptch()` and is being re-executed after the peer ran (A112). Kept out of
+/// the stack because the yield unwinds the call (S2 restartable block), as
+/// `acc::WAIT_PASSES` is.
+static YIELD_DONE: [AtomicBool; pd::NUM_PDS] =
+    [const { AtomicBool::new(false) }; pd::NUM_PDS];
+
+/// Drop identity `idx`'s half-done `appl_yield` (slot released).
+pub(super) fn forget_yield(idx: usize) {
+    if let Some(f) = YIELD_DONE.get(idx) {
+        f.store(false, Ordering::Release);
+    }
+}
+
+/// Drop every half-done `appl_yield` (AES restart).
+pub(super) fn reinit_yields() {
+    for f in YIELD_DONE.iter() {
+        f.store(false, Ordering::Release);
+    }
+}
+
 /// Opcode 17 — `appl_yield`: cooperative yield to the AES scheduler.
 /// EmuTOS's `APPL_YIELD` arm (`gemsuper.c:115-119`, `#if CONF_WITH_PCGEM`,
 /// default-on per `config.h`) only calls `dsptch()` and `break`s, leaving the
 /// enclosing `ret = TRUE` (`gemsuper.c:85`) — so it returns **1**
-/// (`application.md:229`). With a single AES application there is nothing to
-/// schedule to, so NewTOS returns immediately, but with the same `1`.
-pub fn appl_yield(pb: &Aespb) {
+/// (`application.md:229`).
+///
+/// That `dsptch()` is the arm's own; `super()` dispatches again after every
+/// call (`gemsuper.c:458-462`), so the call yields **twice** (A112,
+/// `docs/api/aes/application.md` `appl_yield`, `event.md` "Wake conditions
+/// and dispatch" point 3). The first is [`sched::dsptch`] here: with a ready
+/// peer the call is aborted and re-executed once the round robin comes back
+/// (S2), and [`YIELD_DONE`] makes the re-executed call complete; the second
+/// is the dispatch every completed call ends with (`super::dispatch_in`).
+/// With nobody else ready `sched::dsptch` runs the idle pass and the call
+/// completes at once.
+pub fn appl_yield(pb: &Aespb) -> Option<sched::Switch> {
+    let idx = current_identity();
+    let done = YIELD_DONE
+        .get(idx)
+        .is_some_and(|f| f.swap(false, Ordering::AcqRel));
+    if !done {
+        if let sched::Dispatch::Yield(sw) = sched::dsptch() {
+            if let Some(f) = YIELD_DONE.get(idx) {
+                f.store(true, Ordering::Release);
+            }
+            return Some(sw);
+        }
+    }
     pb.set_ret(1);
+    None
 }
 
 /// Opcode 12 — `appl_write`: deliver a message into another application's

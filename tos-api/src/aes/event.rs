@@ -9,7 +9,8 @@
 //! an event fires. Each of the six `evnt_*` waits below re-checks its predicate
 //! and, when it has not fired, blocks on [`sched::sleep`] with the matching
 //! wake-class key ([`sched::wait_input`]/[`sched::wait_mesg`]/
-//! [`sched::wait_timer`]) — the single cooperative block primitive replacing the
+//! [`sched::wait_timer`], and for `evnt_multi` the union key
+//! [`sched::wait_multi`], A112) — the single cooperative block primitive replacing the
 //! former per-function `pump_input` spin (`docs/analysis/coop-kernel/`
 //! `20-sleepwake-substrate-design.md` §5).
 //!
@@ -25,7 +26,7 @@
 //! nothing. The observable `evnt_*` contract (return values, `MU_*` bits,
 //! message dequeue-on-firing) is unchanged.
 
-use core::sync::atomic::{AtomicI16, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicI16, Ordering};
 
 use super::input::downorup;
 use super::pd;
@@ -59,6 +60,65 @@ fn rect_event(m: &MoBlk) -> bool {
 fn rect_event_at(m: &MoBlk, (mx, my): (i16, i16)) -> bool {
     let inside = mx >= m.x && mx < m.x + m.w && my >= m.y && my < m.y + m.h;
     (m.flags != 0) != inside
+}
+
+/// One flag per AES identity: a blocking `evnt_multi`/`evnt_mouse` of that
+/// identity has **armed** its events and is parked (A112 F4,
+/// `docs/api/aes/event.md` "Wake conditions and dispatch" point 5).
+///
+/// EmuTOS tests the immediate conditions once — the quick checks and each
+/// `iasync` arm (`aes/gemevlib.c:172-259`) — and after `mwait` returns it looks
+/// at nothing but the completed events (`:261-290`). A NewTOS wait that yields
+/// to a peer is aborted and its `svc` re-executed on resume (the S2
+/// restartable block), so without a record of the arm the re-executed call
+/// would run its arm-time tests a second time against a later state. This is
+/// that record — armed when the call is about to block, kept across S2
+/// restarts, cleared on every completion and when the slot is released
+/// ([`forget_wait`]). It lives out here, not on the stack, for the reason
+/// `acc::WAIT_PASSES` does.
+static EV_ARMED: [AtomicBool; pd::NUM_PDS] = [const { AtomicBool::new(false) }; pd::NUM_PDS];
+
+/// `true` when identity `idx` re-enters a wait it had already armed.
+fn ev_armed(idx: usize) -> bool {
+    EV_ARMED.get(idx).is_some_and(|f| f.load(Ordering::Acquire))
+}
+
+/// Record (`true`) or drop (`false`) identity `idx`'s armed wait.
+fn set_ev_armed(idx: usize, armed: bool) {
+    if let Some(f) = EV_ARMED.get(idx) {
+        f.store(armed, Ordering::Release);
+    }
+}
+
+/// Drop identity `idx`'s armed-wait record — the slot's tenant is gone
+/// ([`super::release_client`]) or the AES restarts ([`super::reinit`]).
+pub(super) fn forget_wait(idx: usize) {
+    set_ev_armed(idx, false);
+}
+
+/// Drop every armed-wait record (AES restart).
+pub(super) fn reinit_waits() {
+    for f in EV_ARMED.iter() {
+        f.store(false, Ordering::Release);
+    }
+}
+
+/// The AES tick in milliseconds, `gl_ticktime` (`geminit.c:704`).
+const TICK_MS: u64 = crate::vdi::mouse::TICKCAL_MS as u64;
+
+/// Milliseconds from `now` until a timer of `ms` milliseconds expires, as
+/// `adelay` arms it (A112, `docs/api/aes/event.md` "Wake conditions and
+/// dispatch" point 6): a count that divides to **0 ticks** (`ms /
+/// gl_ticktime == 0`, `gemevlib.c:136,259`) is raised to **one** tick
+/// (`if (c == 0L) c = 1L`, `geminput.c:500-501`), i.e. it expires at the
+/// next tick boundary — 0..1 tick periods from now, never immediately.
+/// Longer counts keep their millisecond value.
+fn timer_span(now: u64, ms: u64) -> u64 {
+    if ms / TICK_MS == 0 {
+        (now / TICK_MS + 1) * TICK_MS - now
+    } else {
+        ms
+    }
 }
 
 /// AES menu-bar interception (mirroring the EmuTOS Control Manager's
@@ -308,11 +368,14 @@ pub fn evnt_mouse(pb: &Aespb) -> Option<sched::Switch> {
         w: pb.intin(3),
         h: pb.intin(4),
     };
+    let idx = super::appl::current_identity();
     if host().is_some() {
         // The position at arm time — `amouse`'s one ownership-blind test
         // (`aes/geminput.c:575-576`), taken before anything is pumped.
         let arm_pos = crate::vdi::mouse_position();
-        let mut pass = 0u32;
+        // A re-executed call (S2) resumes the parked wait: no second arm-time
+        // test (A112 F4).
+        let mut pass = if ev_armed(idx) { 1u32 } else { 0u32 };
         loop {
             if !super::input::ct_msgup_busy() {
                 super::input::w_setactive();
@@ -322,11 +385,13 @@ pub fn evnt_mouse(pb: &Aespb) -> Option<sched::Switch> {
             if fired {
                 break;
             }
+            set_ev_armed(idx, true);
             if let sched::SleepOutcome::Yield(sw) = sched::sleep(sched::wait_input()) {
                 return Some(sw); // yield to a peer (S2); re-checks on resume
             }
             pass = pass.saturating_add(1);
         }
+        set_ev_armed(idx, false);
     }
     fill_rets(pb);
     // `rets[2] = button;   /* always use current button state */`
@@ -442,15 +507,26 @@ pub fn evnt_multi(pb: &Aespb) -> Option<sched::Switch> {
         // any completion below clears it. Only meaningful when `MU_TIMER` is
         // armed; without a timer the value is unused (`cap = None`, no MU_TIMER
         // check), so it is computed but not persisted.
+        //
+        // `tmcount == 0` is the quick-check poll (`gemevlib.c:216-220`): the
+        // deadline is `now` and pass 0 fires it. Any other count is armed the
+        // way `adelay` arms it — a count below one tick as one tick
+        // ([`timer_span`], A112).
+        let now = h.monotonic_millis();
+        let span = if ms == 0 { 0 } else { timer_span(now, ms) };
         let deadline = if flags & MU_TIMER != 0 {
-            sched::arm_or_get_deadline(h.monotonic_millis(), ms)
+            sched::arm_or_get_deadline(now, span)
         } else {
-            h.monotonic_millis().saturating_add(ms)
+            now.saturating_add(span)
         };
         // Pass counter: pass 0 is the *entry* evaluation (EmuTOS's `abutton` /
         // `amouse` level test taken when `ev_multi` arms the event), every later
         // pass is the "asleep in `mwait`" state. See the MU_BUTTON block below.
-        let mut pass = 0u32;
+        // A call re-executed after a peer yield (S2) is still asleep in `mwait`:
+        // it resumes at pass 1 and does not run the quick checks or the arm
+        // a second time (A112 F4; `gemevlib.c:261-290` looks only at what
+        // completed).
+        let mut pass = if ev_armed(idx) { 1u32 } else { 0u32 };
         // The button state and mouse ownership **at arm time** — what `ev_multi`
         // sees when it runs its quick check (`rlr == gl_mowner`,
         // `aes/gemevlib.c:185`) and arms `abutton`'s level test
@@ -646,6 +722,7 @@ pub fn evnt_multi(pb: &Aespb) -> Option<sched::Switch> {
                         && pb.ubuf(pbuff, 2 * pd::MSG_WORDS as u64, true).is_none()
                     {
                         sched::clear_deadline();
+                        set_ev_armed(idx, false);
                         super::input::acancel(idx);
                         return None;
                     }
@@ -658,6 +735,7 @@ pub fn evnt_multi(pb: &Aespb) -> Option<sched::Switch> {
                             for (i, &w) in msg.iter().enumerate() {
                                 if pb.space().put_u16(pbuff + 2 * i as u64, w as u16).is_err() {
                                     sched::clear_deadline();
+                                    set_ev_armed(idx, false);
                                     super::input::acancel(idx);
                                     return None;
                                 }
@@ -703,23 +781,42 @@ pub fn evnt_multi(pb: &Aespb) -> Option<sched::Switch> {
             if fired != 0 {
                 break;
             }
-            // Not fired: block until the cooperative idle re-check (design §5).
-            // `WAIT_INPUT` is the multiplexer's general re-check trigger — every
-            // armed source (keyboard/button/mouse, and the menu/window frame
-            // interception that produces `MU_MESAG`) is input-driven, and the
-            // `MU_TIMER` deadline is checked by this same loop above. The union
-            // of message/timer classes becomes load-bearing at step 4 (§4.1);
-            // in step 3a the caller re-checks the full predicate each pass.
+            // Not fired: sleep on the **union** of the armed events (A112;
+            // `iasync` per flag + `mwait(flags)`, `gemevlib.c:235-263`). Each
+            // event has its own wake source, independent of who is running
+            // (`docs/api/aes/event.md` "Wake conditions and dispatch"):
+            //   * `MU_TIMER` — the slot's own deadline (persisted above),
+            //     completed by the dispatcher's timer pass;
+            //   * `MU_MESAG` — a write into this identity's FIFO by any
+            //     process (`pd::post_msg`/`post_words` wake `WAIT_MESG(idx)`);
+            //   * input — `MU_KEYBD`/`MU_BUTTON`/`MU_M1`/`MU_M2`, and for
+            //     `MU_MESAG` also the inline Control Manager above, which turns
+            //     a menu/frame click into a message inside *this* loop (in
+            //     EmuTOS a process of its own); owner gating stays with the
+            //     checks above, so a woken non-owner simply sleeps again.
             //
             // The loop above the block is read-only (a message is popped only on
             // the `fired |= MU_MESAG` firing pass), so on a peer yield (S2) it is
-            // safe to abort and re-execute from the top on resume (§4.3).
-            if let sched::SleepOutcome::Yield(sw) = sched::sleep(sched::wait_input()) {
+            // safe to abort and re-execute on resume (§4.3); the arm itself is
+            // recorded so the re-executed call does not repeat it (F4).
+            let mut events = 0;
+            if flags & (MU_KEYBD | MU_BUTTON | MU_M1 | MU_M2 | MU_MESAG) != 0 {
+                events |= sched::WAKE_INPUT;
+            }
+            if flags & MU_MESAG != 0 {
+                events |= sched::WAKE_MESG;
+            }
+            if flags & MU_TIMER != 0 {
+                events |= sched::WAKE_TIMER;
+            }
+            set_ev_armed(idx, true);
+            if let sched::SleepOutcome::Yield(sw) = sched::sleep(sched::wait_multi(events, idx)) {
                 return Some(sw);
             }
             pass = pass.saturating_add(1);
         }
     }
+    set_ev_armed(idx, false);
 
     // `which |= acancel(flags)` (`aes/gemevlib.c:264`): a button wait still
     // parked is taken off unsatisfied — leaving `gl_bpend` as it is.
@@ -857,22 +954,23 @@ pub fn evnt_timer(pb: &Aespb) -> Option<sched::Switch> {
     if let Some(sw) = wait_ms(ms) {
         return Some(sw); // yield to a peer (S2); reuses the deadline on resume
     }
-    // Completed (deadline reached, or `ms == 0`): clear the persisted deadline
+    // Completed (deadline reached): clear the persisted deadline
     // so a later timer wait recomputes fresh (S2-restart idempotency, §4.3).
     sched::clear_deadline();
     pb.set_ret(1);
     None
 }
 
-/// Block for `ms` milliseconds against the host's monotonic clock. A
-/// zero count returns immediately (EmuTOS `ev_timer(0)` semantics). With
-/// no host installed the clock stands still, so this returns at once.
+/// Block for `ms` milliseconds against the host's monotonic clock. A count
+/// below one AES tick — **0 included** — waits for the next tick boundary:
+/// `ev_timer` → `ev_block(MU_TIMER, ms / gl_ticktime)` → `adelay`, which
+/// raises 0 ticks to 1 (`gemevlib.c:134-137`, `geminput.c:500-501`;
+/// [`timer_span`], A112). `evnt_timer(0)` is therefore not a poll. With no
+/// host installed the clock stands still, so this returns at once.
 fn wait_ms(ms: u64) -> Option<sched::Switch> {
-    if ms == 0 {
-        return None;
-    }
     if let Some(h) = host() {
         let now = h.monotonic_millis();
+        let ms = timer_span(now, ms);
         // Persist the absolute deadline per-slot so an S2 restart REUSES it
         // instead of recomputing `now + ms` — which, re-entered from the top on
         // every restart with a live peer, would creep forward by `ms` and never

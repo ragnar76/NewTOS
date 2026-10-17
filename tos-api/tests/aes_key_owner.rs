@@ -240,10 +240,13 @@ impl Aespb {
         self.contrl[4] = 0;
         self.intout.fill(0);
         // SAFETY: all six arrays are live, LP64, and cover the declared lengths.
-        assert!(
-            unsafe { tos_api::aes::dispatch(self.block.as_ptr() as u64, ABI) }.is_none(),
-            "the call parked (it must fire on its first pass here)"
-        );
+        let sw = unsafe { tos_api::aes::dispatch(self.block.as_ptr() as u64, ABI) };
+        // The call must complete. Since A112 a completed call may come back
+        // with the `completed` Switch of the dispatch every AES call ends
+        // with (another slot of this test is on the ready list); the host has
+        // no trap handler to apply it, and the call's results are already
+        // copied back. A mid-call yield (S2, not `completed`) is a failure.
+        assert!(sw.is_none_or(|s| s.completed), "the call parked (it must fire on its first pass here)");
         self.intout[0]
     }
 }

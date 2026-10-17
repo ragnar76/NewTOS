@@ -1,0 +1,4 @@
+mode on: red  TOTAL 109 0 5 
+mode on: green TOTAL 109 0 5 
+mode on: result lines red 124 green 124, differing: 0
+mode on: EXC/PANIC red 0 green 0

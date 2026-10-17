@@ -572,6 +572,14 @@ fn sync_handler(frame: &mut ExceptionFrame) {
     // `saved_frame` to write and no run-set entry to drop; the frame is parked
     // in [`KERNEL_PARK`] instead, with the same ELR rewind, and restored the
     // moment the accessory it yields to blocks again.
+    // A112: the dispatch a *completed* AES call ends with found a ready peer
+    // (`Switch::completed`). Not an abort: the call is finished below like any
+    // other, and the leaf yield happens after the completion tail.
+    let mut post_call_switch: Option<tos_api::bdos::process::sched::Switch> = None;
+    if let Some(sw) = pending_switch.take_if(|sw| sw.completed) {
+        post_call_switch = Some(sw);
+    }
+
     if let Some(sw) = pending_switch {
         // KEYS02 (O1): not a switch — the blocking wait gave way because this
         // process's `kbdvec` hook has bytes queued. Abort the call like an S2
@@ -636,7 +644,36 @@ fn sync_handler(frame: &mut ExceptionFrame) {
         return;
     }
 
-    complete_call_tail(frame, result);
+    if complete_call_tail(frame, result) {
+        if let Some(sw) = post_call_switch {
+            yield_after_completed_call(frame, &sw);
+        }
+    }
+}
+
+/// The leaf yield of a **completed** AES call (A112, `docs/api/aes/event.md`
+/// "Wake conditions and dispatch" point 3): `super()`'s closing `dsptch()`
+/// (`aes/gemsuper.c:454-466`) put the caller at the end of the ready list and
+/// a ready peer runs first. The call's result is already in `frame` (`x0 = 0`
+/// for the AES, `int_out` copied back), so the frame is saved **after** the
+/// `svc` — the `Pwait` shape, `save_yield_frame(.., false)` — and on resume
+/// `apply_switch` writes the same `x0 = 0` the completed call returned.
+///
+/// Only reached with the frame as the call's plain return (no terminate, no
+/// fault, no upcall redirected it — [`complete_call_tail`] returned `true`);
+/// a redirected frame keeps the CPU and the peer runs at the caller's next
+/// dispatch.
+fn yield_after_completed_call(
+    frame: &mut ExceptionFrame,
+    sw: &tos_api::bdos::process::sched::Switch,
+) {
+    let cur = tos_api::bdos::process::sched::running_slot();
+    if cur >= tos_api::bdos::process::MAX_PROCESSES || frame.spsr & 0xF != 0 {
+        return; // only an EL0 caller with a slot dispatches (`dispatch_after_call`)
+    }
+    save_yield_frame(cur, frame, false);
+    tos_api::bdos::process::sched::mark_yielded(cur);
+    apply_switch(frame, sw);
 }
 
 /// The seven GEMDOS argument registers (`x0..x6`) of a trap frame, in the
@@ -667,7 +704,11 @@ fn frame_arg_regs(frame: &ExceptionFrame) -> [u64; 7] {
 ///     `Getbpb` returns a full pointer; a completed AES call passes `0`).
 ///  3. On a return to EL0, deliver any pending EL0 upcall for the running
 ///     process (deliver-on-return, design §7.1 / building block 1 §6.2).
-fn complete_call_tail(frame: &mut ExceptionFrame, result: i64) {
+///
+/// Returns `true` when `frame` is left as the call's **plain return** (`x0` =
+/// `result`, nothing delivered on top) — the one state in which a completed
+/// AES call may still yield to a peer (A112, [`yield_after_completed_call`]).
+fn complete_call_tail(frame: &mut ExceptionFrame, result: i64) -> bool {
     // The call touched a bad user pointer (`tos_api::uaccess`): on EmuTOS the
     // bus error in the trap handler kills the caller (`any_vec` → `dopanic`
     // → `Pterm(-1)`, `run` still being the caller's PD, `bios/kprint.c:
@@ -676,11 +717,11 @@ fn complete_call_tail(frame: &mut ExceptionFrame, result: i64) {
     if let Some(rec) = tos_api::uaccess::take_pending_fault() {
         let _ = tos_api::bdos::process::take_pending_terminate();
         uaccess_fault_tail(frame, &rec);
-        return;
+        return false;
     }
     if let Some(rc) = tos_api::bdos::process::take_pending_terminate() {
         terminate_and_redirect(frame, rc);
-        return;
+        return false;
     }
 
     frame.gpr[0] = result as u64;
@@ -692,12 +733,15 @@ fn complete_call_tail(frame: &mut ExceptionFrame, result: i64) {
             if let Some(u) = tos_api::bdos::process::take_pending_upcall(slot_idx)
             {
                 deliver_upcall(frame, u);
-                return;
+                return false;
             }
         }
         // Otherwise the next byte for the process's `kbdvec` hook (KEYS02).
-        deliver_pending_kbdvec(frame);
+        if deliver_pending_kbdvec(frame) {
+            return false;
+        }
     }
+    true
 }
 
 /// Abort the current call for a `kbdvec` delivery (KEYS02, O1): rewind `elr`
@@ -1767,14 +1811,21 @@ fn handle_psigreturn(frame: &mut ExceptionFrame) {
             tos_api::aes::thread::AesCallOutcome::Stalled(next) => {
                 deliver_userdef_upcall(frame, next);
             }
-            tos_api::aes::thread::AesCallOutcome::Complete(_sw) => {
+            tos_api::aes::thread::AesCallOutcome::Complete(sw) => {
                 // The AES draw finished. Restore the client's captured origin
                 // frame, then the shared completion tail writes `x0 = 0` (GEM
                 // trap convention — the real result is in the app's `intout[]`).
-                // A userdef-stalling draw (`compose`/`paint_bg_clip`) never also
-                // yields a peer `Switch`, so `_sw` is always `None` here.
+                // A userdef-stalling draw (`compose`/`paint_bg_clip`) never
+                // blocks, so the only `Switch` it can return is the
+                // `completed` one of the dispatch every AES call ends with.
                 restore_call_origin(frame);
-                complete_call_tail(frame, 0);
+                if complete_call_tail(frame, 0) {
+                    // …and that dispatch's leaf yield (A112), as on the
+                    // ordinary trap path.
+                    if let Some(sw) = sw.filter(|sw| sw.completed) {
+                        yield_after_completed_call(frame, &sw);
+                    }
+                }
             }
         }
         return;

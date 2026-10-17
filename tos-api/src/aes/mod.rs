@@ -181,6 +181,10 @@ pub fn reinit() {
     // `ev_dclick(3, TRUE)` (`:701`) — the power-up click rate, before
     // `process_inf2` re-applies the `.INF` `#E` line (`:734`).
     event::ev_dclick(3, true);
+    // No wait is armed and no `appl_yield` is half done across a restart
+    // (A112).
+    event::reinit_waits();
+    appl::reinit_yields();
     // Per-process resource lists and the application directory.
     resource::reinit();
     // The Shell Manager, `gl_changerez = FALSE` included (`:806`).
@@ -736,6 +740,13 @@ pub unsafe fn dispatch_in(
         // aborted and re-executed on resume, and the yield itself *is* the
         // dispatch (it came out of `sched::sleep`, which already pumped).
         dsptch();
+        // …and that `dsptch()` gives up the CPU (A112 F3, `docs/api/aes/
+        // event.md` "Wake conditions and dispatch" point 3): `disp()` puts
+        // the caller at the end of the ready list and resumes its head, so a
+        // ready peer runs before the caller continues. The returned `Switch`
+        // is marked `completed`: the trap handler finishes this call first
+        // and then yields as a leaf.
+        return crate::bdos::process::sched::dispatch_after_call();
     }
     sw
 }
@@ -854,7 +865,9 @@ fn crysbind(pb: &Aespb) -> Option<crate::bdos::process::sched::Switch> {
         13 => appl::appl_find(pb),
         14 => appl::appl_tplay(pb),
         15 => appl::appl_trecord(pb),
-        17 => appl::appl_yield(pb),
+        // `appl_yield` is a `dsptch()` of its own before `super()`'s (A112) —
+        // it may yield to a peer mid-call.
+        17 => return appl::appl_yield(pb),
         // The six blocking waits may yield to a peer — propagate the `Switch`.
         20 => return event::evnt_keybd(pb),
         21 => return event::evnt_button(pb),
@@ -974,6 +987,10 @@ pub fn release_client(slot: usize) {
     // pass budget so the slot's next tenant gets the full `WAIT_TIMEOUT` and
     // performs the `AC_CLOSE` handshake instead of skipping it (ACC10).
     acc::forget_wait(slot);
+    // Likewise an `evnt_multi`/`evnt_mouse` it had armed and an `appl_yield`
+    // it was in the middle of (A112): the next tenant starts with neither.
+    event::forget_wait(slot);
+    appl::forget_yield(slot);
     // The Window-Manager half of the same release — `sh_ldapp`'s `wm_new()`
     // (`aes/gemshlib.c:676-677`) for a client the shell loop never ran. Only
     // *marked* here: this runs on the `Pterm` exception stack and the sweep

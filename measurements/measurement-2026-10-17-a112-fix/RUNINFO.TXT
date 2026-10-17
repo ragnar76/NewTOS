@@ -1,0 +1,92 @@
+measurement-2026-10-17-a112-fix -- TASK/A112 step 2+3: tests red against HEAD, fix F1-F4 + evnt_timer(0), same tests green.
+Spec: docs/api/aes/event.md "Wake conditions and dispatch -- contract (A112)" (points 1-6) + edge cases; docs/api/aes/application.md
+(ap_rdwr note, appl_yield). Host macOS, QEMU raspi4b + qemu-virt. No SD card, no Pi, nothing under /Volumes/BOOT* or NEWTOS*
+(probe cards are volume EVPRB, the APITEST card A112API). Scratch = session scratchpad .../scratchpad/a112; per-run APFS clones
+(cp -c), deleted after each run. One QEMU at a time.
+
+KERNELS (cargo xtask build --board rpi4 --release; images not kept)
+  red   = HEAD d21a6b21, clean tree           sha256 aaf237c58a37c85768152e680667c2795eb9bedff6fb05eafc424fbca34f05a6
+  green = the fix (uncommitted working tree)  sha256 14e7c3bdc98b5845727b850633fb38c2f9ef8caded3aaf326d5b465bb413b94b
+          The final fresh build (cargo clean -p kernel -p tos-api --target aarch64-unknown-none-softfloat --release, then
+          build; checks/build-rpi4.log) is byte-identical to the green image every green run used.
+
+1. QEMU PROBES (method/)
+   evprobe.c = copy of measurements/measurement-2026-10-17-a112-audit/method/evprobe.c; changes: ACCD prints its real period,
+   the POLL loops are bounded (600000 evnt_multi(MU_TIMER,0), 600000 appl_yield, 250 evnt_timer(0)). Role wrappers r_*.c,
+   built with sdk/build.sh by run-all.sh (probe sha256: serial/probes-{red,green}.sha256, identical). mkimg.sh = audit copy
+   (FAT16, '#Z 01 C:\MAIN.NAP@'); runts.sh = audit runts.sh with kernel/scratch as parameters (host timestamps, -append serial=on).
+     f1   ACCA.NAC (evnt_multi(MU_TIMER,250) loop) + MAIN.NAP (evnt_timer(3000), cover window, 30x evnt_multi(MESAG|TIMER,1000))
+     f1b  ACCD.NAC (evnt_timer(4000) loop) + MAIN.NAP
+     f2   ACCB.NAC (window, evnt_multi(MU_MESAG) loop) + ACCC.NAC (window, evnt_mesag loop) + MAIN_LATE as MAIN.NAP
+          (evnt_timer(9000), then opens+closes a full-screen window over both accessory windows). The first red f2 run used
+          plain MAIN, which covers before the accessories have windows (no test); it was discarded and f2 rerun with MAIN_LATE.
+     f3   ACCD_FAST as ACCD.NAC (evnt_timer(1000) loop) + POLL as MAIN.NAP
+
+   RED (serial/*-red.log)                                  GREEN (serial/*-green.log)
+   f1  ACCA ticks 12x while MAIN sits in evnt_timer, then   ACCA 4 ticks/s for the whole run (235 ticks, 15.3-74.7 s)
+       none from 18.08 s to the end (75 s) while MAIN       while MAIN's 30 loops return at 1 Hz (18.13-47.24 s).
+       loops.                                     -> F1
+   f1b MAIN returns twice (0x10 WM_REDRAW, ...), then      MAIN loops 1..30 at 1 Hz (0x10, then 0x20 each second),
+       its evnt_multi(MESAG|TIMER,1000) never returns       ACCD ticks every 4 s in between.
+       again (18.14 -> 75 s) while ACCD ticks every 4 s.
+                                                  -> F1
+   f2  MAIN covers at 33.18 s: ACCC (evnt_mesag) gets       MAIN covers at 24.15 s: ACCB gets WM_REDRAW w3=1 and ACCC
+       WM_REDRAW w3=2, ACCB (evnt_multi(MU_MESAG)) never.   WM_REDRAW w3=2, both at 24.16 s.
+       (MAIN's evnt_timer(9000) itself returned after 18 s;  (evnt_timer(9000) returned after 9.0 s.)
+       timers were late in red.)                  -> F2
+   f3  POLL loops 20.13-24.10 s: ACCD ticks 0 times (its    POLL loops 17.62-27.05 s: ACCD ticks 9 times (every 1.0 s,
+       6th tick is stamped 24.10 = after "done");           interleaved with every loop); 250x evnt_timer(0) take
+       250x evnt_timer(0) take 0.00 s.          -> F3      4.98 s = one 20-ms tick each.
+   All 8 logs: 0 [EXC]/PANIC.
+
+2. HOST TESTS (tos-api/tests/aes_a112_wake_conditions.rs, new, 5 cases)
+   f1_the_timer_of_a_parked_evnt_multi_fires_while_another_process_runs, f2_a_message_from_another_process_wakes_a_parked_
+   evnt_multi_mesag, f3_a_completed_aes_call_gives_the_cpu_to_a_ready_peer, evnt_timer_0_and_sub_tick_counts_wait_for_the_
+   next_tick, appl_yield_gives_up_the_cpu_before_and_after_it_completes.
+   RED: the same file in a `git archive d21a6b21` copy of the tree (scratch, own target dir): 0 passed / 5 failed, each on its
+        own assertion (hosttest/aes_a112_wake_conditions-red.log). GREEN: 5 / 0 (hosttest/...-green.log).
+   F4 (no repeat of the arm-time tests after a resume) has no host case: not observable through the AES at this layer, see the
+   file header (input::own_mouse() is "an application owns the mouse", not "this caller", and the inline w_setactive of the same
+   pass hands the mouse back at once). Covered by review.
+   Three existing tests had to learn that a completed AES call may return the `completed` Switch of the closing dispatch when
+   another slot of the test is on the ready list (their call helper asserted is_none()): aes_a96_zombie_windows.rs,
+   aes_key_owner.rs, aes_pd_by_slot.rs -- the helper now accepts `completed` and still fails on a mid-call (S2) yield.
+
+3. FIX (product code, uncommitted)
+   tos-api/src/bdos/process/sched.rs  wait_multi(events, idx) union key (WAKE_INPUT/WAKE_MESG/WAKE_TIMER); wake() also wakes
+        union waiters whose bits cover the key; wake_timers() (timer half of EmuTOS forker/tchange) runs in sleep (before the
+        pick), dsptch (after the pick), dispatch_after_call and the idle pass; dispatch_after_call() = super()'s closing
+        dsptch (caller back on the ready list, pick, then timer pass; Switch.completed); deadline keyed on running_slot().
+   tos-api/src/aes/event.rs  evnt_multi sleeps on wait_multi(...); EV_ARMED per identity: a re-executed (S2) evnt_multi /
+        evnt_mouse resumes at the parked state, no second quick check/arm (F4); timer_span(): a count below one tick
+        (0 included for evnt_timer) expires at the next 20-ms tick boundary; evnt_multi(MU_TIMER, 0) stays a poll.
+   tos-api/src/aes/mod.rs  dispatch_in returns sched::dispatch_after_call() after every completed call; appl_yield propagates
+        its Switch; release_client/reinit clear the new per-identity state.
+   tos-api/src/aes/appl.rs  appl_yield = sched::dsptch() (S2) + the closing dispatch, YIELD_DONE per identity.
+   kernel/src/arch/aarch64/exceptions.rs  a `completed` Switch is applied after complete_call_tail (now -> bool "plain
+        return") as a leaf yield (save_yield_frame(.., false), resume after the svc with x0 = 0); also on the userdef-resume path.
+
+4. REGRESSION
+   host tests (cargo xtask test)              1385 / 0 / 1   (baseline 1380 / 0 / 1 + 5 new)        checks/host-tests.log
+   SDK host tests (sdk/run-host-tests.sh)     20 / 0 / 0     (baseline 20 / 0 / 0)                  checks/sdk-host-tests.log
+   release build rpi4 / qemu-virt (fresh)     tos-api 64, kernel 94, rc 0 (baseline 64 / 94)         checks/build-*.log
+   clippy kernel rpi4 / qemu-virt             tos-api 76, kernel 125 (baseline 76 / 125); 0 hits in a touched file
+   clippy touched tests                       0 hits in the four test files                          checks/clippy-tests.log
+   desk drift probe                           TOTAL 0                                                checks/drift.log
+   APITEST (#Z, QEMU raspi4b, memprot on)     red 109/0/5, green 109/0/5, 124 result lines each, 0 differing, 0 EXC/PANIC
+        (method/api-build.sh, api-card.sh, api-run.sh, api-series.sh, api-cmp.sh -- copies of measurement-2026-10-17-arch02;
+         checks/api-red-vs-green.txt, serial/api-*-on-serial.log, screendumps/api-*-on.png, not evaluated beyond existing)
+   qemu-virt boot smoke (method/virt-smoke.sh, release ELF, no card): "[desk] desktop up" 1, 0 EXC/PANIC
+        (serial/virt-smoke-serial.log)
+
+5. NOT RUN / OPEN
+   Desktop/TeraDesk/QED/accessory-card regression with screendumps, APITEST memprot off/strict, real Pi 4: Tester / lead.
+   Scheduling order is round robin over slot order (pick_next), not EmuTOS's rlr list: a process woken by a message is picked
+   at the poster's *own* closing dispatch (EmuTOS: behind the poster, i.e. one call later), and several woken processes run in
+   slot order (EmuTOS: reverse wake order, drl is push-front). Visible in f2-green: both accessories print their WM_REDRAW
+   before MAIN prints "cover window closed+deleted". Timer wakes do follow EmuTOS (pick first, then the timer pass).
+   Input wakes (key / pointer change) still only run in the idle pass, as before; not part of F1-F4.
+   Every switch prints two "[sched]" lines (QUIRK-001 bracket): two processes that both stay ready (two pollers) now switch on
+   every AES call.
+
+Files: RUNINFO.TXT; method/ (18 files); serial/ (11 logs + 2 sha256); hosttest/ (2 logs); checks/ (9 logs); screendumps/ (2).

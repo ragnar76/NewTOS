@@ -76,6 +76,52 @@ pub const fn wait_timer(deadline_ms: u64) -> u64 {
     (CLASS_TIMER << WAIT_CLASS_SHIFT) | (deadline_ms & WAIT_ARG_MASK)
 }
 
+/// `WAIT_MULTI(events, idx)` class tag: a wait on the **union** of several
+/// event sources (A112, `docs/api/aes/event.md` "Wake conditions and dispatch"
+/// point 1). EmuTOS's `ev_multi` arms one `EVB` per requested event with
+/// `iasync` and sleeps on all of them at once (`mwait(flags)`,
+/// `aes/gemevlib.c:235-259`, `aes/gemasync.c:117-127`); any one completing
+/// wakes the process through `signal()` (`gemasync.c:35-61`), whoever is
+/// running. The argument carries the requested [`WAKE_INPUT`]/[`WAKE_MESG`]/
+/// [`WAKE_TIMER`] bits and the AES identity whose message FIFO the
+/// [`WAKE_MESG`] bit watches; the timer deadline is the waiter's
+/// [`super::Process::syscall_deadline`].
+const CLASS_MULTI: u64 = 4;
+
+/// [`wait_multi`] event bit: input — keyboard, button, mouse rectangles, and
+/// (in NewTOS) the inline Control Manager's menu/frame interception, which
+/// turns input into `MN_SELECTED`/`WM_*` messages inside the waiter's own
+/// loop. Woken like a [`wait_input`] waiter.
+pub const WAKE_INPUT: u64 = 1;
+/// [`wait_multi`] event bit: a message written into the waiter's own FIFO by
+/// any process — `aqueue(TRUE,…)` servicing the parked reader
+/// (`aes/gemqueue.c:104-118`). Woken like a [`wait_mesg`] waiter on the same
+/// identity.
+pub const WAKE_MESG: u64 = 2;
+/// [`wait_multi`] event bit: the waiter's own deadline
+/// ([`super::Process::syscall_deadline`]) — EmuTOS `tchange` → `evremove` →
+/// `azombie` → `signal` (`aes/gemflag.c:32-68`), run by any dispatcher pass.
+pub const WAKE_TIMER: u64 = 4;
+
+/// Bit position of the AES identity within a [`wait_multi`] argument.
+const MULTI_IDX_SHIFT: u32 = 8;
+/// Mask of the event bits within a [`wait_multi`] argument.
+const MULTI_EVENTS_MASK: u64 = 0xff;
+
+/// The `WAIT_MULTI(events, idx)` wake key (A112): sleep until **any** of the
+/// sources in `events` ([`WAKE_INPUT`] | [`WAKE_MESG`] | [`WAKE_TIMER`])
+/// fires. `idx` is the AES identity whose FIFO [`WAKE_MESG`] watches (the
+/// caller's own). [`wake`] with a [`wait_input`] key wakes it when
+/// [`WAKE_INPUT`] is set, a [`wait_mesg`]`(idx)` key when [`WAKE_MESG`] is
+/// set; the dispatcher's timer pass when [`WAKE_TIMER`] is set and the slot's
+/// [`super::Process::syscall_deadline`] has passed.
+#[inline]
+pub const fn wait_multi(events: u64, idx: usize) -> u64 {
+    (CLASS_MULTI << WAIT_CLASS_SHIFT)
+        | (((idx as u64) << MULTI_IDX_SHIFT) & WAIT_ARG_MASK)
+        | (events & MULTI_EVENTS_MASK)
+}
+
 /// The wake-class tag of a `wait_cond` key.
 #[inline]
 fn wait_class(cond: u64) -> u64 {
@@ -154,6 +200,17 @@ pub struct Switch {
     /// the hook chained into the BIOS queue is now there). Built only by
     /// [`switch_restart_for_upcall`]; every other field is meaningless then.
     pub upcall_restart: bool,
+    /// **The call has completed** (A112, `docs/api/aes/event.md` "Wake
+    /// conditions and dispatch" point 3): the dispatch every AES call ends
+    /// with — `super()` falls through to `dsptch()` (`aes/gemsuper.c:454-466`)
+    /// — found a ready peer. Unlike an S2 yield nothing is re-executed: the
+    /// trap handler finishes the call as usual (result into `x0`, the
+    /// terminate/upcall tails) and only then, if the frame is the call's plain
+    /// return, saves it as a **leaf** yield (`elr` after the `svc`, the `Pwait`
+    /// shape) and switches. On resume the caller continues after its `svc`
+    /// with `x0 = 0` — the AES trap's own return value. Built only by
+    /// [`dispatch_after_call`].
+    pub completed: bool,
 }
 
 /// The slot currently running (or [`NONE`]).
@@ -228,6 +285,7 @@ pub fn switch_to_kernel() -> Switch {
         el1_internal: true,
         restartable: false,
         upcall_restart: false,
+        completed: false,
     }
 }
 
@@ -248,6 +306,7 @@ pub fn switch_restart_for_upcall() -> Switch {
         el1_internal: false,
         restartable: true,
         upcall_restart: true,
+        completed: false,
     }
 }
 
@@ -409,6 +468,7 @@ fn switch_to(slot: usize) -> Switch {
         // whether the resume preserves `x0` (S2) or writes the `Pwait` 0.
         restartable: RESUME_RESTARTABLE[slot].load(Ordering::Acquire),
         upcall_restart: false,
+        completed: false,
     }
 }
 
@@ -525,6 +585,13 @@ pub fn sleep(cond: u64) -> SleepOutcome {
         PROCESS_TABLE[cur].wait_cond.store(cond, Ordering::Release);
         PROCESS_TABLE[cur].runnable.store(false, Ordering::Release);
 
+        // `disp()` drains the fork ring on **every** dispatch (`forker()`,
+        // `aes/gemdisp.c:239-244`), and `tchange` there completes every
+        // expired timer wait whoever is running (A112, `docs/api/aes/
+        // event.md` "Wake conditions and dispatch" points 2 and 4). Before
+        // the pick, so a peer whose deadline has passed is a candidate now.
+        wake_timers();
+
         // Ausgang (b) — a runnable peer exists (§4.4): yield to it. The handler
         // performs the S2 frame-save (ELR rewound to the svc) + switch; we do
         // NOT touch the trap frame here — `sleep` is deep in a non-leaf syscall
@@ -537,9 +604,12 @@ pub fn sleep(cond: u64) -> SleepOutcome {
         if kernel_parked() {
             return SleepOutcome::Yield(switch_to_kernel());
         }
-    } else if let Some(sw) = pick_peer_for_kernel() {
-        // The EL1 kernel client blocks and an accessory is runnable: `dsptch()`.
-        return SleepOutcome::Yield(sw);
+    } else {
+        wake_timers();
+        if let Some(sw) = pick_peer_for_kernel() {
+            // The EL1 kernel client blocks and an accessory is runnable: `dsptch()`.
+            return SleepOutcome::Yield(sw);
+        }
     }
 
     // Ausgang (a) — the no-peer idle-fallback (§4.4): EmuTOS `schedule()`-idle.
@@ -573,12 +643,71 @@ pub fn sleep(cond: u64) -> SleepOutcome {
 /// caller's own idle re-check already observes the event. It is wired now so
 /// the step-4 peer-switch path and the message/input/timer posters do not have
 /// to touch `event.rs` later (design §1.3).
+///
+/// **Union waits (A112).** A [`wait_multi`] waiter is woken by every key its
+/// event bits cover: a [`wait_input`] key wakes it when it asked for
+/// [`WAKE_INPUT`], a [`wait_mesg`]`(idx)` key when it asked for [`WAKE_MESG`]
+/// on that same identity — EmuTOS's `signal()` ORs the completed event into
+/// `p_evflg` and wakes the owner if `p_evflg & p_evwait` (`aes/gemasync.c:
+/// 35-61`), whatever the owner waits for besides.
 pub fn wake(cond: u64) {
     if cond == 0 {
         return; // 0 is "not waiting", never a valid wake key.
     }
     for p in PROCESS_TABLE.iter() {
-        if p.wait_cond.load(Ordering::Acquire) == cond {
+        let c = p.wait_cond.load(Ordering::Acquire);
+        if c == cond || multi_covers(c, cond) {
+            p.wait_cond.store(0, Ordering::Release);
+            p.runnable.store(true, Ordering::Release);
+        }
+    }
+}
+
+/// `true` when the [`wait_multi`] key `waiter` asked for the source the
+/// single-class key `cond` names ([`wait_input`] or [`wait_mesg`]).
+fn multi_covers(waiter: u64, cond: u64) -> bool {
+    if wait_class(waiter) != CLASS_MULTI {
+        return false;
+    }
+    let events = wait_arg(waiter) & MULTI_EVENTS_MASK;
+    match wait_class(cond) {
+        CLASS_INPUT => events & WAKE_INPUT != 0,
+        CLASS_MESG => {
+            events & WAKE_MESG != 0
+                && (wait_arg(waiter) >> MULTI_IDX_SHIFT) == wait_arg(cond)
+        }
+        _ => false,
+    }
+}
+
+/// The timer half of the dispatcher's fork-ring pass (A112): every WAITING
+/// context whose deadline has passed is made READY — a [`wait_timer`] key by
+/// the deadline it carries, a [`wait_multi`] key with [`WAKE_TIMER`] by its
+/// slot's [`super::Process::syscall_deadline`].
+///
+/// EmuTOS: the tick handler counts the head delay down and, at zero, queues
+/// `tchange` (`aes/gemdosif.S:389-401`); `forker()` runs it on every
+/// `disp()` (`aes/gemdisp.c:239-244`) and at the head of `ev_multi`, and it
+/// completes each expired `EVB` through `evremove` → `azombie` → `signal`
+/// (`aes/gemflag.c:32-68`) — independent of the mouse owner and of the
+/// process that happens to be running. Called from every dispatch here:
+/// [`sleep`], [`dsptch`], [`dispatch_after_call`] and the idle pass.
+pub fn wake_timers() {
+    let Some(h) = host() else {
+        return;
+    };
+    let now = h.monotonic_millis();
+    for p in PROCESS_TABLE.iter() {
+        let c = p.wait_cond.load(Ordering::Acquire);
+        let expired = match wait_class(c) {
+            CLASS_TIMER => wait_arg(c) <= now,
+            CLASS_MULTI if wait_arg(c) & WAKE_TIMER != 0 => {
+                let d = p.syscall_deadline.load(Ordering::Acquire);
+                d != 0 && d <= now
+            }
+            _ => false,
+        };
+        if expired {
             p.wait_cond.store(0, Ordering::Release);
             p.runnable.store(true, Ordering::Release);
         }
@@ -672,16 +801,16 @@ pub fn dsptch() -> Dispatch {
         // and its key is `0` by the WAITING/READY rule (§3.2), so the clear is
         // the no-op it is in EmuTOS.
         PROCESS_TABLE[cur].runnable.store(true, Ordering::Release);
-        if let Some(sw) = on_yield(cur) {
+        if let Some(sw) = pick_after_call(cur) {
+            // `forker()` after the pick (`aes/gemdisp.c:231-244`): a process
+            // whose timer expired joins the ready list *behind* the ones
+            // already on it (A112).
+            wake_timers();
             return Dispatch::Yield(sw);
-        }
-        // No EL0 peer, but an EL1 kernel client may be parked (ACC03) — it is
-        // one more entry on EmuTOS's ready list, so it is a `dsptch` target.
-        if kernel_parked() {
-            return Dispatch::Yield(switch_to_kernel());
         }
     } else if let Some(sw) = pick_peer_for_kernel() {
         // The EL1 kernel client dispatches: an accessory is runnable.
+        wake_timers();
         return Dispatch::Yield(sw);
     }
 
@@ -695,6 +824,58 @@ pub fn dsptch() -> Dispatch {
     Dispatch::Idle
 }
 
+/// The next ready context for a caller in slot `cur` that stays on the ready
+/// list: the next runnable EL0 peer, else the parked EL1 kernel client (ACC03
+/// — one more entry on EmuTOS's ready list), else `None`.
+fn pick_after_call(cur: usize) -> Option<Switch> {
+    if let Some(sw) = on_yield(cur) {
+        return Some(sw);
+    }
+    if kernel_parked() {
+        return Some(switch_to_kernel());
+    }
+    None
+}
+
+/// The `dsptch()` a **completed** AES call ends with (A112,
+/// `docs/api/aes/event.md` "Wake conditions and dispatch" point 3): `super()`
+/// runs the opcode switch and then falls through to `dsptch()` for every AES
+/// call (`aes/gemsuper.c:454-466`), and `disp()` puts the caller at the **end**
+/// of the ready list (`disp_act` → `insert_process`, `aes/gemdisp.c:74-79`,
+/// `aes/gempd.c:133-145`) before resuming its head — so a ready peer runs
+/// before the caller continues, round robin.
+///
+/// The input half of that `disp()` (the `forker()` drain of the mouse and
+/// keyboard packets) is `aes::dsptch`, which has already run when this is
+/// called; this is the scheduling half. Returns the [`Switch`] to the next
+/// ready context with [`Switch::completed`] set — the trap handler finishes
+/// the call and then yields as a leaf (the caller resumes after its `svc`) —
+/// or `None` when the caller is alone on the ready list and simply goes on.
+///
+/// Order: the pick is made from the contexts already ready, then the timer
+/// pass runs ([`wake_timers`]) — EmuTOS's `forker()` follows `disp_act`, and
+/// `schedule()` appends what it woke behind the caller (`gemdisp.c:231-244`),
+/// so a process whose timer expired in this pass runs at the caller's *next*
+/// dispatch when the caller is otherwise alone.
+///
+/// Only an EL0 caller with a slot dispatches here: the EL1 kernel client owns
+/// no slot to save a leaf frame into and makes no AES calls since DESK43 U10.
+pub fn dispatch_after_call() -> Option<Switch> {
+    let cur = running_slot();
+    if cur >= MAX_PROCESSES {
+        return None;
+    }
+    // `disp_act(p)`: the caller is put (back) on the ready list — see
+    // [`dsptch`] for why the membership has to be established, not assumed.
+    PROCESS_TABLE[cur].runnable.store(true, Ordering::Release);
+    let pick = pick_after_call(cur);
+    wake_timers();
+    pick.map(|mut sw| {
+        sw.completed = true;
+        sw
+    })
+}
+
 // ─── timer deadline persistence (S2-restart idempotency, §4.3 OPEN) ─────────
 //
 // A timer-bearing wait (`evnt_timer`/`wait_ms`/`evnt_multi`-`MU_TIMER`) computes
@@ -705,6 +886,22 @@ pub fn dsptch() -> Dispatch {
 // context/no peer, real with step-4 peers). Persisting the deadline per-slot in
 // [`super::Process::syscall_deadline`] makes a restart REUSE the original
 // deadline; first-entry-vs-restart is detected by the field being `0` vs set.
+
+/// The slot whose [`super::Process::syscall_deadline`] a timer wait uses: the
+/// slot [`sleep`] parks — [`running_slot`], derived from `RUN` and maintained
+/// on every path that enters a process — and only when that names none, the
+/// scheduler's [`current`]. (A112: a program the kernel launcher entered
+/// directly has `current() == NONE` until its first switch, so keying the
+/// deadline off `current()` alone left it unpersisted and invisible to the
+/// timer pass, [`wake_timers`].)
+fn deadline_slot() -> usize {
+    let r = running_slot();
+    if r < MAX_PROCESSES {
+        r
+    } else {
+        current()
+    }
+}
 
 /// Arm (first entry) or reuse (S2 restart) the running slot's timer deadline
 /// (design §4.3). When the slot's [`super::Process::syscall_deadline`] is `0`
@@ -717,7 +914,7 @@ pub fn dsptch() -> Dispatch {
 /// [`current`]` == NONE` and never restart (idle-fallback only, §4.4) — there is
 /// nothing to persist, so it just returns `now + ms` (today's behavior).
 pub fn arm_or_get_deadline(now: u64, ms: u64) -> u64 {
-    let cur = current();
+    let cur = deadline_slot();
     if cur < MAX_PROCESSES {
         let field = &PROCESS_TABLE[cur].syscall_deadline;
         let stored = field.load(Ordering::Acquire);
@@ -738,7 +935,7 @@ pub fn arm_or_get_deadline(now: u64, ms: u64) -> u64 {
 /// unrelated timer wait recomputes a fresh deadline via [`arm_or_get_deadline`].
 /// A no-op when no slot is running or no deadline was armed.
 pub fn clear_deadline() {
-    let cur = current();
+    let cur = deadline_slot();
     if cur < MAX_PROCESSES {
         PROCESS_TABLE[cur].syscall_deadline.store(0, Ordering::Release);
     }
@@ -782,14 +979,6 @@ fn idle_wake_pass() {
     if h.console_has_input() || pointer != LAST_POINTER.swap(pointer, Ordering::AcqRel) {
         wake(wait_input());
     }
-    // WAIT_TIMER: per-waiter deadline reached → wake (timer-IRQ deferred to
-    // step 4, §5.2). The absolute deadline lives in the low bits of the key.
-    let now = h.monotonic_millis();
-    for p in PROCESS_TABLE.iter() {
-        let c = p.wait_cond.load(Ordering::Acquire);
-        if wait_class(c) == CLASS_TIMER && wait_arg(c) <= now {
-            p.wait_cond.store(0, Ordering::Release);
-            p.runnable.store(true, Ordering::Release);
-        }
-    }
+    // WAIT_TIMER / WAIT_MULTI(WAKE_TIMER): per-waiter deadline reached → wake.
+    wake_timers();
 }
