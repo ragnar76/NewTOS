@@ -214,7 +214,7 @@ and the `menu_register` slot-id/-1 return.
 | `gl_ctwait` | `gemctrl.h:13` | the control-manager mouse-wait rectangle: `THEACTIVE`'s extent when a bar is up (`gemmnlib.c:717`), else `gl_rmenu` = the menu-bar row `(0, 0, gl_width, gl_hbox)` (`gemgraf.c:427`; `gemctrl.c:438`, `gemmnlib.c:727`) — *not* the full desktop (corrected A87, 2026-09-21; see `menu.md` § `menu_bar`) | `mn_bar` (`gemmnlib.c:715-726`); read by `mchange` (`geminput.c:388`) and `ctlmgr` (`gemctrl.c:456`) |
 | `gl_dafirst` | `gemmnlib.c:68` | object # of the first desk-accessory entry in the tree | `menu_fixup`; the pick router (`gemctrl.c:337`) |
 | `D.g_accreg` | `gemlib.h` (`THEGLO`) | count of registered DAs (bounded by `NUM_ACCS`) | `mn_register`/`mn_init` |
-| `D.g_acctitle[NUM_ACCS]` | `gemlib.h` (`THEGLO`) | the DA menu-item **title string pointers** (stored, not copied) | `mn_register`/`mn_cleanup`/`mn_init` |
+| `D.g_acctitle[NUM_ACCS]` | `gemlib.h` (`THEGLO`) | the DA menu-item **title string pointers** (stored, not copied) | `mn_register`/`mn_init` (`mn_cleanup` reads `desk_ppd[]`, not this array, `gemmnlib.c:745-748`; corrected 2026-10-17) |
 | `desk_ppd[NUM_ACCS]` | `gemmnlib.c:65` | the owner process descriptor per DA slot | `mn_register`; `mn_getownid` (route `AC_OPEN`) |
 | `acc_display[NUM_ACCS]` | `gemmnlib.c:66` | display-slot → DA menu-id lookup table | `build_menuid_lookup`; `mn_getownid` |
 | `gl_submenu`/`gl_submenu_hwm` | `gemmnext.c:57-58` | submenu-info (`SMIB`) array (`CONF_WITH_MENU_EXTENSION`) | `menu_attach`/`menu_istart`; freed by `mn_cleanup` |

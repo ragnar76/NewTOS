@@ -198,7 +198,9 @@ Gadget **groups** used by the frame builder and `wind_calc` (`gemwmlib.h:16-18`)
   `wind_get (104)` below).
 - ¶ `WF_OWNER` (20) exists only with `AES_VERSION >= 0x330` (the default build
   is 0x0340). Returns owner pid, open-flag, and (a partial) top/bottom z-order.
-  **The owner pid reported is 0 for every application window** (`w_owner->p_pid`,
+  **The owner pid reported is 0 for every window created by a chain member**
+  (desktop, program, `Pexec` child) and the accessory's pid (2, 3, …) for a
+  window created by an accessory (corrected 2026-10-17, A113) (`w_owner->p_pid`,
   `gemwmlib.c:1580`; `w_owner` set to `rlr` by `w_setup` at `wind_create` time,
   `:1377`, and for the desktop window (`DESKWH`) by `wm_init`, `:1255,1290`) —
   see [`application.md`](./application.md) §"AES process identity and pid"
@@ -493,7 +495,10 @@ screen buffer via `gsx_mret`. Result rect → `int_out[1..4]`; scalars →
 > (the identity, §"AES process identity and pid" in
 > [`application.md`](./application.md)) must translate at this boundary: the
 > stored owner is the slot, the value `WF_OWNER` hands back is 0 for every
-> application window regardless of which slot actually owns it.
+> window owned by a chain member regardless of which slot actually owns it, and
+> the accessory's own pid (2, 3, …, `application.md` "Pid assignment,
+> accessories, and a failed load") for a window an accessory created
+> (`w_setup(rlr, …)`, `gemwmlib.c:1377`; corrected 2026-10-17, A113).
 
 `WF_TOP`, `WF_SCREEN`, `WF_DCOLOR` do **not** require a valid handle
 (`gemwmlib.c:1517-1520`); every other field returns `FALSE` if the handle is
@@ -1474,8 +1479,9 @@ sets `msg[1] = rlr->p_pid` (sender), `msg[2] = 0` (extra bytes):
 | `WM_MOVED`   | 28 | wh | new x | new y | new w | new h | MOVER/name drag (`gemctrl.c:238`) |
 | `WM_UNTOPPED`| 30 | wh | 0 | 0 | 0 | 0 | previous top is being deactivated (`gemctrl.c:151`) |
 
-> **`msg[1]` (sender) is 1 for every row above except `WM_REDRAW`, which is 0
-> (2026-09-20, A62/A56).** `ap_sendmsg` always stamps `msg[1] = rlr->p_pid`
+> **`msg[1]` (sender) is 1 for every row above except `WM_REDRAW`, which is the
+> caller's pid — 0 for a chain member, ≥ 2 for an accessory (2026-09-20,
+> A62/A56; widened 2026-10-17, A113).** `ap_sendmsg` always stamps `msg[1] = rlr->p_pid`
 > (`gemwmlib.c:855`) — the value depends on *who is running* when the send
 > happens, not on the message id. `WM_TOPPED`/`WM_CLOSED`/`WM_FULLED`/
 > `WM_ARROWED` (queued case)/`WM_HSLID`/`WM_VSLID`/`WM_SIZED`/`WM_MOVED`/
@@ -1483,10 +1489,12 @@ sets `msg[1] = rlr->p_pid` (sender), `msg[2] = 0` (extra bytes):
 > ctl_pd`, pid **1** — via `ct_msgup`/`handle_arrow_msg`
 > (`gemctrl.c:81-315,111-139`). `WM_REDRAW` is posted by `w_redraw`
 > (`gemwmlib.c:904`) from `draw_change`, called synchronously from the
-> *application's own* `wind_open`/`wind_close`/`wind_set(WF_CURRXYWH)` trap
-> (`gemwmlib.c:1426,1453,1612`) — `rlr` is the application itself, pid **0**.
+> *caller's own* `wind_open`/`wind_close`/`wind_set(WF_CURRXYWH)` trap
+> (`gemwmlib.c:1426,1453,1612`) — `rlr` is the caller itself: pid **0** for a
+> chain member, the accessory's pid (≥ 2) when an accessory is the caller
+> (widened 2026-10-17, A113).
 > A held-down scroll arrow can additionally produce a **non-queued**
-> `WM_ARROWED` with `msg[1] = 0` instead of 1, synthesised by the reader's
+> `WM_ARROWED` with `msg[1]` = the reader's pid (0 for the chain) instead of 1, synthesised by the reader's
 > own `evnt_mesag` — see [`event.md`](./event.md) §`evnt_mesag` and
 > [`application.md`](./application.md) §"AES process identity and pid".
 

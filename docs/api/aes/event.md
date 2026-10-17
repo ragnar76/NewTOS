@@ -786,7 +786,7 @@ sources feed it:
   synthesizes a full `WM_ARROWED` message in place (`msg[0]=WM_ARROWED`,
   `msg[1]=p_pid`, `msg[3]=p_msg.wh`, `msg[4]=p_msg.action`) and clears
   `p_msg.action = -1` (`gemevlib.c:102-114`). **`p_pid` here is the reader's
-  own pid — 0 for the application chain** — unlike the normal *queued*
+  own pid — 0 for the application chain, ≥ 2 for an accessory** — unlike the normal *queued*
   `WM_ARROWED`, which arrives via `ap_sendmsg` from the Screen Manager with
   `msg[1] = 1` (`gemctrl.c:125`; see [`application.md`](./application.md)
   §"AES process identity and pid", 2026-09-20/A62+A56).

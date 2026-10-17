@@ -48,7 +48,7 @@ zero accessories loaded, exactly **2**. The table is two arrays,
 |----:|-----------|-----------------|----------|
 | 0 | `D.g_int[0]` | the **entire application chain**: the desktop, every program the shell loop launches via `sh_ldapp`, and every child that program starts with `Pexec`/`dos_exec` — all of them, because `rlr` is set once at `gem_main` init and is **never reassigned** by any nested `Pexec`/`dos_exec` (`geminit.c:850-877`; only `p_name`/`p_appdir` are overwritten in place by `sh_ldapp`, `gemshlib.c:604-605,634-636`, each new launch) | init loop, `geminit.c:851-877` |
 | 1 | `D.g_int[1]` | the **Screen Manager** (`ctlmgr`) — a genuine second cooperative process that owns window-furniture clicks and menu-bar tracking: `gl_mowner = ctl_pd = iprocess("SCRENMGR", ctlmgr)` | `geminit.c:888` → `getpd()`, `gempd.c:60-70` |
-| 2… | `D.g_acc[i-2]` | desk accessories, one per `.ACC` file | `load_one_acc`, `geminit.c:236-257` → `getpd()` |
+| 2… | `D.g_acc[i-2]` | desk accessories, one per **successfully loaded** `.ACC` file (a failed load takes no pid, see below) | `load_one_acc`, `geminit.c:236-257` → `getpd()` |
 
 `getpd()` (`gempd.c:60-70`) has exactly **two callers** in the whole AES:
 `iprocess` (used once, for SCRENMGR) and `load_one_acc`. No other code path
@@ -75,16 +75,90 @@ only `p_name`/`p_pid` comparison. Consequences:
   static array slot, not a heap allocation, has nothing to release (already
   spec'd under `appl_exit` below; NewTOS's A29 fix reproduces exactly this).
 - A target of pid 0 for `appl_write`/`appl_read` always resolves to
-  `D.g_int[0]` regardless of which nested chain member is "logically"
-  running — and because EmuTOS's AES is strictly single-threaded (a `Pexec`
-  parent blocks inside `dos_exec` while its child runs), pid 0 unambiguously
-  means **whichever chain member currently holds the CPU**.
-- `appl_find(name)` can only ever report the **current** occupant's name,
-  because `p_nameit` overwrites `p_name` in place on every launch
-  (`gemshlib.c:604-605,634-635`) — a previously-launched program's name is
-  gone, not a second table entry (measured: `docs/analysis/
+  `D.g_int[0]` (`fpdnm`, `gempd.c:43-52`) — **independent of who the caller
+  is and of which nested chain member is "logically" running**. The whole
+  chain shares that one descriptor and therefore **one message queue**
+  (`p_queue`, `struct.h:152`). (Corrected 2026-10-17, A113: this bullet used
+  to say pid 0 "unambiguously means whichever chain member currently holds the
+  CPU" and that EmuTOS's AES is "strictly single-threaded". It is not: the AES
+  is cooperatively multi-process — `dsptch()` runs `SCRENMGR` and every
+  accessory on their own `AESPD`s — so the *caller* of `appl_write(0, …)` may
+  be an accessory, and pid 0 is then **not** the caller. Only a *chain member*
+  calling `appl_write(0, …)` writes into its own, shared queue.)
+- `appl_find(name)` for the chain can only ever report the **current**
+  occupant's name, because `p_nameit` overwrites `p_name` in place on every
+  launch (`gemshlib.c:604-605,634-635`) — a previously-launched program's name
+  is gone, not a second table entry (measured: `docs/analysis/
   aes-process-table-and-apid-2026-09-20.md` §1a, "nine different programs" run
-  — `appl_find(previous) = -1` every time).
+  — `appl_find(previous) = -1` every time). Accessory names are set once at
+  load (`pstart` → `p_nameit`, `gempd.c:110-121`) and stay for the session, so
+  `appl_find("ACCNAME ")` returns the accessory's pid (2…) for as long as the
+  AES runs, whether or not it is still alive/blocked.
+
+### Pid assignment, accessories, and a failed load (A113, 2026-10-17)
+
+Source-read this session: `geminit.c:236-257,805-894`, `gempd.c:26-121`,
+`util/gemdos.c:29-45` (`pgmld`).
+
+1. **Order in `gem_main`.** `count_accs()` fills `acc[].name` in directory
+   order (`dos_sfirst`/`dos_snext` over `\*.ACC`, at most `NUM_ACCS = 6`;
+   `0` if `BOOTFLAG_SKIP_AUTO_ACC`, `geminit.c:264-282`); `num_accs` descriptors
+   are `dos_alloc_anyram`'d and zeroed — **if that allocation fails, `num_accs`
+   is reset to 0** (`:810-817`); `totpds = num_accs + 2` (`:819`); the init loop
+   sets `p_pid = i` for **every** descriptor, top-down (`:851-877`);
+   `curpid = 0; rlr->p_pid = curpid++` leaves `curpid == 1` (`:875-876`);
+   `iprocess("SCRENMGR", ctlmgr)` → `pstart` → `getpd()` takes `curpid == 1`
+   (`:888`, `gempd.c:60-70`); only **after** that does `aes_run_rom_program(
+   accdesk_start)` (`:894`) run `run_accs_and_desktop`, whose `load_accs`
+   (`geminit.c:687`) calls `load_one_acc` per name, in `acc[]` order.
+2. **Accessory pid = `2 + number of successful loads before it`**, not
+   `2 + directory index`. `getpd()` is called from `pstart` only
+   (`gempd.c:110-114`), and `load_one_acc` reaches `pstart` only when
+   `dos_open` succeeded (`ret >= 0`) **and** `pgmld` did not return `-1`
+   (`geminit.c:246-255`). `pgmld` returns `-1` when `Pexec(PE_LOAD, …)` fails
+   or `Mshrink` fails (`util/gemdos.c:33-43`). Same name order = load order =
+   pid order for the survivors.
+3. **A failed load consumes no pid and leaves no trace but a dead
+   descriptor.** `curpid` is not advanced, so the next successful accessory
+   takes the pid the failed one would have had. The trailing descriptor(s)
+   that are never handed out keep the state of the init loop: `p_pid = i`
+   (their index), `p_name` = 8 blanks (`geminit.c:866`), empty queue,
+   `p_flags = 0` (`bzero`, `:816`), never put on `drl`, no `psetup`. Consequences, all from
+   `fpdnm`'s lack of a liveness test (`gempd.c:38-57`): such a pid still
+   resolves for `appl_write`/`appl_read` (the write succeeds into a queue
+   nobody reads; the 9th 16-byte message blocks the writer for good), the
+   all-blank name `"        "` resolves in `appl_find`, and `wait_for_accs`
+   (`geminit.c:599-628`) finds a descriptor without `AP_MESAG`/`AP_ACCLOSE`
+   ever set and therefore runs its full `WAIT_TIMEOUT` loop before giving up
+   (inference from reading the loop; not measured). Whether the pgmld-failed
+   case that has *already* loaded memory (`Mshrink` failure after `Pexec`)
+   leaks that memory is not analysed here.
+4. **`pid >= totpds`** (e.g. `appl_write(4, …)` with two accessories loaded):
+   `fpdnm` returns `NULL`, `aqueue` then dereferences `p->p_qindex`
+   (`gemqueue.c:94,97,99`) — undefined behaviour, **not** a `0` return (see
+   "What `appl_write` returns" below). Any `0` a NewTOS gives here is a
+   NewTOS safety choice, not EmuTOS behaviour.
+5. **`menu_register` reports the menu id, not the pid.** `mn_register(pid,
+   pstr)` (`gemmnlib.c:789-816`) uses `pid` only for the test `pid >= 0`; the
+   owner stored is `desk_ppd[openda] = rlr` (`:807`) and the return value is
+   `openda`, the slot index `0..NUM_ACCS-1` (`:805-811`), or `-1`. It does not
+   resolve or report the AES pid.
+6. **`msg[1]` is the sender's `rlr->p_pid` at send time** (`ap_sendmsg`,
+   `gemwmlib.c:851-862`): 1 for messages posted from `ctlmgr`
+   (`gemctrl.c:84,125`), the *caller's* pid for messages posted inside the
+   caller's own trap — `WM_REDRAW` from its own `wind_open`/`wind_close`/
+   `wind_set` (`gemwmlib.c:904`), `AC_CLOSE` from `mn_cleanup` inside the
+   exiting program's `appl_exit` (`gemmnlib.c:747`) = pid 0 for a chain
+   member, ≥ 2 if an accessory itself triggers the redraw. The non-queued
+   `WM_ARROWED` synthesised by `ev_mesag` carries the **reader's** pid
+   (`gemevlib.c:105`).
+7. **`WF_OWNER`** returns `pwin->w_owner->p_pid` in `int_out[1]` and the
+   is-open flag in `int_out[2]` (`gemwmlib.c:1579-1582`, `poutwds` =
+   `&WM_OX`, `gemsuper.c:343`). `w_owner` is `rlr` at `wind_create`
+   (`w_setup(rlr, i, kind)`, `gemwmlib.c:1377`), so a window created by an
+   accessory reports **that accessory's pid (≥ 2)**; the desktop window
+   (`DESKWH`) is owned by whoever ran `wm_init` (`ppd = rlr`,
+   `gemwmlib.c:1250-1255,1290`), i.e. pid 0 in the normal boot/launch path.
 
 ### NewTOS contract, in two layers
 
@@ -101,9 +175,12 @@ provision enough slots.
 
 **(b) Reported value (external — what a program reads back).** The *value*
 `appl_init`/`ap_id` (`global[2]`), `appl_find`, `wind_get(WF_OWNER)`
-(`int_out[1]` = `WM_OX`, `include/aesdefs.h:509`), and `msg[1]` of the
-16-byte standard message report is **computed from the identity**, not equal
-to it, and follows EmuTOS's numbers:
+(`int_out[1]`, `gemwmlib.c:1580`), the `appl_write`/`appl_read` target, and
+`msg[1]` of the 16-byte standard message report is **computed from the
+identity**, not equal to it, and follows EmuTOS's numbers (rewritten
+2026-10-17, A113: the previous text knew no accessories and gave target 0 the
+meaning "the currently running client"; both were wrong against
+`geminit.c:236-257,851-877`, `gempd.c:38-70`):
 
 - **0** for every member of the application chain — the kernel-context
   desktop, the program it launches, and any `Pexec` child at any nesting
@@ -112,39 +189,75 @@ to it, and follows EmuTOS's numbers:
   [`scrap-shell.md`](./scrap-shell.md) (2026-09-01) for desktop/first-app;
   this extends it to the full nested-`Pexec` chain (`geminit.c:850-877`,
   `gemshlib.c:572`).
-- **1** only as a **sender stamp** on `msg[1]`, written by `ap_sendmsg`
-  (`gemwmlib.c:851-863`, `ap_msg[1] = rlr->p_pid`) while running as the
-  Screen Manager (`rlr == ctl_pd`) — there is **no NewTOS process** behind
-  this value; it is a constant the poster writes. Exact call sites, all
-  inside `gemctrl.c`'s `ctlmgr()` context via `ct_msgup`/`handle_arrow_msg`:
-  `WM_TOPPED` (`:178`), `WM_CLOSED`/`WM_FULLED` (`:210-220`), `WM_SIZED`
-  (`:259`), `WM_MOVED` (`:238`), `WM_HSLID`/`WM_VSLID` (`:300-314`),
-  `WM_UNTOPPED` (`:151`), `AC_OPEN`/`MN_SELECTED` (`:346-367`), and the
-  **queued** case of `WM_ARROWED` (`:125`, taken when the target is
-  `WAITIN`).
-- **0** for `WM_REDRAW`: `w_redraw`'s `ap_sendmsg` (`gemwmlib.c:904`) runs
-  from `draw_change`, called synchronously from `wm_open`/`wm_close`/
-  `wm_set(WF_CURRXYWH)` (`gemwmlib.c:1426,1453,1612`) — i.e. from *inside*
-  the calling application's own `wind_open`/`wind_close`/`wind_set` trap, so
-  `rlr` is the application (pid 0) at send time, not the Screen Manager.
-- **0**, exceptionally, for a **non-queued** `WM_ARROWED`: when
-  `handle_arrow_msg` finds the target not currently `WAITIN`, it stashes the
-  action directly on the target's `p_msg` instead of sending
+- **1** is the Screen Manager, `SCRENMGR` (`geminit.c:888`, `getpd` →
+  `curpid == 1`, `gempd.c:60-70`). In EmuTOS a genuine `AESPD` that is
+  addressable: `appl_find("SCRENMGR")` = 1 and `appl_write(1, …)` queue into
+  it. In NewTOS no schedulable process sits behind it (H02, `ctl_pd` as a
+  flag); it is the **sender stamp** on `msg[1]`, written by `ap_sendmsg`
+  (`gemwmlib.c:851-862`, `ap_msg[1] = rlr->p_pid`) while `rlr == ctl_pd`, plus
+  the name `appl_find` answers and the `appl_write` target that is not an
+  application. Exact call sites, all inside `gemctrl.c`'s `ctlmgr()` context
+  via `ct_msgup`/`handle_arrow_msg`: `WM_TOPPED` (`:178`),
+  `WM_CLOSED`/`WM_FULLED` (`:210-220`), `WM_SIZED` (`:259`), `WM_MOVED`
+  (`:238`), `WM_HSLID`/`WM_VSLID` (`:300-314`), `WM_UNTOPPED` (`:151`),
+  `AC_OPEN`/`MN_SELECTED` (`:346-367`), and the **queued** case of
+  `WM_ARROWED` (`:125`, taken when the target is `WAITIN`).
+- **2, 3, … = desk accessories**, in successful-load order (**not** directory
+  index — a failed load frees its pid for the next one; see "Pid assignment,
+  accessories, and a failed load" above). `appl_init` of an accessory returns
+  and stores its own pid in `global[2]`; `appl_find("ACCNAME ")` returns it
+  from any caller; `appl_write(pid, …)` from any caller (chain, accessory,
+  another accessory) delivers into **that accessory's** queue and no other;
+  `WF_OWNER` of a window the accessory created is its pid; `msg[1]` of a
+  message posted inside the accessory's own trap (e.g. its `WM_REDRAW`) is its
+  pid.
+- **`msg[1]` of `WM_REDRAW` is the pid of whoever's trap posts it**:
+  `w_redraw`'s `ap_sendmsg` (`gemwmlib.c:904`) runs from `draw_change`, called
+  synchronously from `wm_open`/`wm_close`/`wm_set(WF_CURRXYWH)`
+  (`gemwmlib.c:1426,1453,1612`) — i.e. from *inside* the caller's own
+  `wind_open`/`wind_close`/`wind_set` trap, so `rlr` is the caller (0 for a
+  chain member, ≥ 2 for an accessory), not the Screen Manager. Likewise
+  `AC_CLOSE` from `mn_cleanup` carries the pid of the program running
+  `appl_exit` (`gemmnlib.c:747`).
+- **Exceptionally the reader's own pid** for a **non-queued** `WM_ARROWED`:
+  when `handle_arrow_msg` finds the target not currently `WAITIN`, it stashes
+  the action directly on the target's `p_msg` instead of sending
   (`gemctrl.c:129-133`); the target's own later `evnt_mesag` call then
-  synthesizes the message itself via `ev_mesag`, with `msg[1] = rlr->p_pid` —
-  the **reader's own** pid, 0 (`gemevlib.c:100-117`; see
-  [`event.md`](./event.md) §`evnt_mesag`). The same message id therefore
-  carries **1** or **0** in `msg[1]` depending on whether the target was
-  already blocked waiting when the arrow was clicked.
-- **`appl_write`/`appl_read` target 0** resolves to **the currently-scheduled
-  client** (the innermost active chain member) — the NewTOS analogue of
-  `fpdnm(NULL, 0)` always finding `D.g_int[0]`, because at most one chain
-  member is ever actively trapping into the AES at a time (a `Pexec` parent
-  is blocked, for the same reason EmuTOS's caller is).
-- **`WF_OWNER`** (`wind_get`, `int_out[1]`): **0** for every application
-  window (`w_owner->p_pid`, `gemwmlib.c:1580`; `w_owner` set to `rlr` by
-  `w_setup` at `wind_create` time, `gemwmlib.c:1377`, and for the desktop
-  window by `wm_init`, `gemwmlib.c:1255,1290`).
+  synthesizes the message itself via `ev_mesag`, with `msg[1] = rlr->p_pid`
+  (`gemevlib.c:100-117`; see [`event.md`](./event.md) §`evnt_mesag`). The same
+  message id therefore carries **1** or the reader's pid (0 for the chain)
+  depending on whether the target was already blocked waiting when the arrow
+  was clicked.
+- **`appl_write`/`appl_read` target** = `fpdnm(NULL, AP_RWID)`
+  (`gemsuper.c:102-105`, `gempd.c:38-57`): the descriptor whose `p_pid` equals
+  the id, with **no liveness test**. Target **0** is `D.g_int[0]`, the chain's
+  one shared queue, **whoever the caller is** — an accessory writing to 0
+  reaches the chain; the chain writing to 0 reaches itself. It is *not* "the
+  currently running client". (EmuTOS has a single queue for the whole chain;
+  how NewTOS maps 0 onto its per-slot identities is an implementation choice,
+  see the NewTOS note below.)
+- **`WF_OWNER`** (`wind_get`, `int_out[1]`): the owner's pid —
+  `w_owner->p_pid` (`gemwmlib.c:1580`), `w_owner` = `rlr` at `wind_create`
+  time (`w_setup`, `:1377`): **0** for every window created by a chain
+  member, **the accessory's pid** for one created by an accessory; the desktop
+  window is owned by whoever ran `wm_init` (`:1255,1290`), pid 0 in the
+  normal path.
+
+> **NewTOS state vs. this contract (A113, 2026-10-17 — Auditor measurement
+> `measurements/measurement-2026-10-17-a113-a114/serial/idprobe1.log`).**
+> What is written above is the EmuTOS contract. `tos-api/src/aes/appl.rs`
+> (`reported_pid`, `identity_of`, `:214-238`) still reports 0 for every client
+> including accessories and resolves target 0 to the *caller*; the measured
+> consequences are ap_id 0/0/0 for ACCX/ACCY/MAIN, `appl_find` 0 for both
+> accessories, `appl_write(2|3)` → 0 with nothing delivered, `msg[1] = 0` in an
+> accessory's `WM_REDRAW`. That is a **defect against this spec** (A113), not an
+> allowed deviation. **Inference, not EmuTOS source:** the identity ↔ value
+> mapping a NewTOS needs is `reported_pid` = 2 + the accessory's position among
+> the *successfully loaded* accessories (else 0 for GEMDOS slots/kernel
+> context, 1 only as a stamp for SCRENMGR) and `identity_of(0)` = the
+> **innermost live chain member that is not an accessory**, which is the
+> per-slot analogue of "one shared queue"; `identity_of(0)` = "the caller" is
+> only right while the caller is itself a chain member.
 
 ### Consequences for A39 / A28 / H02 / H05 (reasoned, not re-derived here)
 
@@ -567,24 +680,31 @@ that EmuTOS's `appl_write` has no error return to check for in the common
 > not only from EmuTOS. Fixing it is a `tos-api` code change — Developer
 > work, not this analysis.
 >
-> **`appl_write` (12) keeps its full-queue `0` return, and for a different
-> reason than "no scheduler exists" (a scheduler now exists).** EmuTOS's
-> write-block is only safe because a *different*, independently-scheduled
-> process eventually reads the full target queue (established above: every
-> EmuTOS read targets `rlr`, never a foreign id). NewTOS's cooperative kernel
-> has, at any instant, at most **one** genuinely-scheduled AES client
-> identity (`appl::identity_of`, `appl.rs:220-234`: "at most one of them is
-> running — a `Pexec` parent is blocked while its child runs, the desktop
-> while a launched program runs"); `SCRENMGR_PID` is a stamp a poster writes,
-> not a second schedulable identity (`appl.rs:199-205`, see "AES process
-> identity and pid" above, H02). There is consequently no candidate that
-> could ever perform the draining read while a writer sleeps, and the
-> sleep/wake substrate has no wake-class key for "a queue gained room" at
-> all — only `WAIT_MESG` ("a queue gained a *message*", the reader's
-> condition, `sched.rs:48-50,61-69`). Blocking on write today would hang the
-> kernel's one execution context on *every* full-queue write, self-targeted
-> or not — strictly worse than EmuTOS, which only hangs on the self-targeted
-> case (above). The `pd.rs:160-167` comment's own justification — "a full
+> **`appl_write` (12) keeps its full-queue `0` return — rationale revised
+> 2026-10-17 (A113 review).** EmuTOS's write-block is only safe because a
+> *different*, independently-scheduled process eventually reads the full target
+> queue (established above: every EmuTOS read targets `rlr`, never a foreign
+> id). The A75 text claimed NewTOS has "at most **one** genuinely-scheduled AES
+> client identity" (`appl::identity_of`, `appl.rs:220-234`). **That premise no
+> longer holds for the cross-process case:** since SYSACC/ACC02-ACC05 (accepted
+> on the Pi) desk accessories run as cooperatively scheduled AES clients with
+> their own queue and their own `evnt_mesag`/`evnt_multi` wait loop, i.e.
+> exactly the "other process that eventually reads its own queue" EmuTOS relies
+> on; a writer blocked on an accessory's full queue *could* be drained. What is
+> still true as of this writing (read, not re-verified exhaustively): the
+> sleep/wake substrate has `CLASS_INPUT`, `CLASS_MESG`, `CLASS_TIMER`,
+> `CLASS_MULTI` (`sched.rs:45-121`) and no wake-class for "a queue gained
+> room"; and a chain member writing to its **own** queue (pid 0 from the chain,
+> or any self-targeted write) has no second reader — EmuTOS hangs there
+> too. `SCRENMGR_PID` remains a stamp, not a schedulable identity (H02);
+> EmuTOS's `ctlmgr` *does* read its own queue (`ev_multi` with `MU_MESAG` under
+> `CONF_WITH_3D_OBJECTS`, `gemctrl.c:445-448`, `hctl_msg` at `:480-483`), so a
+> write to pid 1 is drainable there but has no reader in NewTOS. The deviation
+> therefore stays defensible for self- and SCRENMGR-targeted writes, but
+> "no candidate could ever perform the draining read" is no longer a correct
+> statement of the whole case.
+>
+> The `pd.rs:160-167` comment's own justification — "a full
 > queue is unreachable in the desktop's actual usage" — is asserted, not
 > measured (already flagged as unproven by the 2026-07-22 audit,
 > `docs/analysis/aes-audit/p1-appl-pd-dispatch.md` AUD-P1-006); it narrows
@@ -650,7 +770,19 @@ falls to the `default` arm and returns `-1` (see [`_dispatcher.md`](./_dispatche
 **Behaviour.** `ap_exit` tears the application down (`gemaplib.c:252-260`):
 
 1. `wm_update(BEG_UPDATE)` — lock the screen against redraws.
-2. `mn_cleanup()` — drop the app's menu bar if it owns one.
+2. `mn_cleanup()` (`gemmnlib.c:740-758`) — **does not touch the menu bar**
+   (corrected 2026-10-17, A113; the old wording "drop the app's menu bar if it
+   owns one" was wrong: `gl_mntree`/`gl_mnppd` are written only by `mn_bar` and
+   `fm_own`, see [`menu.md`](./menu.md) "A dead client's menu bar"). It does
+   two things: (a) for each `i < NUM_ACCS` with `desk_ppd[i] != NULL` — every
+   accessory slot filled by `menu_register` — it posts `AC_CLOSE` to that
+   accessory's `AESPD` via `ap_sendmsg(appl_msg, AC_CLOSE, desk_ppd[i], i, 0,
+   0, 0, 0)` (`:745-748`), i.e. `msg[1]` = the pid of the program running
+   `appl_exit`, `msg[2]` = 0, `msg[3]` = the accessory's **menu id** `i` (the
+   `menu_register` return value, not its pid); an accessory that never called
+   `menu_register` gets no `AC_CLOSE` here; (b) with `CONF_WITH_MENU_EXTENSION`,
+   frees `gl_submenu` (`:750-756`). `ap_sendmsg` → `ap_rdwr(MU_SDMSG, …)` can
+   itself block on a full accessory queue (see "Blocking behaviour").
 3. `wait_for_accs(AP_ACCLOSE)` — block until every desk accessory has seen the
    `AC_CLOSE` message (`geminit.c:599-628`; polls the DA descriptors' flags
    with a `WAIT_TIMEOUT = 500` loop cap). **"Block" is a round-robin yield, not
@@ -932,8 +1064,8 @@ returns are pid / 0 / 1 / -1 only.
   opcode 17 is an unsupported opcode (`-1`).
 - **`ap_count = 1`** is hard-coded (`gemsuper.c:93`) — EmuTOS reports a single
   concurrent application even though it runs desk accessories as additional AES
-  processes. NewTOS's single-AES-app (desktop) model matches this reported
-  value naturally.
+  processes; NewTOS reports the same constant 1 (accessories are *not*
+  reflected in `ap_count`, `gemsuper.c:93`).
 - The tape functions (`appl_tplay`/`appl_trecord`) are configuration-
   independent in EmuTOS but depend on the input/fork subsystem NewTOS has not
   built.
@@ -962,10 +1094,16 @@ returns are pid / 0 / 1 / -1 only.
 - **Single-app vs. multi-app (the contract split).** EmuTOS runs the desktop
   plus up to `NUM_ACCS` desk accessories as concurrent AES processes, but
   reports `ap_count = 1`. The **reported value 1** and the **pid-as-ap_id**
-  model are *contract*; the concurrent-DA scheduling is *reference*. NewTOS's
-  cooperative single-AES-app (desktop) bring-up satisfies the contract with one
-  process; DA concurrency can be added later without changing what `appl_init`
-  reports. Open question flagged in the report.
+  model are *contract*; the concurrent-DA scheduling is *reference*.
+  **Corrected 2026-10-17 (A113):** the earlier wording — "NewTOS's cooperative
+  single-AES-app bring-up satisfies the contract with one process; DA
+  concurrency can be added later *without changing what `appl_init` reports*" —
+  is false. Accessories now run (SYSACC), and what `appl_init` reports **is**
+  the visible half of that concurrency: an accessory must report its own pid
+  (2, 3, … in successful-load order) and be addressable by `appl_find`/
+  `appl_write`/`WF_OWNER`/`msg[1]` (`geminit.c:236-257`, `gempd.c:60-70`; see
+  "Pid assignment, accessories, and a failed load"). The scheduling is
+  reference; the pid space is contract.
 - **`ap_id` ≠ the Phase-06 process id. Correction (2026-09-20, A62/A56):**
   this line previously equated the *reported* `ap_id` with the GEMDOS
   process id (i.e. "Slot + 1"), which is not what EmuTOS reports — EmuTOS's
