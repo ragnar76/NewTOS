@@ -1,0 +1,68 @@
+measurement-2026-10-17-a112-test -- Tester: independent regression test of the uncommitted A112 fix (TASK/A112.md) against HEAD d21a6b21.
+Host macOS, QEMU -M raspi4b only (-append serial=on [+ memprot=off|strict]); no qemu-virt run, no SD card, no Pi, nothing under /Volumes/BOOT*/SYSTEM/TOOLS.
+No product code touched, nothing committed/stashed/checked out. Shared tree unchanged (git status as before + the two untracked run dirs). Scratch = session
+scratchpad .../scratchpad/t112 (trees, cards, kernels; trees/ and img/ deleted afterwards); per-run cards = APFS clones (cp -c), deleted after each run;
+one QEMU at a time. The a112-fix run directory was only read (its method/ scripts were COPIED into method/ here, so every output lands in this directory).
+
+WORKING TREE UNDER TEST: `git diff HEAD` + untracked tos-api/tests/aes_a112_wake_conditions.rs, sha256 7e76cac46d5be57989355b3ce7193f3fda3c9ebad9a4a21b4dc82fa4465ad84c
+(git diff HEAD, then each untracked file under tos-api/kernel: name + content). green = rsync copy of that tree; head = `git archive d21a6b21`.
+Both built FRESH in own scratch trees (own target dir): cargo xtask build --board rpi4 --release, SOURCE_DATE_EPOCH=1792152000
+  plain-green  2ed00ec93458eb587dd30a02d01e03476e80f50a0a0fae35b89700fe86ec1f01   warnings tos-api 64 / kernel 94, 0 errors  (checks/build-plain-green.log)
+  plain-head   8bf363c33a4cf5f06acba847e92a39548ea607412b228d7ecdc2790180c21ba6   warnings tos-api 64 / kernel 94, 0 errors  (checks/build-plain-head.log)
+  kd-green     22a102b9...  kd-head d0f456b8...  (injector kernels, same trees + tools/inject-arm.py; full list: checks/sha256-kernels-and-programs.txt)
+  (plain-green differs from the a112-fix run's green image 14e7c3bd...: other tree path / scratch build; same warning counts; behaviour below matches that run.)
+
+1. RUN-ALL (method/run-all.sh = copy of the a112-fix one; plain-green kernel; serial/f1-green.log f1b f2 f3, serial/probes-green.sha256)
+   Probe binaries sha256 identical to the fix run (diff of probes-green.sha256: empty). Result vs the expectations in a112-fix/RUNINFO.TXT:
+   f1  ACCA ticks 4/s for the whole run, 236 lines 15.33-74.69 s; MAIN's 30 loops return at 1 Hz 18.13-47.24 s, "loop finished"      PASS (expected 235 ticks, 18.13-47.24)
+   f1b MAIN loops 1..30 at 1 Hz (0x10 then 0x20), ACCD ticks every 4.0 s in between (19.08 .. 47.09 ...)                              PASS
+   f2  MAIN evnt_timer(9000) returns at 24.15 (9.0 s after the accessory windows), cover window: ACCB (MU_MESAG) WM_REDRAW w3=1 and ACCC (evnt_mesag) w3=2, both 24.15 s   PASS
+   f3  POLL: ACCD ticks interleaved (every 1.0 s during 17.62-27.05), 250x evnt_timer(0) = 21.68 -> 26.66 = 4.98 s                   PASS
+   0 [EXC]/PANIC in all four. Line counts equal to the fix run's green logs (479/168/152 identical, f3 534 vs 531). RED (HEAD) was NOT re-run; the red expectation is the
+   fix run's serial/*-red.log (not re-verified here).
+
+2. APITEST (method/api-build.sh + api-card.sh + api-run.sh, copies; APITEST.NCP rebuilt from the tree (9e4ca9e6..), PTERMCH 30fa331e.., DTACHILD; plain-green kernel)
+   memprot on / off / strict:  TOTAL 109 / 0 / 5 each; 124 result lines each, 0 differing from the fix run's api-green-on and api-red-on (HEAD) lines; the 5 SKIPs = BC26-30
+   ("no key pressed"); 0 [EXC]/PANIC; screendumps screendumps/api-green-{on,off,strict}.png (not evaluated beyond the TOTAL line). HEAD APITEST not re-run (baseline 109/0/5 given).
+
+3. INTERACTIVE, injector (tools/inject-arm.py T10/T16 in a scratch tree; scripts/*.spec -> method/gen.py -> scripts/*.script; geometry from calibration dumps
+   of the plain kernel; pointer 1:1 per desk62 cal). Kernels kd-head / kd-green differ ONLY in the tree. Matrix (method/matrix.sh, drive.sh, steps.sh):
+   screendumps keyed to the injector's own feed lines (marks), 0.8 s after the last byte of each step; head vs green compared pixel by pixel (method/pixcmp.py,
+   checks/pixcmp-*.txt) and the green dumps viewed (contact sheets).
+   Script S1 (18 dumps): double-click drive C (window C:\), double-click APPS (folder), click QED row (select), View menu hover + "Show as icons" + back to
+   "Show as text", Options menu hover + "Desktop configuration..." dialog + Return, Desk -> "Desktop info..." dialog + Return, close box (window goes up a level), reopen drive
+   window, Desk -> item 3, Return, then Desk menu HELD OPEN 3000 ticks (15 s guest) and closed by a click outside.
+   a) card desk   (NEWDESK, no accessory)               S1: 18/18 dumps BYTE-IDENTICAL head vs green
+   b) card acc    (C:\ACC\SYSACC.NAC; Desk item 3 opens "NewTOS System Information", Return closes it; viewed)   S1: 18/18 BYTE-IDENTICAL
+   c) card td     (TeraDesk by #Z; launch:DESKTOP script: drive window, File menu hover, click outside, Ctrl-W, Ctrl-Q -> "Quit / Shutdown Options" dialog, click Quit; then desktop S1 after the
+                  restart)  24/24 BYTE-IDENTICAL. Desktop comes back and responds (viewed: t5-after-quit, S1 afterwards).
+      card qed    (QED by #Z; launch:QED script: Datei menu hover, click outside, Ctrl-Q; then desktop S1)  20/21 identical; q3-ctrl-q differs in the POINTER SPRITE POSITION only
+                  (diff bbox = the 97-pixel pointer, 4 images compared): the dump is taken wall-clock 0.8 s after the last QED byte, when the desktop-arm script S1 (the injector kernel
+                  always carries it) is already/not yet moving the pointer. Guest time is identical ("desktop armed" hz_200 6451 vs 6452), and a repeat run pair shows
+                  the green pointer in yet another place (rep: head 2x identical, green 2x different) = dump-timing race, not state. Not a defect; the 20 later dumps are identical.
+   d) card accA   (C:\ACCA.NAC = probe accessory, evnt_multi(MU_TIMER,250) + prints "[ACCA] ... n=" via Cconws)
+      Menu held open 15 s guest (h0-hold-start -> h1-hold-end, serial lines counted between the injector's feed lines):
+        HEAD: 0 [ACCA] lines (n=001C -> 001C);  GREEN: 0 [ACCA] lines (n=0036 -> 0036)  => the sanctioned deviation (COMPATIBILITY.md "An application does not run while a drop-down is open")
+        is unchanged: the accessory does not run while the drop-down is open, in both.
+      ACCA lines per script phase (checks/accA-ticks-per-phase-*.txt): totals HEAD 33, GREEN 59. HEAD: ACCA ticks stop after the folder open (0 lines in w3..a2 except 1) and
+        only run again in the idle phases; GREEN: ACCA keeps ticking ~4/s whenever the desktop idles (6-7 per 300-tick pause) = F1 working with a real desktop. With the Desktop
+        configuration / info dialog open: 1 line in both (unchanged). With a menu open: 0 in both.
+      Screendumps of this card all differ (18/18) because ACCA writes its own console text to the screen (fbcon scroll over the GEM screen: text lines with different n, a garbled
+        menu bar in green h0 where more lines were printed). That is the probe's console output, which HEAD cannot reproduce at the same n; not a UI comparison. The UI comparison is cards a-c.
+   In all 10 matrix runs + 4 repeats: 0 [EXC], 0 PANIC, no hang (every run reached its last mark; every launched program returned: QED "exited with rc=0", TeraDesk quit, "starting desktop NEWDESK", "[desk] desktop up").
+   Card-content artefact (not a finding): on cards td/qed the S1 double-click on the 2nd row hits a different entry after TeraDesk/QED created files in C:\ (td w3: "No application is installed for this document type" alert) -- identical in head and green.
+
+4. SERIAL VOLUME  (lines = serial lines, sw = "[sched] switch" lines; each switch prints 2 "[sched]" lines, QUIRK-001 bracket)
+   interactive (same script, same card):   desk head 236/0 green 236/0 | acc head 246/4 green 260/12 | accA head 349/39 green 385/45 | td head 319/0 green 319/0 | qed head 291/0 green 291/0
+   run-all probes (red from the fix run's logs, green mine):  f1 112/4 -> 479/77 | f1b 82/3 -> 168/32 | f2 109/8 -> 152/24 | f3 489/137 -> 534/160
+   APITEST: head(fix-run log) 336/0, green 336/0 in all three modes.
+   The probe growth is mostly more events (ACCA/ACCD now tick, MAIN's loops return); the interactive growth (acc +8 lines, accA +6 switches) is the accessory process being scheduled.
+   No run shows switch spam on an idle desktop (desk/td/qed: 0 switches).
+
+VERDICT: PASS for everything run (items 1, 2, 3a-c, 3d menu-hold, 4). No regression found. One open dump-timing race (qed q3, pointer only) and one probe-output
+artefact (accA screens) explained above. NOT RUN / OPEN: qemu-virt board, HEAD APITEST and run-all red re-runs, memprot=verify / asid modes, SYSACC dialog buttons, QED beyond menu/quit, TeraDesk beyond window/menu/quit,
+real Pi 4 (cache-coherence class, QUIRK-001, real USB/HID input), host cargo tests / clippy (the fix run did them: 1385/0/1, 20/0/0).
+
+Files: RUNINFO.TXT; method/ (run-all.sh, runts.sh, mkimg.sh, evprobe.c + r_*.c = copies of a112-fix; api-*.sh copies; env.sh, build-plain.sh, build-inj.sh, mkcard.sh, gen.py, steps.sh, run.sh,
+drive.sh, matrix.sh, pixcmp.py, phase-count.py, sheet.py, mdrive.py/fx.py/mode.sh/make-scratch.sh copies of desk43-u10-test, desk.inf/z-*.inf/TERADESK.INF cards); scripts/ (s1/td/q .spec + generated .script + .marks);
+serial/ (f1,f1b,f2,f3 green; api-green-*; <card>-<side>-serial.log); screendumps/ (201); checks/. Images/kernels not kept, sha256 in checks/.
