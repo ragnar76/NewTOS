@@ -10,3 +10,4 @@ pub mod emmc_xfer;
 pub mod framebuffer;
 pub mod mailbox;
 pub mod pl011;
+pub mod pm;

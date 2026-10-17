@@ -48,6 +48,7 @@ pub mod ikbd;
 pub mod input_gate;
 pub mod key_repeat;
 pub mod keymap;
+pub mod reset;
 pub mod shell;
 pub mod selftest_aes;
 pub mod selftest_bios;

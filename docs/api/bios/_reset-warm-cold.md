@@ -261,3 +261,32 @@ OSHEADER-Einsprung (3), `memvalid*`/`resvalid`/`resvector`-Konvention (1.3).
   ueberdeckt 0x424..0x427, `resvector`@0x42A ueberdeckt 0x42E..0x431
   (= `phystop` der Prozesskopie), `memval2`@0x43A ueberdeckt 0x43E..0x441.
   Nur relevant, wenn der Kern die Kopie je liest.
+
+## 6. Umsetzung (TASK/RST01, 2026-10-17; Stand §5 damit ueberholt)
+
+* **Tastenkombination:** `tos_api::bios::reset::reset_key` ist die Pruefung aus
+  §2 (Make-Code `0x53`, `shifty & (ALT|CTRL|LSHIFT) == ALT|CTRL`, RShift →
+  kalt); der Standard-`kbdvec` des Kerns (`kernel/src/ikbd.rs`, `decode_key`)
+  ruft sie als Erstes, fuer IKBD-Bytes aus jeder Quelle (USB-HID-Uebersetzer,
+  Injektor). Dafuer fuehrt der Decoder LShift und RShift jetzt als zwei Bits
+  (`docs/api/bios/0b-kbshift.md`).
+* **Neustart:** `kernel/src/reset.rs` — warm = kalt (Anwenderentscheidung 2):
+  Datencache per Set/Way leeren (ARM ARM D7.5.9.16.1), dann PM-Watchdog
+  (`kernel/src/drivers/bcm2711/pm.rs`, `docs/hardware/pm-watchdog-reset.md`).
+  `board-qemu-virt` hat keinen Mechanismus: Meldung, keine Wirkung.
+* **OSHEADER:** `reseth` (+0x04) und `os_res1` (+0x10) zeigen auf einen
+  Reset-Stub in Seite 0 (`0xA40`), der `Ssystem(S_NEWTOS_RESET = 2021, 0, 0)`
+  ruft (NewTOS-intern, `docs/api/gemdos/154-ssystem.md`). Warm/kalt nach den
+  Magics der Seite 0 des Aufrufers (`memchk`-Regel, §1.3). `os_entry` (+0x00)
+  bleibt 0: ein AArch64-Befehl mit `os_version` in den oberen 16 Bit liegt im
+  SVE-Kodierraum, kein Sprung moeglich (`tos-api/src/bios/reset.rs`).
+* **TeraDesk:** LP64-Breiten in `sdk/overlays/teradesk/main.c` (Entscheidung 4).
+* **„Taste nach dem Neustart noch gehalten“ (§2.1):** Der Watchdog-Neustart
+  setzt den ganzen SoC zurueck; Firmware und Kern starten neu, der Decoder
+  beginnt mit `shifty = 0`. Ein USB-Boot-Report meldet den *Zustand*: haelt der
+  Anwender Ctrl+Alt+Del ueber den ganzen Firmware- und Kernstart hinweg, sieht
+  der erste Report nach der Enumeration die Tasten als gedrueckt, und der Kern
+  startet erneut — wie ein neuer Tastendruck. Die IKBD-Eigenheit, gegen die
+  `ikbd_reset` sich wehrt (Controller sendet gehaltene Tasten ~100 ms nach
+  seinem Reset neu), gibt es auf diesem Pfad nicht; keine Abhilfe gebaut.
+* Belege: `measurements/measurement-2026-10-17-rst01/RUNINFO.TXT`.

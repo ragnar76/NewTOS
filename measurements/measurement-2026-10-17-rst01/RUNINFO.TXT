@@ -1,0 +1,47 @@
+measurement-2026-10-17-rst01 -- Developer run for TASK/RST01 (+ X04): PM-watchdog restart, Ctrl+Alt+Del / Ctrl+Alt+RShift+Del,
+OSHEADER reset entries (reseth/os_res1 -> page-0 reset stub -> Ssystem(S_NEWTOS_RESET=2021)), TeraDesk LP64 overlay (main.c).
+Base HEAD b8245e5c + the UNCOMMITTED RST01 working-tree files (method/build-kernels.sh copies them over `git archive`).
+Host macOS, QEMU 11.0.2, -M raspi4b, -append "serial=on [memprot=..]", one QEMU at a time, per-run APFS clones (cp -c) of
+64 MiB FAT16 cards (label RST1, never a real card), deleted after each run. Scratch: scratchpad .../rst01 (kernels, cards, programs; not kept).
+Not the authoritative verdict -- the Tester runs independently after this.
+
+1 WATCHDOG PROOF (before relying on it). kernel8-kbdw (injector armed on "[desk] desktop up": 0x1D 0x38 0x53 = Ctrl+Alt+Del)
+  a) with -no-reboot (how `cargo xtask run` and the tester scripts start QEMU): serial "[reset] keyboard Ctrl+Alt+Del (Warm) requested",
+     "[reset] PM watchdog full reset", then QEMU EXITS BY ITSELF, rc 0 (-no-reboot turns the guest reset into an exit).  serial/kbdw-noreboot-serial.log
+  b) without -no-reboot: the guest resets and boots the kernel image again ("NewTOS booting on rpi4" x3, hz_200 restarts at ~3000,
+     desktop up again; the re-armed injector resets it again, run stopped at the 2nd desktop).  serial/kbdw-reboot-serial.log,
+     screendumps/kbdw-reboot-second-boot-desktop.png
+  => raspi4b models the PM watchdog as docs/hardware/pm-watchdog-reset.md predicted (WDOG=PASSWD|1, RSTC=PASSWD|0x20).
+
+2 KEY CONDITION (EmuTOS ikbd.c:734-747) in QEMU, kernel8-kbd, -no-reboot (scripts/kbd.script):
+  Ctrl+LShift+Alt+Del -> no reset; Ctrl+Alt + Delete BREAK only (0xD3) -> no reset; Ctrl+Alt+RShift+Del -> "(Cold) requested" + QEMU exit.
+  serial/kbd-noreboot-serial.log. Host tests: tos-api/tests/bios_reset.rs (all 16 modifier combos x CAPS/HOME/INSERT, break code,
+  every other byte, stub encoding, Ssystem 2021 EINVAL/ERROR).
+  USB-HID path: qemu-virt (xtask's virt args, usb-kbd), QMP send-key ctrl+alt+delete -> "[reset] keyboard Ctrl+Alt+Del (Warm) requested",
+  "[reset] no restart mechanism on this board; ignored", QEMU keeps running, 0 EXC.  method/run-virt.py, serial/virt-cad-serial.log
+
+3 OSHEADER ENTRY via Supexec. method/rstprobe.c (mintlib + SDK <mint/osbind.h> Supexec overlay) as C:\AUTO\RSTPROBE.NCP, kernel8-plain:
+  sysbase 0x5C0, reseth 0xA40, os_res1 0xA40, insn@0xA40 0xD280FCA0 (mov x0,#2021); clears memvalid/memval2 (32-bit), Supexec(os_res1)
+  -> "[reset] OSHEADER reset entry (Cold) requested" + watchdog, QEMU exit; probe never prints RETURNED.
+  memprot default / strict / off: identical.  serial/probe-noreboot-, probe-memprot-strict-, probe-memprot-off-serial.log
+
+4 TERADESK "Reboot" (X04). DESKTOP.NAP rebuilt with sdk/overlays/teradesk/main.c (sha in checks/sha256-artifacts.txt), card td.img
+  (#Z autorun), kernel8-td armed launch:DESKTOP (scripts/tdr.spec: Ctrl+Q -> Quit dialog, click Reboot at (320,281)).
+  -no-reboot: quit dialog (screendumps/td-reboot-noreboot-q1-quit-dialog.png) -> click -> "[reset] OSHEADER reset entry (Cold) requested"
+  -> QEMU exit. No pc=0 panic. Cold = TeraDesk's 32-bit memvalid/memval2 clears reached page 0.  serial/td-reboot-noreboot-serial.log
+  without -no-reboot: restart, TeraDesk autoruns again.  serial/td-reboot-serial.log
+
+5 REGRESSION
+  cargo xtask test: 1418 passed / 0 failed / 1 ignored (baseline 1411/0/1; +6 bios_reset.rs, +1 loader unit test;
+    gemdos_ssystem_cpuinfo/sysinfo: "first free number" moved 2021 -> 2022)            checks/xtask-test-summary.txt
+  sdk/run-host-tests.sh: 20/0/0                                                           checks/sdk-host-tests.log
+  rustc warnings tos-api 64 / kernel 94 (rpi4 dev+release, qemu-virt dev) = baseline     checks/rustc-warnings.txt
+  clippy (--package kernel --no-default-features --features board-<b> --lib): tos-api 76 / kernel 125 both boards = baseline,
+    0 hits in new/changed code; clippy --package tos-api --tests: 0 hits in touched test files   checks/clippy-kernel-*.txt
+  tools/desk-drift-probe.sh: TOTAL 0
+  APITEST (same APITEST.NCP sha 9e4ca9e6 as X01), #Z autorun, BATCH: TOTAL 109/0/5, SUPER 17/0/0 in memprot default/strict/off,
+    0 EXC/PANIC.  serial/api-plain*-serial.log, screendumps/api-plain*-end.png
+
+NOT RUN / ONLY REAL PI 4: the real watchdog restart (source level Circle, not datasheet), firmware re-boot after it, USB keyboard
+re-enumeration with keys still held, real USB Ctrl+Alt+Del. qemu-virt release build not made (dev build + clippy only).
+Files: RUNINFO.TXT, method/, scripts/, serial/, screendumps/, checks/ (sha256-artifacts.txt). Kernels, cards, programs not kept.

@@ -301,6 +301,12 @@ impl Host for KernelHost {
         crate::vdi_backend::set_scanout_base(base)
     }
 
+    /// RST01: the OSHEADER reset entry's restart ([`crate::reset::restart`]).
+    /// Returns only on a board without a restart mechanism.
+    fn system_restart(&self, kind: tos_api::bios::reset::ResetKind) {
+        crate::reset::restart(kind, "OSHEADER reset entry");
+    }
+
     fn keyboard_shift_state(&self) -> u8 {
         crate::ikbd::shift_state()
     }

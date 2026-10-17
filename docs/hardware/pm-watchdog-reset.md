@@ -103,3 +103,15 @@ moeglich), Abfrage 2026-10-17:
 | Pi 4 bootet danach die Firmware neu | nur indirekt (Circle `reboot()`); nicht dokumentiert im Repo |
 | Datenblatt dokumentiert den PM | **nein** (komplett durchsucht) |
 | raspi4b modelliert den PM | online-Quelle master; installierte 11.0.2 ungeprueft; kein Lauf |
+
+## 5. QEMU-Lauf (TASK/RST01, 2026-10-17)
+
+Installiertes `qemu-system-aarch64 11.0.2`, `-M raspi4b`: die Folge aus
+`kernel/src/drivers/bcm2711/pm.rs` (`WDOG = PASSWD|1`, `RSTC = PASSWD|0x20`)
+loest einen Gast-Reset aus. Mit `-no-reboot` (so rufen `cargo xtask run` und die
+Tester-Skripte QEMU auf) **beendet sich QEMU** (rc 0) unmittelbar nach der
+Kernmeldung; ohne `-no-reboot` startet der Gast neu und bootet das Kernabbild
+erneut bis zum Desktop. Damit ist der raspi4b-PM nachgebildet (Abschnitt 3,
+Zeile „raspi4b modelliert den PM“: durch Lauf bestaetigt). Fuer die echte Pi 4
+bleibt die Quellenlage unveraendert (Circle, kein Datenblatt).
+Beleg: `measurements/measurement-2026-10-17-rst01/RUNINFO.TXT`.

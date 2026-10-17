@@ -1,0 +1,7 @@
+# RST01 keyboard combination, armed on "[desk] desktop up": Ctrl+Alt+Del -> warm reset (ikbd.c:742-745).
+400 0x1D
+410 0x38
+420 0x53
+430 0xD3
+440 0xB8
+450 0x9D

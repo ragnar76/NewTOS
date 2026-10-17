@@ -415,6 +415,87 @@ pub unsafe fn clean_invalidate_dcache_range(va: usize, len: usize) {
     unsafe { core::arch::asm!("dsb sy", options(nostack, preserves_flags)) };
 }
 
+/// Clean (write back) **every** data/unified cache level of this PE up to the
+/// Level of Coherence to the Point of Coherency, by set/way — ARM ARM
+/// (DDI 0487 M.d) D7.5.9.16.1 "Example code for cache maintenance
+/// instructions", transcribed instruction for instruction (`DC CSW` loop over
+/// `CLIDR_EL1` levels, `CCSIDR_EL1` sets/ways in the 32-bit format the
+/// Cortex-A72 — no FEAT_CCIDX — implements).
+///
+/// Used once, right before a whole-machine restart: the counterpart of
+/// EmuTOS `_flush_data_cache` in `warm_reset`/`cold_reset`
+/// (`bios/panicasm.S:105,133`). The ARM ARM restricts set/way maintenance to
+/// such power-down style uses (same section); it is not a coherency tool for
+/// a running system. Only the calling PE's caches are touched — the other
+/// cores sit in the firmware spin loop and hold no kernel data.
+///
+/// # Safety
+/// EL1. Clobbers `CSSELR_EL1`.
+pub unsafe fn clean_dcache_all() {
+    // SAFETY: system-register reads/writes and cache maintenance by set/way
+    // are permitted at EL1; the loop only computes set/way operands.
+    unsafe {
+        core::arch::asm!(
+            "mrs {clidr}, clidr_el1",
+            "and {loc2:w}, {clidr:w}, #0x07000000", // 2 x Level of Coherence
+            "lsr {loc2:w}, {loc2:w}, #23",
+            "cbz {loc2:w}, 5f",
+            "mov {lvl2:w}, #0",                     // 2 x cache level
+            "mov {one:w}, #1",
+            "1:",
+            "add {t:w}, {lvl2:w}, {lvl2:w}, lsr #1", // 3 x cache level
+            "lsr {ctype:w}, {clidr:w}, {t:w}",      // cache type for this level
+            "and {ctype:w}, {ctype:w}, #0x7",
+            "cmp {ctype:w}, #2",
+            "b.lt 4f",                              // no data/unified cache here
+            "msr csselr_el1, {lvl2}",               // select this level
+            "isb",
+            "mrs {ccsidr}, ccsidr_el1",
+            "and {t:w}, {ccsidr:w}, #7",            // log2(linelen) - 4
+            "add {t:w}, {t:w}, #4",                 // log2(linelen)
+            "ubfx {maxway:w}, {ccsidr:w}, #3, #10", // max way number
+            "clz {wpos:w}, {maxway:w}",             // bit position of the way
+            "lsl {way:w}, {maxway:w}, {wpos:w}",    // max way, aligned
+            "lsl {wdec:w}, {one:w}, {wpos:w}",      // way decrement
+            "2:",
+            "ubfx {set:w}, {ccsidr:w}, #13, #15",   // max set number
+            "lsl {set:w}, {set:w}, {t:w}",          // aligned
+            "lsl {sdec:w}, {one:w}, {t:w}",         // set decrement
+            "3:",
+            "orr {op:w}, {lvl2:w}, {way:w}",
+            "orr {op:w}, {op:w}, {set:w}",
+            "dc csw, {op}",                         // clean by set/way
+            "subs {set:w}, {set:w}, {sdec:w}",
+            "b.ge 3b",
+            "subs {way}, {way}, {wdec}",
+            "b.ge 2b",
+            "4:",
+            "add {lvl2:w}, {lvl2:w}, #2",
+            "cmp {loc2:w}, {lvl2:w}",
+            "dsb sy",
+            "b.gt 1b",
+            "5:",
+            "dsb sy",
+            "isb",
+            clidr = out(reg) _,
+            loc2 = out(reg) _,
+            lvl2 = out(reg) _,
+            one = out(reg) _,
+            t = out(reg) _,
+            ctype = out(reg) _,
+            ccsidr = out(reg) _,
+            maxway = out(reg) _,
+            wpos = out(reg) _,
+            way = out(reg) _,
+            wdec = out(reg) _,
+            set = out(reg) _,
+            sdec = out(reg) _,
+            op = out(reg) _,
+            options(nostack),
+        );
+    }
+}
+
 /// Clean (write back) the cache lines covering a **strided rectangle**:
 /// `rows` runs of `row_bytes` bytes, the first starting at `va` and each
 /// following one `stride_bytes` further on.

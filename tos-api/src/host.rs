@@ -121,6 +121,14 @@ pub trait Host: Sync {
         false
     }
 
+    /// Restart the machine — EmuTOS `warm_reset`/`cold_reset`
+    /// (`bios/panicasm.S:102-140`), reached from `Ssystem(S_NEWTOS_RESET)`,
+    /// the call the OSHEADER reset stub makes (TASK/RST01,
+    /// [`crate::bios::reset`]). Does not return on a host that can restart;
+    /// **returns** only where there is no restart mechanism (the default, a
+    /// hostless test, a board without one), and the caller reports `ERROR`.
+    fn system_restart(&self, _kind: crate::bios::reset::ResetKind) {}
+
     /// Advance the polled input sources once (keyboard/mouse bytes from
     /// the UART(s)), with interrupts briefly enabled. The AES event
     /// manager calls this while it polls for a wait condition: an

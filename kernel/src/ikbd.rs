@@ -33,7 +33,11 @@ use crate::key_repeat::KeyRepeat;
 use crate::sync::SpinMutex;
 
 // ── modifier state ────────────────────────────────────────────────────
-static SHIFT: AtomicBool = AtomicBool::new(false);
+// Left and right Shift are separate bits, as in EmuTOS' `shifty`
+// (`MODE_LSHIFT`/`MODE_RSHIFT`, `bios/ikbd.c:779-783,830-834`): the reset
+// combination tells them apart (RST01, `bios/ikbd.c:734-747`).
+static LSHIFT: AtomicBool = AtomicBool::new(false);
+static RSHIFT: AtomicBool = AtomicBool::new(false);
 static CTRL: AtomicBool = AtomicBool::new(false);
 static CAPS: AtomicBool = AtomicBool::new(false);
 static ALT: AtomicBool = AtomicBool::new(false);
@@ -241,6 +245,16 @@ const fn is_extended_mouse(code: u8) -> bool {
 }
 
 fn decode_key(raw: u8) {
+    // Keyboard warm/cold reset — EmuTOS `kbd_int`'s first test
+    // (`bios/ikbd.c:734-747`): the Delete make code with Ctrl+Alt and not
+    // LShift; RShift in addition is the cold reset. Before everything else,
+    // as there. Warm and cold both restart the machine for now (RST01
+    // decision 2; the warm start that keeps the sysvars is RST02). Only a
+    // board without a restart mechanism returns, and the key then goes on as
+    // a normal key, as when the combination does not match.
+    if let Some(kind) = tos_api::bios::reset::reset_key(raw, shift_state()) {
+        crate::reset::restart(kind, "keyboard Ctrl+Alt+Del");
+    }
     let make = raw & 0x80 == 0;
     let code = raw & 0x7F;
     // `CONF_WITH_EXTENDED_MOUSE` is `1` in the reference build
@@ -249,9 +263,7 @@ fn decode_key(raw: u8) {
     // them to `mousexvec(scancode)` and **returns** (`bios/ikbd.c:746-760`),
     // before the modifier bookkeeping, the ASCII translation and the key
     // queue, so none of the seven is ever seen as a key. EmuTOS places the
-    // block after its Ctrl-Alt-Del reset check, which NewTOS' decoder does not
-    // have; relative to everything the decoder *does* do, this is the same
-    // position. The **full** scancode (release bit included) is passed on; the
+    // block right after its Ctrl-Alt-Del reset check — as here. The **full** scancode (release bit included) is passed on; the
     // handler tells press from release by it.
     if is_extended_mouse(code) {
         tos_api::bios::vectors::mousexvec(raw);
@@ -260,7 +272,8 @@ fn decode_key(raw: u8) {
     match code {
         // Modifier makes and breaks only update the shift state; a running
         // key repeat continues (EmuTOS `bios/ikbd.c:778-801,825-870`).
-        SC_LSHIFT | SC_RSHIFT => SHIFT.store(make, Ordering::Relaxed),
+        SC_LSHIFT => LSHIFT.store(make, Ordering::Relaxed),
+        SC_RSHIFT => RSHIFT.store(make, Ordering::Relaxed),
         SC_CTRL => CTRL.store(make, Ordering::Relaxed),
         SC_ALT => ALT.store(make, Ordering::Relaxed), // AltGr for the DE layout
         SC_CAPS if make => {
@@ -335,11 +348,14 @@ pub fn poll_repeat() {
 /// The current keyboard shift-state bitmask, in BIOS `Kbshift` /
 /// VDI `vq_key_s` encoding (`MODE_*` bits, `include/biosdefs.h`):
 /// `0x01` right-shift, `0x02` left-shift, `0x04` ctrl, `0x08` alt,
-/// `0x10` caps-lock. The decoder tracks a single shift flag (it does not
-/// distinguish left/right), so a held shift reports the left-shift bit.
+/// `0x10` caps-lock — left and right Shift each on their own bit, as
+/// EmuTOS keeps them (`bios/ikbd.c:779-783,830-834`).
 pub fn shift_state() -> u8 {
     let mut m = 0u8;
-    if SHIFT.load(Ordering::Relaxed) {
+    if RSHIFT.load(Ordering::Relaxed) {
+        m |= 0x01; // MODE_RSHIFT
+    }
+    if LSHIFT.load(Ordering::Relaxed) {
         m |= 0x02; // MODE_LSHIFT
     }
     if CTRL.load(Ordering::Relaxed) {
@@ -358,13 +374,12 @@ pub fn shift_state() -> u8 {
 /// (`flag >= 0`). Mirrors EmuTOS storing `flag` into the single `shifty`
 /// byte (`bios/ikbd.c:150`): each modifier atomic is written from the
 /// matching `MODE_*` bit so a following [`shift_state`] reads the value
-/// back, and a later physical make/break still updates its own bit. The
-/// decoder tracks one shift flag, so either shift bit (`MODE_RSHIFT` /
-/// `MODE_LSHIFT`, `0x03`) sets it; bits 5-7 (`MODE_HOME`/`MODE_INSERT`/
-/// reserved) are TT/Falcon-era and not represented, so they do not
-/// round-trip (`docs/api/bios/0b-kbshift.md`).
+/// back, and a later physical make/break still updates its own bit. Bits 5-7
+/// (`MODE_HOME`/`MODE_INSERT`/reserved) are TT/Falcon-era and not
+/// represented, so they do not round-trip (`docs/api/bios/0b-kbshift.md`).
 pub fn set_shift_state(mask: u8) {
-    SHIFT.store(mask & 0x03 != 0, Ordering::Relaxed); // MODE_RSHIFT|MODE_LSHIFT
+    RSHIFT.store(mask & 0x01 != 0, Ordering::Relaxed); // MODE_RSHIFT
+    LSHIFT.store(mask & 0x02 != 0, Ordering::Relaxed); // MODE_LSHIFT
     CTRL.store(mask & 0x04 != 0, Ordering::Relaxed); // MODE_CTRL
     ALT.store(mask & 0x08 != 0, Ordering::Relaxed); // MODE_ALT
     CAPS.store(mask & 0x10 != 0, Ordering::Relaxed); // MODE_CAPS
@@ -375,7 +390,7 @@ pub fn set_shift_state(mask: u8) {
 /// its control code. Returns `None` when the key has no character (cursor /
 /// function keys, unmapped scancodes).
 fn to_ascii(code: u8) -> Option<u8> {
-    let shift = SHIFT.load(Ordering::Relaxed);
+    let shift = LSHIFT.load(Ordering::Relaxed) || RSHIFT.load(Ordering::Relaxed);
     let caps = CAPS.load(Ordering::Relaxed);
     let alt = ALT.load(Ordering::Relaxed);
     let mut ch = crate::keymap::to_ascii(code, shift, caps, alt);

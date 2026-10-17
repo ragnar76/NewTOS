@@ -1,0 +1,33 @@
+b1.log:   Compiling kernel v0.5.0 (/Volumes/Daten/Development/PiRusTOS/kernel)
+b1.log:warning: `tos-api` (lib) generated 64 warnings
+b1.log:warning: `kernel` (lib) generated 94 warnings
+b2.log:   Compiling kernel v0.5.0 (/Volumes/Daten/Development/PiRusTOS/kernel)
+b2.log:warning: `tos-api` (lib) generated 64 warnings
+b2.log:warning: `kernel` (lib) generated 94 warnings
+b-virt.log:   Compiling kernel v0.5.0 (/Volumes/Daten/Development/PiRusTOS/kernel)
+b-virt.log:warning: `tos-api` (lib) generated 64 warnings
+b-virt.log:warning: `kernel` (lib) generated 94 warnings
+plain:     Finished `dev` profile [optimized + debuginfo] target(s) in 1.41s
+plain:     Finished `release` profile [optimized] target(s) in 0.93s
+plain:     Finished `release` profile [optimized] target(s) in 2.66s
+plain: warning: `tos-api` (lib) generated 64 warnings
+plain: warning: `kernel` (lib) generated 94 warnings
+plain:     Finished `release` profile [optimized + debuginfo] target(s) in 7.99s
+kbd:     Finished `dev` profile [optimized + debuginfo] target(s) in 1.10s
+kbd:     Finished `release` profile [optimized] target(s) in 0.83s
+kbd:     Finished `release` profile [optimized] target(s) in 2.89s
+kbd: warning: `tos-api` (lib) generated 64 warnings
+kbd: warning: `kernel` (lib) generated 94 warnings
+kbd:     Finished `release` profile [optimized + debuginfo] target(s) in 7.84s
+kbdw:     Finished `dev` profile [optimized + debuginfo] target(s) in 0.90s
+kbdw:     Finished `release` profile [optimized] target(s) in 0.83s
+kbdw:     Finished `release` profile [optimized] target(s) in 6.08s
+kbdw: warning: `tos-api` (lib) generated 64 warnings
+kbdw: warning: `kernel` (lib) generated 94 warnings
+kbdw:     Finished `release` profile [optimized + debuginfo] target(s) in 17.70s
+td:     Finished `dev` profile [optimized + debuginfo] target(s) in 1.55s
+td:     Finished `release` profile [optimized] target(s) in 0.89s
+td:     Finished `release` profile [optimized] target(s) in 2.80s
+td: warning: `tos-api` (lib) generated 64 warnings
+td: warning: `kernel` (lib) generated 94 warnings
+td:     Finished `release` profile [optimized + debuginfo] target(s) in 7.80s

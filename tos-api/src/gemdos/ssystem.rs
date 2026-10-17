@@ -13,7 +13,8 @@
 //! `docs/api/xbios/22-kbdvbase.md` B3/D6), and the system-information modes
 //! 2003–2020 ([`S_NEWTOS_CPUMEAS`] … [`S_NEWTOS_KVERSION`], SYSINFO01, and
 //! [`S_NEWTOS_INPUTMODE`], KEYOWNER): the effective settings the kernel runs
-//! with. 2000 is free: FreeMiNT's own header
+//! with — and [`S_NEWTOS_RESET`] (2021), the kernel entry of the OSHEADER
+//! reset stub (RST01, `docs/api/bios/_reset-warm-cold.md`). 2000 is free: FreeMiNT's own header
 //! reserves 0–29, 100, `0x54f8`, 900–999 and 1000–**1999**
 //! (`references/freemint/sys/mint/ssystem.h`, the two `reserved` comments),
 //! and the highest number its dispatcher answers is the build-gated test mode
@@ -44,6 +45,10 @@ pub const S_NEWTOS_CPUTEMP: u16 = 2001;
 /// one IKBD key byte — what the `kbdvec_default` stub in every process's page
 /// 0 calls (KEYS02). Defined next to the stub in [`crate::xbios::kbdvecs`].
 pub const S_NEWTOS_KBDVEC: u16 = crate::xbios::kbdvecs::S_NEWTOS_KBDVEC;
+/// NewTOS-own subfunction: restart the machine — what the reset stub behind
+/// OSHEADER `reseth`/`os_res1` calls (TASK/RST01). Defined next to the stub
+/// in [`crate::bios::reset`].
+pub const S_NEWTOS_RESET: u16 = crate::bios::reset::S_NEWTOS_RESET;
 
 // SYSINFO01: the effective system settings a system-information tool shows
 // (`docs/api/gemdos/154-ssystem.md` §"System-information modes (2003–2020)").
@@ -111,6 +116,7 @@ pub fn ssystem(args: &TrapArgs) -> Long {
             newtos_scalar(args, || host::host()?.cpu_temperature_mdeg())
         }
         S_NEWTOS_KBDVEC => s_newtos_kbdvec(args),
+        S_NEWTOS_RESET => crate::bios::reset::s_newtos_reset(args),
         S_NEWTOS_KVERSION => s_newtos_kversion(args),
         mode @ (S_NEWTOS_CPUMEAS..=S_NEWTOS_SERIAL | S_NEWTOS_INPUTMODE) => {
             newtos_scalar(args, || sysinfo_value(mode))

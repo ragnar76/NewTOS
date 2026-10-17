@@ -640,7 +640,7 @@ unsafe fn install_slot(
     // The process's private page 0: the classic TOS low-memory system area
     // (sysvars + OSHEADER + cookie jar + the `os_run` cell), the upcall and
     // `G_USERDEF` trampolines and the KEYS02 vector table (B1 / Option 1,
-    // plan E3). A 1:1-ported TOS app reads `_sysbase`@0x4F2 /
+    // plan E3), and the RST01 reset stub. A 1:1-ported TOS app reads `_sysbase`@0x4F2 /
     // `_p_cookies`@0x5A0 / the OSHEADER directly (e.g. TeraDesk
     // `main.c:56`), so these must be a real, populated instance in the
     // app's own address space.
@@ -651,6 +651,7 @@ unsafe fn install_slot(
     write_upcall_trampoline(page0);
     write_userdef_trampoline(page0);
     crate::xbios::kbdvecs::write_defaults(page0);
+    crate::bios::reset::write_stub(page0);
     // Page 0's trampolines and stubs are code: make them visible to
     // instruction fetch (see the image sync in `populate_and_map`).
     // SAFETY: page 0 is live and mapped in the kernel's high half.
@@ -1058,6 +1059,19 @@ const _: () = assert!(KBDVECS_AREA_VA.is_multiple_of(8));
 const _: () = assert!(KBDVEC_STUB_AREA_VA >= KBDVECS_AREA_VA + KBDVECS_AREA_SIZE);
 const _: () = assert!(KBDVEC_STUB_AREA_VA + KBDVEC_STUB_AREA_SIZE <= RESERVED_LOW_END);
 
+/// EL0 VA of the **reset stub** (TASK/RST01): the code OSHEADER `reseth`
+/// (+0x04) and `os_res1` (+0x10) point at — EmuTOS stores `_main` in both
+/// (`bios/startup.S:82-83,92-93`). It calls `Ssystem(S_NEWTOS_RESET)`; see
+/// [`crate::bios::reset`]. `[0xA40, 0xA60)`, page 0 (`UserRwExec`), directly
+/// above the IKBD stubs.
+pub const RESET_STUB_AREA_VA: u64 = 0xA40;
+
+/// Size of the [`RESET_STUB_AREA_VA`] region, in bytes.
+pub const RESET_STUB_AREA_SIZE: u64 = 0x20;
+
+const _: () = assert!(RESET_STUB_AREA_VA >= KBDVEC_STUB_AREA_VA + KBDVEC_STUB_AREA_SIZE);
+const _: () = assert!(RESET_STUB_AREA_VA + RESET_STUB_AREA_SIZE <= RESERVED_LOW_END);
+
 /// OSHEADER `os_version` (+0x02): Falcon TOS 4.04. EmuTOS' own default is
 /// 0x206 (`config.h:1367-1372`); NewTOS reports 4.04 — user-pinned.
 const OS_VERSION: u16 = 0x0404;
@@ -1124,11 +1138,18 @@ fn populate_sysvars(tpa: &mut [u8], pd: u64) {
     // ── OSHEADER instance (osheader.md; EmuTOS bios/startup.S:73-114
     //    `_os_header`) ─────────────────────────────────────────────────
     let oh = OSHEADER_VA as usize;
-    // os_entry (+0x00): m68k `BRA.S reseth` reset-vector opcode — no m68k
-    // reset path on AArch64 (osheader.md §os_entry). Left 0.
+    // os_entry (+0x00): EmuTOS `bra.s _main` (startup.S:78-79) — an m68k
+    // instruction, two bytes, followed by `os_version`. An AArch64
+    // instruction is four bytes, so the word here would be
+    // `0x0404_xxxx` with `os_version` on top, which no AArch64 branch
+    // encodes (SVE encoding space; `bios::reset` module doc). Left 0; the
+    // jumpable reset entries are `reseth` and `os_res1` below.
     // os_version (+0x02):
     wr_word(tpa, oh + 0x02, OS_VERSION);
-    // reseth (+0x04): m68k C reset handler — none on AArch64. Left 0.
+    // reseth (+0x04): EmuTOS `.dc.l _main` (startup.S:82-83), the full
+    // restart. NewTOS: the page-0 reset stub, which ends in the restart
+    // (`bios::reset`, `Ssystem(S_NEWTOS_RESET)`; TASK/RST01).
+    wr_long(tpa, oh + 0x04, crate::bios::reset::RESET_STUB_VA as u32);
     // os_beg (+0x08): "base address of the operating system"
     // (`biosdefs.h:51`). EmuTOS stores the OS-image self-pointer
     // `_os_header` (startup.S:88-89), which is the very same address
@@ -1147,7 +1168,11 @@ fn populate_sysvars(tpa: &mut [u8], pd: u64) {
     let (stram_start, stram_end) = crate::bdos::mem::init::stram_range();
     wr_long(tpa, oh + 0x08, OSHEADER_VA);
     wr_long(tpa, oh + 0x0C, stram_start as u32);
-    // os_rsvl (+0x10): reserved; EmuTOS sets 0 (osheader.md §os_rsvl). 0.
+    // os_rsvl (+0x10): EmuTOS `os_res1: .dc.l _main` (startup.S:92-93) —
+    // the same restart entry as `reseth`, not 0 (osheader.md §os_rsvl,
+    // corrected 2026-10-17). TeraDesk's "Reboot" jumps through it
+    // (`main.c:2096`). NewTOS: the page-0 reset stub, as for `reseth`.
+    wr_long(tpa, oh + 0x10, crate::bios::reset::RESET_STUB_VA as u32);
     // os_magic (+0x14): pointer to the GEM_MUPB — populated only once GEM/AES
     // is reimplemented into a per-process GEM_MUPB (osheader.md §os_magic);
     // its `gm_init` (AES entry) has no faithful native EL0-VA value yet, so
@@ -1250,8 +1275,8 @@ fn populate_sysvars(tpa: &mut [u8], pd: u64) {
     // vectors. EmuTOS points them at `just_rts` (a no-op RTS stub) in
     // `chardev_init` (`_boot-init.md` §7c). NewTOS has no printer device and
     // no m68k vector page to install, so they stay 0 (no redirection =
-    // printer absent) — HW-absence, matching the OSHEADER's m68k-only
-    // os_entry/reseth fields left 0 above.
+    // printer absent) — HW-absence, like the OSHEADER's m68k-only
+    // `os_entry` instruction left 0 above.
     wr_long(tpa, 0x506, 0);
     wr_long(tpa, 0x50A, 0);
 
@@ -1953,6 +1978,27 @@ mod basepage_segment_tests {
         let cell = rd32(sysbase + 0x28) as usize;
         assert_eq!(cell as u64, OS_RUN_CELL_VA);
         assert_eq!(u64::from_le_bytes(page0[cell..cell + 8].try_into().unwrap()), 0x0109_7000);
+    }
+
+    /// RST01: `reseth` (+0x04) and `os_res1` (+0x10) both hold the reset
+    /// stub's address, as EmuTOS stores `_main` in both
+    /// (`bios/startup.S:82-83,92-93`), and the stub is in page 0 where the
+    /// loader writes it. `os_entry` stays 0 (no AArch64 branch fits it).
+    #[test]
+    fn osheader_reset_entries_point_at_the_reset_stub() {
+        let mut page0 = vec![0u8; RESERVED_LOW_END as usize];
+        populate_sysvars(&mut page0, 0x0109_7000);
+        crate::bios::reset::write_stub(&mut page0);
+        let rd32 = |off: usize| u32::from_le_bytes(page0[off..off + 4].try_into().unwrap());
+        let oh = rd32(0x4F2) as usize;
+        let stub = crate::bios::reset::RESET_STUB_VA as u32;
+        assert_eq!(rd32(oh + 0x04), stub, "reseth");
+        assert_eq!(rd32(oh + 0x10), stub, "os_res1");
+        assert_eq!(rd32(oh) & 0xFFFF, 0, "os_entry");
+        assert_eq!(rd32(oh) >> 16, OS_VERSION as u32, "os_version untouched");
+        // TeraDesk's LP64-fixed read `*(uint32_t *)(os_start + 0x10)` lands
+        // on the first stub instruction: `mov x0, #2021`.
+        assert_eq!(rd32(stub as usize), 0xD280_FCA0);
     }
 
     /// A data segment with no BSS (`memsz == filesz`) gives `p_blen = 0`

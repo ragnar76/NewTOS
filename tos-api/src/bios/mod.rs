@@ -16,6 +16,7 @@ pub mod chardev;
 pub mod crash;
 pub mod drive;
 pub mod getmpb;
+pub mod reset;
 pub mod tick;
 pub mod vectors;
 

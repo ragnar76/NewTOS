@@ -16,7 +16,7 @@
 //! 5. 2019 copies with FreeMiNT's `strncpy_f` rule (`len - 1` characters, NUL
 //!    always, `len <= 0` writes nothing);
 //! 6. 2020 reports the input pump (0 timer pump, 1 `input=aes`);
-//! 7. 2021 is not a mode (`EINVFN`).
+//! 7. 2022 is not a mode (`EINVFN`); 2021 is the RST01 reset entry (`bios_reset.rs`).
 
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU8, Ordering};
 use std::sync::{Mutex, MutexGuard, Once};
@@ -296,8 +296,11 @@ fn input_mode_reports_the_pump_in_effect() {
     PUMP.store(InputMode::TimerPump as u8, Ordering::Relaxed);
 }
 
+/// The system-information block ends at 2020; 2021 is the RST01 reset entry
+/// (`S_NEWTOS_RESET`, tested in `bios_reset.rs`), so 2022 is the first free
+/// number.
 #[test]
-fn the_block_ends_at_2020() {
+fn the_block_ends_at_2020_and_2021_is_the_reset_entry() {
     let _g = rig(true);
-    assert_eq!(gemdos(2021, 0, 0), EINVFN);
+    assert_eq!(gemdos(2022, 0, 0), EINVFN);
 }

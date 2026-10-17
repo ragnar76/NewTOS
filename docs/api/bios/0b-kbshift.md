@@ -223,7 +223,8 @@ previous shift byte (zero-extended) always, and on `flag >= 0` truncates
 `flag` to a byte and stores it via `Host::set_keyboard_shift_state`. The byte
 is the `shifty`-equivalent maintained by the IKBD decoder
 (`crate::ikbd::{shift_state, set_shift_state}`) with the `MODE_*` layout
-above. NewTOS' decoder tracks a single shift flag (not L/R separately) and
+above. NewTOS' decoder tracks left and right Shift separately (since RST01,
+2026-10-17 — the Ctrl+Alt+RShift+Del test needs them apart) and
 does not represent bits 5-7 (`MODE_HOME`/`MODE_INSERT`/reserved — TT/Falcon
 -era), so a set of those bits does not round-trip; bits 0-4 do. There is no
 `os_kbshift` low-memory alias on the Pi — access is via the trap or the host
@@ -260,10 +261,10 @@ AES / VDI key-state consumers through the host trait. There is no
 
 ### Gaps vs. the contract (residual)
 
-- **L/R shift not distinguished.** The Pi decoder tracks one shift flag, so
-  `MODE_RSHIFT`/`MODE_LSHIFT` collapse: a held shift reads back as
-  `MODE_LSHIFT`, and setting `MODE_RSHIFT` alone reads back as the shift bit
-  it can represent.
+- ~~**L/R shift not distinguished.**~~ Closed by RST01 (2026-10-17): the
+  decoder keeps `MODE_RSHIFT` and `MODE_LSHIFT` as two bits, set and cleared
+  by their own make/break codes (`0x36`/`0x2A`), as EmuTOS does
+  (`bios/ikbd.c:779-783,830-834`); both round-trip through a `Kbshift` set.
 - **Bits 5-7 not represented.** `MODE_HOME`/`MODE_INSERT` (bits 5-6) are
   TT/Falcon-era and not produced by the USB-HID decoder, and bit 7 is
   reserved; a `Kbshift` set of those bits does not round-trip. Bits 0-4

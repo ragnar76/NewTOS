@@ -116,6 +116,11 @@ the same target as `os_entry` (`bra.s _main`, `:78-79`) and `os_res1`
 monitor change (`bios/bios.c:552`, called at `bios/screen.c:1329`).
 See `docs/api/bios/_reset-warm-cold.md` §3.
 
+**NewTOS (RST01, 2026-10-17):** the EL0 VA of the page-0 reset stub (`0xA40`),
+which calls `Ssystem(S_NEWTOS_RESET)` and ends in the restart
+(`tos-api/src/bios/reset.rs`); the same value as `os_rsvl` (+0x10). `os_entry`
+(+0x00) stays 0 — see `_reset-warm-cold.md` §6.
+
 ### `os_beg` (0x08)
 
 Address of the OSHEADER itself (the OS image base). Programs use this
