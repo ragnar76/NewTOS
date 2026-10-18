@@ -241,7 +241,7 @@ entry before data) is a crash-consistency contract worth preserving.
 
 TASK/PROC02 (2026-10-06): `tos-api/src/bdos/fs/file.rs` `fclose` follows
 `xclose` (`bdos/fsopnclo.c:426-496`): negative → `E_OK`; `h >= NUMHANDLES`
-(here `NUMSTD + OPEN_FILES` = 22) → `EIHNDL`; a standard handle reverts to
+(here `NUMSTD + OPEN_FILES` = 22; EmuTOS 81 — TASK/PROC04 point 4, `_state.md` §2) → `EIHNDL`; a standard handle reverts to
 `default_handle[h]` (`-1,-1,-2,-3,-1,-1`) and closes what it mapped; a
 BIOS-mapped entry only loses a use; otherwise `ixclose` (dirty directory
 entry; `EINTRN` if the OFD is no longer listed; buffer flush, whose failure

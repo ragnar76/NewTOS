@@ -550,3 +550,22 @@ request straight into the caller's buffer (contiguous clusters merged up to
 `CNTMAX` records), only the partial head/tail records pass through the data
 buffer list. Unobservable through the API (same bytes, same return values);
 measured effect in `measurements/measurement-2026-10-07-fat-curcl/`.
+
+**PROC04 point 3 re-validation (2026-10-18) — the ticket's claim is obsolete.**
+TASK/PROC04 point 3 ("`Fread`/`Fwrite` read the handle as u16; a negative BIOS
+handle gives `EIHNDL`; AUX/PRN land on the console") described the state before
+FS11 (2026-10-13). Re-read against both sides today: EmuTOS
+`bdos/bdosmain.c:571-640` (signed `short` handle, `numl` resolution `:578-593`,
+`numl < -3` → `EIHNDL` `:601-602`, device path `:604-640`) and NewTOS
+`tos-api/src/bdos/fs/file.rs:393-407` / `:440-455` (`args.arg_i16(0)`, `resolve`
+`:231-246` — same resolution order and the same `-3` floor) →
+`gemdos/console.rs` `device_read :682` / `device_write :739` (`hxform` = `3+h`
+`:620`, HUGE-read guard on the high word, `pw[3]==1` → `conin` path, else
+`cgets`; `Fwrite`: CON Ctrl-C-only break + raw byte (EmuTOS: `tabout`), other devices `Bconout` with
+short count on 0). Verdict: **confirmed implemented**; no repair needed. Only
+residual differences, all already documented above: no tab expansion / Ctrl-C-only
+break on CON (approved divergences of 2026-10-13), AUX/PRN backends are the
+absent/no-cable device-table entries (TASK/IO01), and a handle `>= NUMHANDLES`
+answers `EIHNDL` where EmuTOS reads `sft[]` out of bounds (`:578-579`, contract
+per `42-fseek.md`). Tests: `tos-api/tests/fs11_device_rw.rs`,
+`fs10_fseek_device_handles.rs`.

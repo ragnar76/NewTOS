@@ -155,45 +155,90 @@ Unimplemented IDs map to `ni()` (`bdos/bdosmain.c:316`) which returns
 
 ## 5. Standard-handle (`p_uft[]`) interception
 
-Before calling the function, `osif()` checks whether the call refers
-to a standard handle that has been redirected via `Fforce` (0x46) /
-`Fdup` (0x45). The relevant test is at `bdos/bdosmain.c:498-575`:
+(Re-validated against EmuTOS source 2026-10-18, TASK/PROC04; the earlier
+pseudo-code listed `case 6` as live and glossed the byte/EOF details.)
+
+`osif(short *pw)` (`bdos/bdosmain.c:431`; `pw` is `short *`, so every handle
+and every WORD argument is **signed 16-bit**) has **two** handle-aware
+blocks, both keyed on `funcs[fn].stdio_typ`:
+
+**Block A — character functions redirected to a file**
+(`bdos/bdosmain.c:498-568`). Guard: `typ && fn && ((fn < 12) || (16 <= fn <= 19))`.
+`typ & 0x7f` is the *standard handle*: `0x80`→0 (stdin), `0x81`→1 (stdout),
+`0x82`→2 (aux), `0x83`→3 (prn) (`funcs[]` `:150-197`):
+
+| fn | function | `stdio_typ` | std handle | block A active? |
+|---:|----------|------------:|-----------:|-----------------|
+| 0x01 | Cconin   | 0x80 | 0 | yes |
+| 0x02 | Cconout  | 0x81 | 1 | yes |
+| 0x03 | Cauxin   | 0x82 | 2 | yes |
+| 0x04 | Cauxout  | 0x82 | 2 | yes |
+| 0x05 | Cprnout  | 0x83 | 3 | yes |
+| 0x06 | Crawio   | **0**| — | **no** (`:161`; the `case 6`/`rawout` arm below is unreachable for fn 6, only `rawout` is reached by fn 2/4/5) |
+| 0x07 | Crawcin  | 0x80 | 0 | yes |
+| 0x08 | Cnecin   | 0x80 | 0 | yes |
+| 0x09 | Cconws   | 0x81 | 1 | yes |
+| 0x0A | Cconrs   | 0x80 | 0 | yes |
+| 0x0B | Cconis   | 0x80 | 0 | yes |
+| 0x10 | Cconos   | 0x81 | 1 | yes |
+| 0x11 | Cprnos   | 0x83 | 3 | yes |
+| 0x12 | Cauxis   | 0x82 | 2 | yes |
+| 0x13 | Cauxos   | 0x82 | 2 | yes |
 
 ```c
-if (typ && fn && ((fn<12) || ((fn>=16) && (fn<=19)))) {
-    h = run->p_uft[typ & 0x7f];
-    if (h > 0) {
-        /* standard device routed to a file: handle inline */
-        switch (fn) {
-            case 1: case 3: case 7: case 8:  /* read 1 byte */
-                if (xread(h, 1L, &ctmp) != 1L) return EOF_INDICATOR;
-                return ctmp;
-            case 6:  /* Crawio: 0xFF=read else write */
-                if (pw[1] != 0xFF) goto rawout;
-                /* else FALLTHROUGH to read */
-            case 2: case 4: case 5:  /* write 1 byte */
-            rawout: xwrite(h, 1L, ((char*)&pw[1]) + 1);  return 0;
-            case 9:  /* Cconws: write strlen(p) bytes */
-                pb2 = *((char**)&pw[1]);
-                xwrite(h, strlen(pb2), pb2);  return 0;
-            case 10: /* Cconrs: line-edit emulation over file */
-                /* manual byte-by-byte read with CR-terminate */
-                ...
-            case 11: case 18:                       /* status read */
-                if (eof(h)) return 0L;
-                FALLTHROUGH;
-            case 16: case 17: case 19:              /* status write */
-                return -1L;
-        }
+h = run->p_uft[typ & 0x7f];                 /* :500 */
+if (h > 0) {                                /* :501  only a file handle (>= 6) */
+    switch (fn) {
+    case 1: case 3: case 7: case 8:         /* read ONE byte      :509-519 */
+        if (xread(h, 1L, &ctmp) != 1L) return EOF_INDICATOR;   /* 0x0000ff1a, :69 */
+        return ctmp;                        /* ctmp is plain `char` -> SIGN-extended */
+    case 2: case 4: case 5:                 /* :521-528 */
+    rawout: xwrite(h, 1L, ((char*)&pw[1]) + 1);   /* low byte of the WORD arg */
+        return 0;                           /* dummy: NOT the Cconout "1" */
+    case 9:  xwrite(h, strlen(pb2), pb2); return 0;            /* :530-533, raw */
+    case 10: /* Cconrs: read up to max bytes one by one; stop at 0x0d and EAT the
+                following byte (the LF); store count in buf[1]; return 0   :535-553 */
+    case 11: case 18: if (eof(h)) return 0L; FALLTHROUGH;      /* :555-558 */
+    case 16: case 17: case 19: return -1L;                     /* :561-564 */
     }
-    typ = 0;  /* fall through to regular dispatch */
 }
+typ = 0;                                    /* :568 not redirected: normal dispatch */
 ```
 
-The `0x80`/`0x81`/`0x82`/`0x83` `stdio_typ` flags in `funcs[]` encode
-which standard handle each function uses. The dispatcher's interception
-means **applications that redirect stdin/stdout via `Fforce` see the
-console functions automatically reading from / writing to the file**.
+Notes (cited = read in source; *inferred* = reasoning from it):
+
+- Only `p_uft[x] > 0` triggers block A. A **negative** `p_uft` (BIOS handle,
+  default or `Fforce(std, -n)`) is **not** touched here — the function body in
+  `bdos/console.c` then uses `HXFORM(run->p_uft[x])` = `3 + p_uft[x]` as the
+  BIOS device (`console.c:161,170,179,188,197,281,333,342,377,401,419,434,
+  447,451,461,535`; `console.h:36`). Both mechanisms are needed for a faithful
+  redirect.
+- `Crawio` (fn 6, `stdio_typ 0`) is never answered by block A. With
+  `p_uft[0]`/`p_uft[1]` forced to a *file* handle `h > 0`, `xrawio`
+  (`console.c:441-453`) still runs and calls `getch`/`Bconout` with BIOS
+  device `3 + h` — no file I/O. (*inferred*: result is BIOS-table dependent
+  for `3+h >= 6`, `bios/bios.c:991-1011` Bconmap branch; `constat` returns 0
+  for `h` outside 1..2, `console.c:142-143`.)
+- EOF/error on a redirected read returns `EOF_INDICATOR` (`0x0000ff1a`), the
+  comment says "same way as MiNT" (`:514-516`). A successful read returns the
+  byte **sign-extended** (`char ctmp`, `:433,519`; the EmuTOS `Makefile` has
+  no `-funsigned-char` — *inferred* from C semantics: bytes `>= 0x80` come
+  back as `0xFFFFFFxx`).
+- Write status: `Cconis`/`Cauxis` on a file return `0` only at EOF
+  (`eof(h)` is non-zero for EOF *and* for error, `fsio.c:288-300`), else `-1`.
+- Block A does no tab expansion, no `conbrk`, no Ctrl-C handling, no
+  line editing — it is raw byte I/O on the file.
+
+**Block B — handle-based file functions** (`bdos/bdosmain.c:571-643`;
+`typ & 0x80`: Fread 0x82 handle `pw[1]`, Fwrite 0x82 `pw[1]`, Fseek 0x81
+`pw[3]`). Resolution of the signed handle, `Fread`/`Fwrite` on a character
+device and the `-4`/`0` error cases are specified in `file/42-fseek.md`,
+`file/3f-fread.md`, `file/40-fwrite.md` and are not repeated here.
+
+Consequence: **applications that redirect stdin/stdout via `Fforce` see
+`Cconin`/`Cconout`/`Cconws`/`Cconrs`/… read from / write to the file** —
+EmuTOS contract. NewTOS does **not** do this yet (TASK/PROC04 point 1,
+`_state.md` §2 "NewTOS deviations").
 
 ---
 

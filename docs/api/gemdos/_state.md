@@ -179,12 +179,40 @@ NewTOS (TASK/PROC02): `sft[]` entries (`f_ofd`, `f_own`, `f_use`) and the
 OFDs they point at are separate tables in `tos-api/src/bdos/fs/file.rs`; an
 OFD carries a `listed` flag for its `d_files` membership. `f_own` is the
 running PD, or — kernel code with no running process — the stand-in PD that
-is EmuTOS's `run` there (`standin::kernel_run`, TASK/PPARENT). A negative
-`p_uft`/`f_ofd` (BIOS handle) still resolves to the console for
-`Fread`/`Fwrite` (no AUX/PRN device in the profile). The dispatcher's
-redirection of the character functions (`Cconout` & co. through
-`p_uft[]`, `bdos/bdosmain.c:498-568`) is not implemented: they always use the
-console.
+is EmuTOS's `run` there (`standin::kernel_run`, TASK/PPARENT).
+
+**NewTOS deviations from the above — re-validated 2026-10-18 against EmuTOS
+(TASK/PROC04), NOT yet repaired; the EmuTOS behaviour is the target:**
+
+1. *Character functions ignore `p_uft[]`.* `gemdos/console.rs` hard-wires
+   `DEV_CON`/`DEV_AUX`/`DEV_PRN` (`cconout :88`, `cauxin :118`, `cauxout :132`,
+   `cprnout :149`, `crawio :171`, `cconin :228`, `crawcin :253`, `cnecin :267`,
+   `cconrs :462`, `cconws :514`, `cconis :559`, `cconos :569`, `cprnos :581`,
+   `cauxis :592`, `cauxos :603`) and `gemdos/mod.rs` `dispatch_inner` has no
+   pre-dispatch step. EmuTOS: `osif` `bdos/bdosmain.c:498-568` (see
+   `_dispatcher.md` §5, which was corrected the same day) **plus** the
+   `p_uft`-derived BIOS device in `bdos/console.c` (`HXFORM(run->p_uft[n])`,
+   `:161,170,179,188,197,281,333,342,377,401,419,434,447,451,461,535`) — both
+   halves are needed: a redirected-to-file handle is answered in `osif`, a
+   BIOS handle other than the default (`Fforce(1,-2)` etc.) is answered by
+   the `console.c` functions. NewTOS today has neither.
+2. *Open-file table.* NewTOS `OPEN_FILES = 16` (`file.rs:30`) → `NUMHANDLES`
+   22; EmuTOS `OPNFILES = 75` → 81 (`bdos/fs.h:43-45`, unconditional — no
+   `CONF_WITH_*`/`TARGET_*` gate; the comment `fs.h:34-41` lists TOS
+   1.04/2.06/3.06 = 75, TOS 4.04 = 19 "[likely a per-process number]", i.e.
+   the Falcon/TOS4 *profile* does not change EmuTOS's own value). The table
+   is **system-wide**; there is no per-process handle limit (a process owns
+   only the 6 `p_uft[]` slots). Full table → `ENHNDL` (`opnfil`
+   `bdos/fsopnclo.c:341-346`, `xdup` `bdos/fshand.c:100-105`).
+3. *`Fdelete` of an open file* — see `file/41-fdelete.md`
+   ("Open files" section): NewTOS invalidates every handle (audit fix "F6",
+   `file.rs:498-535`), EmuTOS does not.
+
+(Point 3 of the PROC04 ticket — `Fread`/`Fwrite` on negative handles — was
+already repaired by FS11 on 2026-10-13: `file.rs:393-394,441-442`
+`arg_i16`, `resolve` `:231`, `gemdos/console.rs` `device_read`/`device_write`.
+Standard handles whose `p_uft`/`f_ofd` is a BIOS device reach AUX/PRN through
+the device table, not the console.)
 
 ---
 

@@ -105,7 +105,8 @@ Note the interface: `Fdelete` has no wildcard iteration and no error for
 - Frees the file's FAT cluster chain (`bdos/fsopnclo.c:674-683`).
 - Marks the directory entry erased (`0xE5`) and flushes
   (`bdos/fsopnclo.c:688-692`).
-- May close an OFD owned by the current process before deleting.
+- May `ixclose` an OFD owned by the current process before deleting (the
+  handle stays valid, see edge case 3).
 
 ### Side effects on hardware
 
@@ -127,7 +128,8 @@ spec's "delete on a folder returns EACCDN" is incorrect; delete folders with
 `Ddelete` (0x3A).
 
 **Error paths not in Compendium:** the "open by another process → `EACCDN`"
-distinction and the same-process auto-close before delete.
+distinction and the same-process `ixclose` before delete (the handle is not
+invalidated).
 
 ---
 
@@ -149,9 +151,42 @@ distinction and the same-process auto-close before delete.
 2. **Folders/labels are "not found", not "denied".** The `FA_NORM` scan mask
    excludes them, so `Fdelete` returns `EFILNF` (`bdos/fsopnclo.c:604`).
 
-3. **Same-process open file is auto-closed, then deleted.** If the file is open
-   by `run`, `ixdel` calls `ixclose` first and proceeds; the handle becomes
-   stale (`bdos/fsopnclo.c:665-666`).
+3. **Same-process open file: `ixclose`d, then deleted — the handle is NOT
+   invalidated** (re-validated 2026-10-18, TASK/PROC04; the earlier wording
+   "the handle becomes stale" was imprecise and led to NewTOS's F6 deviation).
+   Read in source (`bdos/fsopnclo.c:652-669`): `ixdel` walks `dn->d_files`
+   for OFDs with `o_dirbyt == pos`, and for every `sft[n]` whose `f_ofd` is
+   that OFD checks `sft[n].f_own == run`; if yes it calls `ixclose(fd,0)` and
+   **only that** (`:665-666`). `ixclose(fd,0)` (`:511-581`) (a) writes the
+   dirty directory entry back (date/time, start cluster, length, archive
+   bit), (b) unlinks the OFD from `dn->d_files`, (c) flushes the dirty FAT /
+   data buffers. It does **not** touch `sft[]`, `f_use`, `f_own`, `f_ofd`, or
+   any `p_uft[]`. Then `ixdel` frees the cluster chain and writes `0xE5`.
+   Consequences (all read from the code, none from comments):
+   - `Fdelete` returns `E_OK`; the caller's handle (and every `Fdup`/`Fforce`
+     alias of it) stays valid — `getofd` still returns the OFD
+     (`fsmain.c:474-486`).
+   - `Fread`/`Fwrite`/`Fseek` on that handle keep working through the OFD's
+     remembered cluster fields (`o_strtcl`, `o_curcl`, …) — i.e. on a chain the
+     FAT now lists as free. EmuTOS does not protect against that; a write
+     after the delete can land in clusters another file later allocates, and
+     a dirty OFD's later `Fclose` rewrites the (possibly re-used) directory
+     slot's cluster/length/attribute fields (`ixclose` `:530-549`, no check
+     that the slot still holds the same file). This is an EmuTOS hazard,
+     reported here as fact; whether NewTOS replicates it is a decision, see
+     "NewTOS implementation notes".
+   - `Fclose` of that handle: `ixclose(fd,0)` finds the OFD no longer in
+     `d_files` (`:552-566`) and returns **`EINTRN`** (-65), but `xclose` still
+     decrements `f_use` and `sftdel`s the entry (`:484-496`). Same quirk as
+     the second close of a shared OFD (`_state.md` §2).
+   - The loop does not stop at the first match: with several `sft[]` entries
+     on the OFD (Fdup / Fforce / inheritance) each owned-by-`run` entry calls
+     `ixclose` (the 2nd+ return `EINTRN`, ignored); the first entry owned by
+     **another** process returns `EACCDN` immediately — entries examined
+     earlier may already have been `ixclose`d (`:660-669`, no rollback).
+   - Same `ixdel` is reached from `Fcreate` over an existing file
+     (`fsopnclo.c:163`; `EACCDN` on `ixdel < 0`), `Ddelete` (`fsdir.c:377`) and
+     the two error paths of `Dcreate` (`fsdir.c:228,239`).
 
 4. **Open by another process blocks.** `sft[n].f_own != run` → `EACCDN`
    (`bdos/fsopnclo.c:667-668`).
@@ -244,3 +279,25 @@ checksum, broken ordinal sequence, already erased) is left untouched: it was
 not this entry's name to begin with, and FreeMiNT's `__readvfat` rejects it the
 same way. This is a **NewTOS decision** taken from the FAT layout, not
 behaviour extracted from EmuTOS — EmuTOS has no answer here.
+
+**PROC04 point 5 (2026-10-18) — NewTOS deviates from edge case 3; not
+sanctioned.** `tos-api/src/bdos/fs/file.rs` `erase_entry :498-513` calls
+`close_open_file :526-540`, which sets `ofds[j] = None` (`:532`) and frees **every**
+`sft[]` entry on the OFD (`:533-537`), so afterwards `Fread`/`Fwrite`/`Fclose`
+on the handle answer `EIHNDL` (EmuTOS: valid handle; `Fclose` → `EINTRN`).
+It also never takes the foreign-owner branch: the doc comment calls the SFT
+"process-agnostic" (`:523`) although `Ftab.own` (`:83-85`, PROC02) now
+carries the owner — so a file open in another process is deleted instead of
+`EACCDN`. Origin: audit fix "F6", commit `00c8137a` ("a stale handle after
+delete now returns EIHNDL instead of writing into freed/reused clusters ...
+the foreign-process EACCDN branch would need OFD ownership (deferred)"),
+based on the imprecise reading of this spec's old edge case 3. It is **not**
+listed in `docs/COMPATIBILITY.md` (searched: no entry on Fdelete, SFT or
+handles), so it is an unsanctioned deviation, not a decision.
+Faithful replacement (contract): `erase_entry` → `ixdel` semantics: loop
+OFDs at (`dir_start`,`dir_slot`) × `sft[]` entries; owned by `run_pd()` →
+`ixclose(j)` (exists, `file.rs:999`), else `EACCDN` before any cluster is
+freed by this call; callers: `fdelete`, `fcreate` (overwrite → `EACCDN`),
+`Ddelete`/`Dcreate` paths. Open decision for the user: the data-integrity
+hazard above is EmuTOS-inherent; replicating it 1:1 is what "EmuTOS-faithful"
+asks for, but the Developer should be told explicitly that it is a hazard.
