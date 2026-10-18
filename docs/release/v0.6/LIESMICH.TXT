@@ -133,7 +133,7 @@ die laufen in dieser Version noch NICHT.
 6. Rueckmeldung
 ---------------
 
-Bitte TESTANLEITUNG.TXT durchgehen und FEEDBACK.TXT ausfuellen
+Einfach ausprobieren (Anregungen in TESTANLEITUNG.TXT) und FEEDBACK.TXT ausfuellen
 (Antwort an die Mailingliste). Jede Rueckmeldung hilft — auch
 "alles lief".
 

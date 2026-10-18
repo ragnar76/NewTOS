@@ -1,136 +1,27 @@
-NewTOS 0.6 — Testanleitung
-==========================
+NewTOS 0.6 — Wie testen?
+========================
 
-Bitte die Tests der Reihe nach durchgehen. Zu jedem Test steht, was
-passieren SOLL. Das Ergebnis traegst du in FEEDBACK.TXT unter derselben
-Nummer ein: OK, FEHLER (mit Beschreibung) oder NICHT GETESTET.
+Ganz einfach: Benutze NewTOS so, wie du einen Atari benutzen wuerdest.
+Es gibt keine Pflichtliste. Die meisten Fehler findet man beim normalen
+Arbeiten und Ausprobieren — genau das brauchen wir.
 
-Ein Test dauert meist ein bis zwei Minuten, alles zusammen etwa eine
-Stunde. Du musst nicht alles machen — jeder Teil hilft.
+Ein paar Anregungen, falls du nicht weisst, wo du anfangen sollst:
 
-Bei einem Absturzbericht (Text auf dem Bildschirm mit "pc=", Registern
-usw.): bitte ein Foto machen, dann eine Taste druecken.
+- Mit dem Desktop arbeiten: Fenster, Ordner, Dateien kopieren, umbenennen,
+  loeschen, Einstellungen, "Desktop sichern".
+- Die Programme ausprobieren: QED (Texte schreiben), zView (eigene Bilder
+  ansehen), Doom, TeraDesk, CoreMark, Ball.
+- Das Accessory im Desk-Menue oeffnen, waehrend etwas anderes laeuft.
+- Neustart mit Ctrl+Alt+Del.
+- Alles, was dir vom echten Atari vertraut ist: sieht es gleich aus,
+  verhaelt es sich gleich?
 
+Was uns besonders interessiert:
 
-A. Start
---------
+- Absturzbericht (Text mit "pc=" und Registern): bitte ein FOTO machen,
+  dann eine Taste druecken.
+- Haenger: was hast du kurz vorher gemacht?
+- Alles, was anders aussieht oder sich anders anfuehlt als auf einem
+  Atari mit TOS 4 / EmuTOS — auch Kleinigkeiten.
 
-A1  Karte einlegen, Pi einschalten.
-    SOLL: Nach wenigen Sekunden Startbildschirm mit NewTOS-Version 0.6
-    und Speicherangabe, danach der Desktop mit Laufwerkssymbol C: und
-    Papierkorb.
-
-A2  Maus bewegen, Tastatur benutzen (z. B. im Desk-Menue).
-    SOLL: Mauszeiger folgt fluessig; Menues klappen beim Darueberfahren auf.
-
-A3  Wie lange dauert der Start vom Einschalten bis zum Desktop (ungefaehr)?
-    (Nur notieren.)
-
-
-B. Desktop
-----------
-
-B1  Doppelklick auf C:.
-    SOLL: Fenster mit dem Inhalt der Karte (ACC, APPS, KERNEL8.IMG ...).
-
-B2  In APPS und weiter in einen Unterordner doppelklicken, mit dem
-    Schliessfeld (oben links) zurueck.
-    SOLL: Inhalte stimmen, kein Rest alter Bilder im Fenster.
-
-B3  Zwei Fenster oeffnen, gegeneinander verschieben, in der Groesse
-    aendern, abwechselnd nach vorne holen.
-    SOLL: Alles wird sauber neu gezeichnet, keine Reste.
-
-B4  Datei markieren (Klick), mehrere markieren (Shift-Klick oder Gummiband),
-    in ein anderes Fenster klicken.
-    SOLL: Markierung verschwindet, wenn man woanders hinklickt.
-
-B5  Menue "View" -> "Set background...": Farbe und Muster waehlen.
-    SOLL: Vorschau im Dialog folgt der Auswahl; nach OK aendert sich der
-    Hintergrund.
-
-B6  "File" -> "New folder..." anlegen; eine Datei in ein anderes Fenster
-    ziehen (kopieren); "File" -> "Info/Rename..." umbenennen; "File" ->
-    "Delete..." oder in den Papierkorb ziehen.
-    SOLL: Die Operationen funktionieren, die Fenster zeigen den neuen Stand.
-
-B7  "Options" -> "Save desktop...", Pi neu starten.
-    SOLL: Fensterpositionen und Einstellungen sind wieder da.
-
-
-C. Accessory
-------------
-
-C1  Menue "Desk" -> "NewTOS System Information".
-    SOLL: Fenster mit Systemangaben (CPU, Takt, Temperatur, Speicher).
-    Schliessen und erneut oeffnen.
-
-C2  Waehrend das Accessory offen ist, ein Programm starten (z. B. QED)
-    und wieder beenden.
-    SOLL: Kein Haenger; der Desktop kommt zurueck.
-
-
-D. Programme
-------------
-
-D1  QED: APPS\QED\QED.NAP doppelklicken. Text tippen (Umlaute,
-    Grossbuchstaben mit linker UND rechter Shift-Taste), speichern unter
-    C:\TEST.TXT, beenden.
-    SOLL: QED nimmt den ganzen Bildschirm ein, Menues deutsch, Text wird
-    gespeichert, Rueckkehr zum Desktop.
-
-D2  QED erneut starten, Datei -> Oeffnen, in der Dateiauswahl in einen
-    Unterordner und zurueck wechseln, C:\TEST.TXT oeffnen.
-    SOLL: Dateiauswahl funktioniert, Text ist unveraendert.
-
-D3  Datei TEST.TXT im Desktop auf das QED-Symbol ziehen.
-    SOLL: QED startet mit dieser Datei.
-
-D4  zView: APPS\ZVIEW\ZVIEW.NAP starten, ein Bild oeffnen (eigene
-    JPG/PNG/GIF/BMP/Degas/NEO-Bilder auf die Karte kopieren).
-    SOLL: Bild wird korrekt angezeigt.
-
-D5  Doom: APPS\DOOM\DOOM.NAP starten, ein paar Minuten spielen, beenden.
-    SOLL: Laeuft fluessig, Tastatur reagiert, Rueckkehr zum Desktop.
-    (Wie fluessig? Bitte notieren.)
-
-D6  CoreMark: APPS\COREMARK\CORE.NCP starten.
-    SOLL: Laeuft durch und zeigt am Ende einen Wert "Iterations/Sec".
-    Bitte den Wert notieren.
-
-D7  TeraDesk: APPS\TERADESK\DESKTOP.NAP starten, ein Fenster oeffnen,
-    Ordner wechseln, ein Programm daraus starten, TeraDesk mit Ctrl+Q
-    (Quit-Dialog) -> "Quit" verlassen.
-    SOLL: TeraDesk laeuft, Rueckkehr zum NewTOS-Desktop.
-
-
-E. Neustart und Tasten
-----------------------
-
-E1  Auf dem Desktop Ctrl+Alt+Del druecken.
-    SOLL: Der Pi startet neu bis zum Desktop.
-
-E2  Ctrl+Alt+rechte Shift+Del druecken.
-    SOLL: Ebenfalls Neustart.
-
-E3  Ctrl+Alt+LINKE Shift+Del druecken, und Del allein.
-    SOLL: Es passiert NICHTS (so wie beim Atari).
-
-E4  TeraDesk starten, Ctrl+Q -> im Quit-Dialog "Reboot".
-    SOLL: Neustart (kein Absturzbericht).
-
-
-B8  "File" -> "Execute EmuCON": Befehle "dir", "cd APPS", "dir",
-    "type" auf eine Textdatei, "exit".
-    SOLL: Konsole funktioniert, "exit" fuehrt zurueck zum Desktop.
-
-
-F. Freies Testen
-----------------
-
-F1  Probiere aus, was dich interessiert: Fenster, Menues, Dialoge,
-    Tastatur, Dateien. Alles, was anders aussieht oder sich anders
-    verhaelt als auf einem echten Atari mit TOS 4 / EmuTOS, ist
-    interessant — auch Kleinigkeiten.
-
-F2  Laeuft der Pi eine Stunde ohne Bedienung stabil (Desktop offen)?
+Rueckmeldung mit FEEDBACK.TXT an die Mailingliste. Danke!
