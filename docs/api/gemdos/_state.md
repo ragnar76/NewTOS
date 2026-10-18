@@ -182,7 +182,8 @@ running PD, or — kernel code with no running process — the stand-in PD that
 is EmuTOS's `run` there (`standin::kernel_run`, TASK/PPARENT).
 
 **NewTOS deviations from the above — re-validated 2026-10-18 against EmuTOS
-(TASK/PROC04), NOT yet repaired; the EmuTOS behaviour is the target:**
+(TASK/PROC04); points 1 and 3 NOT yet repaired (point 2 repaired, see
+there); the EmuTOS behaviour is the target:**
 
 1. *Character functions ignore `p_uft[]`.* `gemdos/console.rs` hard-wires
    `DEV_CON`/`DEV_AUX`/`DEV_PRN` (`cconout :88`, `cauxin :118`, `cauxout :132`,
@@ -196,8 +197,14 @@ is EmuTOS's `run` there (`standin::kernel_run`, TASK/PPARENT).
    halves are needed: a redirected-to-file handle is answered in `osif`, a
    BIOS handle other than the default (`Fforce(1,-2)` etc.) is answered by
    the `console.c` functions. NewTOS today has neither.
-2. *Open-file table.* NewTOS `OPEN_FILES = 16` (`file.rs:30`) → `NUMHANDLES`
-   22; EmuTOS `OPNFILES = 75` → 81 (`bdos/fs.h:43-45`, unconditional — no
+2. *Open-file table.* **Repaired 2026-10-18 (TASK/PROC04 point 4):** NewTOS
+   `OPEN_FILES = 75` (`file.rs`) → `NUMHANDLES` 81, handles 6..80; every
+   allocator (`Fopen`/`Fcreate` via `open_handle`, `Fdup`) goes through
+   `claim_sft` and answers `ENHNDL` on a full table; `Fcreate`'s directory
+   entry is written before the claim, as in `ixcreat` (`bdos/fsopnclo.c:
+   186-201`). Host test `tos-api/tests/proc04_open_file_table.rs`. Before:
+   `OPEN_FILES = 16` → `NUMHANDLES` 22. EmuTOS `OPNFILES = 75` → 81
+   (`bdos/fs.h:43-45`, unconditional — no
    `CONF_WITH_*`/`TARGET_*` gate; the comment `fs.h:34-41` lists TOS
    1.04/2.06/3.06 = 75, TOS 4.04 = 19 "[likely a per-process number]", i.e.
    the Falcon/TOS4 *profile* does not change EmuTOS's own value). The table

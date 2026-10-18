@@ -1,0 +1,28 @@
+measurement-2026-10-18-proc04-files -- Developer: TASK/PROC04 point 4, open-file table at EmuTOS size (OPNFILES 75, NUMHANDLES 81,
+handles 6..80, system-wide; bdos/fs.h:43-45, fsglob.c:34; ENHNDL from opnfil fsopnclo.c:341-346 and xdup fshand.c:100-105).
+Spec: docs/api/gemdos/_state.md section 2, file/3e-fclose.md. Base HEAD 70be8ef9, change UNCOMMITTED in the working tree.
+
+CHANGE: tos-api/src/bdos/fs/file.rs OPEN_FILES 16 -> 75 (sft[], ofds[], NUMHANDLES = NUMSTD + OPEN_FILES are all sized by it; every
+slot allocator -- open_handle (Fopen/Fcreate) and Fdup -- goes through claim_sft -> ENHNDL when full; Fcreate writes the directory
+entry before the claim, as ixcreat). Largest handle 80 fits the i8 p_uft[]. Footprint: 75 x (Ofd ~100 B + Ftab ~40 B) ~ 10 KiB .bss.
+Tests: new tos-api/tests/proc04_open_file_table.rs; proc02_handle_lifecycle.rs and fs10_fseek_device_handles.rs 6+16 -> 6+75 (6+15 -> 6+74).
+
+1 RED/GREEN HOST (checks/red-host-proc04.txt, green-host-proc04.txt): proc04_open_file_table on HEAD: 2/2 FAIL (Fopen #17 -> -35 ENHNDL;
+  the second test fails as a consequence, the first left 16 handles open when it panicked). With the change 2/2 ok, proc02 7/7, fs10 9/9.
+2 QEMU PROBE (method/p4files.c -> C:\AUTO\P4F.NCP, EL0 console program; method/build-pf.sh, mkcard.sh (label P4FPRB), run-probe.sh,
+  regress/run.sh = per-run APFS clone, -append serial=on [memprot=strict|off], one QEMU at a time):
+  70 x Fcreate kept open + Fwrite, then Fopen until ENHNDL (expect 75 total, last handle 80), Fopen/Fcreate/Fdup(1) on full -> ENHNDL,
+  Fclose all, Fclose(81) -> EIHNDL, reopen+verify+Fdelete all 70, Fdelete of the file the ENHNDL-Fcreate left behind.
+  head on (red): PF RESULT fails=6 (54 of 70 Fcreate -> ENHNDL; table full at 16)          serial/pf-head-on.log
+  wt on / strict / off: PF RESULT fails=0, 0 FAIL lines, 0 EXC/PANIC, then "[desk] desktop up"  serial/pf-wt-{on,strict,off}.log
+3 REGRESSION wt (method/regress/series.sh wt, copied from measurement-2026-10-18-proc04-curdir-test; checks/series-wt.out):
+  APITEST TOTAL 109/0/5 on/strict/off; S2ALL PASS on/off, S2ALLS PASS strict (4 [crash] lines = its two intended crash prompts);
+  VFORK PASS x3; TeraDesk #Z -> F1 -> QED: 6 dumps (t25/t40 x 3 modes) all sha 5d8e72ff.. = identical to the PROC04-curdir Tester run;
+  viewed: QED menu bar (German) over the green work area (checks/screendumps.sha256; PNGs in scratch only).
+4 HOST/BUILD: cargo xtask test 1437 passed / 0 failed / 1 ignored (1435 + 2 new; checks/host-tests-full.log);
+  sdk/run-host-tests.sh 20/0/0 (checks/sdk-host.txt); cargo xtask build (dev) rpi4 + qemu-virt: tos-api 64 / kernel 94 warnings each
+  (baseline 64/94); clippy tos-api 76, kernel 125 (rpi4 and qemu-virt; baseline 76/125), 0 hits in file.rs and the new test;
+  tools/desk-drift-probe.sh TOTAL 0.
+Kernels (release rpi4 from `git archive 70be8ef9` + the 4 working-tree files, SOURCE_DATE_EPOCH=1792152000): checks/kernels.sha256;
+  head-plain af0f7ed8 = bit-identical to the curdir run's wt-plain (sanity: HEAD = that tree).
+NOT RUN: real Pi 4, qemu-virt boot, head series (baseline from measurement-2026-10-18-proc04-curdir-test), memprot=verify.

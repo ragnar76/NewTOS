@@ -245,7 +245,7 @@ fn a_bios_mapped_duplicate_is_not_a_file() {
     assert_eq!(fforce(0, d), EIHNDL, "a free entry has no OFD");
     assert_eq!(fforce(0, 1), EIHNDL, "a standard source");
     assert_eq!(fforce(6, -1), EIHNDL, "a non-standard target");
-    assert_eq!(fclose(6 + 16), EIHNDL, "NUMHANDLES");
+    assert_eq!(fclose(6 + 75), EIHNDL, "NUMHANDLES");
     assert_eq!(fclose(-3), E_OK);
 }
 

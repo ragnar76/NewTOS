@@ -189,8 +189,8 @@ fn t12_free_and_out_of_range_handles() {
     let (_g, _host) = fs();
     let _p = Pd::new();
     // This binary closes every handle it opens: the last entry is free.
-    assert_eq!(fseek(0, 6 + 15, 0), EIHNDL, "T12 free sft slot");
-    assert_eq!(fseek(0, 6 + 16, 0), EIHNDL, "NUMHANDLES");
+    assert_eq!(fseek(0, 6 + 74, 0), EIHNDL, "T12 free sft slot");
+    assert_eq!(fseek(0, 6 + 75, 0), EIHNDL, "NUMHANDLES");
     assert_eq!(fseek(0, 0x7FFF, 0), EIHNDL, "largest positive WORD");
 }
 

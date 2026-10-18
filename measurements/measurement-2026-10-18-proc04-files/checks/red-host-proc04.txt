@@ -1,0 +1,30 @@
+    Finished `test` profile [optimized + debuginfo] target(s) in 6.76s
+     Running tests/proc04_open_file_table.rs (target/debug/deps/proc04_open_file_table-7b74ec7ef54994ca)
+
+running 2 tests
+test numhandles_is_81 ... FAILED
+test seventy_five_handles_then_enhndl ... FAILED
+
+failures:
+
+---- numhandles_is_81 stdout ----
+
+thread 'numhandles_is_81' (2745947) panicked at tos-api/tests/proc04_open_file_table.rs:82:13:
+assertion `left == right` failed: Fopen #17 -> -35
+  left: -35
+ right: 22
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- seventy_five_handles_then_enhndl stdout ----
+
+thread 'seventy_five_handles_then_enhndl' (2745948) panicked at tos-api/tests/proc04_open_file_table.rs:77:5:
+Fcreate C:\P4A.TXT -> -35
+
+
+failures:
+    numhandles_is_81
+    seventy_five_handles_then_enhndl
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p tos-api --test proc04_open_file_table`

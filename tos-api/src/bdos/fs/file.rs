@@ -26,8 +26,11 @@ use tos_types::Long;
 
 /// Number of reserved standard handles (0..5); first real handle is 6.
 const NUMSTD: u16 = 6;
-/// Open-file table size (EmuTOS `OPNFILES` is 75).
-const OPEN_FILES: usize = 16;
+/// Open-file table size — EmuTOS `OPNFILES` (`bdos/fs.h:43`), system-wide
+/// and unconditional: handles `NUMSTD..NUMHANDLES` = 6..80. A full table
+/// answers `ENHNDL` from every allocator ([`claim_sft`]). The largest handle
+/// (80) still fits the `i8` `p_uft[]` entries (TASK/PROC04 point 4).
+const OPEN_FILES: usize = 75;
 /// `FA_RO` read-only attribute bit.
 const FA_RO: u8 = 0x01;
 
