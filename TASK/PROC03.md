@@ -134,3 +134,12 @@ Bau `31db1d1c`; Belege
 `measurements/measurement-2026-10-18-proc03-s1-test/` (Tester PASS).
 Naechstes: PROC04 Punkt 2; B5 wartet auf Anwenderentscheidung (Konflikt mit
 ARCH03 E15, `_run-ownership-curdir.md` D-8/D-9).
+
+## Anwenderentscheidung B5 (2026-10-18)
+
+Vorschlag (2) bestaetigt: waehrend ein Accessory laeuft, zeigen `*os_run`
+und der `p_parent` eines von ihm per `Pexec` gestarteten Kindes wie EmuTOS
+auf `run` (Vordergrund-/accdesk-PD). Speicherbesitz, Verzeichnis, DTA,
+Dateien und Speicherschutz bleiben beim Accessory selbst — benannte
+Abweichung in `docs/COMPATIBILITY.md` beim Bau (E15 und Speicherschutz
+unberuehrt). `_run-ownership-curdir.md` D-7/D-8/D-9 damit entschieden.

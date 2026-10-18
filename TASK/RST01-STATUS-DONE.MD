@@ -39,3 +39,9 @@ wiederholt gleich).
   USB-/IKBD-Tastatur, Tasten ueber den Neustart gehalten.
 * Endlosschleife ohne Trap laesst sich nicht per Ctrl+Alt+Del beenden →
   [INPUT02](INPUT02.md).
+
+## Pi-Abnahme (2026-10-18)
+
+Kern `f000303a…` (aus `3717b49e`), TeraDesk `fdaada9e…`. Anwender:
+*„reset funktioniert, wie geplant“* — der Watchdog-Neustart (Quelle Circle)
+traegt auf echter Pi 4.

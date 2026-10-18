@@ -55,3 +55,11 @@ Spec `docs/api/gemdos/_dispatcher.md` §5, `_state.md` §2,
 
 Nebenfund → [FS15](FS15.md) (`CON:`/`AUX:`/`PRN:` bei `Fopen`/`Fcreate`).
 Reihenfolge: 4 → 1 → 5 (nach Entscheidung).
+
+## Anwenderentscheidung Punkt 5 (2026-10-18)
+
+Variante (b): `Fdelete` auf eine eigene offene Datei liefert `E_OK`, der
+Handle bleibt gueltig (wie `ixdel`/`ixclose`), auf eine fremde `EACCDN`;
+spaeteres Schreiben/`Fclose` ueber den Handle fasst die Karte nicht mehr an
+(keine freigegebenen Cluster, kein Verzeichnisslot) — benannte Abweichung in
+`docs/COMPATIBILITY.md` beim Bau.
