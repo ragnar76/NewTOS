@@ -1285,7 +1285,7 @@ rows 3, 6, 8 and 13 empty, and row 15 as the gap above the OK button):
 ```
                     - NewTOS -
 
-        Version    NewTOS 0.5
+        Version    NewTOS 0.6
         Machine    Raspberry Pi 4 (BCM2711)
 
      NewTOS is an independent project -

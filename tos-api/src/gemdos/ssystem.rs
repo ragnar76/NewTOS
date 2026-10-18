@@ -178,7 +178,7 @@ fn sysinfo_value(mode: u16) -> Option<Long> {
 /// characters and always a NUL; `len <= 0` writes nothing and is `E_OK`. A
 /// null buffer with `len > 0` is `EINVAL` (FreeMiNT would write to address 0).
 /// The string is the host's OS version and the build stamp, e.g.
-/// `"NewTOS 0.5 2026-10-07 (c50a9c9)"`; `ERROR` without one.
+/// `"NewTOS 0.6 2026-10-07 (c50a9c9)"`; `ERROR` without one.
 fn s_newtos_kversion(args: &TrapArgs) -> Long {
     let buf = args.arg_u64(1);
     let len = args.arg_i32(2);

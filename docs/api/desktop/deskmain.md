@@ -1320,7 +1320,7 @@ replaces the **content**:
 |---|---|---|---|
 | 0 | `G_BOX` | the box | sized to its text, see below |
 | 1 | `G_STRING` | `- NewTOS -` | (title, centred) |
-| 2/3 | `G_STRING` ×2 | `Version` + `NewTOS 0.5` | `desk::inf::VERSION_STRING` |
+| 2/3 | `G_STRING` ×2 | `Version` + `NewTOS 0.6` | `desk::inf::VERSION_STRING` |
 | 4/5 | `G_STRING` ×2 | `Machine` + the board name | `desk::inf::MACHINE_NAME` (per-board build constant, X03) |
 | 6/7 | `G_STRING` ×2 | the independence notice, split at its dash | `desk::inf::INDEPENDENCE_NOTICE` |
 | 8/9 | `G_STRING` ×2 | the EmuTOS credit | `desk::inf::CREDIT_REIMPL` / `CREDIT_EMUTOS` |

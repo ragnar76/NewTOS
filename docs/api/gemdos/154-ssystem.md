@@ -356,7 +356,7 @@ Ssystem(2019, char *buf, LONG len)
 The kernel copies at most `len − 1` characters of the version string and always
 terminates with a NUL — `strncpy_f`'s rule; `len <= 0` writes nothing and is
 still `E_OK`. The string is the OS name and version followed by the build stamp,
-`"NewTOS 0.5 2026-10-07 (c50a9c9)"` — the same two texts the boot screen prints
+`"NewTOS 0.6 2026-10-07 (c50a9c9)"` — the same two texts the boot screen prints
 as *Version* and *Built* (`kernel/src/initinfo.rs` `VERSION_STRING`,
 `tos_api::build::BUILD_STAMP`). It is shorter than 64 bytes.
 
