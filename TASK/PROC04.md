@@ -63,3 +63,9 @@ Handle bleibt gueltig (wie `ixdel`/`ixclose`), auf eine fremde `EACCDN`;
 spaeteres Schreiben/`Fclose` ueber den Handle fasst die Karte nicht mehr an
 (keine freigegebenen Cluster, kein Verzeichnisslot) — benannte Abweichung in
 `docs/COMPATIBILITY.md` beim Bau.
+
+## Punkt 4 erledigt (2026-10-18, QEMU, `5fe11974`)
+
+75 Eintraege, Handles 6..80, `ENHNDL` bei voller Tabelle. Belege
+`measurements/measurement-2026-10-18-proc04-files/` (rot → gruen),
+`measurements/measurement-2026-10-18-proc04-files-test/` (Tester PASS).
