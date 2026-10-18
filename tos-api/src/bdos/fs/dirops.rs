@@ -150,11 +150,14 @@ pub fn ddelete(args: &TrapArgs) -> Long {
         None => return EPTHNF,
     };
 
-    vol.free_chain(entry.cluster);
-    // FS01: the folder's 8.3 entry *and* the `attr == 0x0F` long-name slots
-    // in front of it — a folder created by a foreign system carries them just
-    // like a file, and leaving them behind orphans the chain.
-    dir::erase_slot_with_lfn(&vol, parent, slot);
+    // EmuTOS `xrmdir` ends in `ixdel(d1, fcb, pos)` (`bdos/fsdir.c:377`), the
+    // same routine as `Fdelete`: owner check on the OFDs at that position,
+    // free the chain, erase the entry — here with FS01's long-name slots in
+    // front of it (a folder created by a foreign system carries them just
+    // like a file, and leaving them behind orphans the chain).
+    if let Err(code) = super::file::ixdel(&vol, parent, slot) {
+        return code;
+    }
     if let Err(code) = super::cache::flush() {
         return code;
     }

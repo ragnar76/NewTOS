@@ -1,0 +1,40 @@
+== C:/
+ Volume in drive : is P4FPRB     
+ Volume Serial Number is 89D7-07F3
+Directory for ::/
+
+FDC      TXT      5000 1980-01-01   0:00 
+FDD      TXT         6 1980-01-01   0:00 
+SUB          <DIR>     2026-10-19   0:10 
+TMP          <DIR>     2026-10-19   0:10 
+AUTO         <DIR>     2026-10-19   0:10 
+FKID     NCP     54152 2026-10-17  12:00 
+NEWDESK  INF         9 2026-10-17  12:00 
+        7 files              59 167 bytes
+                         66 775 040 bytes free
+
+== C:/SUB
+ Volume in drive : is P4FPRB     
+ Volume Serial Number is 89D7-07F3
+Directory for ::/SUB
+
+No files
+                         66 775 040 bytes free
+
+== C:/TMP
+ Volume in drive : is P4FPRB     
+ Volume Serial Number is 89D7-07F3
+Directory for ::/TMP
+
+No files
+                         66 775 040 bytes free
+
+== C:/AUTO
+ Volume in drive : is P4FPRB     
+ Volume Serial Number is 89D7-07F3
+Directory for ::/AUTO
+
+P4F      NCP     52416 2026-10-17  12:00 
+        1 file               52 416 bytes
+                         66 775 040 bytes free
+

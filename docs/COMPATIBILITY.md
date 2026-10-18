@@ -862,6 +862,41 @@ record. Spec `docs/api/gemdos/_dispatcher.md` §5,
 `docs/api/gemdos/console/0a-cconrs.md`; test
 `tos-api/tests/proc04_console_redirect.rs` `a_cconrs_max_is_unsigned`.
 
+**A file deleted while open no longer reaches the card through its
+handles** — user decision, 2026-10-18 (TASK/PROC04 point 5, "Anwenderentscheidung
+Punkt 5", variant b). `Fdelete`, `Fcreate` over an existing file and `Ddelete`
+run EmuTOS' `ixdel` (`references/emutos/bdos/fsopnclo.c:652-699`) unchanged in
+everything a program can ask for: a file open in **another** process is refused
+with `EACCDN` (`:667-668`, without rolling back closes already done, `:660-669`);
+a file open by the **caller** is `ixclose`d (`:665-666`, `:511-581`), deleted,
+and the call returns `E_OK`, while the caller's handle and every `Fdup`/`Fforce`
+alias stay valid and a later `Fclose` returns `EINTRN` and frees the entry
+(`:552-566`, `:484-496`). EmuTOS then keeps working on the OFD's remembered
+clusters: `Fread`/`Fwrite` go to a chain the FAT lists as free (another file may
+own it by then), and a dirty OFD's `Fclose` rewrites the directory slot,
+whatever entry holds it by then (`:530-549`). NewTOS marks every OFD on the
+deleted entry and lets nothing done through it touch the card
+(`tos-api/src/bdos/fs/file.rs`, `ixdel`, `Ofd::deleted`). **Observable
+differences**, all only on a handle whose file was deleted while open:
+(1) `Fread` returns 0 (EmuTOS: the bytes of the freed clusters) and does not
+move the position; (2) `Fwrite` of one or more bytes returns `EACCDN` (EmuTOS:
+the byte count, written into the freed clusters); zero bytes still return 0;
+(3) `Fseek` returns the target position or `ERANGE` from the OFD alone, exactly
+as `ixlseek` bounds it (`references/emutos/bdos/fsio.c:360-361`) — EmuTOS may
+answer `EINTRN` instead, because it walks the freed chain (a freed entry reads 0
+and the walk ends on the media word); (4) `Fdatime` reads and sets the time and
+date the entry had at the delete, kept with the OFD — as EmuTOS' `o_td`
+(`references/emutos/bdos/fsdir.c:684-707`) — but a set is never written to the
+card; (5) `Fclose` returns `EINTRN` like EmuTOS but writes no directory entry
+and flushes no buffers. Redirected character I/O over such a handle follows (1)
+and (2). Unchanged: `Fdelete`/`Fcreate`/`Ddelete` results, `eof` (Cconis on a
+redirected stdin) from the OFD's position and length. One addition on the delete
+itself: an OFD the owner check does not see (a handle shared through
+`Fforce`/`Fdup` after its first close) has its pending length/start cluster
+written back before the chain is freed, so no cluster is left allocated. Spec
+`docs/api/gemdos/file/41-fdelete.md` edge case 3 and "PROC04 point 5"; tests
+`tos-api/tests/proc04_fdelete_open.rs`.
+
 ## EmuTOS is the reference, not the template
 
 CLAUDE.md Rule 1 says EmuTOS source *is* the spec. Through this charter that

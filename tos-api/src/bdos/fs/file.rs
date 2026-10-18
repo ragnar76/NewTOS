@@ -20,7 +20,7 @@ use super::fsio::{self, Fail, Stream};
 use super::path;
 use crate::trap::TrapArgs;
 use tos_types::error::{
-    EACCDN, EFILNF, EIHNDL, EINTRN, EINVFN, ENHNDL, ENSAME, EPTHNF, E_OK,
+    EACCDN, EFILNF, EIHNDL, EINTRN, EINVFN, ENHNDL, ENSAME, EPTHNF, ERANGE, E_OK,
 };
 use tos_types::Long;
 
@@ -58,6 +58,18 @@ struct Ofd {
     /// of the same OFD — a handle shared through `Fforce`, `Fdup` or
     /// inheritance — finds it gone and answers `EINTRN`.
     listed: bool,
+    /// Open order: EmuTOS puts a new OFD at the head of `d_files` (`makopn`,
+    /// `bdos/fsopnclo.c:294-295`) and `ixdel` walks that list, so the newest
+    /// OFD on a file is examined first ([`ixdel`]).
+    seq: u64,
+    /// `Some(time/date)` once the file was deleted while this OFD was open
+    /// ([`ixdel`], TASK/PROC04 point 5): the handles on it stay valid as on
+    /// EmuTOS, but nothing done through them reaches the card any more —
+    /// sanctioned deviation, user decision 2026-10-18 (`docs/COMPATIBILITY.md`
+    /// "Sanctioned deviations"). The four bytes are the directory entry's
+    /// time and date words (offset 0x16) at the delete, EmuTOS' `o_td`, which
+    /// `Fdatime` reads and sets from then on.
+    deleted: Option<[u8; 4]>,
 }
 
 /// What an `sft[]` entry points at — EmuTOS `f_ofd`: no OFD (`NULL`), a BIOS
@@ -102,13 +114,18 @@ struct Tables {
     /// The OFDs the `sft[]` entries point at; one OFD may be shared by several
     /// entries (`Fdup`), and lives while any entry points at it (`sftdel`).
     ofds: [Option<Ofd>; OPEN_FILES],
+    /// The next [`Ofd::seq`].
+    seq: u64,
 }
 
 struct FileTable(UnsafeCell<Tables>);
 // SAFETY: accessed only from the single-CPU, IRQ-off trap path.
 unsafe impl Sync for FileTable {}
-static FILES: FileTable =
-    FileTable(UnsafeCell::new(Tables { sft: [FREE; OPEN_FILES], ofds: [None; OPEN_FILES] }));
+static FILES: FileTable = FileTable(UnsafeCell::new(Tables {
+    sft: [FREE; OPEN_FILES],
+    ofds: [None; OPEN_FILES],
+    seq: 0,
+}));
 
 fn sft() -> &'static mut [Ftab; OPEN_FILES] {
     // SAFETY: single trap path; never concurrently borrowed.
@@ -118,6 +135,14 @@ fn sft() -> &'static mut [Ftab; OPEN_FILES] {
 fn ofds() -> &'static mut [Option<Ofd>; OPEN_FILES] {
     // SAFETY: single trap path; never concurrently borrowed.
     unsafe { &mut (*FILES.0.get()).ofds }
+}
+
+/// The open-order number for a new OFD ([`Ofd::seq`]).
+fn next_seq() -> u64 {
+    // SAFETY: single trap path; never concurrently borrowed.
+    let seq = unsafe { &mut (*FILES.0.get()).seq };
+    *seq += 1;
+    *seq
 }
 
 /// EmuTOS `run` as an owner: the running PD, or — kernel code with no
@@ -148,7 +173,7 @@ fn open_handle(ofd: Ofd) -> Option<Long> {
     // free OFD slot.
     let j = ofds().iter().position(Option::is_none)?;
     let i = claim_sft(FOfd::File(j))?;
-    ofds()[j] = Some(ofd);
+    ofds()[j] = Some(Ofd { seq: next_seq(), ..ofd });
     Some((i as u16 + NUMSTD) as Long)
 }
 
@@ -303,6 +328,8 @@ pub fn fopen(args: &TrapArgs) -> Long {
         dir_slot,
         mode,
         listed: true,
+        seq: 0,
+        deleted: None,
     })
     .unwrap_or(ENHNDL)
 }
@@ -353,13 +380,18 @@ pub fn fcreate(args: &TrapArgs) -> Long {
         return EACCDN;
     }
 
-    // If the file already exists, delete it first (unless RO / folder).
+    // If the file already exists, delete it first (unless RO / folder):
+    // `ixcreat` → `ixdel`, `EACCDN` when it is open in another process
+    // (`bdos/fsopnclo.c:154-165`). A device error during the delete ends the
+    // call with its code, as EmuTOS' `longjmp_rwabs` does.
     if let Some(existing) = dir::find_in_dir(&vol, parent, &name11) {
         if existing.attrib & (FA_RO | 0x10) != 0 {
             return EACCDN;
         }
         if let Some(s) = dir::slot_of(&vol, parent, &name11) {
-            erase_entry(&vol, parent, s, existing.cluster);
+            if let Err(code) = ixdel(&vol, parent, s) {
+                return code;
+            }
         }
     }
 
@@ -388,6 +420,8 @@ pub fn fcreate(args: &TrapArgs) -> Long {
         dir_slot,
         mode: 0x01, // write access
         listed: true,
+        seq: 0,
+        deleted: None,
     })
     .unwrap_or(ENHNDL)
 }
@@ -427,6 +461,12 @@ pub fn fread(args: &TrapArgs) -> Long {
 fn ixread(ofd: &mut Ofd, len: i32, space: crate::uaccess::Space, ubuf: u64) -> Result<Long, Long> {
     // Clamp to the bytes before EOF; zero or negative requests move nothing.
     if len <= 0 {
+        return Ok(0);
+    }
+    // A file deleted while open (TASK/PROC04 point 5): EmuTOS would read the
+    // freed chain, whatever holds it by now; NewTOS reads nothing and leaves
+    // the position alone — sanctioned deviation, user decision 2026-10-18.
+    if ofd.deleted.is_some() {
         return Ok(0);
     }
     let want = (len as u32).min(ofd.s.fileln.saturating_sub(ofd.s.bytnum));
@@ -486,6 +526,13 @@ pub fn fwrite(args: &TrapArgs) -> Long {
 fn ixwrite(ofd: &mut Ofd, len: i32, space: crate::uaccess::Space, ubuf: u64) -> Result<Long, Long> {
     if len <= 0 {
         return Ok(0);
+    }
+    // A file deleted while open (TASK/PROC04 point 5): EmuTOS would write
+    // into the freed chain (clusters another file may own by now); NewTOS
+    // refuses with `EACCDN` and moves nothing — sanctioned deviation, user
+    // decision 2026-10-18.
+    if ofd.deleted.is_some() {
+        return Ok(EACCDN);
     }
     if !ofd.s.vol.is_writable() {
         return Ok(EACCDN);
@@ -585,50 +632,83 @@ pub(crate) fn eof(h: i16) -> Long {
     }
 }
 
-/// Free a file's cluster chain and mark its directory entry — and the
-/// long-name slots in front of it — erased. `start` is the directory
-/// holding the entry (0 = root).
-fn erase_entry(vol: &Volume, start: u32, slot: u32, start_cluster: u32) {
-    // F6: close any open handle to this same file *before* freeing its
-    // clusters, so a stale handle (`Fopen`→`Fdelete`→`Fwrite`/`Fclose`)
-    // cannot write into the freed / re-allocated chain. EmuTOS `ixdel`
-    // scans the OFDs open on this directory position and, for the running
-    // process, closes them before the chain is freed (`fsopnclo.c:660-669`).
-    close_open_file(start, slot);
-    if vol.is_data_cluster(start_cluster) {
-        vol.free_chain(start_cluster);
-    }
-    // FS01: the 8.3 entry *and* the `attr == 0x0F` long-name slots that
-    // belong to it. Freeing only the short entry leaves the chain behind as
-    // an orphan (`dir::erase_slot_with_lfn`).
-    dir::erase_slot_with_lfn(vol, start, slot);
-}
-
-/// Close every open-file-table entry that refers to the directory entry at
-/// (`dir_start`, `dir_slot`) — i.e. an open handle to a file being deleted
-/// or overwritten. Invalidating the slot here means a subsequent
-/// `Fread`/`Fwrite`/`Fclose` on that handle returns `EIHNDL` rather than
-/// operating on freed clusters.
+/// EmuTOS `ixdel` (`bdos/fsopnclo.c:652-699`): delete the directory entry at
+/// (`dir_start`, `slot`) — a file, or for `Ddelete` an empty folder — whose
+/// name the caller has resolved. Shared by `Fdelete`, `Fcreate` over an
+/// existing file and `Ddelete` (spec `docs/api/gemdos/file/41-fdelete.md`
+/// edge case 3, TASK/PROC04 point 5).
 ///
-/// The identifying key `(dir_start, dir_slot)` is EmuTOS' `(o_dnode,
-/// o_dirbyt)` pair and uniquely names the file. EmuTOS distinguishes the
-/// *owning* process (close it via `ixclose`) from a foreign one (refuse the
-/// delete with `EACCDN`); NewTOS' open-file table is process-agnostic (one
-/// shared SFT, the desktop's single active process), so it always takes the
-/// owning-process branch and closes the handle.
-fn close_open_file(dir_start: u32, dir_slot: u32) {
-    for j in 0..OPEN_FILES {
-        let hit = matches!(ofds()[j], Some(o) if o.dir_start == dir_start && o.dir_slot == dir_slot);
-        if !hit {
-            continue;
-        }
-        ofds()[j] = None;
-        for e in sft().iter_mut() {
-            if e.ofd == FOfd::File(j) {
-                *e = FREE;
+/// 1. Every OFD still listed on the directory at that position (`d_files`,
+///    newest first) is examined; for each `sft[]` entry on it: owned by `run`
+///    → `ixclose` (the entry and the handle stay valid, `sft[]` is not
+///    touched), owned by another process → `EACCDN` at once, with no rollback
+///    of the closes already done (`:660-669`).
+/// 2. The start cluster is read from the entry *after* those closes — a file
+///    written but not closed has it only in its OFD, and `ixclose` wrote it
+///    back — and the chain is freed (`:674-683`).
+/// 3. The 8.3 entry and its long-name slots are erased (FS01,
+///    [`dir::erase_slot_with_lfn`]).
+///
+/// NewTOS deviation (user decision 2026-10-18, `docs/COMPATIBILITY.md`
+/// "Sanctioned deviations"): every OFD that still names the entry is then
+/// marked [`Ofd::deleted`], so nothing done through its handles reaches the
+/// card again — EmuTOS keeps reading and writing the freed chain and lets a
+/// dirty OFD's `Fclose` rewrite the slot, whoever uses it by then. An OFD
+/// that is no longer listed (a second handle after a first close) is not part
+/// of the owner check, as on EmuTOS; its pending length/cluster is written
+/// back first so the chain freed is the whole chain.
+///
+/// `Err` is `EACCDN` (open elsewhere) or a device error code.
+pub(super) fn ixdel(vol: &Volume, dir_start: u32, slot: u32) -> Result<(), Long> {
+    let names = |o: &Ofd| o.deleted.is_none() && o.dir_start == dir_start && o.dir_slot == slot;
+    let run = run_pd();
+    // `for (fd = dn->d_files; fd; fd = fd->o_link)`: the listed OFDs at this
+    // position, newest first. A close only takes the OFD it closes off the
+    // list, so walking by descending `seq` visits exactly EmuTOS' sequence.
+    let mut below = u64::MAX;
+    loop {
+        let next = (0..OPEN_FILES)
+            .filter_map(|j| ofds()[j].filter(|o| o.listed && names(o) && o.seq < below).map(|o| (o.seq, j)))
+            .max();
+        let Some((seq, j)) = next else { break };
+        below = seq;
+        for n in 0..OPEN_FILES {
+            if sft()[n].ofd == FOfd::File(j) {
+                if sft()[n].own == Some(run) {
+                    let _ = ixclose(j);
+                } else {
+                    return Err(EACCDN);
+                }
             }
         }
     }
+    for o in ofds().iter_mut().flatten() {
+        if names(o) && o.s.dirty {
+            flush_ofd(o);
+            o.s.dirty = false;
+        }
+    }
+
+    let mut e = [0u8; 32];
+    if !dir::read_slot(vol, dir_start, slot, &mut e) {
+        return Err(super::cache::take_error().unwrap_or(EINTRN));
+    }
+    let start_cluster = u32::from(u16::from_le_bytes([e[0x1A], e[0x1B]]));
+    if vol.is_data_cluster(start_cluster) {
+        vol.free_chain(start_cluster);
+    }
+    dir::erase_slot_with_lfn(vol, dir_start, slot);
+
+    let mut td = [0u8; 4];
+    td.copy_from_slice(&e[0x16..0x1A]);
+    for o in ofds().iter_mut().flatten() {
+        if names(o) {
+            o.deleted = Some(td);
+            o.listed = false;
+            o.s.dirty = false;
+        }
+    }
+    Ok(())
 }
 
 /// Flush an open file's directory entry (size + start cluster).
@@ -669,7 +749,9 @@ pub fn fdelete(args: &TrapArgs) -> Long {
         Some(s) => s,
         None => return EFILNF,
     };
-    erase_entry(&vol, parent, slot, entry.cluster);
+    if let Err(code) = ixdel(&vol, parent, slot) {
+        return code;
+    }
     if let Err(code) = super::cache::flush() {
         return code;
     }
@@ -973,6 +1055,15 @@ pub fn fdatime(args: &TrapArgs) -> Long {
         Some(o) => o,
         None => return EIHNDL,
     };
+    // A file deleted while open (TASK/PROC04 point 5): its directory slot may
+    // hold another file by now. EmuTOS' `xgsdtof` works on the OFD's `o_td`
+    // alone (`bdos/fsdir.c:684-707`); so does NewTOS here, with the
+    // time/date kept at the delete — and a set is not written back by the
+    // later `Fclose` (sanctioned deviation, user decision 2026-10-18).
+    if let Some(td) = ofd.deleted.as_mut() {
+        let r = if wrt == 0 { args.space.copy_to(buf, &td[..]) } else { args.space.copy_from(&mut td[..], buf) };
+        return if r.is_err() { crate::uaccess::FAULTED } else { E_OK };
+    }
     let mut e = [0u8; 32];
     if !dir::read_slot(&ofd.s.vol, ofd.dir_start, ofd.dir_slot, &mut e) {
         return EIHNDL;
@@ -1025,7 +1116,28 @@ pub fn fseek(args: &TrapArgs) -> Long {
         2 => ofd.s.fileln as i64,     // SEEK_END
         _ => return EINVFN,
     };
+    if ofd.deleted.is_some() {
+        return seek_deleted(&mut ofd.s, base + n);
+    }
     fsio::ixlseek(&mut ofd.s, base + n)
+}
+
+/// `ixlseek` (`bdos/fsio.c:354-425`) for a file deleted while open
+/// (TASK/PROC04 point 5): the same `ERANGE` bounds and the same result, but
+/// without walking the cluster chain — it is free in the FAT now, and no
+/// transfer through this OFD will ever use the cluster fields again. EmuTOS
+/// walks the freed chain and may answer `EINTRN` instead (a freed entry reads
+/// 0, and the walk from cluster 0 meets the media word); NewTOS answers the
+/// position (sanctioned deviation, user decision 2026-10-18).
+fn seek_deleted(s: &mut Stream, n: i64) -> Long {
+    if n < 0 || n > i64::from(s.fileln) {
+        return ERANGE;
+    }
+    s.bytnum = n as u32;
+    s.curcl = 0;
+    s.currec = 0;
+    s.curbyt = 0;
+    n as Long
 }
 
 /// `Fclose` (0x3E) — close a handle (EmuTOS `xclose`,
@@ -1093,7 +1205,11 @@ fn ixclose(j: usize) -> Long {
     let Some(ofd) = ofds()[j].as_mut() else {
         return EIHNDL;
     };
-    if ofd.s.dirty {
+    // A file deleted while open has no directory entry to write back: its
+    // slot may belong to another file by now (TASK/PROC04 point 5; EmuTOS
+    // rewrites it from a dirty OFD, `:530-549`). Such an OFD is never listed,
+    // so the close ends with `EINTRN` below, before the buffer flush.
+    if ofd.s.dirty && ofd.deleted.is_none() {
         flush_ofd(ofd);
         ofd.s.dirty = false;
     }

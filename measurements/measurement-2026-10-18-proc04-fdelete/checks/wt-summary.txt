@@ -1,0 +1,7 @@
+host tests (pass fail ignored): 1474 0 1
+build rpi4: rc=0 kernel=94 tos-api=64  0 errors
+build qemu-virt: rc=0 kernel=94 tos-api=64  0 errors
+clippy rpi4: tos-api=76 kernel=125 
+clippy qemu-virt: tos-api=76 kernel=125 
+drift: DRIFT-PROBE TOTAL: 0
+sdk host: host tests: 20 passed, 0 failed, 0 skipped

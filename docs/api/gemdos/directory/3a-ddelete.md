@@ -235,3 +235,11 @@ the folder's 8.3 entry (`dir::erase_slot_with_lfn`,
 chain just as a file does. Rationale, sources and the "a chain that does not
 validate is not ours to erase" rule: `docs/api/gemdos/file/41-fdelete.md`,
 section *FS01*.
+
+**PROC04 point 5 (2026-10-18): the erase goes through `ixdel`.** `ddelete`
+now ends in `file::ixdel` (`tos-api/src/bdos/fs/file.rs`) as `xrmdir` ends in
+`ixdel(d1, fcb, pos)` (`bdos/fsdir.c:377`): owner check on the OFDs listed at
+the folder's position (none can be — `Fopen`/`Fcreate` never open a folder —
+and the OFD of a file deleted earlier in that slot is not listed), then the
+chain is freed and the entry erased with its long-name slots. Details
+`docs/api/gemdos/file/41-fdelete.md` "PROC04 point 5".

@@ -1,0 +1,53 @@
+measurement-2026-10-18-proc04-fdelete -- Developer: TASK/PROC04 point 5, Fdelete (and Fcreate over an existing file, Ddelete) on an
+OPEN file. User decision 2026-10-18, variant b: EmuTOS ixdel (bdos/fsopnclo.c:652-669) -- file open in ANOTHER process -> EACCDN (no
+rollback), own open file -> ixclose, E_OK, handles incl. Fdup/Fforce aliases stay valid, later Fclose EINTRN -- plus a sanctioned
+deviation: nothing done through a deleted file's handle reaches the card (docs/COMPATIBILITY.md "Sanctioned deviations").
+Replaces audit fix F6 (00c8137a). Spec docs/api/gemdos/file/41-fdelete.md edge case 3 + "PROC04 point 5".
+Base HEAD 569635ee, change UNCOMMITTED in the working tree. Developer self-evidence; the Tester's verdict is separate.
+Host macOS, QEMU -M raspi4b -append "serial=on [memprot=strict|off|verify]", one QEMU at a time, per-run APFS clones (cp -c) of one
+base card per content, deleted after each run (fsck_msdos -n + mtools listing of the clone first); private 64 MiB FAT16 images only,
+no SD card, no Pi. Scratch = session scratchpad .../scratchpad/fd (method/env.sh).
+
+CHANGE
+  tos-api/src/bdos/fs/file.rs   Ofd.seq (open order, d_files newest first), Ofd.deleted (Some(time/date) after a delete while open);
+                                ixdel replaces erase_entry/close_open_file: listed OFDs at (dir_start,slot) newest first, per sft[]
+                                entry own==run_pd() -> ixclose, else EACCDN; pending dirty entries written back; start cluster read
+                                from the entry AFTER the closes; chain freed; entry + LFN erased; every OFD on it marked deleted.
+                                Deleted OFD: ixread -> 0, ixwrite (len>=1) -> EACCDN, Fseek -> seek_deleted (ixlseek bounds, no
+                                chain walk), Fdatime on the kept time/date, ixclose writes nothing (-> EINTRN, no flush).
+                                fcreate/fdelete call ixdel (Err -> its code: EACCDN or a device code).
+  tos-api/src/bdos/fs/dirops.rs ddelete erases through file::ixdel (xrmdir -> ixdel, fsdir.c:377).
+  docs/COMPATIBILITY.md         new sanctioned deviation entry; docs/api/gemdos/file/41-fdelete.md, _state.md, directory/3a-ddelete.md.
+  tos-api/tests/proc04_fdelete_open.rs  new, 9 host tests.
+
+1 RED/GREEN HOST (checks/red-host-proc04-fdelete.txt, green-host-proc04-fdelete.txt)
+  HEAD code: 0 passed / 9 failed (handles EIHNDL after delete; foreign delete succeeded; 3 clusters LOST when a written, unclosed file
+  was deleted -- F6 freed the chain from the stale on-disk start cluster). Change: 9/9.
+2 QEMU PROBE P4F (method/p4fdel.c -> C:\AUTO\P4F.NCP + C:\FKID.NCP; build-fd.sh, card-fd.sh, run-probe.sh):
+  A parent holds C:\FDA.TXT open, child Fdelete + Fcreate -> both EACCDN, parent's handle writes + Fclose 0, content intact;
+  B own delete while open (5000 bytes): Fdelete 0, Fopen EFILNF, Fseek 5000/5000/ERANGE, Fwrite EACCDN, Fread 0, Fdatime 0/0,
+    Fclose EINTRN then EIHNDL, Dfree back to before; next file FDC.TXT intact;  C Fcreate over own open file;  D Ddelete case;
+  E mintlib tmpfile paths (T1 TOS path, T2 MiNT path) in a child.
+  head on (red, serial/fd-head-on.log): FD RESULT fails=0x14; fsck: "Found 6 orphaned clusters", rc=206.
+  wt on/strict/off/verify (serial/fd-wt-*.log): FD RESULT fails=0, 0 FAIL, 0 EXC/PANIC, desktop up; fsck rc=0, no orphans (-fsck.txt).
+  tmpfile: mintlib tmpfile() does NOT link with the SDK (tmpnam -> __diraccess -> getgroups -> getgrent/getpwuid undefined,
+  checks/tmpfile-link.txt, method/tmpfile-link.*). Its paths replayed: T1 (__mint<9, NewTOS: no MiNT cookie) ok; T2 (__mint>=9:
+  remove of the open stream) remove 0, fwrite buffered, fflush EOF, fclose -1 (Fwrite EACCDN) -- on HEAD the same visible result.
+3 INTERACTIVE (method/inter/: cards.sh, gen.py (+drag), *.spec -> *.script, runall.sh head wt; dumps screendumps/, serial/*-card.txt,
+  *-fsck.txt): dsk = NEWDESK, NOTE.TXT (W3) and README.TXT (W1) dragged onto the Trash, DELETE FILE(S) OK -> both gone;
+  tdd = TeraDesk, DELME.TXT dragged onto TRASH, "Delete Files and Folders" OK -> gone, KEEP.TXT stays;
+  qsv = QED Ctrl+N "abc", Ctrl+S save as C:\APPS\QED\QS.TXT, "d", Ctrl+S = Fcreate over the existing file (backup option off, no
+  .BAK) -> QS.TXT = "abcd". head and wt: identical card listings, fsck rc=0 everywhere, 0 EXC/PANIC; 15/16 dump pairs pixel-identical,
+  qsv-q1 differs only in dump phase (typing "ab" vs "abc"; q2..q6 identical).
+4 REGRESSION wt (method/regress/series.sh, checks/series-wt.out, serial/rg-wt-*): APITEST TOTAL 109/0/5 on/strict/off; S2ALL PASS
+  on/off, S2ALLS PASS strict (4 EXC lines = its two intended crash prompts); VFORK PASS x3; TeraDesk #Z -> F1 -> QED: 6 dumps all
+  sha 5d8e72ff.. (= measurement-2026-10-18-proc04-redir / con01-test), PNGs in scratch only.
+5 HOST/BUILD (method/checks.sh wt; checks/wt-*.txt, wt-summary.txt): cargo xtask test 1474/0/1 (1465 + 9 new); SDK 20/0/0;
+  release builds rpi4 + qemu-virt rc=0, tos-api 64 / kernel 94 warnings (baseline 64/94); clippy tos-api 76 / kernel 125 both boards
+  (baseline 76/125), 0 hits in file.rs/dirops.rs; desk-drift-probe TOTAL 0. qemu-virt boot (release, flat): desktop up (0 drives),
+  0 EXC/PANIC (serial/virt-wt-boot.log).
+Kernels: release rpi4 from `git archive 569635ee` [+ working-tree tos-api files for wt], SOURCE_DATE_EPOCH=1792152000,
+  variants dsk/tdd/qsv/s2s/tdq instrumented in scratch trees only (tools/inject-arm.py): checks/kernels.sha256.
+  Cards checks/cards.sha256 (api/s2/s2s/vf/tdq = clones of the proc04-redir scratch cards; SDK unchanged since), programs.sha256.
+NOT RUN: real Pi 4, head regression series (baseline = proc04-redir / con01-test), a delete while an Fforce'd shared handle has been
+  closed once (host-tested only indirectly), Ctrl+D delete in NEWDESK, an EmuTOS/Hatari reference run of the EmuTOS hazard itself.

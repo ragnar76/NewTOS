@@ -224,9 +224,12 @@ there); the EmuTOS behaviour is the target:**
    is **system-wide**; there is no per-process handle limit (a process owns
    only the 6 `p_uft[]` slots). Full table → `ENHNDL` (`opnfil`
    `bdos/fsopnclo.c:341-346`, `xdup` `bdos/fshand.c:100-105`).
-3. *`Fdelete` of an open file* — see `file/41-fdelete.md`
-   ("Open files" section): NewTOS invalidates every handle (audit fix "F6",
-   `file.rs:498-535`), EmuTOS does not.
+3. *`Fdelete` of an open file* — **repaired 2026-10-18 (TASK/PROC04 point 5)**:
+   `file.rs` `ixdel` as EmuTOS (own OFD `ixclose`d, handles stay valid, later
+   `Fclose` `EINTRN`; another process's → `EACCDN`), plus the sanctioned
+   protection that nothing through a deleted file's handle reaches the card
+   (`docs/COMPATIBILITY.md`; details `file/41-fdelete.md` "PROC04 point 5").
+   Before: audit fix "F6" invalidated every handle.
 
 (Point 3 of the PROC04 ticket — `Fread`/`Fwrite` on negative handles — was
 already repaired by FS11 on 2026-10-13: `file.rs:393-394,441-442`

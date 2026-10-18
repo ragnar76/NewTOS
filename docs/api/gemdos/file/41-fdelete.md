@@ -280,24 +280,43 @@ not this entry's name to begin with, and FreeMiNT's `__readvfat` rejects it the
 same way. This is a **NewTOS decision** taken from the FAT layout, not
 behaviour extracted from EmuTOS — EmuTOS has no answer here.
 
-**PROC04 point 5 (2026-10-18) — NewTOS deviates from edge case 3; not
-sanctioned.** `tos-api/src/bdos/fs/file.rs` `erase_entry :498-513` calls
-`close_open_file :526-540`, which sets `ofds[j] = None` (`:532`) and frees **every**
-`sft[]` entry on the OFD (`:533-537`), so afterwards `Fread`/`Fwrite`/`Fclose`
-on the handle answer `EIHNDL` (EmuTOS: valid handle; `Fclose` → `EINTRN`).
-It also never takes the foreign-owner branch: the doc comment calls the SFT
-"process-agnostic" (`:523`) although `Ftab.own` (`:83-85`, PROC02) now
-carries the owner — so a file open in another process is deleted instead of
-`EACCDN`. Origin: audit fix "F6", commit `00c8137a` ("a stale handle after
-delete now returns EIHNDL instead of writing into freed/reused clusters ...
-the foreign-process EACCDN branch would need OFD ownership (deferred)"),
-based on the imprecise reading of this spec's old edge case 3. It is **not**
-listed in `docs/COMPATIBILITY.md` (searched: no entry on Fdelete, SFT or
-handles), so it is an unsanctioned deviation, not a decision.
-Faithful replacement (contract): `erase_entry` → `ixdel` semantics: loop
-OFDs at (`dir_start`,`dir_slot`) × `sft[]` entries; owned by `run_pd()` →
-`ixclose(j)` (exists, `file.rs:999`), else `EACCDN` before any cluster is
-freed by this call; callers: `fdelete`, `fcreate` (overwrite → `EACCDN`),
-`Ddelete`/`Dcreate` paths. Open decision for the user: the data-integrity
-hazard above is EmuTOS-inherent; replicating it 1:1 is what "EmuTOS-faithful"
-asks for, but the Developer should be told explicitly that it is a hazard.
+**PROC04 point 5 (2026-10-18) — `ixdel` as EmuTOS, plus a sanctioned
+protection after the delete** (user decision 2026-10-18, variant b,
+`docs/COMPATIBILITY.md` "Sanctioned deviations", "A file deleted while open no
+longer reaches the card through its handles"). Replaces audit fix F6
+(`00c8137a`), which freed every `sft[]` entry on the OFD — handles answered
+`EIHNDL` afterwards — and deleted files open in another process; both were a
+misreading of the old edge case 3.
+
+`tos-api/src/bdos/fs/file.rs` `ixdel` is shared by `fdelete`, `fcreate` (an
+existing file of that name; any `Err` ends the call — `EACCDN`, or a device
+code as EmuTOS' `longjmp`) and `dirops::ddelete` (`fsdir.c:377`). It does what
+`ixdel` does (`fsopnclo.c:652-699`):
+- walks the OFDs still listed on the directory at the entry's position
+  (`Ofd::listed` = on `d_files`), newest first (`Ofd::seq`, `makopn`
+  `:294-295`), and for every `sft[]` entry on such an OFD: `f_own` = the running
+  PD (`run_pd()`) → `ixclose`; otherwise → `EACCDN` at once, no rollback;
+- reads the start cluster from the entry **after** those closes (a file written
+  but not closed has it only in its OFD; `ixclose` writes it back, as EmuTOS's
+  `f->f_clust` points into the buffer `ixclose` updated) and frees the chain;
+- erases the entry and its long-name slots (FS01).
+
+NewTOS additions: every OFD that still names the entry gets
+`Ofd::deleted = Some(time/date)` and is unlisted; an unlisted OFD the owner check
+does not see (a shared handle after its first close) has its pending length/start
+cluster written back first, so the freed chain is complete. On a deleted OFD:
+`Fread` → 0 (position unchanged), `Fwrite` (len ≥ 1) → `EACCDN`, len ≤ 0 → 0,
+`Fseek` → target or `ERANGE` from `o_bytnum`/`o_fileln` without a chain walk
+(`seek_deleted`), `Fdatime` get/set on the kept time/date only, `Fclose` →
+`EINTRN` with no directory write and no flush (`ixclose`), redirected character
+I/O via `xread`/`xwrite` as `Fread`/`Fwrite`; `eof` unchanged (needs no card).
+A deleted OFD is never matched by a later `ixdel`, so a file or folder that
+reuses the slot is unaffected (EmuTOS: not on `d_files` either).
+
+`Dcreate`'s two `ixdel` error paths (`fsdir.c:228,239`) have no counterpart:
+NewTOS's `dcreate` writes the directory entry last, after the cluster is
+allocated and initialised, so there is no half-made entry to delete.
+
+Tests `tos-api/tests/proc04_fdelete_open.rs` (9; red on the F6 code: 9/9
+failed, incl. 3 clusters lost when a written, unclosed file was deleted);
+probe `measurements/measurement-2026-10-18-proc04-fdelete/`.

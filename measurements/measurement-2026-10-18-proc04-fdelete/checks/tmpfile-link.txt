@@ -1,0 +1,19 @@
+rust-lld: error: undefined symbol: getpwuid
+>>> referenced by getgroups.c
+>>>               unix__getgroups.o:(getgroups) in archive /Volumes/Daten/Development/PiRusTOS/sdk/libc/libc.a
+
+rust-lld: error: undefined symbol: setgrent
+>>> referenced by getgroups.c
+>>>               unix__getgroups.o:(getgroups) in archive /Volumes/Daten/Development/PiRusTOS/sdk/libc/libc.a
+
+rust-lld: error: undefined symbol: getgrent
+>>> referenced by getgroups.c
+>>>               unix__getgroups.o:(getgroups) in archive /Volumes/Daten/Development/PiRusTOS/sdk/libc/libc.a
+>>> referenced by getgroups.c
+>>>               unix__getgroups.o:(getgroups) in archive /Volumes/Daten/Development/PiRusTOS/sdk/libc/libc.a
+
+rust-lld: error: undefined symbol: endgrent
+>>> referenced by getgroups.c
+>>>               unix__getgroups.o:(getgroups) in archive /Volumes/Daten/Development/PiRusTOS/sdk/libc/libc.a
+>>> referenced by getgroups.c
+>>>               unix__getgroups.o:(getgroups) in archive /Volumes/Daten/Development/PiRusTOS/sdk/libc/libc.a
