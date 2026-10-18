@@ -32,3 +32,26 @@ und `measurements/measurement-2026-10-18-proc04-curdir-test/` (Tester PASS,
 Accessories: eigener PD bis B5 entschieden. Nebenbefunde: 16 statt 26
 Laufwerke (`BLKDEVNUM`/`NUMCURDIR`, vgl. FS12), Pfade auf 63 statt 111 Byte.
 Punkte 1, 3, 4, 5 offen.
+
+## Re-Validierung Punkte 1, 3, 4, 5 (2026-10-18, Researcher)
+
+Spec `docs/api/gemdos/_dispatcher.md` §5, `_state.md` §2,
+`file/41-fdelete.md`, `3f-fread.md`, `40-fwrite.md`, `3e-fclose.md`.
+
+1. **Bestaetigt, praeziser:** zwei Mechanismen — Datei-Umlenkung
+   (`bdosmain.c:498-568`, `stdio_typ` `:150-197`, Crawio ausgenommen) und
+   BIOS-Geraet ueber `HXFORM(run->p_uft[n])` (`console.c`). NewTOS ignoriert
+   `p_uft` in allen 15 Zeichenfunktionen (`tos-api/src/gemdos/console.rs`).
+   Betrifft `system()`/`popen()` der mintlib mit Kindern im TOS-Stil.
+3. **Ueberholt** — seit FS11 (2026-10-13) EmuTOS-gleich (`file.rs:231-246,393-455`).
+4. **Bestaetigt:** EmuTOS `OPNFILES 75`, `NUMHANDLES 81`, systemweit, ohne
+   CONF-Gate (`bdos/fs.h:43-45`); NewTOS 16 (`file.rs:30`).
+5. **Bestaetigt, praeziser:** EmuTOS `ixdel` (`fsopnclo.c:652-669`): eigene
+   offene Datei → `ixclose`, Handle bleibt gueltig, `Fdelete` = `E_OK`,
+   spaeteres `Fclose` = `EINTRN`; fremde → `EACCDN`. NewTOS (F6, `00c8137a`)
+   macht alle Handles ungueltig. Keine benannte Abweichung — F6 war eine
+   Fehllesung. EmuTOS-Gefahr: Schreiben nach dem Loeschen landet in freien
+   Clustern → Anwenderentscheidung.
+
+Nebenfund → [FS15](FS15.md) (`CON:`/`AUX:`/`PRN:` bei `Fopen`/`Fcreate`).
+Reihenfolge: 4 → 1 → 5 (nach Entscheidung).
