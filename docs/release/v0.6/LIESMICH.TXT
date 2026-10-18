@@ -122,8 +122,8 @@ Bitte TESTANLEITUNG.TXT durchgehen und FEEDBACK.TXT ausfuellen
 
 NewTOS steht unter der GNU GPL v2 oder spaeter. Die enthaltenen Programme
 stehen unter ihren eigenen Lizenzen (TeraDesk, QED, zView, Doom: GPL).
-Die vollstaendigen Quelltexte genau dieser Version liegen dem Download als
-NEWTOS-0.6-QUELLEN.ZIP bei. Die Raspberry-Pi-Firmware (start4.elf,
+Die vollstaendigen Quelltexte genau dieser Version (NewTOS, SDK und die
+Anpassungen der Programme) gibt es auf Anfrage ueber die Mailingliste. Die Raspberry-Pi-Firmware (start4.elf,
 fixup4.dat, .dtb) stammt von der Raspberry Pi Foundation und steht unter
 deren Lizenz (LICENCE.broadcom). DOOM1.WAD ist die frei weitergebbare
 Shareware-Episode von id Software.
