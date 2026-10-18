@@ -1,0 +1,72 @@
+measurement-2026-10-18-proc04-curdir -- TASK/PROC04 point 2 (in the TASK/PROC03 package, user decision 2026-10-18 "alles
+EmuTOS-treu"): current drive and per-drive current directory per PD (p_curdrv at PD+0x37, p_curdir[] + dirtbl), inherited
+at PD creation (init_pd_files), Dsetdrv/Dgetdrv/Dsetpath/Dgetpath and relative paths on `run`'s PD, stand-in PDs as mutable
+`run` in kernel context, dirtbl uses dropped at Pterm. Developer self-evidence; the Tester's verdict is separate.
+
+Date 2026-10-18, branch main, HEAD bee5a392 + this change (uncommitted). Host macOS, QEMU -M raspi4b, -append "serial=on
+[memprot=strict|off]", one QEMU at a time, per-run APFS clones (cp -c) of one base card per content, deleted after each run.
+No SD card, Pi or TT touched; tools/make-sd-image.sh not used. Scratch = session scratchpad .../scratchpad/p4 (method/env.sh).
+Spec: docs/api/gemdos/process/_run-ownership-curdir.md §4 (+ §6.5 added: as built), directory/3b-dsetpath.md,
+47-dgetpath.md, drive/0e-dsetdrv.md, 19-dgetdrv.md, _parent-and-environment.md §2. EmuTOS pin 1a7484ab.
+
+METHOD
+  method/p4probe.c        probe WITH EmuTOS expectations (extends the CWD part of measurement-2026-10-17-proc03 p3probe.c):
+                          P4AUTO.NCP (AUTO), P4Z.NAP (#Z), P4Z2.NAP (shel_write from Z while Z is in \SUB), P4ACC.NAC
+                          (accessory), P4E.NCP (run twice from the in-kernel EmuCON). Card: P4E.NCP, P4KA.NCP, P4KZ.NAP,
+                          P4INNER.TXT exist ONLY in C:\SUB, so a bare-name Fopen/Pexec/EmuCON "run" proves relative
+                          resolution against the caller's PD. Checks: own PD+0x37 == 2 and Dgetdrv 2; stand-ins'
+                          p_curdrv (initial, AES, accdesk, EmuCON) == 2; AUTO and #Z start at the root (AUTO's Dsetpath
+                          does not leak); Dsetpath(\SUB) -> relative Pexec of the kid; the kid inherits \SUB/C:, moves
+                          itself to \ and A:; afterwards the parent is still in \SUB on C: and opens relative names;
+                          Z2 (NORMAL_APP via shel_write) starts in Z's directory (sh_curdrvdir -> sh_apdir -> sh_chdef);
+                          EmuCON "cd ..", "cd sub", "run p4e.ncp" twice: P4E inherits \SUB, moves itself to A:\, and
+                          EmuCON must still find p4e.ncp relative in \SUB the second time.
+  method/build-p4.sh, card.sh, mkcard.sh, p4.inf (#Z C:\P4Z.NAP), common.h, run-probe.sh (80 s per mode)
+  method/emucon.script    tools/inject-arm.py launch:P4Z2 -- the EmuCON keys above (no backslash key needed).
+  method/build-kernels.sh git archive bee5a392 (+ working-tree kernel/ tos-api/ files for side wt) into scratch trees,
+                          release rpi4, SOURCE_DATE_EPOCH=1792152000; plain / inj / s2s / tdq (injectors on scratch only).
+  method/checks.sh        static checks on the shared tree -> checks/wt-*.txt, checks/wt-summary.txt
+  method/regress/         copied unchanged from measurement-2026-10-18-proc03-s1/method/regress (APITEST, S2ALL/S2ALLS,
+                          VFORKT, TeraDesk -> F1 -> QED), for side head and wt.
+
+RED
+  host: tos-api/tests/proc04_curdir_per_pd.rs (first 6 tests, compiled against HEAD code): 0 passed / 6 failed
+        (checks/red-head-host-proc04.txt): PD+0x37 of a desktop program 0 (want 2); parent's Dgetpath "" after the
+        child's Dsetpath (want \SUB); a program's Dsetpath moves accdesk's directory; a program's Dsetdrv(0) moves accdesk's
+        drive (Dgetdrv 0 in kernel context, want 2); sh_chdef moves the running program; accdesk's Dsetdrv(5) not in
+        its PD+0x37.
+  QEMU: serial/p4-head-on.log, p4-head-strict.log (kernel8-head-inj = HEAD + injector), identical:
+        AUTO fails=6, ACC 1, Z 6, Z2 5, EMU 1 + the second "run p4e.ncp" -> "Cannot run program (error 33)" (only one EMU
+        RESULT line). 21 FAIL lines each. 0 EXC/PANIC.
+
+GREEN (kernel8-wt-inj 7483ceae..., memprot strings checked in each log)
+  host: proc04_curdir_per_pd.rs 11/11 (6 above + 5 added after the red run: dirtbl use counts through inherit/
+        Dsetpath/Pterm, stand-ins releasing at leave_*, a scribbled p_curdir byte read as root and not inherited,
+        program-written PD+0x37 seen by Dgetdrv, recount of a full table of unnamed uses).
+  QEMU: serial/p4-wt-on.log, p4-wt-strict.log, p4-wt-off.log: AUTO 0, ACC 0, Z 0, Z2 0, EMU 0 and EMU 0 (second run found
+        relative) -- in on, strict and off; 0 FAIL lines, 0 EXC/PANIC; desktop up after EmuCON "exit".
+
+STATIC CHECKS (checks/wt-summary.txt, final tree)        baseline (HEAD bee5a392)          this tree
+  host tests (cargo xtask test) pass/fail/ignored         1424/0/1                         1435/0/1 (+11: proc04_curdir_per_pd.rs)
+  release warnings tos-api / kernel, rpi4 and qemu-virt   64/94                            64/94 both, 0 errors
+  clippy tos-api / kernel, rpi4 and qemu-virt             76/125                           76/125 both (none in touched files)
+  desk drift probe                                         0                                0
+  SDK host tests                                           20/0/0                           20/0/0
+
+REGRESSION (serial/rg-<side>-<mode>-*.log; side head = kernel8-head-*, wt = kernel8-wt-*; modes on/strict/off)
+  APITEST (#Z)            head 109/0/5, wt 109/0/5 in all three modes; the 130 [OK]/[FAIL]/[SKIP]/TOTAL lines identical
+                          head vs wt per mode (unmasked).
+  S2ALL (on/off), S2ALLS (strict, 2 intended crashes answered by the s2s injector = the 4 [crash] lines)
+                          PASS head and wt in every mode; PASS/FAIL lines identical head vs wt (numbers masked).
+  VFORKT alone            VFORK: PASS head and wt, all modes, lines identical.
+  TeraDesk -> F1 -> QED   QED menu bar (from qed.rsc in its app dir) on screen at t25/t40 in every mode; screendumps
+                          byte-identical head vs wt (sha256 5d8e72ff..., checks/screendumps.sha256;
+                          screendumps/rg-{head,wt}-on-tdqed-t40.png) -- the same image as measurement-2026-10-18-proc03-s1.
+
+BINARIES (not kept): checks/kernels.sha256 (kernel8-head-plain 654c2f1b... = HEAD; kernel8-wt-plain af0f7ed8...;
+kernel8-wt 109ec7a5... / kernel-virt-wt ed706dc6... from checks.sh on the shared tree), checks/probe-programs.sha256,
+checks/regress-programs.sha256.
+
+NOT RUN: TeraDesk folder navigation (no injector for folder double-clicks exists; only the F1 -> QED path is driven),
+desktop/accessory pixel comparison, qemu-virt boot (only built), real Pi 4, memprot=verify, an accessory's own Dsetpath
+(B5 not decided: NewTOS keeps `run` = the accessory's PD, EmuTOS acts on the PD in front).

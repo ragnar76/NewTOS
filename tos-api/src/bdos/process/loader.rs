@@ -780,9 +780,11 @@ pub unsafe fn create_basepage(
 /// ([`super::standin::kernel_run_uft`], TASK/PPARENT). Runs once the PD is
 /// complete, so a load that fails takes no use (`bdos/proc.c:235,345-350`).
 ///
-/// The rest of `init_pd_files` — `p_curdir[]` / `p_curdrv` (`:401-409`) — has
-/// no counterpart: NewTOS keeps the current drive and paths globally, not per
-/// PD (TASK/PROC02).
+/// The rest of `init_pd_files` — `p_curdir[]` with one `dirtbl` use each, then
+/// `p_curdrv` (`:401-409`) — from the same `run`
+/// ([`crate::bdos::fs::curdir::inherit_from_run`], TASK/PROC04 point 2): the
+/// child starts in its creator's drive and directories, and its own
+/// `Dsetdrv`/`Dsetpath` change only its PD.
 ///
 /// # Safety
 ///
@@ -805,6 +807,8 @@ pub unsafe fn init_pd_files(p: *mut BasePage) {
             unsafe { (*p).p_uft[i] = h };
         }
     }
+    // SAFETY: caller contract — `p` is a live basepage that is not `run`'s.
+    unsafe { crate::bdos::fs::curdir::inherit_from_run(p) };
 }
 
 /// Write the [`BasePage`] into the reserved window at the start of the
@@ -837,8 +841,9 @@ pub unsafe fn init_pd_files(p: *mut BasePage) {
 /// `bdos/proc.c:378-383`); `p_env` receives the address of the
 /// copied environment block (`env_addr`), or `0` when none was
 /// allocated. `p_parent` is set when the process is started (EmuTOS
-/// `proc_go`, `bdos/proc.c:541` — `pexec::set_parent`); `p_curdir` and the
-/// saved-register cells are left zero.
+/// `proc_go`, `bdos/proc.c:541` — `pexec::set_parent`); `p_curdir`,
+/// `p_curdrv` (filled by [`init_pd_files`]) and the saved-register cells are
+/// left zero.
 fn populate_basepage(
     tpa: &mut [u8],
     img: &ElfImage,

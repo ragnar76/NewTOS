@@ -4,13 +4,13 @@
 //! Spec: `docs/api/gemdos/drive/{0e-dsetdrv,19-dgetdrv}.md`,
 //! `docs/api/gemdos/directory/36-dfree.md`.
 //!
-//! The current drive is a global stand-in for the per-process
-//! `p_curdrv` (single foreground caller for now), defaulting to `C:`
-//! (the first hard-disk drive). This is also the implicit drive used by
-//! `Fopen`/`Fsfirst` when a path carries no `X:` prefix.
+//! The current drive is `run->p_curdrv`, the byte at PD+0x37 of `run`'s PD
+//! (TASK/PROC04 point 2, [`super::curdir`]): the running process's, or with
+//! kernel code on the stack the stand-in PD the kernel's `run` names. It is
+//! also the implicit drive used by `Fopen`/`Fsfirst` when a path carries no
+//! `X:` prefix.
 
-use core::sync::atomic::{AtomicU16, Ordering};
-
+use super::curdir;
 use super::fat::Volume;
 use crate::bios::drive as bios_drive;
 use crate::trap::TrapArgs;
@@ -18,21 +18,20 @@ use tos_types::error::{ERROR, E_OK};
 use tos_types::Long;
 
 const BLKDEVNUM: u16 = 16;
-/// Default current drive: `C:` (drive index 2; A:/B: are floppy slots).
-const DEFAULT_DRIVE: u16 = 2;
 
-static CUR_DRIVE: AtomicU16 = AtomicU16::new(DEFAULT_DRIVE);
-
-/// The current drive index (0 = A:). Used by the path parsers when a
-/// path has no explicit `X:` prefix.
+/// The current drive index (0 = A:) — `run->p_curdrv`. Used by the path
+/// parsers when a path has no explicit `X:` prefix.
 pub fn current_drive() -> u16 {
-    CUR_DRIVE.load(Ordering::Relaxed)
+    curdir::current_drive()
 }
 
 /// `dos_sdrv(bootdev)` (`aes/geminit.c:796-803`) — put the current drive
 /// back to the boot device, which is what a resolution change does on TOS 3
 /// and EmuTOS ("resolution change always resets the default drive to the boot
-/// device"). Called from the kernel's AES session loop on a restart (A106).
+/// device"). Called from the kernel's AES session loop on a restart (A106),
+/// where `run` is the AES PD (accdesk has ended), so it is the AES PD's
+/// `p_curdrv` that changes and the next accdesk inherits it
+/// (`_run-ownership-curdir.md` §4.4).
 ///
 /// NewTOS has no boot-device BIOS variable; the boot drive is the first hard
 /// disk in the BIOS drive map, which is the derivation the process loader
@@ -42,7 +41,7 @@ pub fn current_drive() -> u16 {
 pub fn set_boot_drive() {
     let drvbits = bios_drive::drvbits();
     if drvbits != 0 {
-        CUR_DRIVE.store(drvbits.trailing_zeros() as u16, Ordering::Relaxed);
+        curdir::set_current_drive(drvbits.trailing_zeros() as u16);
     }
 }
 
@@ -62,18 +61,20 @@ pub fn boot_drive() -> u16 {
     }
 }
 
-/// `Dgetdrv` (0x19) — return the current drive (0 = A:).
+/// `Dgetdrv` (0x19) — return the current drive (0 = A:): `run->p_curdrv`
+/// (`bdos/fsmain.c:438-441`).
 pub fn dgetdrv(_args: &TrapArgs) -> Long {
-    CUR_DRIVE.load(Ordering::Relaxed) as Long
+    current_drive() as Long
 }
 
-/// `Dsetdrv` (0x0E) — set the current drive (0-based), return the BIOS
-/// drive bitmap. Out-of-range indices are silently ignored (no existence
-/// check), per the historical Atari behaviour.
+/// `Dsetdrv` (0x0E) — set the current drive (0-based) in `run`'s PD
+/// (`run->p_curdrv = drv`, `bdos/fsmain.c:420-426`), return the BIOS drive
+/// bitmap. Out-of-range indices are silently ignored (no existence check),
+/// per the historical Atari behaviour.
 pub fn dsetdrv(args: &TrapArgs) -> Long {
     let drv = args.arg_u16(0);
     if drv < BLKDEVNUM {
-        CUR_DRIVE.store(drv, Ordering::Relaxed);
+        curdir::set_current_drive(drv);
     }
     bios_drive::drvbits() as Long
 }

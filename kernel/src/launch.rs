@@ -341,51 +341,26 @@ pub fn skip_auto_acc() -> bool {
     SKIP_AUTO_ACC.load(Ordering::Relaxed)
 }
 
-/// The drive and directory an `\AUTO\` program runs in — the **root of the
-/// boot drive** (DESK28).
-///
-/// EmuTOS' `autoexec` sets neither: `run_auto_program` builds the full path
-/// `"\AUTO\<name>"` and hands it straight to `Pexec(PE_LOADGO, …)`
-/// (`bios/bios.c:685-695`), with no `Dsetdrv`/`Dsetpath` anywhere in
-/// `autoexec` (`:697-733`). The AUTO child's working directory is therefore
-/// purely *inherited*: `Pexec` copies the current drive and the per-drive
-/// current-directory table out of the calling process into the child's
-/// basepage (`init_pd_files`, `bdos/proc.c:400-410`), and the caller here is
-/// the BIOS, whose state is `Dsetdrv(bootdev)` (`bios/bios.c:827`) plus, for
-/// every drive it never `Dsetpath`ed, the **root** DND that `ckdrv` installs
-/// on first use (`bdos/fsdrive.c:119-131`). An AUTO program that opens
-/// `FOO.TXT` by a bare name sees `<bootdrive>:\FOO.TXT`, not `\AUTO\FOO.TXT`.
-///
-/// NewTOS has no per-process copy to inherit from: the current drive and the
-/// per-drive current directories are single globals, the documented stand-in
-/// for `p_curdrv`/`p_curdir` (`tos-api/src/bdos/fs/drive.rs`,
-/// `…/fs/path.rs`). Left alone, the first AUTO program's `Dsetpath` would be
-/// seen by the second and by the desktop after them — which on EmuTOS cannot
-/// happen, because each child mutates only its own copy. Re-establishing the
-/// BIOS's state here, before every program, is what makes the global behave
-/// like the copy: each `\AUTO\` program starts on the boot drive, at its
-/// root, whatever the one before it did.
-fn set_auto_default_path() {
-    // `Dsetdrv(bootdev)` (`bios/bios.c:827`) — the BIOS's current drive, which
-    // is what every AUTO child inherits as `p_curdrv`.
-    tos_api::bdos::fs::drive::set_boot_drive();
-    // …and the root on every drive: the BIOS process never `Dsetpath`ed, so
-    // `ckdrv` hands each of its drives the root DND (`bdos/fsdrive.c:119-131`).
-    // The empty string is this table's spelling of "root"
-    // (`tos-api/src/bdos/fs/path.rs`, `curdir_str`).
-    for drive in 0..16 {
-        tos_api::bdos::fs::path::set_curdir(drive, "");
-    }
-}
+// The drive and directory an `\AUTO\` program runs in — the **root of the
+// boot drive** (DESK28) — need no code here. EmuTOS' `autoexec` sets neither:
+// `run_auto_program` hands `"\AUTO\<name>"` straight to `Pexec(PE_LOADGO, …)`
+// (`bios/bios.c:685-695`), and the child *inherits* `run`'s drive and
+// directories at creation (`init_pd_files`, `bdos/proc.c:400-410`), `run`
+// being `initial_basepage`: `Dsetdrv(bootdev)` (`bios/bios.c:827`) and the
+// root on every drive. Since TASK/PROC04 point 2 the loader does exactly that
+// from the `initial_basepage` stand-in (the kernel's `run` before the AES,
+// `tos_api::bdos::process::standin`), and each child's `Dsetpath`/`Dsetdrv`
+// changes only its own PD — so neither the next AUTO program nor the desktop
+// sees what one did, and the reset this file used to run before every program
+// (the stand-in for a per-PD copy while the state was global) is gone.
 
 /// Run every auto-run program in `\AUTO\` on the boot drive (C:) in directory
 /// order, before the desktop — EmuTOS' `autoexec` (`bios/bios.c:697`). Each
 /// runs to its `Pterm`, then the next. AUTO programs are typically drivers /
 /// TSRs that set something up at boot. Absent `\AUTO\` folder → no-op.
 ///
-/// Each program starts on the boot drive at its root — see
-/// [`set_auto_default_path`] for why that is the inherited state and not
-/// `\AUTO\`.
+/// Each program starts on the boot drive at its root — inherited from
+/// `initial_basepage` (see the note above this function), not `\AUTO\`.
 ///
 /// Skipped entirely when the user held Control on the boot screen — EmuTOS'
 /// first act in `autoexec` (`bios/bios.c:702-704`, "check if the user does not
@@ -440,18 +415,10 @@ pub fn run_auto_folder() {
             "[auto] running C:\\AUTO\\{}",
             core::str::from_utf8(name).unwrap_or("?")
         );
-        // The working directory EmuTOS' AUTO child inherits, re-established
-        // for every program because our drive/directory state is global
-        // (DESK28, see [`set_auto_default_path`]).
-        set_auto_default_path();
         run_program(&path);
         ran += 1;
     }
     if ran > 0 {
-        // Whatever the last program did to the global drive/directory, the
-        // desktop that follows must see the state EmuTOS' BIOS process still
-        // has after `autoexec` returns — its own, untouched by any child.
-        set_auto_default_path();
         kprintln!("[auto] {} AUTO program(s) run", ran);
     }
 }

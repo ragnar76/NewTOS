@@ -161,9 +161,11 @@ pub fn ddelete(args: &TrapArgs) -> Long {
     E_OK
 }
 
-/// `Dsetpath` (0x3B) — set the current directory for the path's drive.
-/// Resolves `.`/`..` and stores the canonical absolute path (no drive
-/// letter). The target must be an existing directory.
+/// `Dsetpath` (0x3B) — set the current directory for the path's drive in
+/// `run`'s PD (`xchdir`, `bdos/fsdir.c:1113-1148`: `run->p_curdir[dlog]`,
+/// TASK/PROC04 point 2, [`super::curdir`]). Resolves `.`/`..` and stores the
+/// canonical absolute path (no drive letter). The target must be an existing
+/// directory; on any failure `run`'s PD is unchanged.
 pub fn dsetpath(args: &TrapArgs) -> Long {
     // Path argument(s) in the caller's space (ARCH03 3a, `fs::path_arg`).
     let mut p_buf: super::PathBuf = [0; super::PATH_ARG_MAX];
@@ -190,8 +192,9 @@ pub fn dsetpath(args: &TrapArgs) -> Long {
     let mut comps: [&str; 32] = [""; 32];
     let mut depth = 0usize;
     let absolute = matches!(rest.as_bytes().first(), Some(b'/') | Some(b'\\'));
+    let cur = super::curdir::curdir(drive);
     if !absolute {
-        for c in path::curdir_str(drive).split(['/', '\\']).filter(|c| !c.is_empty()) {
+        for c in cur.as_str().split(['/', '\\']).filter(|c| !c.is_empty()) {
             if depth >= comps.len() {
                 return EPTHNF;
             }
@@ -242,14 +245,18 @@ pub fn dsetpath(args: &TrapArgs) -> Long {
         }
     }
     let s = core::str::from_utf8(&buf[..len]).unwrap_or("");
-    if !path::set_curdir(drive, s) {
+    // `incr_curdir_usage` + `run->p_curdir[dlog] = newdir` +
+    // `decr_curdir_usage(olddir)` (`fsdir.c:1140-1151`); a full table is
+    // `EINTRN`, answered as `EPTHNF` (`:1143-1144`).
+    if !super::curdir::set_curdir(drive, s) {
         return EPTHNF;
     }
     E_OK
 }
 
-/// `Dgetpath` (0x47) — write the current directory of `drv` (0 = current,
-/// 1 = A:, …) into `buf` as an absolute path without the drive letter.
+/// `Dgetpath` (0x47) — write `run`'s current directory of `drv` (0 = current,
+/// 1 = A:, …) into `buf` as an absolute path without the drive letter
+/// (`xgetdir`, `bdos/fsdir.c:1229-1251`: `dirtbl[run->p_curdir[drv]]`).
 pub fn dgetpath(args: &TrapArgs) -> Long {
     let buf = args.arg_u64(0);
     let drv = args.arg_u16(1);
@@ -263,7 +270,8 @@ pub fn dgetpath(args: &TrapArgs) -> Long {
         }
         return EDRIVE;
     }
-    let s = path::curdir_str(drive);
+    let cur = super::curdir::curdir(drive);
+    let s = cur.as_str();
     // The path bytes plus a NUL terminator.
     if args.space.copy_to(buf, s.as_bytes()).is_err()
         || args.space.put_u8(buf + s.len() as u64, 0).is_err()

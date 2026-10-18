@@ -1,0 +1,60 @@
+test sh_chdef_sets_the_directory_of_accdesk_not_of_the_running_program ... FAILED
+test the_restart_drive_reset_lands_in_the_aes_pd_and_the_next_accdesk ... FAILED
+
+failures:
+
+---- a_new_pd_inherits_run_s_current_drive_at_creation stdout ----
+
+thread 'a_new_pd_inherits_run_s_current_drive_at_creation' (2451049) panicked at tos-api/tests/proc04_curdir_per_pd.rs:175:5:
+assertion `left == right` failed: PD+0x37 of a desktop program = C:
+  left: 0
+ right: 2
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- a_childs_dsetpath_does_not_move_the_parents_directory stdout ----
+
+thread 'a_childs_dsetpath_does_not_move_the_parents_directory' (2451047) panicked at tos-api/tests/proc04_curdir_per_pd.rs:225:5:
+assertion `left == right` failed: the parent's directory is unchanged
+  left: ""
+ right: "\\SUB"
+
+---- kernel_context_calls_act_on_the_stand_in_that_is_run stdout ----
+
+thread 'kernel_context_calls_act_on_the_stand_in_that_is_run' (2451050) panicked at tos-api/tests/proc04_curdir_per_pd.rs:275:5:
+assertion `left == right` failed: the program's Dsetpath left accdesk alone
+  left: ""
+ right: "\\SUB"
+
+---- a_drive_prefix_moves_that_drives_directory_of_run_only stdout ----
+
+thread 'a_drive_prefix_moves_that_drives_directory_of_run_only' (2451048) panicked at tos-api/tests/proc04_curdir_per_pd.rs:255:5:
+assertion `left == right` failed
+  left: 0
+ right: 2
+
+---- sh_chdef_sets_the_directory_of_accdesk_not_of_the_running_program stdout ----
+
+thread 'sh_chdef_sets_the_directory_of_accdesk_not_of_the_running_program' (2451051) panicked at tos-api/tests/proc04_curdir_per_pd.rs:309:5:
+assertion `left == right` failed: the program P is not moved by the shell
+  left: "\\SUB"
+ right: ""
+
+---- the_restart_drive_reset_lands_in_the_aes_pd_and_the_next_accdesk stdout ----
+
+thread 'the_restart_drive_reset_lands_in_the_aes_pd_and_the_next_accdesk' (2451052) panicked at tos-api/tests/proc04_curdir_per_pd.rs:325:5:
+assertion `left == right` failed: accdesk moved to F:
+  left: 2
+ right: 5
+
+
+failures:
+    a_childs_dsetpath_does_not_move_the_parents_directory
+    a_drive_prefix_moves_that_drives_directory_of_run_only
+    a_new_pd_inherits_run_s_current_drive_at_creation
+    kernel_context_calls_act_on_the_stand_in_that_is_run
+    sh_chdef_sets_the_directory_of_accdesk_not_of_the_running_program
+    the_restart_drive_reset_lands_in_the_aes_pd_and_the_next_accdesk
+
+test result: FAILED. 0 passed; 6 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p tos-api --test proc04_curdir_per_pd`

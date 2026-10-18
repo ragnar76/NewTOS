@@ -32,10 +32,18 @@
 //! at VA = PA (`usermem::expose`, `PROT_PR`, ADR-023), so a program can follow
 //! its `p_parent` chain in every protection mode. The kernel writes the page
 //! (the accdesk and EmuCON PDs are rebuilt at every start, the AES PD's
-//! `p_cmdlin` is `ad_stail`, D-4); programs cannot. They are **never** the
-//! running process: `RUN`, `os_run`, memory owner tags, `parent_slot` and the
-//! `Pterm` return path of a process do not see them (owner tags and `os_run`
-//! are TASK/PROC03 B5, not built).
+//! `p_cmdlin` is `ad_stail`, D-4, and the current drive and directories of
+//! whichever stand-in is the kernel's `run`, TASK/PROC04 point 2); programs
+//! cannot. They are **never** the running process: `RUN`, `os_run`, memory
+//! owner tags, `parent_slot` and the `Pterm` return path of a process do not
+//! see them (owner tags and `os_run` are TASK/PROC03 B5, not built).
+//!
+//! They **are** `run` for the current drive and directory while kernel code
+//! is on the stack (`_run-ownership-curdir.md` §4.4, spec finding §6.2.4:
+//! their drive and directories are mutable state): the AES shell's
+//! `sh_chdef` moves the accdesk PD's directory before each start, EmuCON's
+//! `cd`/`d:` the EmuCON PD's, the restart's `dos_sdrv(bootdev)` the AES PD's
+//! ([`kernel_run_kva`], `crate::bdos::fs::curdir`).
 //!
 //! What uses them: [`super::pexec::set_parent`] and
 //! [`super::pexec::set_kernel_parent`] (`p_parent` of a program a kernel
@@ -123,7 +131,11 @@ struct Cell(UnsafeCell<Page>);
 unsafe impl Sync for Cell {}
 
 static PAGE: Cell = Cell(UnsafeCell::new(Page {
-    initial: BasePage::zeroed(),
+    // Before [`init`] the kernel's `run` is already `initial_basepage` (EmuTOS
+    // sets `run` in `osinit_after_xmaddalt`, before the BIOS knows `bootdev`);
+    // its drive is `C:` — the first hard-disk drive, the default the current
+    // drive had before it moved into the PD — until `init` writes `bootdev`.
+    initial: BasePage { p_curdrv: crate::bdos::fs::curdir::DEFAULT_DRIVE, ..BasePage::zeroed() },
     aes: BasePage::zeroed(),
     double_nul: [0, 0],
     _pad0: [0; AES_ENV_OFFSET - DOUBLE_NUL_OFFSET - 2],
@@ -231,8 +243,11 @@ pub unsafe fn init(bootdev: u16) -> Option<u64> {
     p.aes_env = env;
 
     // `initial_basepage` (`bdos/bdosmain.c:78`, static → all zero) with what
-    // `osinit_after_xmaddalt`, `stdhdl_init` and `Dsetdrv(bootdev)` write.
+    // `osinit_after_xmaddalt`, `stdhdl_init` and `Dsetdrv(bootdev)` write. It
+    // is the same object EmuTOS's `run` was before: its directories (none,
+    // at boot) stay.
     let mut ib = BasePage::zeroed();
+    ib.p_curdir = p.initial.p_curdir;
     ib.p_flags = PF_STANDARD; // bdosmain.c:340
     ib.p_env = double_nul_va as Long; // bdosmain.c:341
     ib.p_uft = DEFAULT_HANDLE; // console.c:107-112
@@ -247,9 +262,16 @@ pub unsafe fn init(bootdev: u16) -> Option<u64> {
     // 863-864`); `proc_go`: `p_parent = run` (`bdos/proc.c:541`). The fields
     // NewTOS cannot represent follow the decisions of `_run-ownership-curdir.md`
     // §6.4 (D-1 `p_tbase` 0, D-2 `p_hitpa` p + 0x100) — see [`rom_pd`].
+    // SAFETY: `p.aes` is a live PD of the page; its directory uses go first.
+    unsafe { crate::bdos::fs::curdir::release(&p.aes) };
     p.aes = rom_pd(AES_OFFSET, initial_va, aes_env_va, &p.initial);
 
     // Not started yet: built by `enter_accdesk` / `enter_emucon`.
+    // SAFETY: live PDs of the page; their directory uses go with them.
+    unsafe {
+        crate::bdos::fs::curdir::release(&p.accdesk);
+        crate::bdos::fs::curdir::release(&p.emucon);
+    }
     p.accdesk = BasePage::zeroed();
     p.emucon = BasePage::zeroed();
     p.accdesk_env = [0; AES_ENV_SIZE];
@@ -293,8 +315,8 @@ pub unsafe fn init(bootdev: u16) -> Option<u64> {
 ///   no counterpart — NewTOS's AES keeps its DTAs in kernel buffers), the
 ///   empty tail (`p_cmdlin` all zero);
 /// * `p_flags = PF_STANDARD` (`:234`);
-/// * `init_pd_files` (`:388-409`): `p_uft` and `p_curdrv` of `run`
-///   (`p_curdir[]` is PROC04 point 2);
+/// * `init_pd_files` (`:388-409`): `p_uft`, `p_curdir[]` (one `dirtbl` use
+///   each) and `p_curdrv` of `run` (TASK/PROC04 point 2);
 /// * `proc_go`: `p_parent = run` (`:541`);
 /// * `p_tbase` (the entry `exec_os`/`accdesk_start`/`coma_start`) is **0**
 ///   — decision D-1, `_run-ownership-curdir.md` §6.4: the code is kernel
@@ -316,7 +338,8 @@ fn rom_pd(off: usize, parent_va: u64, env_va: u64, creator: &BasePage) -> BasePa
     pd.p_flags = PF_STANDARD;
     pd.p_env = env_va as Long;
     pd.p_uft = creator.p_uft;
-    pd.p_curdrv = creator.p_curdrv;
+    // SAFETY: both are live basepages (a local and a PD of the page).
+    unsafe { crate::bdos::fs::curdir::inherit(&mut pd, creator) };
     pd
 }
 
@@ -332,6 +355,10 @@ fn start_rom_pd(which: u8, env_off: usize, parent: u8) {
     let mut env = [0u8; AES_ENV_SIZE];
     let n = parent_env.len().min(AES_ENV_SIZE);
     env[..n].copy_from_slice(&parent_env[..n]);
+    // The PD this stand-in had before (a previous session's accdesk, an
+    // EmuCON that was not left) gives its directory uses back first.
+    // SAFETY: a PD of the static page, kernel context (`Cell` contract).
+    unsafe { crate::bdos::fs::curdir::release(pd_ptr(which)) };
     // SAFETY: the parent PD is a field of the static page; short shared read.
     let creator = unsafe { &*pd_ptr(parent) };
     let pd = rom_pd(pd_offset(which), user_va(pd_offset(parent)), user_va(env_off), creator);
@@ -392,7 +419,21 @@ pub fn enter_accdesk() {
 /// change.
 pub fn leave_accdesk() {
     if KERNEL_RUN.load(Ordering::Acquire) == RUN_ACCDESK {
+        end_rom_pd(RUN_ACCDESK);
         KERNEL_RUN.store(RUN_AES, Ordering::Release);
+    }
+}
+
+/// The directory half of `ixterm` for a stand-in that ends (`Pterm0` of
+/// accdesk or EmuCON, `bdos/proc.c:126-132`): its `dirtbl` uses are dropped
+/// and, the PD being gone in EmuTOS, its `p_curdir[]` bytes cleared so a
+/// later recount does not see them.
+fn end_rom_pd(which: u8) {
+    let p = pd_ptr(which);
+    // SAFETY: a PD of the static page, kernel context (`Cell` contract).
+    unsafe {
+        crate::bdos::fs::curdir::release(p);
+        (*p).p_curdir = [0; tos_types::NUMCURDIR];
     }
 }
 
@@ -413,6 +454,7 @@ pub fn enter_emucon() {
 /// EmuCON ends (`Pterm0`, `cli/cmdasm.S:48-49`): `run` is its parent again.
 pub fn leave_emucon() {
     if KERNEL_RUN.load(Ordering::Acquire) == RUN_EMUCON {
+        end_rom_pd(RUN_EMUCON);
         KERNEL_RUN.store(EMUCON_PARENT.load(Ordering::Acquire), Ordering::Release);
     }
 }
@@ -466,6 +508,27 @@ pub fn kernel_run() -> *mut BasePage {
         return core::ptr::null_mut();
     }
     user_va(pd_offset(KERNEL_RUN.load(Ordering::Acquire))) as *mut BasePage
+}
+
+/// The **kernel** pointer to the PD [`kernel_run`] names — what the current
+/// drive and directory calls read and write when no process runs
+/// (`crate::bdos::fs::curdir`, TASK/PROC04 point 2). Unlike [`kernel_run`]
+/// never null: before [`init`] it is `initial_basepage`, as EmuTOS's `run` is
+/// from GEMDOS initialisation on (`bdos/bdosmain.c:339`), with drive `C:`.
+pub fn kernel_run_kva() -> *mut BasePage {
+    pd_ptr(KERNEL_RUN.load(Ordering::Acquire))
+}
+
+/// Kernel pointers to the four stand-in PDs, for a recount of the `dirtbl`
+/// uses (`crate::bdos::fs::curdir`). A stand-in that is not alive holds no
+/// directory bytes ([`end_rom_pd`], [`init`]).
+pub fn live_pds() -> [*const BasePage; 4] {
+    [
+        pd_ptr(RUN_INITIAL),
+        pd_ptr(RUN_AES),
+        pd_ptr(RUN_ACCDESK),
+        pd_ptr(RUN_EMUCON),
+    ]
 }
 
 /// The standard handles of [`kernel_run`] — what `init_pd_files` inherits

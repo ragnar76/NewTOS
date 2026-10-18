@@ -304,8 +304,10 @@ Fields: §2.3/§2.4 with the Developer decisions of
 [`_run-ownership-curdir.md`](./_run-ownership-curdir.md) §6.4 — `p_tbase = 0`
 (D-1), `p_hitpa = p + 0x100` (D-2), `p_xdta = &p_cmdlin` (D-3); the AES PD's
 `p_cmdlin` mirrors `ad_stail` (D-4, every write in `tos-api/src/aes/shell.rs`).
-`p_uft` and `p_curdrv` are copied from the creating stand-in (`init_pd_files`);
-`p_curdir[]` stays 0 until PROC04 point 2.
+`p_uft`, `p_curdir[]` and `p_curdrv` are copied from the creating stand-in
+(`init_pd_files`); since PROC04 point 2 the stand-ins' drive and directories are
+mutable kernel state, `run`'s for the current-drive/directory calls in kernel
+context ([`_run-ownership-curdir.md`](./_run-ownership-curdir.md) §6.5).
 
 Resulting chains (measured, `measurements/measurement-2026-10-18-proc03-s1/`,
 QEMU raspi4b, memprot on/off/strict): AUTO depth 3; `#Z` and `shel_write`

@@ -438,9 +438,10 @@ TASK/PROC02 (2026-10-06): the file half of `ixterm` (`bdos/proc.c:116-123`) —
 dying PD — runs in `terminate_inner` (`Pterm`, `Pterm0`, `Ptermres`) before
 the memory sweep (`file::close_process_files`). Before PROC02 files a process
 left open stayed open after its `Pterm`. The current-directory half
-(`decr_curdir_usage`) has no counterpart: NewTOS keeps no per-PD current
-directories (**to be added by PROC04 point 2**, decided 2026-10-18; the EmuTOS
-facts are in [`_run-ownership-curdir.md`](./_run-ownership-curdir.md) §4).
+(`decr_curdir_usage` of every `p_curdir[i]`, `bdos/proc.c:126-132`) runs since
+TASK/PROC04 point 2 (2026-10-18), right after the files and before the memory
+(`curdir::release_pd`; [`_run-ownership-curdir.md`](./_run-ownership-curdir.md)
+§4.5, §6.5).
 
 TASK/PROC06 (2026-10-16): the exit code is masked once in the shared
 terminate tail. `finish_terminate` (`kernel/src/arch/aarch64/exceptions.rs`)

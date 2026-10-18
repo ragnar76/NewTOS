@@ -634,7 +634,9 @@ extern "C" fn kernel_main_rust(dtb_phys: usize, entry_el: u64) -> ! {
         // resets the default drive to the boot device". NewTOS has no boot
         // device variable; the boot drive is the first hard disk in the drive
         // map, the same derivation the loader writes into `bootdev` ($446)
-        // for every process (`bdos/process/loader.rs`).
+        // for every process (`bdos/process/loader.rs`). `run` is the AES PD
+        // here (accdesk has ended), so its `p_curdrv` changes and the next
+        // session's accdesk inherits it (TASK/PROC04 point 2).
         tos_api::bdos::fs::drive::set_boot_drive();
     }
 

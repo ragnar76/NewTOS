@@ -22,11 +22,12 @@
 //!   * The user-term handler at exception number `0x102` (Compendium
 //!     `Setexc(0x102, -1)`). Phase 09 introduces the per-process
 //!     exception handler table.
-//!   * `dirtbl[]` decrement — NewTOS keeps no per-PD current directories.
 //!
 //! The file half of `ixterm` (`p_uft[]` redirections and owned `sft[]`
 //! entries, `bdos/proc.c:116-123`) runs since TASK/PROC02
-//! ([`crate::bdos::fs::file::close_process_files`]).
+//! ([`crate::bdos::fs::file::close_process_files`]), the directory half
+//! (`p_curdir[]` → `decr_curdir_usage`, `:126-132`) since TASK/PROC04 point 2
+//! ([`crate::bdos::fs::curdir::release_pd`]).
 //!
 //! Until those phases land the cleanup is "memory-only" — but for
 //! the D6 selftest (single user `Mxalloc` followed by `Pterm`) that
@@ -338,6 +339,10 @@ unsafe fn terminate_inner(reserve: bool, follow_parent: bool) -> Result<PtermRes
     // memory goes, as EmuTOS orders it (TASK/PROC02).
     // SAFETY: BDOS lock held; `bp` is the dying process's live basepage.
     unsafe { crate::bdos::fs::file::close_process_files(bp) };
+    // `ixterm` (`bdos/proc.c:126-132`): every `p_curdir[i]` of the dying PD
+    // gives its `dirtbl` use back — before its memory (the PD) goes.
+    // SAFETY: as above.
+    unsafe { crate::bdos::fs::curdir::release_pd(bp) };
 
     // The sweep and the release of unstarted children are one change of
     // rights, entered when this guard drops (MEMPROT-FAST): nothing in

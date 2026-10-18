@@ -216,7 +216,9 @@ non-error path Compendium does not spell out.
 `p_curdrv` is inherited at PD creation (`init_pd_files`, `bdos/proc.c:409`), the
 AES shell writes the accdesk PD's before each launch, the AES writes the AES
 PD's on a resolution change (`aes/geminit.c:796-801`)
-(`../process/_run-ownership-curdir.md` §4). NewTOS today: PD+0x37 reads 0.
+(`../process/_run-ownership-curdir.md` §4). Built (PROC04 point 2): the byte at
+PD+0x37 of `run`'s PD (`../process/_run-ownership-curdir.md` §6.5); NewTOS still
+accepts only `0 <= drv < 16`.
 
 PHASE-05: `p_curdrv` is a per-process field in the kernel `Process`. Preserve the
 0-based index, the 26-drive range, and the silent-ignore-out-of-range behaviour

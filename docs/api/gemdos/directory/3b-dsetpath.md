@@ -238,9 +238,10 @@ returns `EPTHNF` (not `EFILNF`). Compendium documents only `EPTHNF` generically.
 necessarily the caller — an accessory's `Dsetpath` changes the front program's
 directory; the AES shell changes the accdesk PD's directory before every launch
 and EmuCON's `cd` changes the EmuCON PD's (`../process/_run-ownership-curdir.md`
-§1.3, §4.3-4.4). NewTOS today keeps the directory global, so a child's
-`Dsetpath` changes its parent's (measured, `measurements/measurement-2026-10-17-proc03/`);
-the per-PD model with inheritance at creation is required.
+§1.3, §4.3-4.4). Before PROC04 the directory was global, so a child's
+`Dsetpath` changed its parent's (measured, `measurements/measurement-2026-10-17-proc03/`).
+Built per PD (`tos-api/src/bdos/fs/curdir.rs`, `../process/_run-ownership-curdir.md`
+§6.5; accessories still act on their own PD until B5 is decided).
 
 PHASE-05: preserve the per-process/per-drive current-directory model and the
 "prefix ≠ current drive" semantics. The `dirtbl[]` reference-counting is a free

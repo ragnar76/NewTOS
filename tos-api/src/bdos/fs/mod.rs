@@ -6,6 +6,7 @@
 //! (D2), path parser (D3) and the GEMDOS file/dir calls follow.
 
 pub mod cache;
+pub mod curdir;
 pub mod dir;
 pub mod dirops;
 pub mod drive;

@@ -169,7 +169,7 @@ No error is possible.
 
 **2026-10-18 (TASK/PROC03/PROC04 point 2):** reads `run->p_curdrv` (the PD in
 front, not necessarily the caller — `../process/_run-ownership-curdir.md` §1.3,
-§4).
+§4). Built (PROC04 point 2): the byte at PD+0x37 of `run`'s PD, §6.5 there.
 
 PHASE-05: read the per-process current-drive field; return zero-extended 0-based
 index. Trivial once `p_curdrv` exists in the kernel `Process`.

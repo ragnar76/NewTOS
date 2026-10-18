@@ -525,6 +525,46 @@ reproduced because it is the only changed value with a defined EmuTOS meaning
 (a suspended PD's saved context). Accessory `Pexec` children are unchanged by
 this stage (their `p_parent` is still the accessory's PD — B5).
 
+### 6.5 PROC04 point 2 as built (2026-10-18)
+
+`p_curdrv`/`p_curdir[]` live in the PD, `run`'s PD is the one read and written
+(`tos-api/src/bdos/fs/curdir.rs`, `run_pd`): the running process's basepage, or
+with kernel code on the stack the stand-in `standin::kernel_run_kva()` names
+(`initial_basepage` → AES PD → accdesk PD, the EmuCON PD while EmuCON runs —
+§1.2, finding §6.2.4: the stand-ins' drive and directories are mutable kernel
+state, still read-only to programs).
+
+| EmuTOS | NewTOS |
+|---|---|
+| `Dgetdrv`/`Dsetdrv` on `run->p_curdrv` (`fsmain.c:420-441`) | the byte at PD+0x37 of `run_pd()`; a program that writes its own byte changes its `Dgetdrv` [C] |
+| `p_curdir[d]` = `dirtbl[]` index, `NCURDIR = 40`, slot 0 unused, use counts | same bytes, same 40-slot table with use counts; a slot holds drive + canonical path (`\A\B`, no DND cache in NewTOS) [R] |
+| `init_pd_files` copies `p_curdir[]` (+1 use each) and `p_curdrv` from `run` (`proc.c:401-409`) | `loader::init_pd_files` → `curdir::inherit_from_run`, for every PD the loader creates (modes 0/3/5/7, accessories, kernel launches); the stand-ins inherit the same way when they start (`rom_pd`) |
+| `Dsetpath`: incr new, store, decr old; full → `EINTRN` → `EPTHNF` (`fsdir.c:1140-1151`) | same order (`curdir::set_curdir`); full table → `EPTHNF` |
+| `ixterm` decrements every `p_curdir[i]` (`proc.c:126-132`) | `pterm::terminate_inner` → `curdir::release_pd` after the files, before the memory; accdesk's/EmuCON's end (`leave_accdesk`/`leave_emucon`) releases theirs |
+| root DND gets a slot lazily in `ckdrv` | the root is `p_curdir[d] == 0`, no slot (same directory, one slot saved) [R] |
+| accessory PD's uses leak (D-10) | released in `free_accs` (and on an accessory's failed `Mshrink`) — not reproduced |
+| a byte naming any index is followed | a byte that names no live slot of its drive reads as the root, is copied as 0 and never decremented; on a full table the uses are recounted from every live PD (process slots + stand-ins) before `Dsetpath` gives up, so PDs gone without `ixterm` (unstarted `PE_LOAD` children freed by `Mfree`, scribbled bytes) cannot exhaust it [R] |
+| stale `dirtbl` slot after a media change → root via `ckdrv` | a stored path that no longer resolves → root (unchanged) |
+
+Kernel-context consequences, all EmuTOS-faithful: the AUTO programs inherit
+`initial_basepage` (`p_curdrv = bootdev`, all roots), so the global reset the
+launcher ran before every AUTO program (DESK28) is gone; `sh_chdef` →
+`set_drvdir` moves accdesk's directory, which the next program inherits
+(`NORMAL_APP` from `sh_apdir` = the `shel_write` caller's directory,
+`sh_curdrvdir`); EmuCON's `cd`/`d:` move the EmuCON PD and its children inherit
+it; `dos_sdrv(bootdev)` on a restart (`drive::set_boot_drive`) writes the AES
+PD, which the next accdesk inherits.
+
+**Accessories (B5 not decided):** NewTOS's `run` while an accessory executes is
+still the accessory's own PD, so its `Dgetdrv`/`Dsetpath`/relative paths act on
+the accessory PD (copied from accdesk at load), not on the PD in front as §1.3
+says for EmuTOS. That follows the B5 decision, not this step.
+
+Unchanged deviations, not part of this step: `BLKDEVNUM`/`NUMCURDIR` are 16 in
+NewTOS (`tos-types::NUMCURDIR`, `drive.rs`), 26 in EmuTOS — `Dsetdrv(16..25)` is
+ignored instead of stored; stored paths are limited to 63 bytes (`Dsetpath`
+answers `EPTHNF` beyond), EmuTOS's `Dgetpath` budget is 111.
+
 ## Related
 
 - [`_parent-and-environment.md`](./_parent-and-environment.md) — the chains and PD field contents.

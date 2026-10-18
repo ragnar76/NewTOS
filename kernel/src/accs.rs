@@ -238,6 +238,7 @@ fn load_one_acc(acc: &mut Acc) {
         // SAFETY: the slot was never started; nothing references its TPA or
         // its environment, both owned by the child's PD (`owned_by_child`).
         unsafe {
+            tos_api::bdos::fs::curdir::release_pd(child.handle as *mut tos_types::BasePage);
             tos_api::bdos::mem::free_all_owned::free_all_owned(child.handle as *mut core::ffi::c_void);
             process::pterm::release_slot(child.slot);
         }
@@ -389,6 +390,11 @@ pub fn free_accs() {
         // nothing holds a reference into its memory; `pd` is its PD pointer
         // (null if the slot has no image, which frees nothing).
         let freed = unsafe {
+            // The accessory PD's `dirtbl` uses, copied from accdesk when it was
+            // loaded (`init_pd_files`), go back before its memory does. EmuTOS
+            // never `ixterm`s an accessory and leaks them (an accident, not
+            // reproduced: `_run-ownership-curdir.md` §4.5, D-10).
+            tos_api::bdos::fs::curdir::release_pd(pd);
             let freed = tos_api::bdos::mem::free_all_owned::free_all_owned(pd as *mut core::ffi::c_void);
             process::pexec::release_unstarted_of(pd);
             process::pterm::release_slot(e.slot);
