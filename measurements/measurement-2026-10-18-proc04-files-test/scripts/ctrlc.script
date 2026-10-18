@@ -1,0 +1,8 @@
+# ctrlc.script -- PROC06: Ctrl-C 5 s after CTRLCPAR's launch (tools/inject-arm.py launch:CTRLCPAR): by then CTRLCPAR has Pexec'd
+# C:\PTERMCH.NCP "c", which waits in Cconin. IKBD make/break: Ctrl 0x1D, C 0x2E, C break 0xAE, Ctrl break 0x9D (kernel/src/ikbd.rs folds
+# Ctrl + letter to the control code, Ctrl-C = 0x03). Should the key arrive while the child is still in its Cconws, the output-side break
+# (conbrk) terminates it with the same -32.
+1000 0x1D
+1005 0x2E
+1010 0xAE
+1015 0x9D

@@ -1,0 +1,3 @@
+run mi-head-on-doom: 99 lines; end: 0; EXC/PANIC: 0
+run mi-head-strict-doom: 99 lines; end: 0; EXC/PANIC: 0
+run mi-head-off-doom: 99 lines; end: 0; EXC/PANIC: 0

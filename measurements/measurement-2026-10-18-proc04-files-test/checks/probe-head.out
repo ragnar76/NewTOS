@@ -1,0 +1,2 @@
+run pf-head-on: 75 lines; end: 1; EXC/PANIC: 0
+  PF RESULT fails=0x00000006  FAIL lines: 6

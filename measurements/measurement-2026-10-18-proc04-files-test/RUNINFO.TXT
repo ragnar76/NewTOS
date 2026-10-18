@@ -1,0 +1,19 @@
+measurement-2026-10-18-proc04-files-test -- Tester: independent regression test of the UNCOMMITTED PROC04 point-4 working tree (open-file table 16 -> 75,
+tos-api/src/bdos/fs/file.rs + 3 tests) against HEAD 70be8ef9. No product code touched, nothing committed/stashed/checked out.
+Host macOS, QEMU -M raspi4b (-append serial=on [memprot=strict|off|verify]), -M virt (boot only), one QEMU at a time, per-run APFS clones deleted,
+private 64 MiB FAT16 cards, never a real card. Scratch = session scratchpad .../scratchpad/ft. Developer's dir measurement-2026-10-18-proc04-files read/copy only.
+Kernels: fresh `git archive 70be8ef9` trees (+ the 4 uncommitted tos-api files for side wt), release, SOURCE_DATE_EPOCH=1792152000 (checks/kernels.sha256).
+  head-plain af0f7ed8 (= developer's), wt-plain ffeb2e27 (new). Injectors on scratch trees only.
+1 PROBE P4F (method/run-probe.sh): wt on/strict/off PF RESULT fails=0, 0 FAIL lines, 0 EXC/PANIC, "[desk] desktop up (1 drives)" (serial/pf-wt-*.log);
+  wt memprot=verify (regress/run.sh): fails=0, desktop up. head on (red control): fails=6.
+2 REGRESSION (regress/series.sh wt AND head; checks/series-*.out): APITEST TOTAL 109/0/5 on/strict/off, head and wt, result lines identical per mode;
+  S2ALL PASS (on/off), S2ALLS PASS (strict, 4 intended [crash] lines, head=wt), VFORK PASS x3; TeraDesk->F1->QED 12 dumps all sha 5d8e72ff.. (head=wt), viewed.
+  S2ALLS strict: injector feed lines differ in hz_200 stamps/count (wall-time injector), after "S2ALL: PASS" (same as the curdir run).
+3 INTERACTIVE (method/m113/matrix.sh, series-n.sh; scripts/): matrix desk 18/18, acc 18/18, td 24/24, qed 21/21 dumps byte-identical head vs wt; serial line counts
+  identical (desk 236, acc 260 w/ 12 sched-switch, td 319, qed 291), 0 EXC/PANIC. dn/tn/qn 11/11, 11/11, 5/5 byte-identical; [CWD] lines identical head=wt (dn,tn).
+4 DOOM smoke (method/misc-series.sh): 50 s, on/strict/off, head and wt: 0 EXC/PANIC, "picture 640x480 VERIFIED via EdDI", in-game frames viewed (wt strict, head strict).
+  Frames differ head vs wt (Doom demo is not deterministic across runs; 307k px at t30 already) -- not comparable by pixels. Serial differs only in [mm] kernel end
+  (+0x2000 = BSS growth of the table) and the stand-in PD addresses that follow from it.
+5 QEMU-VIRT boot (method/virt-boot.sh, fresh release tree wt-virt): "[proc] stand-in PDs ..." and "[desk] desktop up (0 drives)", 0 EXC/PANIC (serial/virt-wt-boot.log).
+6 HOST: cargo xtask test 1437 passed / 0 failed / 1 ignored (checks/host-tests-full.log); sdk/run-host-tests.sh 20/0/0 (checks/sdk-host.txt).
+NOT RUN: real Pi 4, clippy/warning delta, head qemu-virt baseline, Doom beyond 50 s / quit path, a program that needs >16 handles launched from the desktop.

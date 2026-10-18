@@ -1,0 +1,12 @@
+run rg-head-on-api: 336 lines; end: 1; EXC/PANIC: 0
+run rg-head-on-s2all: 262 lines; end: 1; EXC/PANIC: 0
+run rg-head-on-vforkt: 80 lines; end: 1; EXC/PANIC: 0
+run rg-head-on-tdqed: 59 lines; end: 0; EXC/PANIC: 0
+run rg-head-strict-api: 336 lines; end: 1; EXC/PANIC: 0
+run rg-head-strict-s2alls: 307 lines; end: 1; EXC/PANIC: 4
+run rg-head-strict-vforkt: 80 lines; end: 1; EXC/PANIC: 0
+run rg-head-strict-tdqed: 59 lines; end: 0; EXC/PANIC: 0
+run rg-head-off-api: 336 lines; end: 1; EXC/PANIC: 0
+run rg-head-off-s2all: 262 lines; end: 1; EXC/PANIC: 0
+run rg-head-off-vforkt: 80 lines; end: 1; EXC/PANIC: 0
+run rg-head-off-tdqed: 59 lines; end: 0; EXC/PANIC: 0

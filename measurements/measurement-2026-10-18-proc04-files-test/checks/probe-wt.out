@@ -1,0 +1,6 @@
+run pf-wt-on: 75 lines; end: 1; EXC/PANIC: 0
+  PF RESULT fails=0x00000000  FAIL lines: 0
+run pf-wt-strict: 75 lines; end: 1; EXC/PANIC: 0
+  PF RESULT fails=0x00000000  FAIL lines: 0
+run pf-wt-off: 75 lines; end: 1; EXC/PANIC: 0
+  PF RESULT fails=0x00000000  FAIL lines: 0
