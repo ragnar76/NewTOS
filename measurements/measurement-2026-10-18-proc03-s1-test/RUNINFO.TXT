@@ -1,0 +1,30 @@
+measurement-2026-10-18-proc03-s1-test -- Tester: independent regression test of the UNCOMMITTED PROC03 stage-1 working tree (+B4) against HEAD d45082a8.
+Scope: accdesk/EmuCON stand-in PDs, Pterm via p_parent with unwinding, AES PD p_cmdlin = shel_write tail (D-1..D-5). No product code touched, nothing
+committed/stashed/checked out (git status before/after: same 16 M + 1 ?? product paths). Host macOS, QEMU -M raspi4b (-append serial=on [memprot=strict|off|verify]) and
+-M virt (boot only); one QEMU at a time; per-run APFS clones (cp -c), deleted after each run; 64 MiB FAT16 cards with private labels (P3PRB/T113/A113API), never a real
+card. Scratch = session scratchpad .../scratchpad/pt (kernels, trees, cards; deleted afterwards; sha256 in checks/sha256-artifacts.txt).
+Kernels: fresh `git archive d45082a8` trees (+ the uncommitted kernel/ tos-api/ files for side "wt"), `cargo xtask build --board rpi4 --release`, own target dirs,
+SOURCE_DATE_EPOCH=1792152000; inject-arm.py on scratch trees only (plain/inj/s2s/tdq/kd/crash/crash2). Bit-identical to the developer's: wt-plain 654c2f1b, wt-inj a40cf53c,
+head-plain fed8a420; kd-head 16d6c631 = rst01-test kd-head. qemu-virt: release build in a fresh tree, flat binary via llvm-objcopy (as xtask run).
+
+1 DEVELOPER'S PROBE RUNS (method/ copied from measurement-2026-10-18-proc03-s1; build-p3s1.sh, card.sh, emucon.script via inject-arm launch:P3Z2; runts-mode.sh, 45 s)
+  wt (serial/probe-wt-{on,strict,off,verify}.log): AUTO/ACC/Z/Z2/EMU fails=0 in all four modes (Z twice = Z and Z2), Z2 unwind "exited with rc=102", desktop up after
+  EmuCON exit, 0 EXC/PANIC. memprot=verify: 95 checks, 0 mismatches. head (serial/probe-head-*.log, RED control): Z 7/6/7 fails, EMU 8 fails, no rc=102 -- as in the
+  developer's red run, identical in on/strict/off.
+2 REGRESSION A/B (method/regress/series.sh, wt vs head, on/strict/off; serial/rg-*.log; checks/series.out)
+  APITEST 109/0/5 in all six; S2ALL PASS (S2ALLS strict with the injector answering the 2 intended crashes: 4 [crash] lines, same on head); VFORKT PASS; result/verdict lines
+  identical wt vs head in every mode. TeraDesk -> F1 -> QED: all 12 dumps byte-identical (sha 5d8e72ff..), viewed: QED menu bar, green hatched work area (same on head).
+3 INTERACTIVE A/B (method/m113 matrix; kd-head vs kd-wt; scripts/m113; cards c-desk/c-acc(SYSACC.NAC 812ddd57)/c-td/c-qed; dumps 0.8 s after the injected step)
+  desk 18/18, acc 18/18, qed 21/21 byte-identical; td 23/24 in the first run (td-*-h2-menu-closed: Desk menu still open on wt, closed on head), then td head x2 + wt x5
+  repeats 24/24 identical (screendumps-rep/r1..r5) -> one non-reproducible timing deviation, cause not established (the first td serial logs were overwritten by the repeat;
+  matrix output: 319/319 lines). 0 EXC/PANIC in every run; serial volume desk 236/236, acc 260/260 (sched-switch 12/12), td 319/319, qed 291/291.
+4 PROGRAM EXIT PATHS (method/crash-series.sh, direct-series.sh, build-crash.sh, waitkey.c [test scaffolding]; crash/crash2 kernels; serial/cr-*, dr-*)
+  CRASHTST, UACC3A, MPROT3B/S/O, E10USR/S/O: PASS in on/strict/off, wt = head; Ctrl-C of a Pexec child (CTRLCPAR): rc=65504 [OK] all modes;
+  #Z program crashing itself (CRCHILD bare, Bus Error -> key -> Pterm(-1)): "exited with rc=65535", desktop up, all modes; #Z program ended by Ctrl-C (WAITKEY direct):
+  "exited with rc=65504", desktop up, all modes; filtered [crash]/[pterm]/exited/desktop lines md5-identical wt vs head (addresses masked). Ptermres: S2ALL TSR PASS
+  (TSRRES/TSRPAR/TSRUSE, Pexec'd) wt = head in all modes.
+5 DOOM smoke (serial/mi-*, screendumps/extra/mi-*): 50 s, in-game frame at t45 viewed (wt strict), 0 EXC/PANIC, on/strict/off, wt and head.
+6 QEMU-VIRT boot (method/virt-boot.sh): "[proc] stand-in PDs: ... AES PD 0x40260100, accdesk 0x40260300, EmuCON 0x40260400" and "[desk] desktop up (0 drives)", 0 EXC/PANIC (serial/virt-wt-boot.log).
+7 HOST: cargo xtask test 1424 passed / 0 failed / 1 ignored (checks/xtask-test-full.log); sdk/run-host-tests.sh 20 passed / 0 failed / 0 skipped (checks/sdk-host-tests.log).
+NOT RUN: real Pi 4 (cache/HW, USB, HDMI), qemu-virt head baseline, clippy/warning delta (not requested), Doom quit/exit path, TeraDesk launching a program that crashes /
+  is Ctrl-C'ed, Ptermres of a directly desktop-launched program, a hand-typed (non-injector) EmuCON session, NEWDESK's own p_parent (developer's NOT probed also open).

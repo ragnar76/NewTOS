@@ -1,0 +1,39 @@
+# PROC03 stage 1: armed on "launch:P3Z2" (tools/inject-arm.py). P3Z2 asks for EMUCON (shel_write) and ends
+# through its kid's B4 unwind; the in-kernel EmuCON then reads these keys (pump_devices runs inside its Cnecin
+# loop). IKBD make codes, break = make|0x80, 10 ticks per character (200 Hz).
+# +1600: "run p3e.ncp" Enter
+1600 0x13
+1605 0x93
+1610 0x16
+1615 0x96
+1620 0x31
+1625 0xB1
+1630 0x39
+1635 0xB9
+1640 0x19
+1645 0x99
+1650 0x04
+1655 0x84
+1660 0x12
+1665 0x92
+1670 0x34
+1675 0xB4
+1680 0x31
+1685 0xB1
+1690 0x2E
+1695 0xAE
+1700 0x19
+1705 0x99
+1710 0x1C
+1715 0x9C
+# +3000: "exit" Enter (back to the desktop)
+3000 0x12
+3005 0x92
+3010 0x2D
+3015 0xAD
+3020 0x17
+3025 0x97
+3030 0x14
+3035 0x94
+3040 0x1C
+3045 0x9C

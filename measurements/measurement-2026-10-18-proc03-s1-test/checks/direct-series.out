@@ -1,0 +1,12 @@
+run dr-wt-on-dcrash: 94 lines; end: 1; EXC/PANIC: 2
+run dr-wt-on-dwait: 66 lines; end: 1; EXC/PANIC: 0
+run dr-wt-strict-dcrash: 94 lines; end: 1; EXC/PANIC: 2
+run dr-wt-strict-dwait: 66 lines; end: 1; EXC/PANIC: 0
+run dr-wt-off-dcrash: 93 lines; end: 1; EXC/PANIC: 2
+run dr-wt-off-dwait: 66 lines; end: 1; EXC/PANIC: 0
+run dr-head-on-dcrash: 94 lines; end: 1; EXC/PANIC: 2
+run dr-head-on-dwait: 66 lines; end: 1; EXC/PANIC: 0
+run dr-head-strict-dcrash: 94 lines; end: 1; EXC/PANIC: 2
+run dr-head-strict-dwait: 66 lines; end: 1; EXC/PANIC: 0
+run dr-head-off-dcrash: 93 lines; end: 1; EXC/PANIC: 2
+run dr-head-off-dwait: 66 lines; end: 1; EXC/PANIC: 0
