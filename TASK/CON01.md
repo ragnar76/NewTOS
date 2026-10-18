@@ -28,3 +28,13 @@ Pterm“), obwohl `edit_line` existiert.
 ## Arbeitsregel
 
 [Gemeinsame Regeln](README.md) gelten.
+
+## Anwenderentscheidung (2026-10-18)
+
+Die am 2026-10-13 genehmigte Abweichung (nur Ctrl-C, keine Tab-Expansion, kein
+Typeahead) wird **zurueckgenommen**: wie EmuTOS angleichen — `conbrk` mit
+Ctrl-S/Ctrl-Q/Ctrl-X und Typeahead, `glbcolumn` je Geraet, Tab-Expansion in
+`tabout` (`references/emutos/bdos/console.c:202-300`). Reihenfolge: direkt nach
+PROC04 Punkt 1 (Umlenkung, selber Code). Spec-Stellen, die die Abweichung als
+genehmigt fuehren (`docs/api/gemdos/file/40-fwrite.md`, `console.rs:30-60`
+Kommentar), mitziehen.

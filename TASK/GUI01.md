@@ -39,3 +39,9 @@ ist und die Lueckenliste vollstaendig sein soll; es ist aber **kein Auftrag**,
 solange die Zuordnungsmechanik den Fall abdeckt. Vor einer Wiederaufnahme
 zuerst pruefen, ob eine Zuordnung auf einen `.NAP`-Betrachter heute schon
 genuegt — wenn ja, ist dieses Ticket gegenstandslos und wird geschlossen.
+
+## Bestaetigt (2026-10-18)
+
+Anwender: *„es macht Sinn, eine App als Betrachter zu haben, damit ist man
+etwas flexibler“* — weiter kein eingebautes `show_file`; Betrachter ueber die
+Anwendungs-Zuordnung (z. B. `.TXT` → QED). EmuCON-`more` → [CON03](CON03.md).
