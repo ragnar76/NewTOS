@@ -1,0 +1,92 @@
+NewTOS 0.6 — Rueckmeldebogen
+============================
+
+Bitte ausfuellen und als Antwort an die Mailingliste schicken (Text
+direkt in die Mail kopieren genuegt). Fotos vom Bildschirm gern als
+Anhang. Felder, die du nicht weisst, einfach leer lassen.
+
+
+1. Zu dir und deinem Aufbau
+---------------------------
+
+Name / Rufname:
+Kontakt fuer Rueckfragen (E-Mail):
+Atari-Erfahrung (welche Maschinen / TOS-Versionen):
+
+Raspberry Pi 4, RAM (1/2/4/8 GB):
+Netzteil (offiziell / anderes):
+Monitor (Hersteller, Aufloesung, HDMI direkt / Adapter):
+Tastatur (Hersteller/Modell, deutsch/US):
+Maus (Hersteller/Modell):
+SD-Karte (Hersteller, Groesse):
+Wie partitioniert (macOS / Windows / Linux, Befehl):
+Weitere USB-Geraete angeschlossen:
+
+
+2. Ergebnisse der Testanleitung
+-------------------------------
+
+Je Zeile: OK / FEHLER / NICHT GETESTET. Bei FEHLER bitte unten unter 3.
+einen Fehlerbericht mit derselben Nummer.
+
+A1 Start ..................
+A2 Maus/Tastatur ..........
+A3 Startdauer (Sekunden) ..
+B1 Laufwerk C: oeffnen ....
+B2 Ordner wechseln ........
+B3 Fenster ................
+B4 Markieren ..............
+B5 Hintergrund ............
+B6 Dateioperationen .......
+B7 Desktop sichern ........
+B8 EmuCON .................
+C1 Accessory ..............
+C2 Accessory + Programm ...
+D1 QED tippen/speichern ...
+D2 QED Dateiauswahl .......
+D3 Datei auf QED ziehen ...
+D4 zView (welche Formate) .
+D5 Doom (fluessig?) .......
+D6 CoreMark (Wert) ........
+D7 TeraDesk ...............
+E1 Ctrl+Alt+Del ...........
+E2 Ctrl+Alt+RShift+Del ....
+E3 Gegenprobe LShift / Del
+E4 TeraDesk Reboot ........
+F2 Stunde Dauerlauf .......
+
+
+3. Fehlerberichte (je Fehler einen Block kopieren)
+--------------------------------------------------
+
+Test-Nr. (oder "frei"):
+Was hast du gemacht (Schritt fuer Schritt):
+1.
+2.
+3.
+Was hast du erwartet:
+Was ist passiert:
+Passiert es wieder, wenn du es wiederholst? (immer / manchmal / einmal):
+Absturzbericht auf dem Bildschirm? (ja/nein, Foto angehaengt?):
+Lief das System danach weiter? (ja / nur nach Taste / nur nach Neustart):
+Wie wichtig fuer dich (stoert sehr / stoert / Kleinigkeit):
+
+
+4. Vergleich mit dem Original
+-----------------------------
+
+Was sieht anders aus oder verhaelt sich anders als auf einem echten
+Atari (TOS 4 / EmuTOS)? Auch Kleinigkeiten (Farben, Abstaende,
+Tastenkuerzel, Meldungstexte):
+
+
+5. Gesamteindruck
+-----------------
+
+Stabilitaet (1 = staendig Probleme ... 5 = lief einwandfrei):
+Geschwindigkeit (1 = zaeh ... 5 = sehr flott):
+Was hat dir gefallen:
+Was hat dich am meisten gestoert:
+Welches Atari-Programm moechtest du als naechstes auf NewTOS sehen:
+Wuerdest du bei der naechsten Version wieder testen? (ja/nein):
+Sonstiges:
