@@ -69,3 +69,12 @@ spaeteres Schreiben/`Fclose` ueber den Handle fasst die Karte nicht mehr an
 75 Eintraege, Handles 6..80, `ENHNDL` bei voller Tabelle. Belege
 `measurements/measurement-2026-10-18-proc04-files/` (rot → gruen),
 `measurements/measurement-2026-10-18-proc04-files-test/` (Tester PASS).
+
+## Anwenderentscheidungen zu Punkt 1 (2026-10-18)
+
+- `Cconrs` aus einer umgelenkten Datei: EmuTOS liest `max` vorzeichenbehaftet
+  (`bdosmain.c:535-553`), ab 128 liest es ohne Grenze bis CR/EOF und kann den
+  Puffer ueberlaufen. NewTOS stoppt bei `max` (0..255, vorzeichenlos) —
+  benannte Abweichung in `docs/COMPATIBILITY.md`; fuer `max` ≤ 127 identisch.
+  Umsetzung zusammen mit CON01.
+- Zeichenweises Zurueckschreiben bei Umlenkung auf eine Datei → [FS16](FS16.md).
