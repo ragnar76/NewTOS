@@ -1,0 +1,10 @@
+run rd-wt-on: 73 lines; end: 1; EXC/PANIC: 0
+  RD RESULT fails=0x00000000  FAIL lines: 0  desktop: 1
+run rd-wt-strict: 73 lines; end: 1; EXC/PANIC: 0
+  RD RESULT fails=0x00000000  FAIL lines: 0  desktop: 1
+run rd-wt-off: 73 lines; end: 1; EXC/PANIC: 0
+  RD RESULT fails=0x00000000  FAIL lines: 0  desktop: 1
+run rd-head-on: 57 lines; end: 0; EXC/PANIC: 0
+    FAIL lines: 0  desktop: 0
+run rd-wt-verify: 76 lines; end: 1; EXC/PANIC: 0
+  RD RESULT fails=0x00000000  FAIL lines: 0  desktop: 1

@@ -1,0 +1,21 @@
+measurement-2026-10-18-proc04-redir-test -- Tester: independent regression test of the UNCOMMITTED PROC04 point 1 (= CON02) working tree
+(GEMDOS character functions follow p_uft: tos-api/src/gemdos/{mod,console}.rs, bdos/fs/file.rs, tests) against HEAD 0daaeee5.
+No product code touched, nothing committed/stashed/checked out. Host macOS, QEMU -M raspi4b (-append serial=on [memprot=strict|off|verify]),
+-M virt (boot only), one QEMU at a time, per-run APFS clones deleted, private 64 MiB FAT16 cards, no SD card, no Pi.
+Scratch = session scratchpad .../scratchpad/rt. method/ = copy of proc04-redir/method (+ proc04-files-test m113, series-n, misc-series,
+cards-n, cwd probe; own build-inj2.sh + emucon2.script); the developer's dir was only read/copied.
+Kernels: fresh `git archive 0daaeee5` trees (+ the 5 uncommitted tos-api files for side wt), release, SOURCE_DATE_EPOCH=1792152000
+(checks/kernels.sha256; head-plain ffeb2e27 = same as previous runs' wt-plain, as expected since HEAD contains point 4).
+Probe programs P4R/RKID sha identical to developer's (checks/programs-cards.sha256). Reused unchanged from the files-test scratch (SDK untouched):
+APITEST/S2/CWD programs and the cards api/s2/s2s/vf/tdq/doom, c-desk/acc/td/qed/nd/nt/nq images (sha in programs-cards.sha256).
+1 PROBE P4R (method/run-probe.sh): wt on/strict/off/verify RD RESULT fails=0, 0 FAIL, 0 EXC, desktop up (serial/rd-wt-*.log); head on (red control): no RD RESULT, KID prints on console.
+2 EmuCON probe (curdir/run-probe.sh): wt on/strict/off all six P4 RESULT fails=0, 270 lines, [P4 lines identical to developer's and to head (on).
+3 REGRESSION (regress/series.sh wt AND head, checks/series-*.out): APITEST 109/0/5 on/strict/off both sides (+ wt verify); S2ALL PASS on/off, S2ALLS PASS strict, VFORK PASS x3 both sides;
+  TeraDesk->F1->QED 12 dumps all sha 5d8e72ff (head=wt), viewed.
+4 INTERACTIVE matrix (m113/matrix.sh, series-n.sh): desk 18, acc 18, td 24, qed 21, dn 11, tn 11, qn 5 dumps IDENTICAL head vs wt; serial differs only in the 2 [mm] kernel-end / stand-in PD address lines; 0 EXC/PANIC.
+5 EmuCON typing session (build-inj2.sh, emucon2.script: cd .., cd sub, dir, run p4e.ncp, dir): dumps t14..t42 head vs wt identical except t26 (injector wall-clock: wt had typed 'd', head not yet);
+  final frame t30..t42 identical, viewed: dir listing + child output + [program exited] + second dir.
+6 DOOM smoke 50 s on/strict/off head and wt: 0 EXC/PANIC, "VERIFIED via EdDI", frame viewed (wt strict t45); not pixel comparable (demo not deterministic).
+7 QEMU-VIRT boot (virt-boot.sh, fresh release): stand-in PDs + "[desk] desktop up (0 drives)", 0 EXC/PANIC (serial/virt-wt-boot.log).
+8 HOST/BUILD (checks.sh wt; checks/): cargo xtask test 1449/0/1; sdk host 20/0/0; release builds both boards rc=0, 0 errors, kernel=94 tos-api=64 warnings; clippy 76/125 both boards; drift probe TOTAL 0.
+NOT RUN: real Pi 4, BIOS-device redirect on a live target (AUX/PRN not observable on raspi4b; host tests only), head qemu-virt baseline, Doom beyond 50 s.
