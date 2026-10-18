@@ -1,6 +1,6 @@
 # CON01 — Spaltenzaehler (`glbcolumn`) und BDOS-Typeahead fuer die Konsole
 
-Status: **OFFEN** · Prioritaet: **P3** · Typ: Konformitaet — Anwenderentscheidung 2026-10-13 bei der FS11-Spec
+Status: **ERLEDIGT** 2026-10-18 (QEMU, `5d2a3812`; Pi offen) · Prioritaet: **P3** · Typ: Konformitaet — Anwenderentscheidung 2026-10-13 bei der FS11-Spec
 
 Abhaengigkeiten: [FS11](FS11.md) (Geraeteweiche)
 
@@ -38,3 +38,12 @@ Ctrl-S/Ctrl-Q/Ctrl-X und Typeahead, `glbcolumn` je Geraet, Tab-Expansion in
 PROC04 Punkt 1 (Umlenkung, selber Code). Spec-Stellen, die die Abweichung als
 genehmigt fuehren (`docs/api/gemdos/file/40-fwrite.md`, `console.rs:30-60`
 Kommentar), mitziehen.
+
+## Erledigt (2026-10-18, QEMU, `5d2a3812`)
+
+Typeahead, Ctrl-S/Q/X, Tab-Expansion, `cgets` wie EmuTOS; Belege
+`measurements/measurement-2026-10-18-con01/` (rot 20 → gruen) und
+`measurements/measurement-2026-10-18-con01-test/` (Tester PASS, `27b36347`).
+Offen: Pi (Kosten des USB-Polls je Ausgabebyte); Anwenderentscheidung zu
+`newline` (Ctrl-U nach Backspace in Spalte 0: EmuTOS zaehlt ohne Grenze
+herunter, NewTOS stoppt bei 0 — `docs/api/gemdos/console/0a-cconrs.md`).
