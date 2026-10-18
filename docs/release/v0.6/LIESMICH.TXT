@@ -34,9 +34,9 @@ WICHTIG — so muss die Karte aussehen:
 - Die Grenze von 2 GB ist hart: FAT16 mit mehr als 2 GB braucht 64-KB-
   Cluster (Windows erlaubt das bis 4 GB), NewTOS nimmt hoechstens
   32-KB-Cluster an — wie das Atari-TOS.
-- Optional: bis zu drei weitere primaere Partitionen, ebenfalls FAT16 bis
-  2 GB, erscheinen als Laufwerke D:, E:, F:. Der Rest der Karte bleibt
-  einfach frei.
+- Optional: weitere Partitionen (primaer oder logisch), ebenfalls FAT16
+  bis 2 GB, erscheinen als Laufwerke D:, E:, ... bis P:. Der Rest der
+  Karte darf einfach frei bleiben.
 
 macOS (Terminal, DISK durch die Karte ersetzen, z. B. disk4 —
 mit "diskutil list" pruefen, sonst loeschst du die falsche Platte):
