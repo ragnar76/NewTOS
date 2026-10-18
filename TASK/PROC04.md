@@ -1,6 +1,6 @@
 # PROC04 — Remaining GEMDOS handle deviations found during PROC02
 
-Status: **OFFEN** · Prioritaet: **P3** · Typ: Abweichungen von EmuTOS — aus [PROC02](PROC02-STATUS-DONE.MD)
+Status: **ERLEDIGT** 2026-10-19 (QEMU) — [Quittung](PROC04-STATUS-DONE.MD) · Prioritaet: **P3** · Typ: Abweichungen von EmuTOS — aus [PROC02](PROC02-STATUS-DONE.MD)
 
 Abhaengigkeiten: —
 
