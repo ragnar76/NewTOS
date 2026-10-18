@@ -1,0 +1,58 @@
+measurement-2026-10-18-proc04-redir -- Developer: TASK/PROC04 point 1 (= TASK/CON02), the GEMDOS character functions follow
+run->p_uft[] in EmuTOS's two ways: (A) a standard handle forced to a FILE is answered by the osif file block before the function
+table (bdos/bdosmain.c:498-568, stdio_typ table :150-197; Crawio excluded), (B) a BIOS handle names the device of the
+bdos/console.c bodies, HXFORM(run->p_uft[n]) = 3 + p_uft[n]. Spec: docs/api/gemdos/_dispatcher.md section 5, _state.md section 2.
+Base HEAD 169a6021 (= 0b786cc7 + a docs-only commit), change UNCOMMITTED in the working tree. Developer self-evidence; the
+Tester's verdict is separate. Host macOS, QEMU -M raspi4b -append "serial=on [memprot=strict|off]", one QEMU at a time, per-run
+APFS clones (cp -c) of one base card per content, deleted after each run; private 64 MiB FAT16 images only, no SD card, no Pi.
+Scratch = session scratchpad .../scratchpad/rd (method/env.sh).
+
+CHANGE
+  tos-api/src/gemdos/mod.rs      dispatch_inner: console::redirect_to_file(id, args) after the MAX_FN check, before the table.
+  tos-api/src/gemdos/console.rs  redirect_to_file (block A: one-byte reads sign-extended / EOF_INDICATOR 0x0000ff1a, writes
+                                 return 0, Cconws raw strlen bytes, Cconrs byte-wise to CR with the following byte eaten and
+                                 max as a signed char, Cconis/Cauxis 0 only at EOF, Cconos/Cprnos/Cauxos -1, a device error or a
+                                 user fault ends the call with its code); std_dev = HXFORM(std_handle(n)) and constat() (only
+                                 devices 1/2 have an input status) in all 15 bodies (block B). CON keeps its existing host paths
+                                 (Ctrl-C-only break, Cconrs TrapLineIo, Crawio key word) -> default handles bit-identical; a
+                                 non-CON device: no break check (every non-CON table entry has no input), Cconrs = edit_line
+                                 over that device (as Fread on a device), a BIOS handle with no table entry = the absent device.
+  tos-api/src/bdos/fs/file.rs    ixread/ixwrite factored out of fread/fwrite (Result: Err = device error / fault that ends the
+                                 call; Fread/Fwrite results unchanged); pub(crate) std_handle (running PD's p_uft, else the
+                                 kernel stand-in's = default_handle, as init_pd_files), xread, xwrite, eof (getofd-based).
+  docs/api/gemdos/_state.md, _dispatcher.md   deviation 1 marked repaired.
+  tos-api/tests/proc04_console_redirect.rs    new, 12 host tests.
+  tos-api/tests/xbios_kbdvecs.rs              fixture Page0::loaded gets default_handle in p_uft (what init_pd_files gives every
+                                 loaded PD; the all-zero fixture made stdin HXFORM(0) = MIDI, so Cconin no longer reached CON).
+
+1 RED/GREEN HOST (checks/red-host-proc04-redir.txt, green-host-proc04-redir.txt)
+  proc04_console_redirect on HEAD code: 1 passed / 11 failed (only defaults_unchanged_* passes); with the change 12/12.
+2 QEMU PROBE P4R (method/p4redir.c -> C:\AUTO\P4R.NCP parent + C:\RKID.NCP child; build-rd.sh, card-rd.sh (RIN.TXT =
+  "line one" CR LF "X"), run-probe.sh): A Fcreate out / Fopen in, Fdup(0/1), Fforce(1,out), Fforce(0,in), Pexec(0,RKID);
+  the child does Cconws/Cconout('A')/Cconout(TAB)/Crawio('Z')/Cconrs/Cconin x2/Cconis/Cconos and reports the return values
+  with Cconws/Cconout into the same stdout; the parent checks Pexec rc 0x42 and the file == EXP (106 bytes,
+  "KID A\t ws=00000000 out=00000000 rs=00000008 [line one] cin=00000058 eof=0000ff1a is=00000000 os=ffffffff\r\n").
+  B mintlib system("C:\RKID.NCP <C:\RIN.TXT >C:\RSYS.TXT") (system_hack: Fdup/Fforce/spawnvp) -> rc 0x42, file == EXP.
+  C the parent's Cconws back on the console returns 1.
+  head on (red, serial/rd-head-on.log): the child prints "KID A<TAB>Z" on the CONSOLE, then Cconrs blocks on the keyboard;
+       no RD RESULT within 60 s, desktop never comes up.
+  wt on / strict / off (serial/rd-wt-*.log): RD RESULT fails=0, 0 FAIL lines, 0 EXC/PANIC, "[desk] desktop up (1 drives)".
+3 EmuCON SESSION (method/curdir/ = the PROC04 point-2 probe copied unchanged from measurement-2026-10-18-proc04-curdir, paths
+  adapted; inj kernel = launch:P4Z2 -> method/emucon.script types "cd ..", "cd sub", "run p4e.ncp" x2, "exit" into the
+  in-kernel EmuCON): wt on/strict/off: AUTO/ACC/Z/Z/EMU/EMU RESULT fails=0 each, 0 EXC/PANIC, desktop up; the [P4 lines are
+  identical to measurement-2026-10-18-proc04-curdir/serial/p4-wt-on.log (270 lines both).
+4 REGRESSION wt (method/regress/series.sh wt, copied from measurement-2026-10-18-proc04-files-test; checks/series-wt.out):
+  APITEST TOTAL 109/0/5 on/strict/off; S2ALL PASS on/off, S2ALLS PASS strict (4 [crash] lines = its two intended crash
+  prompts); VFORK PASS x3; TeraDesk #Z -> F1 -> QED: 6 dumps (t25/t40 x 3 modes) all sha 5d8e72ff.. = identical to
+  measurement-2026-10-18-proc04-files(-test); viewed: QED menu bar (German) over the green work area (checks/screendumps.sha256,
+  PNGs in scratch only).
+5 HOST/BUILD (method/checks.sh wt; checks/wt-*.txt): cargo xtask test 1449 passed / 0 failed / 1 ignored (1437 + 12 new);
+  sdk/run-host-tests.sh 20/0/0; release builds rpi4 + qemu-virt rc=0: tos-api 64 / kernel 94 warnings each (baseline 64/94);
+  clippy tos-api 76 / kernel 125 on both boards (baseline 76/125), 0 hits in console.rs, file.rs, gemdos/mod.rs;
+  tools/desk-drift-probe.sh TOTAL 0.
+Kernels (release rpi4 from `git archive 169a6021` [+ the working-tree tos-api files for wt], SOURCE_DATE_EPOCH=1792152000):
+  checks/kernels.sha256; head-plain ffeb2e27 = bit-identical to measurement-2026-10-18-proc04-files-test wt-plain (sanity).
+  Probe/regression programs: checks/programs.sha256.
+NOT RUN: real Pi 4, qemu-virt boot, memprot=verify, head regression series (baseline = proc04-files/-test), a QEMU run with a
+  BIOS-device redirect (Fforce(n,-2/-3): AUX is the no-cable entry and PRN absent, nothing observable on raspi4b; covered by the
+  host tests b_*), interactive desktop matrix.

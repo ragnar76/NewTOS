@@ -13,7 +13,9 @@
 //! defer their Ctrl-C `terminate()` to the kernel SVC handler via
 //! [`crate::bdos::process::request_terminate`] (a leaf function cannot
 //! redirect the trap frame itself); the other console leaves dispatch
-//! directly.
+//! directly. Before the table, [`console::redirect_to_file`] answers a
+//! character function whose standard handle is forced to a file (EmuTOS
+//! `osif`, `bdos/bdosmain.c:498-568`).
 
 use crate::host::host;
 use crate::trap::TrapArgs;
@@ -153,6 +155,12 @@ fn dispatch_inner(args: &TrapArgs) -> Long {
     }
     if id > MAX_FN {
         return EINVFN;
+    }
+    // A character function whose standard handle is forced to a file is
+    // answered from that file before the table (`osif`,
+    // `bdos/bdosmain.c:498-568`, `_dispatcher.md` §5; TASK/PROC04 point 1).
+    if let Some(rc) = console::redirect_to_file(id, args) {
+        return rc;
     }
     match TABLE[id] {
         Some(f) => f(args),

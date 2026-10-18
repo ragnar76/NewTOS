@@ -182,10 +182,22 @@ running PD, or — kernel code with no running process — the stand-in PD that
 is EmuTOS's `run` there (`standin::kernel_run`, TASK/PPARENT).
 
 **NewTOS deviations from the above — re-validated 2026-10-18 against EmuTOS
-(TASK/PROC04); points 1 and 3 NOT yet repaired (point 2 repaired, see
+(TASK/PROC04); point 3 NOT yet repaired (points 1 and 2 repaired, see
 there); the EmuTOS behaviour is the target:**
 
-1. *Character functions ignore `p_uft[]`.* `gemdos/console.rs` hard-wires
+1. *Character functions ignore `p_uft[]`.* **Repaired 2026-10-18 (TASK/PROC04
+   point 1 = TASK/CON02):** `gemdos/mod.rs` `dispatch_inner` runs
+   `console::redirect_to_file` before the table (the `osif` file block,
+   `_dispatcher.md` §5: raw one-byte reads sign-extended / `EOF_INDICATOR`,
+   writes return 0, `Cconrs` byte-wise to CR with the following byte eaten
+   and `max` as a signed `char`, `Cconis`/`Cauxis` 0 only at EOF, output
+   status -1, `Crawio` excluded); the 15 bodies take their BIOS device from
+   `HXFORM(run->p_uft[n])` (`console::std_dev`). `run` without a running
+   process is the stand-in PD (`file::std_handle` → `kernel_run_uft`, always
+   `default_handle`), so kernel code keeps CON/CON/AUX/PRN. Host test
+   `tos-api/tests/proc04_console_redirect.rs`; QEMU evidence
+   `measurements/measurement-2026-10-18-proc04-redir/`. Before:
+   `gemdos/console.rs` hard-wired
    `DEV_CON`/`DEV_AUX`/`DEV_PRN` (`cconout :88`, `cauxin :118`, `cauxout :132`,
    `cprnout :149`, `crawio :171`, `cconin :228`, `crawcin :253`, `cnecin :267`,
    `cconrs :462`, `cconws :514`, `cconis :559`, `cconos :569`, `cprnos :581`,

@@ -104,7 +104,13 @@ struct Page0(Box<[u64; 32]>);
 impl Page0 {
     fn loaded() -> Page0 {
         kbdvecs::write_defaults(page0());
-        Page0(Box::new([0; 32]))
+        let p = Page0(Box::new([0; 32]));
+        // The standard handles `init_pd_files` gives every loaded PD (here the
+        // kernel's `default_handle`): the console calls read their device from
+        // `p_uft[]` (TASK/PROC04 point 1), so stdin must be CON.
+        // SAFETY: the box is 256 bytes, a whole basepage.
+        unsafe { (*p.kva()).p_uft = tos_api::bdos::process::standin::DEFAULT_HANDLE };
+        p
     }
     fn bytes(&self) -> &[u8] {
         page0()

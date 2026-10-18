@@ -413,28 +413,42 @@ pub fn fread(args: &TrapArgs) -> Long {
         Some(o) => o,
         None => return EIHNDL,
     };
-    // `ixread` (`bdos/fsio.c:498-514`): clamp to the bytes before EOF; zero
-    // or negative requests move nothing.
+    match ixread(ofd, len, args.space, ubuf) {
+        Ok(v) | Err(v) => v,
+    }
+}
+
+/// EmuTOS `ixread` (`bdos/fsio.c:498-514`) on an open file: `len` bytes from
+/// the file position into `ubuf` in `space`. `Ok` is the call's ordinary
+/// result (the bytes moved); `Err` is a result that ends the GEMDOS call
+/// wherever it came from — a device error (EmuTOS unwinds `osif` with the
+/// BIOS code, `longjmp_rwabs`, `bdos/fs.h:60`) or a buffer the caller cannot
+/// write ([`crate::uaccess::FAULTED`]).
+fn ixread(ofd: &mut Ofd, len: i32, space: crate::uaccess::Space, ubuf: u64) -> Result<Long, Long> {
+    // Clamp to the bytes before EOF; zero or negative requests move nothing.
     if len <= 0 {
-        return 0;
+        return Ok(0);
     }
     let want = (len as u32).min(ofd.s.fileln.saturating_sub(ofd.s.bytnum));
     if want == 0 {
-        return 0;
+        return Ok(0);
     }
     // `xrw(0, …)` (FS08, `docs/api/gemdos/_state.md` §3a): one FAT step per
     // new cluster from `o_curcl`, whole records straight into the caller's
     // buffer (in its space, ARCH03 3a), partial ones through the cache.
-    let r = fsio::xrw(&mut ofd.s, false, want, args.space, ubuf);
+    let r = fsio::xrw(&mut ofd.s, false, want, space, ubuf);
     // A read that stopped on a device error reports the error, not a short
     // count (`docs/api/gemdos/file/3f-fread.md` §"Error conditions": an
     // underlying disk read failure surfaces as the BIOS code, `EREADF`); a
     // chain that ends early stays a short count.
     let pending = super::cache::take_error();
     match r {
-        Err(Fail::Fault) => crate::uaccess::FAULTED,
-        Err(Fail::Device) => pending.unwrap_or(EINTRN),
-        Ok(done) => pending.unwrap_or(done as Long),
+        Err(Fail::Fault) => Err(crate::uaccess::FAULTED),
+        Err(Fail::Device) => Err(pending.unwrap_or(EINTRN)),
+        Ok(done) => match pending {
+            Some(code) => Err(code),
+            None => Ok(done as Long),
+        },
     }
 }
 
@@ -461,37 +475,113 @@ pub fn fwrite(args: &TrapArgs) -> Long {
         Some(o) => o,
         None => return EIHNDL,
     };
+    match ixwrite(ofd, len, args.space, ubuf) {
+        Ok(v) | Err(v) => v,
+    }
+}
+
+/// EmuTOS `ixwrite` (`bdos/fsio.c:554-557`) on an open file: `len` bytes from
+/// `ubuf` in `space` at the file position. `Ok` / `Err` as in [`ixread`]:
+/// `Err` is a device error or a fault, which ends the GEMDOS call.
+fn ixwrite(ofd: &mut Ofd, len: i32, space: crate::uaccess::Space, ubuf: u64) -> Result<Long, Long> {
     if len <= 0 {
-        return 0;
+        return Ok(0);
     }
     if !ofd.s.vol.is_writable() {
-        return EACCDN;
+        return Ok(EACCDN);
     }
     // `ixwrite` → `xrw(1, …)` (FS08, `docs/api/gemdos/_state.md` §3a):
     // clusters allocated by `nextcl` as the write runs past the chain, whole
     // records straight from the caller's buffer, partial ones
     // read-modify-write through the cache. A disk that fills up ends the
     // transfer with a short count.
-    let r = fsio::xrw(&mut ofd.s, true, len as u32, args.space, ubuf);
+    let r = fsio::xrw(&mut ofd.s, true, len as u32, space, ubuf);
     if r == Err(Fail::Fault) {
-        return crate::uaccess::FAULTED;
+        return Err(crate::uaccess::FAULTED);
     }
     // Write-back of everything this call dirtied. Its code wins over the
     // byte count: EmuTOS never returns a short count for a hard error, it
     // unwinds with `EWRITF` (`bdos/fs.h:60`).
-    if let Err(code) = super::cache::flush() {
-        return code;
-    }
+    super::cache::flush()?;
     // ...and a transfer that stopped because the *device* failed is the
     // same hard error, not the "disk full" short count
     // (`docs/api/gemdos/file/40-fwrite.md` §"Error conditions": disk-full is
     // a short count, a media fault is a BIOS code).
     if let Some(code) = super::cache::take_error() {
-        return code;
+        return Err(code);
     }
     match r {
-        Ok(done) => done as Long,
-        Err(_) => EINTRN,
+        Ok(done) => Ok(done as Long),
+        Err(_) => Err(EINTRN),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Standard handles for the character functions (TASK/PROC04 point 1).
+// ---------------------------------------------------------------------------
+
+/// `run->p_uft[std]` as the GEMDOS character functions read it
+/// (`bdos/bdosmain.c:500`, `HXFORM(run->p_uft[n])` in `bdos/console.c`):
+/// the running process's entry, or — kernel code with no running process —
+/// the entry of the stand-in PD that is EmuTOS's `run` there
+/// ([`crate::bdos::process::standin::kernel_run_uft`], always
+/// `default_handle`; the same source `init_pd_files` inherits from). So
+/// kernel code (desktop, EmuCON, boot) keeps CON/CON/AUX/PRN. `std` past
+/// `NUMSTD` answers the console.
+///
+/// Deliberately separate from [`uft`], which the handle-based file functions
+/// use and which answers `-1` for every standard handle without a process
+/// (TASK/PROC04 point 1 leaves that path as it was; for `std` 0/1/4/5 the two
+/// agree, for 2/3 the file path has always said CON).
+pub(crate) fn std_handle(std: u16) -> i16 {
+    let bp = crate::bdos::process::current_kva();
+    let uft = if bp.is_null() {
+        crate::bdos::process::standin::kernel_run_uft()
+    } else {
+        // SAFETY: `current_kva` is the running process's live basepage.
+        unsafe { (*bp).p_uft }
+    };
+    uft.get(std as usize).copied().unwrap_or(-1) as i16
+}
+
+/// EmuTOS `xread(h, len, buf)` (`bdos/fsio.c:440-454`) for the character
+/// functions redirected to a file (`osif`, `bdos/bdosmain.c:509-553`): `h`
+/// through `getofd`, then [`ixread`]; a handle with no file behind it is
+/// `Ok(EIHNDL)`. `Err` ends the GEMDOS call (device error, fault).
+pub(crate) fn xread(h: i16, len: i32, space: crate::uaccess::Space, ubuf: u64) -> Result<Long, Long> {
+    match getofd(h) {
+        FOfd::File(j) => match ofds()[j].as_mut() {
+            Some(ofd) => ixread(ofd, len, space, ubuf),
+            None => Ok(EIHNDL),
+        },
+        _ => Ok(EIHNDL),
+    }
+}
+
+/// EmuTOS `xwrite(h, len, buf)` (`bdos/fsio.c:528-548`) for the character
+/// functions redirected to a file: [`ixwrite`] on `getofd(h)`, `Ok(EIHNDL)`
+/// for a handle with no file behind it.
+pub(crate) fn xwrite(h: i16, len: i32, space: crate::uaccess::Space, ubuf: u64) -> Result<Long, Long> {
+    match getofd(h) {
+        FOfd::File(j) => match ofds()[j].as_mut() {
+            Some(ofd) => ixwrite(ofd, len, space, ubuf),
+            None => Ok(EIHNDL),
+        },
+        _ => Ok(EIHNDL),
+    }
+}
+
+/// EmuTOS `eof(h)` (`bdos/fsio.c:294-306`): `1` when the position of `h`'s
+/// file is at or past its length, `0` before it, `EIHNDL` for a handle with no
+/// file behind it.
+pub(crate) fn eof(h: i16) -> Long {
+    match getofd(h) {
+        FOfd::File(j) => match ofds()[j].as_ref() {
+            Some(ofd) if ofd.s.bytnum >= ofd.s.fileln => 1,
+            Some(_) => 0,
+            None => EIHNDL,
+        },
+        _ => EIHNDL,
     }
 }
 

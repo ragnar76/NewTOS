@@ -16,8 +16,14 @@
 `xrawio`, **`stdio_typ = 0`**, `wparms = 1` (`bdos/bdosmain.c:161`). Because
 `stdio_typ` is `0`, the dispatcher's standard-handle interception is **skipped
 for `Crawio`** — the gate is `if (typ && fn && …)` and `typ == 0`
-(`bdos/bdosmain.c:498`). `Crawio` therefore **always** talks to the console
-BIOS device, even when stdin/stdout are redirected to files (see Edge case 5).
+(`bdos/bdosmain.c:498`). `Crawio` is therefore never redirected **to a file**;
+it talks to the BIOS device `HXFORM(run->p_uft[0|1])` = `3 + h`
+(`bdos/console.c:447,451`). With the default handles that is the console
+(`h = -1` → device 2). **Corrected 2026-10-18 (PROC04 point 1):** this line used
+to say "always the console"; when stdin/stdout are forced to a file handle
+`h > 0`, EmuTOS addresses BIOS device `3 + h` (no console, no file) — NewTOS
+does the same; with no such device the write goes nowhere and the read answers
+0.
 The `case 6:` arm inside that interception switch (`bdos/bdosmain.c:505-508`) is
 **unreachable** dead code for the normal dispatch of function 6.
 

@@ -237,8 +237,10 @@ device and the `-4`/`0` error cases are specified in `file/42-fseek.md`,
 
 Consequence: **applications that redirect stdin/stdout via `Fforce` see
 `Cconin`/`Cconout`/`Cconws`/`Cconrs`/… read from / write to the file** —
-EmuTOS contract. NewTOS does **not** do this yet (TASK/PROC04 point 1,
-`_state.md` §2 "NewTOS deviations").
+EmuTOS contract. NewTOS does this since 2026-10-18 (TASK/PROC04 point 1,
+`_state.md` §2 "NewTOS deviations" item 1: `console::redirect_to_file`
+before the function table, `console::std_dev` = `HXFORM(run->p_uft[n])` in
+the bodies).
 
 ---
 
