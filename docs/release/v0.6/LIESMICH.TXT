@@ -63,6 +63,7 @@ Nach einigen Sekunden erscheint der Startbildschirm, danach der Desktop.
     APPS\ZVIEW\ZVIEW.NAP            zView (Bildbetrachter, 10 Formate)
     APPS\DOOM\DOOM.NAP              Doom (Shareware-Episode)
     APPS\COREMARK\CORE.NCP          CoreMark (CPU-Benchmark, Textprogramm)
+    APPS\BALL\BALL.NAP              Ball (Grafik-Demo)
 
 Programmendungen: .NAP = GEM-Programm, .NCP = Textprogramm,
 .NTP = Textprogramm mit Parametern, .NAC = Accessory. Die Atari-Endungen
@@ -121,10 +122,10 @@ Bitte TESTANLEITUNG.TXT durchgehen und FEEDBACK.TXT ausfuellen
 
 NewTOS steht unter der GNU GPL v2 oder spaeter. Die enthaltenen Programme
 stehen unter ihren eigenen Lizenzen (TeraDesk, QED, zView, Doom: GPL).
-Saemtliche Quelltexte dieser Version: https://github.com/tuxie01/NewTOS,
-Tag v0.6. Die Raspberry-Pi-Firmware (start4.elf, fixup4.dat, .dtb) stammt
-von der Raspberry Pi Foundation und steht unter deren Lizenz
-(LICENCE.broadcom). DOOM1.WAD ist die frei weitergebbare Shareware-
-Episode von id Software.
+Die vollstaendigen Quelltexte genau dieser Version liegen dem Download als
+NEWTOS-0.6-QUELLEN.ZIP bei. Die Raspberry-Pi-Firmware (start4.elf,
+fixup4.dat, .dtb) stammt von der Raspberry Pi Foundation und steht unter
+deren Lizenz (LICENCE.broadcom). DOOM1.WAD ist die frei weitergebbare
+Shareware-Episode von id Software.
 
 Projektseite: https://newtosworld.de
