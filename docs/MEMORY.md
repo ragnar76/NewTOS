@@ -2343,6 +2343,76 @@ U10.
 
 ---
 
+## ADR-027: Kernel memory management takes FreeMiNT as its reference, even where that is visible
+
+**Date:** 2026-10-18
+**Status:** **Accepted** (user decision 2026-10-18).
+**Phase:** cross-cutting (GEMDOS memory, process memory, protection); refines ARCH03 and ADR-025.
+
+### Context
+
+Since ARCH03 the kernel's memory internals already follow FreeMiNT: one
+shared, identity-mapped address space with rights per process, several
+owners per block, `Mfree`/`Mshrink` only by an owner (`EIMBA` otherwise, E15),
+protection modes `PROT_P/G/S/PR/I` (ADR-023, [[adopt-freemint-protection-model]]).
+The open memory tickets (MEM06, MEM07, MEM08, MEM10, ARCH03 stage 2b) are
+optimisations of exactly that model. The 2026-10-18 rule "everything
+EmuTOS-faithful" (PROC03) raised the question which reference those tickets
+use. Building memory management EmuTOS-internal now and replacing it with
+FreeMiNT for 2.0 ([[version-roadmap-1-0-2-0]], [[freemint-extension-direction]])
+would do the work twice.
+
+### Decision
+
+1. **Kernel memory management uses FreeMiNT as its reference**
+   (`references/freemint`): allocation, ownership, sharing, protection,
+   process memory, performance work.
+2. **This holds even where it is visible to programs in small ways.** The
+   user (2026-10-18): *"selbst wenn es kleine sichtbare Änderungen gegenüber
+   EmuTOS sind, würde ich aus Effizienzgründen dennoch für FreeMiNT mich
+   entscheiden."* Every such visible difference is still **named** in
+   `docs/COMPATIBILITY.md` (with the FreeMiNT and EmuTOS source lines), never
+   left silent.
+3. **Scope is the kernel only.** The AES and the VDI stay EmuTOS-faithful
+   (ADR-022/ADR-026); NewTOS has not built them for FreeMiNT.
+4. **The rest of the kernel is unchanged by this ADR:** processes, the file
+   system, the console and the BIOS stay EmuTOS-faithful (PROC03/PROC04
+   decisions of 2026-10-18), unless a later decision extends this one.
+
+### Rationale
+
+- Efficiency: no EmuTOS-internal rebuild that 2.0 would throw away.
+- Consistency: the model is already FreeMiNT; references for its tickets must
+  be the same source the model came from.
+- Applications rarely depend on allocator internals; the contract that
+  matters (return values, error codes, `Malloc(-1)`, MD lists) is checked per
+  change and any visible difference is documented.
+
+### Consequences
+
+- MEM06/07/08/10 and ARCH03 stage 2b are specified from FreeMiNT
+  (`sys/memory.c`, `sys/k_exec.c`, `sys/arch/mprot*.c` …); the spec entry
+  names the FreeMiNT lines and, where visible, the EmuTOS behaviour it departs
+  from.
+- B5 (PROC03, user 2026-10-18, option 2) already follows this line: an
+  accessory's memory ownership and protection stay with the accessory
+  (FreeMiNT-like), only `*os_run`/`p_parent` follow EmuTOS.
+- A program that relies on an EmuTOS allocator quirk may behave differently;
+  the named entry in COMPATIBILITY is the place to look.
+
+### Alternatives considered
+
+- **EmuTOS for everything, including memory internals:** rejected — double
+  work, and it contradicts the ARCH03 model already in place.
+- **FreeMiNT only where invisible:** rejected by the user for efficiency.
+
+### References
+
+- `TASK/ARCH03.md`, ADR-023, ADR-025; `TASK/PROC03.md` (B5);
+  `docs/api/gemdos/process/_run-ownership-curdir.md` (D-6..D-9).
+
+---
+
 ## Quirks Discovered
 
 Format: `QUIRK-NNN`, dated, with severity (low / medium / high / critical).
