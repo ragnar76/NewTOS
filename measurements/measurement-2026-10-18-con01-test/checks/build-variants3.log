@@ -1,0 +1,19 @@
+files over a97c0d05 (wt):
+  kernel/src/host_env.rs
+  kernel/src/selftest_console.rs
+  tos-api/src/bdos/process/standin.rs
+  tos-api/src/gemdos/console.rs
+  tos-api/src/host.rs
+  tos-api/tests/con01_console_typeahead.rs
+  tos-api/tests/fs11_device_rw.rs
+  tos-api/tests/proc04_console_redirect.rs
+inject-arm.py: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/trees/wt-kqt: tag [kn], up:QED (82 bytes)
+097847794405b46699b39a0f7ab515b0682a34212089a50afe14015e83785de7  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/bin/kernel8-wt-kqt.img
+inject-arm.py: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/trees/wt-kapip: tag [kd], launch:APITEST (900 bytes)
+b624ae89d62a3425b717e4e3f81b19561696a5138c47dfabb4edac85af8ab17d  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/bin/kernel8-wt-kapip.img
+files over a97c0d05 (head):
+  
+inject-arm.py: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/trees/head-kqt: tag [kn], up:QED (82 bytes)
+9ad09cf8f1bcf6d7601ff72e2b7dee431f1db9bdce785a87d0e0e819d4e5cde0  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/bin/kernel8-head-kqt.img
+inject-arm.py: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/trees/head-kapip: tag [kd], launch:APITEST (900 bytes)
+58dd315b3119dd3608f02fc02c2950521a54be1eacc76e04ed1d91798bb459ba  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/bin/kernel8-head-kapip.img

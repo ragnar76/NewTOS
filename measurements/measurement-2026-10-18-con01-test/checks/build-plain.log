@@ -1,0 +1,13 @@
+files over a97c0d05 (wt):
+  kernel/src/host_env.rs
+  kernel/src/selftest_console.rs
+  tos-api/src/bdos/process/standin.rs
+  tos-api/src/gemdos/console.rs
+  tos-api/src/host.rs
+  tos-api/tests/con01_console_typeahead.rs
+  tos-api/tests/fs11_device_rw.rs
+  tos-api/tests/proc04_console_redirect.rs
+4016deba8243b5549b9bcc50d7e587ab3fec175867bd52b016d74df191931bc9  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/bin/kernel8-wt-plain.img
+files over a97c0d05 (head):
+  
+f6897513a739877e50c3d2fbfd1cdc5113176e8eaa9aaddf6056c9cd9357c520  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/bin/kernel8-head-plain.img

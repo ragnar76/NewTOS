@@ -1,0 +1,33 @@
+measurement-2026-10-18-con01-test -- Tester: independent regression test of the UNCOMMITTED CON01 working tree (GEMDOS console layer as
+EmuTOS bdos/console.c: per-device column, 64-key typeahead, conbrk Ctrl-S/Q/X/C, tab expansion, cgets echo, Cconrs max unsigned from a
+redirected file) against HEAD a97c0d05. No product code touched, nothing committed/stashed/checked out. Host macOS, QEMU -M raspi4b
+(-append serial=on [memprot=on|strict|off|verify]), -M virt (boot only), one QEMU at a time, per-run APFS clones deleted, private 64 MiB
+FAT16 cards, no SD card, no Pi. Scratch = session scratchpad .../scratchpad/ct. method/ = copy of proc04-redir-test/method (+ build-all.sh,
+extra-variants.sh, inter-new.sh, run-inter-all.sh, time-cat.py, regress/series-plain.sh, con01/ = developer's EmuCON card+script);
+scripts/ = copy of proc04-redir-test/scripts + gen.py (mkey), qtype/tkeys/deskkeys/doomkeys/apikey/apiprobe/cad scripts.
+Kernels: fresh `git archive a97c0d05` trees, side wt = + the 8 uncommitted kernel/ tos-api/ files (all mtime <= 12:26, unchanged during the run),
+release, SOURCE_DATE_EPOCH=1792152000, instrumented variants only in scratch trees (tools/inject-arm.py). checks/kernels.sha256, cards.sha256,
+programs.sha256 (APITEST/S2/P4/RD programs and the cards api/s2/s2s/vf/tdq/doom/rd/p4, c-desk/acc/td/qed/nd/nt/nq are reused unchanged from the
+proc04-redir-test scratch, SDK untouched). wt con01 kernel = developer's kernel8-wt-inj (sha 3a2461ae..., bit-identical).
+1 HOST/BUILD (method/checks.sh wt -> checks/wt-*): cargo xtask test 1465/0/1; release builds rpi4 + qemu-virt rc=0, 0 errors, kernel=94 tos-api=64
+  warnings = HEAD (logs of the head tree: same); clippy both boards tos-api=76 kernel=125 = HEAD (checks/head-clippy-*), no hit in a touched file; drift
+  probe TOTAL 0; SDK host tests 20/0/0.
+2 REGRESSION (regress/series-plain.sh head|wt; serial/rg-*): APITEST TOTAL 109/0/5 on/strict/off/verify on BOTH sides, 0 [FAIL]; S2ALL PASS on/off/verify,
+  S2ALLS PASS strict (4 intended crash EXC lines on both sides), VFORK PASS x4 both sides; serial head-vs-wt identical except the [mm] kernel-end
+  / stand-in PD addresses and injector tick numbers. TeraDesk->F1->QED (tdq, strict/on/off): 12 dumps all sha 5d8e72ff, head = wt (screendumps/regress).
+  BC26-30 (5 SKIPs of the plain run = "no key pressed"): driven with ONE injected key tap (kapik kernels, scripts/apikey.script, timing found with
+  scripts/apiprobe.script): TOTAL 114/0/0 incl. BC26-BC30 [OK] on/strict/off/verify, head and wt (serial/key-*-api.log; Bconin(2)=0x001E0061).
+3 PROC04 probe (method/run-probe.sh): P4R "RD RESULT fails=0x00000000", 0 FAIL lines, desktop up: wt and head, on/strict/off/verify (serial/rd-*).
+4 KEY INPUT, head vs wt (method/inter-new.sh, scripts/*.spec): QED typing (up:QED, Ctrl+N, "Hello World" LShift/RShift capitals, Enter, Tab, "a1", BS,
+  both-Shift B, Up/Left/Left/Down/Right/Delete, ...): final frames n6/n7 pixel-identical head=wt in 4/4 runs; mid-typing frames differ with the dump phase
+  (see below). TeraDesk (Ctrl+W x2, Ctrl+Q -> Quit dialog), NEWDESK keyboard (Alt+C, arrows, Esc, Ctrl+I, Enter, CR, Ctrl+W, Ctrl+U): 5/5 and 9/9 dumps pixel-identical.
+  Doom (launch:DOOM, Up, Esc, Down, Down, Esc): same menu open/close pattern head and wt, frames not pixel-identical (demo not deterministic), weak evidence.
+5 INTERACTIVE MATRIX (m113/matrix.sh, series-n.sh): desk 18, acc 18, td 24, qed 21, dn 11, tn 11, qn 5 dumps IDENTICAL head vs wt; serial differs only in
+  injector arming ticks; 0 EXC/PANIC.
+6 EmuCON (con01 script, developer's card): wt tabs expanded in the serial bytes (0 raw TAB vs 5 on head), Ctrl-S stops the output (4 lines between Ctrl-S and Ctrl-Q feed),
+  typed 'ver' executes at the next prompt; final frame t60 head=wt=developer's wt (screendumps/emucon-*). EmuCON dir/run session (inj2): final frames identical head/wt.
+  Timing of the 6000-line cat (method/time-cat.py, 3 runs each): head 25.4 s (25.17/25.40/25.68), wt 31.40/30.58/30.79 minus 5.2 s Ctrl-S pause = 26.2/25.4/25.6 s, no slow-down visible on raspi4b (no USB there).
+7 Ctrl+Alt+Del (RST01 kcad kernels, c-desk): "[reset] keyboard Ctrl+Alt+Del (Warm) requested" + "PM watchdog full reset", QEMU -no-reboot exits, head and wt.
+8 qemu-virt boot (wt and head release, flat binary): "[desk] desktop up (0 drives)", 0 EXC/PANIC (serial/virt-*-boot.log).
+NOT RUN: real Pi 4 (USB poll per output byte, interactive keys, Doom frame rate), curdir EmuCON probe (needs the old 'inj' kernel), Ctrl+Alt+Del while a console
+program prints, Doom key-by-key check (product Doom prints no key lines), qemu-virt interactive (USB-HID), measured QED/Doom latency (no in-guest timestamp).

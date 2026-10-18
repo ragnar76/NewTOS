@@ -1,0 +1,55 @@
+files over a97c0d05 (wt):
+  kernel/src/host_env.rs
+  kernel/src/selftest_console.rs
+  tos-api/src/bdos/process/standin.rs
+  tos-api/src/gemdos/console.rs
+  tos-api/src/host.rs
+  tos-api/tests/con01_console_typeahead.rs
+  tos-api/tests/fs11_device_rw.rs
+  tos-api/tests/proc04_console_redirect.rs
+inject-arm.py: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/trees/wt-inj2: tag [inj], launch:P4Z2 (66 bytes)
+368db8c6b351164bbe919813da8d010259c953e6705990cb0dd18d1267073f68  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/bin/kernel8-wt-inj2.img
+inject-arm.py: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/trees/wt-con01: tag [inj], launch:P4Z2 (68 bytes)
+3a2461aed8663439d4228cdfbf4aed23cfcd07180a1644587c7549253f897318  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/bin/kernel8-wt-con01.img
+inject-arm.py: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/trees/wt-s2s: tag [inj], launch:S2ALLS (120 bytes)
+e4ff57c1c213ea556fce9323e9f1dd3c3e7b2c9053a472611b7fabd33b10a761  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/bin/kernel8-wt-s2s.img
+inject-arm.py: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/trees/wt-tdq: tag [inj], up:DESKTOP (2 bytes)
+132b6efd2f0de1d2941020052bd0f4955007dd86b0b54de41c95ad9d2ebf2105  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/bin/kernel8-wt-tdq.img
+inject-arm.py: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/trees/wt-kd: tag [kd], launch:DESKTOP (77 bytes), desktop (180 bytes), launch:QED (49 bytes)
+d4ceb798b5a40d97b52357d6556a4745a83e9112deed0c3216be7a3e9b2fc1f9  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/bin/kernel8-wt-kd.img
+inject-arm.py: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/trees/wt-kdn: tag [kn], desktop (138 bytes)
+e20ec58fa71defa736b06657a65d632be8e200d36ad60f3c3df9da51003c5555  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/bin/kernel8-wt-kdn.img
+inject-arm.py: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/trees/wt-ktn: tag [kn], up:DESKTOP (144 bytes)
+e55f21fd63d477fd568e65257e3044032cc0622e3708141e07da7440eba31647  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/bin/kernel8-wt-ktn.img
+inject-arm.py: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/trees/wt-kqn: tag [kn], up:QED (73 bytes)
+1b5f9ea423a6e926ee02a3d90e64eb94dc5ce795179e6a4320cf1aadfc077a22  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/bin/kernel8-wt-kqn.img
+inject-arm.py: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/trees/wt-kqt: tag [kn], up:QED (82 bytes)
+097847794405b46699b39a0f7ab515b0682a34212089a50afe14015e83785de7  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/bin/kernel8-wt-kqt.img
+inject-arm.py: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/trees/wt-ktt: tag [kn], up:DESKTOP (66 bytes)
+51013568fd9a4ad02f8b86952a057f6cbede45c28115a574cb6aa0b7f56c7da7  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/bin/kernel8-wt-ktt.img
+inject-arm.py: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/trees/wt-kcad: tag [kd], desktop (6 bytes)
+8773531b42f28b12cfd8eb47f0aa664e0e402d7eecd2e70c522a449f429aae50  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/bin/kernel8-wt-kcad.img
+files over a97c0d05 (head):
+  
+inject-arm.py: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/trees/head-inj2: tag [inj], launch:P4Z2 (66 bytes)
+447e1bf14854daa50302e811ba07e66b210a55e9988fc0fba8a8ec510af9f55b  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/bin/kernel8-head-inj2.img
+inject-arm.py: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/trees/head-con01: tag [inj], launch:P4Z2 (68 bytes)
+c1e97e02f219dee9a25e50eca9be35244e0c495b6f3ee0fdd467699ca4b53061  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/bin/kernel8-head-con01.img
+inject-arm.py: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/trees/head-s2s: tag [inj], launch:S2ALLS (120 bytes)
+894df09a450cc33e8642b17fae1101a367ba253b06c1ec0c1a30005f1ca69560  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/bin/kernel8-head-s2s.img
+inject-arm.py: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/trees/head-tdq: tag [inj], up:DESKTOP (2 bytes)
+84f840bfa0eaf52943971387b38698882552d95ce878661e9bc7d6edda86d3cf  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/bin/kernel8-head-tdq.img
+inject-arm.py: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/trees/head-kd: tag [kd], launch:DESKTOP (77 bytes), desktop (180 bytes), launch:QED (49 bytes)
+0f90333bda6b349f624f30b927cc6654d7c1b5b3130b8031ea55e2d0748b5698  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/bin/kernel8-head-kd.img
+inject-arm.py: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/trees/head-kdn: tag [kn], desktop (138 bytes)
+e4722ebfd04dd9450813454ac462443b70ad254c6b7093178e3e8f1f969d8b84  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/bin/kernel8-head-kdn.img
+inject-arm.py: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/trees/head-ktn: tag [kn], up:DESKTOP (144 bytes)
+7b7d180b0dedf989b342457907fccf62f5e98870822ea06c33d1ee646efcd856  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/bin/kernel8-head-ktn.img
+inject-arm.py: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/trees/head-kqn: tag [kn], up:QED (73 bytes)
+79e5392c4e7eca53a414e4a31fb94c82f940b62fc62cfc6ac84a55866be7eaa4  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/bin/kernel8-head-kqn.img
+inject-arm.py: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/trees/head-kqt: tag [kn], up:QED (82 bytes)
+9ad09cf8f1bcf6d7601ff72e2b7dee431f1db9bdce785a87d0e0e819d4e5cde0  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/bin/kernel8-head-kqt.img
+inject-arm.py: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/trees/head-ktt: tag [kn], up:DESKTOP (66 bytes)
+639e9ac5f106300d3d873837bd47f8a7cabf4ec183622cd33d4c91b3065b3376  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/bin/kernel8-head-ktt.img
+inject-arm.py: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/trees/head-kcad: tag [kd], desktop (6 bytes)
+26373445272e0f2099500cb5f5f0fb43a6f87d6ba38ba99c7300a48df81e5f98  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/bin/kernel8-head-kcad.img

@@ -1,0 +1,15 @@
+files over a97c0d05 (wt):
+  kernel/src/host_env.rs
+  kernel/src/selftest_console.rs
+  tos-api/src/bdos/process/standin.rs
+  tos-api/src/gemdos/console.rs
+  tos-api/src/host.rs
+  tos-api/tests/con01_console_typeahead.rs
+  tos-api/tests/fs11_device_rw.rs
+  tos-api/tests/proc04_console_redirect.rs
+inject-arm.py: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/trees/wt-kapik: tag [kd], launch:APITEST (2 bytes)
+166734a99fd5233be493b4788052409f476a2bf22cb3dcc701616d366aedccce  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/bin/kernel8-wt-kapik.img
+files over a97c0d05 (head):
+  
+inject-arm.py: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/trees/head-kapik: tag [kd], launch:APITEST (2 bytes)
+7a8cce89e0df3326b829648436f48ba08cea07e82367dd7ab20a15592d8f1e06  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/ct/bin/kernel8-head-kapik.img

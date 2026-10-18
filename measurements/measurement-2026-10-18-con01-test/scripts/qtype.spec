@@ -1,0 +1,48 @@
+# QTYPE -- QED (#Z), armed up:QED: Ctrl+N, then typing: "Hello World" (LShift H, RShift W), Enter, Tab, "a1", Backspace, "B" (both shifts), Enter,
+# "line3", Up, Left Left, LShift+x, Down, Right, Delete, Enter, RShift+Q, "u".
+at 300
+mkey 0x1D 0x31
+wait 100
+mark n0-new-window
+mkey 0x2A 0x23
+key 0x12
+key 0x26
+key 0x26
+key 0x18
+key 0x39
+mkey 0x36 0x11
+key 0x18
+key 0x13
+key 0x26
+key 0x20
+mark n1-hello-world
+key 0x1C
+key 0x0F
+key 0x1E
+key 0x02
+mark n2-enter-tab-a1
+key 0x0E
+mark n3-backspace
+mkey 0x2A,0x36 0x30
+key 0x1C
+key 0x26
+key 0x17
+key 0x31
+key 0x12
+key 0x04
+mark n4-line3
+key 0x48
+key 0x4B
+key 0x4B
+mkey 0x2A 0x2D
+mark n5-up-left-left-X
+key 0x50
+key 0x4D
+key 0x53
+mark n6-down-right-delete
+key 0x1C
+mkey 0x36 0x10
+key 0x16
+wait 100
+mark n7-final
+wait 200
