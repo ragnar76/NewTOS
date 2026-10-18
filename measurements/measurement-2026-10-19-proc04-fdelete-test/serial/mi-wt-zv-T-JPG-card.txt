@@ -1,0 +1,12 @@
+== C:/
+ Volume in drive : is P4FPRB     
+ Volume Serial Number is 29A2-0810
+Directory for ::/
+
+ZVIEW        <DIR>     2026-10-19   0:38 
+ZVLAUNCH NAP     49712 2026-10-17  12:00 
+ZVARG    TXT        24 2026-10-17  12:00 
+NEWDESK  INF        23 2026-10-17  12:00 
+        4 files              49 759 bytes
+                         64 692 224 bytes free
+

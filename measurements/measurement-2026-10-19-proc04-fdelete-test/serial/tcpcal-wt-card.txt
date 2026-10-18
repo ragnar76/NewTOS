@@ -1,0 +1,15 @@
+== C:/
+ Volume in drive : is P4FPRB     
+ Volume Serial Number is 4921-080F
+Directory for ::/
+
+README   TXT        13 2026-10-17  12:00 
+LONGNAME TXT        16 2026-10-17  12:00 
+BIG      TXT     39200 2026-10-17  12:00 
+SUB          <DIR>     2026-10-19   0:37 
+FOLD         <DIR>     2026-10-19   0:37 
+APPS         <DIR>     2026-10-19   0:37  Apps
+NEWDESK  INF       410 2026-10-17  12:00 
+        7 files              39 639 bytes
+                         66 387 968 bytes free
+

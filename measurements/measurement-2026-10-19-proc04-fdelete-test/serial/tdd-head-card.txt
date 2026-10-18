@@ -1,0 +1,15 @@
+== C:/
+ Volume in drive : is P4FPRB     
+ Volume Serial Number is 27D2-080C
+Directory for ::/
+
+KEEP     TXT         9 2026-10-17  12:00 
+APPS         <DIR>     2026-10-19   0:34  Apps
+NEWDESK  INF       410 2026-10-17  12:00 
+        3 files                 419 bytes
+                         66 447 360 bytes free
+
+== C:/SUB
+mdir: File "::/SUB" not found
+== C:/TMP
+mdir: File "::/TMP" not found

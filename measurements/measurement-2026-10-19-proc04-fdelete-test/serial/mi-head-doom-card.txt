@@ -1,0 +1,21 @@
+== C:/
+ Volume in drive : is P4FPRB     
+ Volume Serial Number is B8AC-1112
+Directory for ::/
+
+SUB          <DIR>     2026-10-18   9:40 
+DOOM         <DIR>     2026-10-18   9:40 
+NEWDESK  INF        25 2026-10-17  12:00 
+        3 files                  25 bytes
+                         61 956 096 bytes free
+
+== C:/DOOM
+ Volume in drive : is P4FPRB     
+ Volume Serial Number is B8AC-1112
+Directory for ::/DOOM
+
+DOOM     NAP    740456 2026-10-17  12:00 
+DOOM1    WAD   4196020 2026-10-17  12:00 
+        2 files           4 936 476 bytes
+                         61 956 096 bytes free
+

@@ -1,0 +1,19 @@
+== C:/
+ Volume in drive : is P4FPRB     
+ Volume Serial Number is 75A6-0810
+Directory for ::/
+
+AUTO         <DIR>     2026-10-19   0:38 
+NEWDESK  INF         9 2026-10-17  12:00 
+        2 files                   9 bytes
+                         66 777 088 bytes free
+
+== C:/AUTO
+ Volume in drive : is P4FPRB     
+ Volume Serial Number is 75A6-0810
+Directory for ::/AUTO
+
+CORE     NCP    116784 2026-10-17  12:00 
+        1 file              116 784 bytes
+                         66 777 088 bytes free
+

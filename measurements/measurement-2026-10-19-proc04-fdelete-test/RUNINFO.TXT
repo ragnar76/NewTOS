@@ -1,0 +1,32 @@
+measurement-2026-10-19-proc04-fdelete-test -- Tester: independent regression test of the UNCOMMITTED working tree over HEAD 3167c5f2
+(TASK/PROC04 point 5: Fdelete / Fcreate-over-existing / Ddelete through an EmuTOS-style ixdel). Files under test (sha256 identical at start and end,
+checks/wt-files-end.sha256): tos-api/src/bdos/fs/file.rs, dirops.rs, tests/proc04_fdelete_open.rs (+ docs). No product code touched, nothing
+committed/stashed/checked out; the developer's run dir measurements/measurement-2026-10-18-proc04-fdelete/ was not edited (method/ COPIED here, env.sh
+retargeted to the scratch dir pft + HEADREV=3167c5f2; run.sh got LSDIRS support; gen.py got kdown/kup/text).
+Host macOS, QEMU -M raspi4b -append serial=on [memprot=strict|off|verify], -M virt (boot only), one QEMU at a time, per-run APFS clones (cp -c) of one
+base card per content, fsck_msdos -n + mtools listing of every clone before it is deleted; private 64 MiB FAT16 images (label P4FPRB), no SD card, no Pi.
+Scratch = session scratchpad .../scratchpad/pft (deleted at the end). Kernels: fresh release rpi4 builds from `git archive 3167c5f2` (side head) and the
+same + the 3 working-tree files (side wt), SOURCE_DATE_EPOCH=1792152000, instrumented variants (tools/inject-arm.py) in scratch trees only:
+checks/kernels.sha256, cards.sha256, programs.sha256. api/s2/s2s/vf/tdq/rd/doom/con01 cards = clones of earlier scratch cards (SDK unchanged).
+
+1 FDELETE RE-RUN (method/build-fd.sh, card-fd.sh, run-probe.sh, inter/runall.sh)
+  P4F probe wt on/strict/off/verify: FD RESULT fails=0x00000000, 0 FAIL, 0 EXC/PANIC, desktop up; fsck rc=0 (serial/fd-wt-*-fsck.txt).
+  Negative control head/on: FD RESULT fails=0x14 (20 FAIL lines), fsck "Found 6 orphaned clusters" rc=206 (serial/fd-head-on*) -> probe discriminates.
+  inter wt+head (dsk NEWDESK trash x2, tdd TeraDesk trash, qsv QED save-as + save-over): card listings head==wt (NOTE/README gone; DELME gone, KEEP stays;
+  QS.TXT="abcd", no .BAK), fsck rc=0 all six, 0 EXC/PANIC; 13/16 dump pairs pixel-identical, the 3 others are pre-action "selected" frames that differ
+  only in the pointer/drag-outline phase (dsk-a1 431 px, dsk-b1 408 px, tdd-t2 484 px, bbox around the pointer).
+2 FILE-SYSTEM REGRESSION head vs wt (all: card listing identical, fsck -n rc=0 both sides, 0 EXC/PANIC)
+  dcm  desktop copy file onto folder row, copy multi-cluster BIG.TXT, copy folder tree FOLD (2 folders 3 files) into C:\SUB, Ctrl-drag MOVE of 12-char
+       LONGNAME.TXT, delete folder with contents via Trash (inter/dcm.spec): dumps 12/14 identical, c2/f1 = copy/move box frames at a different phase
+       (wt box still open, head already closed; final frames identical).
+  tcp  TeraDesk copy file onto folder, copy folder tree, delete folder via TRASH (inter/tcp.spec): 8/10 identical, 2 "selected" frames pointer phase.
+  ec   EmuCON dir / cat / cd .. / dir / cat / cat LONG.TXT (inter/ec.spec): 4/5 identical, e5 = mid-scroll frame of a 400 KB cat.
+  Doom start (45 s): WAD read, demo runs, nothing written; t45 identical, t30 differs (demo not deterministic). CoreMark (AUTO/CORE.NCP): validated both
+       sides (5176 / 5108 it/s). zView with T.JPG / TRGB.PNG / T24.BMP via ZVLAUNCH: 6/6 dumps identical head=wt, image decoded. QED/Fcreate-over: see 1.
+3 REGRESSION wt (regress/series.sh wt): APITEST TOTAL 109/0/5 on/strict/off; S2ALL PASS on/off, S2ALLS PASS strict (4 EXC lines = 2 intended crash
+  prompts); VFORK PASS x3; TeraDesk->F1->QED 6 dumps all sha 5d8e72ff (= earlier runs). PROC04 redirection probe (rd card) RD RESULT fails=0 on/strict/off/verify,
+  fsck rc=0. qemu-virt boot (release, flat): "[desk] desktop up (0 drives)", 0 EXC/PANIC.
+4 HOST/BUILD (method/checks.sh wt -> checks/wt-*): cargo xtask test 1474/0/1 (incl. 9/9 proc04_fdelete_open); both boards release rc=0, tos-api 64 / kernel 94
+  warnings (= head build logs), clippy tos-api 76 / kernel 125 on both boards, 0 hits in file.rs/dirops.rs; desk-drift-probe TOTAL 0; SDK host tests 20/0/0.
+NOT RUN: real Pi 4, head series (APITEST/S2/VFORK/rd on head; baseline = earlier runs), Ctrl+D delete in NEWDESK, Fforce'd shared-handle close-then-delete, memprot=verify
+  for APITEST/S2ALL/VFORK, QED/TeraDesk with a FOLDER delete-while-open interactive.

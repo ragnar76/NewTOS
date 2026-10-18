@@ -1,0 +1,6 @@
+run mi-head-doom: 99 lines; end: 0; EXC/PANIC: 0
+run mi-head-core: 57 lines; end: 1; EXC/PANIC: 0
+run mi-head-zv-T-JPG: 80 lines; end: 0; EXC/PANIC: 0
+run mi-head-zv-TRGB-PNG: 80 lines; end: 0; EXC/PANIC: 0
+run mi-head-zv-T24-BMP: 80 lines; end: 0; EXC/PANIC: 0
+DONE

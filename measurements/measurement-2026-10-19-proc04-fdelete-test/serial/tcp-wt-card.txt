@@ -1,0 +1,52 @@
+== C:/
+ Volume in drive : is P4FPRB     
+ Volume Serial Number is 4921-080F
+Directory for ::/
+
+README   TXT        13 2026-10-17  12:00 
+LONGNAME TXT        16 2026-10-17  12:00 
+BIG      TXT     39200 2026-10-17  12:00 
+SUB          <DIR>     2026-10-19   0:37 
+APPS         <DIR>     2026-10-19   0:37  Apps
+NEWDESK  INF       410 2026-10-17  12:00 
+        6 files              39 639 bytes
+                         66 347 008 bytes free
+
+== C:/SUB
+ Volume in drive : is P4FPRB     
+ Volume Serial Number is 4921-080F
+Directory for ::/SUB
+
+NOTE     TXT        10 2026-10-17  12:00 
+BIG      TXT     39200 2026-10-17  12:00 
+FOLD         <DIR>     1980-01-01   0:00 
+OTHER    TXT        12 2026-10-17  12:00 
+        4 files              39 222 bytes
+                         66 347 008 bytes free
+
+== C:/SUB/FOLD
+ Volume in drive : is P4FPRB     
+ Volume Serial Number is 4921-080F
+Directory for ::/SUB/FOLD
+
+.            <DIR>     1980-01-01   0:00 
+..           <DIR>     1980-01-01   0:00 
+A        TXT        16 2026-10-17  12:00 
+B        TXT        30 2026-10-17  12:00 
+INNER        <DIR>     1980-01-01   0:00 
+        5 files                  46 bytes
+                         66 347 008 bytes free
+
+== C:/SUB/FOLD/INNER
+ Volume in drive : is P4FPRB     
+ Volume Serial Number is 4921-080F
+Directory for ::/SUB/FOLD/INNER
+
+.            <DIR>     1980-01-01   0:00 
+..           <DIR>     1980-01-01   0:00 
+C        TXT        17 2026-10-17  12:00 
+        3 files                  17 bytes
+                         66 347 008 bytes free
+
+== C:/FOLD
+mdir: File "::/FOLD" not found

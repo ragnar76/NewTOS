@@ -1,0 +1,34 @@
+== C:/
+ Volume in drive : is P4RPRB     
+ Volume Serial Number is 011D-12F3
+Directory for ::/
+
+SUB          <DIR>     2026-10-18  11:10 
+AUTO         <DIR>     2026-10-18  11:10 
+RKID     NCP     48632 2026-10-17  12:00 
+RIN      TXT        11 2026-10-17  12:00 
+NEWDESK  INF        10 2026-10-17  12:00 
+        5 files              48 653 bytes
+                         66 770 944 bytes free
+
+== C:/SUB
+ Volume in drive : is P4RPRB     
+ Volume Serial Number is 011D-12F3
+Directory for ::/SUB
+
+No files
+                         66 770 944 bytes free
+
+== C:/TMP
+mdir: File "::/TMP" not found
+init :: non DOS media
+Cannot initialize '::'
+== C:/AUTO
+ Volume in drive : is P4RPRB     
+ Volume Serial Number is 011D-12F3
+Directory for ::/AUTO
+
+P4R      NCP     70688 2026-10-17  12:00 
+        1 file               70 688 bytes
+                         66 770 944 bytes free
+

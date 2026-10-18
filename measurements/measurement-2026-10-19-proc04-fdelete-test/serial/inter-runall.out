@@ -1,0 +1,39 @@
+t=18.0s -> dsk-wt-a1-note-selected.png {"return": {}}
+t=19.9s -> dsk-wt-a2-delete-box.png {"return": {}}
+t=21.7s -> dsk-wt-a3-note-deleted.png {"return": {}}
+t=24.5s -> dsk-wt-b1-readme-selected.png {"return": {}}
+t=26.3s -> dsk-wt-b2-delete-box.png {"return": {}}
+t=27.9s -> dsk-wt-b3-readme-deleted.png {"return": {}}
+run dsk-wt: rc=0 fsck: fsck rc=0 Warning: 7 files, 65326 KiB free (32663 clusters)  EXC/PANIC: 0 lines: 177 sched-switch: 0
+t=18.0s -> tdd-wt-t1-window-open.png {"return": {}}
+t=20.1s -> tdd-wt-t2-selected.png {"return": {}}
+t=24.5s -> tdd-wt-t3-confirm.png {"return": {}}
+t=26.1s -> tdd-wt-t4-deleted.png {"return": {}}
+run tdd-wt: rc=0 fsck: fsck rc=0 Warning: 13 files, 64890 KiB free (32445 clusters)  EXC/PANIC: 0 lines: 216 sched-switch: 0
+t=17.9s -> qsv-wt-q1-new.png {"return": {}}
+t=18.7s -> qsv-wt-q2-typed.png {"return": {}}
+t=19.5s -> qsv-wt-q3-saveas.png {"return": {}}
+t=21.3s -> qsv-wt-q4-name.png {"return": {}}
+t=22.1s -> qsv-wt-q5-saved.png {"return": {}}
+t=24.0s -> qsv-wt-q6-saved-over.png {"return": {}}
+run qsv-wt: rc=0 fsck: fsck rc=0 Warning: 11 files, 64764 KiB free (32382 clusters)  EXC/PANIC: 0 lines: 89 sched-switch: 0
+t=18.0s -> dsk-head-a1-note-selected.png {"return": {}}
+t=19.9s -> dsk-head-a2-delete-box.png {"return": {}}
+t=21.4s -> dsk-head-a3-note-deleted.png {"return": {}}
+t=24.3s -> dsk-head-b1-readme-selected.png {"return": {}}
+t=26.2s -> dsk-head-b2-delete-box.png {"return": {}}
+t=28.0s -> dsk-head-b3-readme-deleted.png {"return": {}}
+run dsk-head: rc=0 fsck: fsck rc=0 Warning: 7 files, 65326 KiB free (32663 clusters)  EXC/PANIC: 0 lines: 177 sched-switch: 0
+t=18.0s -> tdd-head-t1-window-open.png {"return": {}}
+t=20.4s -> tdd-head-t2-selected.png {"return": {}}
+t=24.6s -> tdd-head-t3-confirm.png {"return": {}}
+t=26.1s -> tdd-head-t4-deleted.png {"return": {}}
+run tdd-head: rc=0 fsck: fsck rc=0 Warning: 13 files, 64890 KiB free (32445 clusters)  EXC/PANIC: 0 lines: 216 sched-switch: 0
+t=17.8s -> qsv-head-q1-new.png {"return": {}}
+t=18.9s -> qsv-head-q2-typed.png {"return": {}}
+t=19.7s -> qsv-head-q3-saveas.png {"return": {}}
+t=21.5s -> qsv-head-q4-name.png {"return": {}}
+t=22.4s -> qsv-head-q5-saved.png {"return": {}}
+t=24.0s -> qsv-head-q6-saved-over.png {"return": {}}
+run qsv-head: rc=0 fsck: fsck rc=0 Warning: 11 files, 64764 KiB free (32382 clusters)  EXC/PANIC: 0 lines: 89 sched-switch: 0
+DONE
