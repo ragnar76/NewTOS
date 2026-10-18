@@ -211,13 +211,28 @@ bytes are written verbatim through `Bconout`.
 PHASE-02: `Cconout` returns `1` (D-001/D-011); an early implementation drift to
 `0`/the byte was corrected — see D-011.
 
-FS11 (2026-10-13, user decision 2; documentation of an already implemented,
-approved divergence): NewTOS `Cconout` runs only the **Ctrl-C-only** subset of
-EmuTOS' `conbrk` (`bdos/console.c:206-243`) before the byte: a Ctrl-C at the front
-of the input queue is consumed and `Pterm(-32)` is requested; Ctrl-S/Ctrl-Q flow
-control and the BDOS typeahead buffer are **not** implemented (other keys stay in
-the single input ring), and there is **no tab expansion and no `glbcolumn`
-tracking** — TAB (0x09) is emitted raw (`tos-api/src/gemdos/console.rs`, doc
-comment of `output_break`, "Divergence from EmuTOS (documented, approved)"). The
-column counter and typeahead for all console functions is a separate future
-ticket. `Fwrite` to CON follows this same rule (`40-fwrite.md`).
+FS11 (2026-10-13) had approved a divergence here (a Ctrl-C-only subset of
+`conbrk`, no Ctrl-S/Ctrl-Q, no BDOS typeahead, no tab expansion, no
+`glbcolumn`). **Revoked by user decision 2026-10-18 (TASK/CON01):** NewTOS now
+follows the EmuTOS body above exactly — `tabout(h, ch)` with the full WORD `ch`
+(`bdos/console.c:279-303`), `conout` = `conbrk(h)` + `Bconout(h, ch)` + the
+`glbcolumn[h]` update (`:263-273`), `conbrk` with Ctrl-C (flush + `Pterm(-32)`),
+Ctrl-S/Ctrl-Q pause, Ctrl-X flush, every other key into the 64-entry BDOS
+typeahead of AUX/CON (bell `Bconout(h, 7)` when full, `:206-244`). Implementation
+`tos-api/src/gemdos/console.rs` (`conbrk`, `conout`, `tabout`, `GLBCOLUMN`,
+`CON_TYPEAHEAD`/`AUX_TYPEAHEAD`). `Fwrite` to CON takes the same `tabout` path
+(`40-fwrite.md`).
+
+NewTOS specifics (no observable difference on the NewTOS device table):
+- `conbrk`'s `Bconstat(h)` is the device table's status read; on `board-rpi4`
+  it gives the polled USB keyboard a turn when the key ring is empty
+  (`kernel/src/host_env.rs` `fill_from_device`), the polled stand-in for the
+  IKBD interrupt that fills EmuTOS' queue during output.
+- EmuTOS has a typeahead buffer only for AUX (1) and CON (2) (`buffer[0] =
+  NULL`, `:115`); a `conbrk` on any other device with input pending would
+  dereference that NULL. NewTOS leaves the key in the device there (no read).
+  Unobservable today: PRN, MIDI, IKBD and raw-CON have no input
+  (`Bconstat` 0).
+- `glbcolumn` has a cell per BIOS device 0..7 plus one shared cell for a
+  `HXFORM` value outside the table (a standard handle forced below `H_Print`);
+  EmuTOS' `glbcolumn[3]` has cells for 0..2 only and indexes past it there.

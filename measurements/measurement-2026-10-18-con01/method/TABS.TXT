@@ -1,0 +1,6 @@
+a	b	c|
+12345678	X|
+123456789	Y|
+ABCDEFGHIJKLMNOP	Z|
+	TAB-AT-0|
+end of tabs

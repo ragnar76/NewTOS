@@ -340,16 +340,28 @@ fn a_cconrs_reads_lines_from_the_file() {
     fdelete("C:\\RA4.TXT");
 }
 
-/// `max` is a signed `char` there (`max = *pb2++`, `int max`): a value with
-/// bit 7 set does not stop the loop, only CR or EOF does.
+/// `max` is read **unsigned** (0..255) and stops the loop — the named
+/// deviation of 2026-10-18 (`docs/COMPATIBILITY.md` "Sanctioned deviations",
+/// TASK/PROC04). EmuTOS reads it as a signed `char` (`max = *pb2++`, `int
+/// max`, `bdosmain.c:537-539`): from 128 on only CR or EOF stops it there, past
+/// the record. For `max` <= 127 both agree (`a_cconrs_reads_lines_from_the_file`).
 #[test]
-fn a_cconrs_signed_max() {
+fn a_cconrs_max_is_unsigned() {
     let (_g, _host, _pd) = setup();
-    let fh = file_with("C:\\RA5.TXT", b"0123456789\rZ");
+    // 250 bytes without a CR, then a line end.
+    let mut data: Vec<u8> = (0..250u32).map(|i| b'a' + (i % 26) as u8).collect();
+    data.extend_from_slice(b"\r\n");
+    let fh = file_with("C:\\RA5.TXT", &data);
     assert_eq!(fforce(0, fh), E_OK);
-    let (r, rec) = cconrs(0x80, 32);
-    assert_eq!((r, rec[1]), (0, 10));
-    assert_eq!(&rec[2..13], b"0123456789\r");
+    let (r, rec) = cconrs(200, 2 + 256);
+    assert_eq!((r, rec[1]), (0, 200), "stops after max = 200 bytes");
+    assert_eq!(&rec[2..202], &data[..200]);
+    assert!(rec[202..].iter().all(|&b| b == 0xAA), "nothing written past max");
+    assert_eq!(ftell(fh), 200, "exactly max bytes read from the file");
+    // 0x80 is 128, not "no limit".
+    let (r, rec) = cconrs(0x80, 2 + 256);
+    assert_eq!((r, rec[1]), (0, 50), "the remaining 50 bytes up to the CR");
+    assert_eq!(&rec[2..53], &[&data[200..250], &b"\r"[..]].concat()[..]);
     release(0, fh);
     fdelete("C:\\RA5.TXT");
 }

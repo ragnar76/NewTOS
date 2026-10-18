@@ -43,10 +43,11 @@ pub trait Host: Sync {
     /// Non-blocking, **non-destructive** peek of the next whole key word
     /// (`scancode << 8 | ascii`) at the front of the console input queue —
     /// the value the next [`Host::console_try_read_key`] would return —
-    /// without consuming it. Used by the GEMDOS output-side break check
-    /// (`Cconout`/`Cconws` conbrk) to spot a pending Ctrl-C without
-    /// disturbing normal type-ahead. The default has no peekable source
-    /// (`None`); the kernel host overrides it with the IKBD key ring.
+    /// without consuming it. (Until TASK/CON01 the GEMDOS output-side break
+    /// check peeked here; EmuTOS' `conbrk` uses `Bconstat`/`Bconin` and the
+    /// BDOS typeahead instead, so the GEMDOS layer no longer calls this.)
+    /// The default has no peekable source (`None`); the kernel host overrides
+    /// it with the IKBD key ring.
     fn console_peek_key(&self) -> Option<u16> {
         None
     }

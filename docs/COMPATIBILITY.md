@@ -848,6 +848,20 @@ selected icon and deselects once after the loop
 (`programs/desktop/src/dir.rs`). Desktop-internal behaviour, no interface: no
 program can observe it.
 
+**`Cconrs` from a redirected stdin stops at `max` read unsigned** — user
+decision, 2026-10-18 (TASK/PROC04 point 1, "Anwenderentscheidungen zu Punkt 1").
+With stdin forced to a file, EmuTOS' `osif` answers `Cconrs` itself and reads
+the limit as `max = *pb2++` — a plain, signed `char` into an `int` — then loops
+`while (max--)` (`references/emutos/bdos/bdosmain.c:535-553`, `:537-539`). A
+`max` of 128..255 is negative there, so only a CR or the end of the file stops
+the loop, and the bytes run past the caller's record. NewTOS reads `max` as
+the unsigned byte 0..255 and stops after that many bytes
+(`tos-api/src/gemdos/console.rs`, `redirect_to_file`, the `0x0A` arm). For
+`max` <= 127 both are identical; above that NewTOS never writes beyond the
+record. Spec `docs/api/gemdos/_dispatcher.md` §5,
+`docs/api/gemdos/console/0a-cconrs.md`; test
+`tos-api/tests/proc04_console_redirect.rs` `a_cconrs_max_is_unsigned`.
+
 ## EmuTOS is the reference, not the template
 
 CLAUDE.md Rule 1 says EmuTOS source *is* the spec. Through this charter that

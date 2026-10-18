@@ -46,12 +46,12 @@ impl KernelHost {
     /// Only pumps while the queue is empty, so a key that is already waiting
     /// is reported without touching the hardware and queue order is kept.
     ///
-    /// Deliberately **not** applied to `console_peek_key`: that is the
-    /// output-side `conbrk` check, run once per character written by
-    /// `Cconout`/`Cconws`, and pumping there would drive the mouse decoder
-    /// (and its cursor redraw) in the middle of console output. The
-    /// consequence — Ctrl-C during a long print is not seen on `board-rpi4` —
-    /// is the same defect class and is recorded in `docs/STATUS.md`.
+    /// Since TASK/CON01 the GEMDOS output-side `conbrk` is EmuTOS' — it asks
+    /// `Bconstat` before every byte `Cconout`/`Cconws`/`Fwrite` to CON writes
+    /// — so this pump also runs once per output byte while the queue is
+    /// empty: Ctrl-C / Ctrl-S typed during a long print reach `board-rpi4`, as
+    /// the keyboard interrupt delivers them on EmuTOS. (`console_peek_key`
+    /// is no longer used by the GEMDOS layer and stays unpumped.)
     #[inline]
     fn fill_from_device(&self) {
         if crate::console::rx_has_input() {

@@ -20,19 +20,20 @@
 //! * **F3** injects keys into the console RX ring and calls `cconout`
 //!   **directly** (not via `svc`, so the deferred-terminate atomic can be
 //!   inspected here instead of being consumed by the SVC handler's Pterm
-//!   redirect): a pending Ctrl-C must abort the write and set
-//!   `take_pending_terminate() == Some(-32)` while consuming exactly that
-//!   key; a pending normal key (or Ctrl-S) must leave the ring untouched
-//!   with no terminate. `cconws` shares the identical `output_break` guard;
-//!   its user-pointer `ldtrb` faults at EL1 by design (see `selftest.rs`),
-//!   so the full `cconws` Ctrl-C round-trip is real-Pi4 / EL0-Pexec. See
-//!   `docs/api/gemdos/console/{02-cconout,09-cconws}.md`.
+//!   redirect) — EmuTOS `conbrk` (TASK/CON01): a pending Ctrl-C must abort
+//!   the write and set `take_pending_terminate() == Some(-32)` while
+//!   consuming that key; a pending normal key moves from the ring into the
+//!   BDOS typeahead (`Cconis` stays -1, the next `Cnecin` returns it); a
+//!   Ctrl-S + Ctrl-Q pair pauses and resumes and is consumed. `cconws` runs
+//!   the same `tabout`/`conbrk`; its user-pointer `ldtrb` faults at EL1 by
+//!   design (see `selftest.rs`), so the full `cconws` round-trip is real-Pi4
+//!   / EL0-Pexec. See `docs/api/gemdos/console/{02-cconout,09-cconws}.md`.
 //!
 //! Not wired into the normal boot; invoke [`run`] from `kernel_main` when
 //! debugging (mirrors the other `selftest_*` modules).
 
 use tos_api::bdos::process::take_pending_terminate;
-use tos_api::gemdos::console::{cconout, cconws, edit_line, LineEdit, LineEditIo};
+use tos_api::gemdos::console::{cconout, cconws, edit_line, LineEdit, LineEditIo, Terminated};
 use tos_api::TrapArgs;
 
 use crate::{console, kprintln};
@@ -64,11 +65,15 @@ fn args1(a0: u64) -> TrapArgs {
     }
 }
 
-/// Drain any queued keys + a stale pending-terminate so an F3 sub-test
-/// starts from a known-empty state (and nothing leaks into the boot flow).
+/// Drain any queued keys, the BDOS typeahead (`Crawcin` while `Cconis`) and
+/// a stale pending-terminate so an F3 sub-test starts from a known-empty
+/// state (and nothing leaks into the boot flow).
 fn reset_input() {
     let _ = take_pending_terminate();
     while console::rx_pop_key().is_some() {}
+    while gemdos(0x0B, 0) != 0 {
+        let _ = gemdos(0x07, 0);
+    }
 }
 
 // ── F1 line-editor mock backend ──────────────────────────────────────
@@ -76,15 +81,17 @@ fn reset_input() {
 const MOCK_BUF: usize = 64;
 const MOCK_ECHO: usize = 256;
 
-/// In-memory [`LineEditIo`]: replays `script` byte-by-byte, records echoes,
-/// and stores the accumulated line in `buf`. Reaching the end of the
-/// script yields CR (0x0D) so a missing terminator cannot loop forever.
+/// In-memory [`LineEditIo`]: replays `script` byte-by-byte, records echoes
+/// and tracks their column (the `conout` rule), and stores the accumulated
+/// line in `buf`. Reaching the end of the script yields CR (0x0D) so a
+/// missing terminator cannot loop forever.
 struct MockIo<'a> {
     script: &'a [u8],
     pos: usize,
     buf: [u8; MOCK_BUF],
     echo: [u8; MOCK_ECHO],
     echo_len: usize,
+    col: i16,
 }
 
 impl<'a> MockIo<'a> {
@@ -95,6 +102,7 @@ impl<'a> MockIo<'a> {
             buf: [0; MOCK_BUF],
             echo: [0; MOCK_ECHO],
             echo_len: 0,
+            col: 0,
         }
     }
 }
@@ -105,11 +113,21 @@ impl LineEditIo for MockIo<'_> {
         self.pos += 1;
         b
     }
-    fn echo_byte(&mut self, b: u8) {
+    fn conout(&mut self, b: u8) -> Result<(), Terminated> {
         if self.echo_len < self.echo.len() {
             self.echo[self.echo_len] = b;
             self.echo_len += 1;
         }
+        match b {
+            0x20..=0xFF => self.col += 1,
+            0x0D => self.col = 0,
+            0x08 => self.col -= 1,
+            _ => {}
+        }
+        Ok(())
+    }
+    fn column(&self) -> i16 {
+        self.col
     }
     fn store_byte(&mut self, i: usize, b: u8) {
         if i < self.buf.len() {
@@ -162,8 +180,9 @@ pub fn run() {
     // ── F1: Ctrl-R redisplays, buffer unchanged ──────────────────────
     {
         let (len, io) = drive(b"foo\x12\r", 16);
-        // The redisplay echoes CR LF then the kept buffer "foo".
-        let echo_ok = io.echo[..io.echo_len].windows(5).any(|w| w == b"\r\nfoo");
+        // The redisplay echoes `#`, CR LF (start column 0) then the kept
+        // buffer "foo".
+        let echo_ok = io.echo[..io.echo_len].windows(6).any(|w| w == b"#\r\nfoo");
         check(
             len == Some(3) && io.buf[..3] == *b"foo" && echo_ok,
             "Cconrs Ctrl-R redisplays, len kept 3 \"foo\" (F1)",
@@ -203,22 +222,27 @@ pub fn run() {
         "cconout: pending Ctrl-C aborts + defers Pterm(-32), key consumed (F3)",
     );
 
-    // (b) Normal key pending → ring untouched, no terminate, byte written.
+    // (b) Normal key pending → moved into the BDOS typeahead, no terminate,
+    //     byte written; the next Cnecin returns it.
     reset_input();
     console::push_rx(b'A' as u16); // normal key (ascii 0x41)
     let _ = cconout(&args1(b'Y' as u64));
     check(
-        take_pending_terminate().is_none() && console::rx_pop_key() == Some(b'A' as u16),
-        "cconout: normal key at front -> ring untouched, no terminate (F3)",
+        take_pending_terminate().is_none()
+            && console::rx_pop_key().is_none()
+            && gemdos(0x0B, 0) == -1
+            && gemdos(0x08, 0) & 0xFF == b'A' as i64,
+        "cconout: normal key -> BDOS typeahead, Cnecin returns it (F3, CON01)",
     );
 
-    // (c) Ctrl-S is NOT flow control here: left in the ring as data.
+    // (c) Ctrl-S then Ctrl-Q: pause and resume, both consumed, none stored.
     reset_input();
     console::push_rx(0x13); // Ctrl-S
+    console::push_rx(0x11); // Ctrl-Q
     let _ = cconout(&args1(b'Z' as u64));
     check(
-        take_pending_terminate().is_none() && console::rx_pop_key() == Some(0x13),
-        "cconout: Ctrl-S left in ring, no flow control (F3 documented divergence)",
+        take_pending_terminate().is_none() && console::rx_pop_key().is_none() && gemdos(0x0B, 0) == 0,
+        "cconout: Ctrl-S/Ctrl-Q consumed, nothing stored (F3, CON01)",
     );
 
     // (d) Empty ring → normal write, no terminate (no regress).

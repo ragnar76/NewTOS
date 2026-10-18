@@ -243,3 +243,11 @@ error — it terminates the process (`terminate()` = `xterm(-32)`).
 ## NewTOS implementation notes
 
 (Empty during Phase 00.)
+
+TASK/CON01 (2026-10-18): implemented as above — `conbrk(h)`, then `conin(h)` =
+`getch(h)` (BDOS typeahead first, else `Bconin(h)`) + `conout(h, (unsigned
+char)ch)` (unconditional echo, also the NUL of a scancode-only key and the
+Ctrl-C itself, with `conbrk` and the `glbcolumn` update), then the Ctrl-C check
+(`tos-api/src/gemdos/console.rs` `cconin`). The `Bconin` read gives way to a
+`kbdvec` hook (KEYS02) as before; keys `conbrk` already moved into the typeahead
+stay there across the restart.

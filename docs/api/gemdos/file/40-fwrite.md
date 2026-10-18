@@ -162,7 +162,8 @@ When `Bconout` returns 0 (BIOS side):
 ### Test cases (device path; **EmuTOS reference expectations**)
 
 > These are the EmuTOS results. The NewTOS expectations (decisions of
-> 2026-10-13: Ctrl-C-only break, no tab expansion, AUX = port present/no cable, PRN absent; AUX revised by option A, 2026-10-13) are
+> 2026-10-13: AUX = port present/no cable (option A), PRN absent; the CON
+> rule follows EmuTOS again since TASK/CON01, 2026-10-18) are
 > the table "NewTOS host tests" below; where they differ, that table is the one
 > the Developer implements.
 
@@ -202,27 +203,28 @@ captured; printer-port accept/reject switchable.
 ### NewTOS host tests (decisions 2026-10-13; IDs the Developer implements)
 
 Device table as in `3f-fread.md` "NewTOS implementation notes": CON real, **AUX
-(1) = "port present, no cable"** (`Bconout` accepts+discards, → 1; option A) and **PRN (0) = absent-device entry** (`Bconout` → 0). CON write rule:
-per byte `output_break` (Ctrl-C only) then `console_write_byte`, **raw** (no tab
-expansion, no `glbcolumn`, no BDOS typeahead, no Ctrl-S/Ctrl-Q). **(=)** = same
-as the EmuTOS row, **(≠)** = NewTOS value given.
+(1) = "port present, no cable"** (`Bconout` accepts+discards, → 1; option A) and **PRN (0) = absent-device entry** (`Bconout` → 0). CON write rule
+(TASK/CON01, 2026-10-18, replaces the 2026-10-13 raw/Ctrl-C-only rule): per byte
+EmuTOS `tabout` — `conbrk` (Ctrl-C/S/Q/X, BDOS typeahead), `Bconout`,
+`glbcolumn`, TAB expanded to the next multiple of 8. **(=)** = same as the
+EmuTOS row, **(≠)** = NewTOS value given.
 
 | # | Call / setup | NewTOS expected |
 |---|---|---|
 | W1 | **(=)** `Fwrite(-1,5,"hello")` | 5; CON `"hello"` |
 | W2 | **(=)** `Fwrite(1|0|4|5, 3, "abc")` | 3 each; CON |
-| W3 | **(≠)** `Fwrite(-1,2,"\tX")` | 2; CON bytes `09 58` (raw TAB, no expansion) |
-| W4 | **(≠)** `Fwrite(-1,4,"ab\tX")` | 4; `61 62 09 58` |
-| W5 | **(≠)** after `Fwrite("12345")`: `Fwrite(-1,2,"\tX")` | 2; `09 58` (no column state) |
-| W6 | **(≠)** `Fwrite(-1,1,"\t")` | 1; `09` |
+| W3 | **(=)** CON at column 0: `Fwrite(-1,2,"\tX")` | 2; 8 spaces + `X` |
+| W4 | **(=)** CON at column 0: `Fwrite(-1,4,"ab\tX")` | 4; `"ab"` + 6 spaces + `X` |
+| W5 | **(=)** after `Fwrite("12345")`: `Fwrite(-1,2,"\tX")` | 2; 3 spaces + `X` |
+| W6 | **(=)** CON at column 8: `Fwrite(-1,1,"\t")` | 1; 8 spaces |
 | W7 | **(=)** `Fwrite(-1,3,"a\nb")` | 3; `61 0A 62` (no CR inserted) |
-| W8 | **(≠)** `Fwrite(-1,3,"a\rb")`, then `Fwrite(-1,1,"\t")` | 3, then 1; bytes `61 0D 62`, `09` |
+| W8 | **(=)** `Fwrite(-1,3,"a\rb")`, then `Fwrite(-1,1,"\t")` | 3, then 1; bytes `61 0D 62`, then 7 spaces (column 1 after the CR) |
 | W9 | **(=)** `Fwrite(-1,0,b)` | 0, no output |
 | W10 | **(=)** `Fwrite(-1,-5,b)` | **-5**, no output (returns `count` itself) |
 | W11 | **(=)** `Fwrite(-1,3,"a\0b")` | 3; `61 00 62` |
-| W12 | **(≠ mechanism)** keyboard queue `('k')`; `Fwrite(-1,1,"x")` | 1; `'k'` is **not** consumed (no typeahead buffer); it stays in the input ring and the next `Fread(-1,1,…)` returns it — same observable outcome as EmuTOS |
-| W13 | **(≠ detail)** keyboard queue front `(^C)`; `Fwrite(-1,3,"abc")` | terminate (exit -32) requested before the first byte, no byte written, the key consumed (observe the terminate hook); return value not observable by the program |
-| W14 | **(≠)** keyboard queue `(^S)`; `Fwrite(-1,3,"abc")` | 3; `"abc"` written immediately — **no pause**; `^S` stays in the queue and is read later as data (no Ctrl-S/Q flow control) |
+| W12 | **(=)** keyboard queue `('k')`; `Fwrite(-1,1,"x")` | 1; `'k'` moved from the key ring into the BDOS typeahead, returned by the next `Fread(-1,1,…)` |
+| W13 | **(=)** keyboard queue `(^C)`; `Fwrite(-1,3,"abc")` | terminate (exit -32) requested before the first byte, no byte written, the key consumed (observe the terminate hook); return value not observable by the program |
+| W14 | **(=)** keyboard queue `(^S)`, `^Q` arriving while paused; `Fwrite(-1,3,"abc")` | the first byte is held until `^Q`, then 3; both keys consumed, neither stored |
 | W15 | **(=)** AUX default entry (port present, no cable): `Fwrite(-2,4,"ATZ\r")`, `Fwrite(2,4,…)` (separate runs) | **4** each (every `Bconout(1,…)` returns 1); bytes discarded; CON receives nothing |
 | W16 | **(=)** `Fwrite(-2,2,"\tX")` | 2 (raw, discarded; no tab expansion) |
 | W17 | **(=)** CON queue `(^C)`; `Fwrite(-2,2,"ab")` | 2, and the Ctrl-C is **not** consumed (no break check on non-CON; stays queued) |
@@ -449,19 +451,16 @@ for AUX/PRN. Documented, deliberate profile (not a stub): PRN and MIDI entries r
 driver (`TASK/IO01.md`) only swaps the entry; short-count semantics are already
 in place (tests W19-W21, WT1-WT3).
 
-**2. CON write = NewTOS `Cconws` today.** For `Fwrite` to CON, per byte: the
-Ctrl-C-only `output_break` (`tos-api/src/gemdos/console.rs`, doc comment above
-`output_break`, "Divergence from EmuTOS (documented, approved)"), then the byte
-raw to the console. Divergences from the EmuTOS `tabout`/`conbrk` path described
-above, all the **same approved divergence** as `Cconout`/`Cconws` (see
-`docs/api/gemdos/console/02-cconout.md` and `09-cconws.md`, which now carry the
-note): **no tab expansion** (TAB 0x09 is emitted raw), **no `glbcolumn`**, **no BDOS
-typeahead buffer** (pending keys stay in the input ring) and **no Ctrl-S/Ctrl-Q
-pause**; a Ctrl-C at the front of the queue consumes that key, requests
-`Pterm(-32)` and stops. Return value: `count` (as EmuTOS, `tabout` is void). A
-separate future ticket will add the column counter and typeahead for *all*
-console functions together; it is **not** part of FS11. Non-CON devices have no
-break check at all (as EmuTOS, `:633-635`).
+**2. CON write = EmuTOS `tabout`.** FS11 (2026-10-13) had approved a raw write
+with a Ctrl-C-only break here; **revoked by user decision 2026-10-18
+(TASK/CON01)**. For `Fwrite` to CON NewTOS runs `tabout(2, byte)` per byte
+(`:631`), the same path as `Cconout`/`Cconws` (`docs/api/gemdos/console/
+02-cconout.md`, `09-cconws.md`): `conbrk` (Ctrl-C flushes the typeahead and
+requests `Pterm(-32)` — the call stops, returning the bytes written before it;
+Ctrl-S pauses until Ctrl-Q; Ctrl-X flushes; other keys go into the BDOS
+typeahead), the byte to `Bconout`, `glbcolumn[2]` updated, TAB expanded from the
+tracked column. Return value: `count` (as EmuTOS, `tabout` is void). Non-CON
+devices have no break check at all (as EmuTOS, `:633-635`).
 
 **3. Edge cases follow EmuTOS:** `count <= 0` → returns `count` itself (also
 negative, e.g. -5; not an error code); the full 32-bit `count` is used (no HUGE
@@ -507,7 +506,8 @@ FS11 (2026-10-13). Re-read against both sides today: EmuTOS
 `cgets`; `Fwrite`: CON Ctrl-C-only break + raw byte (EmuTOS: `tabout`), other devices `Bconout` with
 short count on 0). Verdict: **confirmed implemented**; no repair needed. Only
 residual differences, all already documented above: no tab expansion / Ctrl-C-only
-break on CON (approved divergences of 2026-10-13), AUX/PRN backends are the
+break on CON (approved divergences of 2026-10-13 — revoked and aligned with
+EmuTOS by TASK/CON01, 2026-10-18), AUX/PRN backends are the
 absent/no-cable device-table entries (TASK/IO01), and a handle `>= NUMHANDLES`
 answers `EIHNDL` where EmuTOS reads `sft[]` out of bounds (`:578-579`, contract
 per `42-fseek.md`). Tests: `tos-api/tests/fs11_device_rw.rs`,

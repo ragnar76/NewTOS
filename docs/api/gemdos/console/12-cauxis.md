@@ -175,6 +175,6 @@ error code.
 (Empty during Phase 00.)
 
 FS11 / IO01 prep (2026-10-13, user decision 1): see `docs/api/gemdos/file/3f-fread.md` "NewTOS implementation notes" for the device table.
-`Cauxis()` = `constat(1)` → `Bconstat(1)` of the AUX entry = **0** (no byte). **Unchanged by the 2026-10-13 option-A revision** (AUX = "port present, no cable", see `docs/api/gemdos/file/3f-fread.md` "NewTOS implementation notes" item 1a): EmuTOS `bconstat1` also returns 0 on an empty iorec (`bios/serport.c:255-258`, `:191-200`). The BDOS typeahead check in `constat` has nothing to find (NewTOS has no BDOS typeahead; no cable → no input). See the D-003 note in `03-cauxin.md`
+`Cauxis()` = `constat(1)` → `Bconstat(1)` of the AUX entry = **0** (no byte). **Unchanged by the 2026-10-13 option-A revision** (AUX = "port present, no cable", see `docs/api/gemdos/file/3f-fread.md` "NewTOS implementation notes" item 1a): EmuTOS `bconstat1` also returns 0 on an empty iorec (`bios/serport.c:255-258`, `:191-200`). The BDOS typeahead check in `constat` has nothing to find (no cable → no input, so `conbrk(1)` never fills the AUX typeahead; NewTOS has the typeahead since TASK/CON01, 2026-10-18). See the D-003 note in `03-cauxin.md`
 (spec said the AUX typeahead is never populated; `conbrk(1)` can populate it in
 EmuTOS).

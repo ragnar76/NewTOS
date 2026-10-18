@@ -228,6 +228,12 @@ Notes (cited = read in source; *inferred* = reasoning from it):
   (`eof(h)` is non-zero for EOF *and* for error, `fsio.c:288-300`), else `-1`.
 - Block A does no tab expansion, no `conbrk`, no Ctrl-C handling, no
   line editing — it is raw byte I/O on the file.
+- `case 10` reads `max = *pb2++` into an `int` from a plain (signed) `char`
+  and loops `while (max--)` (`:537-539`): a `max` of 128..255 is negative and
+  only CR or EOF stops the loop, past the caller's record. **NewTOS reads `max`
+  unsigned (0..255) and stops there** — named deviation, user decision
+  2026-10-18 (TASK/PROC04, `docs/COMPATIBILITY.md` "Sanctioned deviations");
+  identical for `max` <= 127.
 
 **Block B — handle-based file functions** (`bdos/bdosmain.c:571-643`;
 `typ & 0x80`: Fread 0x82 handle `pw[1]`, Fwrite 0x82 `pw[1]`, Fseek 0x81

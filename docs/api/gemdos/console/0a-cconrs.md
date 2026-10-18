@@ -232,5 +232,30 @@ the only result.
 
 ## NewTOS implementation notes
 
-(Empty during Phase 00. Blocked on `Pterm` — implement the leaf console
-functions first; defer the line editor until `xterm(-32)` exists.)
+(Phase 00 note "Blocked on `Pterm`" is obsolete: the editor exists since
+PHASE-02, `tos-api/src/gemdos/console.rs` `edit_line`.)
+
+TASK/CON01 (user decision 2026-10-18; revokes the earlier `edit_line` echo
+divergence — no `glbcolumn`, `BS SP BS` take-back for Ctrl-U, plain `CR LF` for
+Ctrl-R, raw echo without `cookdout`): `edit_line` is `cgets` (`bdos/console.c:
+540-582`) over the stdin device `h` — `getch(h)` (BDOS typeahead first, then
+`Bconin(h)`; every key, also a scancode-only key, whose low byte 0 is stored and
+echoed `^@`), echo through `cookdout`/`conout` (with `conbrk` and the
+`glbcolumn[h]` update), start column `stcol = glbcolumn[h]`, `backsp` erasing to
+the column recomputed from the buffer (TAB to the next multiple of 8, a control
+byte 2 columns), Ctrl-U/Ctrl-R = `#` + `newline(h, stcol)` (CR, LF, `stcol`
+spaces), Ctrl-R then re-echoes the buffer through `cookdout`. The same editor
+serves `Fread` on a device (`3f-fread.md`). A Ctrl-C seen by `conbrk` during an
+echo terminates as the Ctrl-C key does.
+
+One guard, **pending a user decision**: `newline` counts `while (startcol)` down
+from an `int`; a negative start column (reachable after `Cconout(8)` at column 0,
+`glbcolumn` goes to -1) makes EmuTOS write about 2^32 spaces. NewTOS writes the
+spaces only while `startcol > 0` (identical for every column >= 0).
+
+Redirected stdin (`_dispatcher.md` §5, edge case 5): NewTOS stops at `max` read
+as **unsigned** 0..255; EmuTOS reads `max` as a signed `char`
+(`bdos/bdosmain.c:537`) and from 128 on reads without limit until CR/EOF,
+overrunning the caller's record. Named deviation, user decision 2026-10-18
+(TASK/PROC04, `docs/COMPATIBILITY.md` "Sanctioned deviations"); identical for
+`max` <= 127.

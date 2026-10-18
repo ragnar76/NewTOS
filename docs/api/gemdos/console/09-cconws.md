@@ -193,12 +193,16 @@ buffer (no validation).
 PHASE-02: `Cconws` returns the written byte count by design (D-009), asserted by
 the Phase-02 self-test.
 
-FS11 (2026-10-13, user decision 2; documentation of an already implemented,
-approved divergence): the loop above is, in NewTOS, per byte the Ctrl-C-only
-`output_break` followed by the raw byte — **no tab expansion** (the "Tab
-expansion" verification criterion and edge case 4's Ctrl-S pause above describe
-EmuTOS and are **not** met by NewTOS), **no `glbcolumn`**, **no BDOS typeahead**,
-**no Ctrl-S/Ctrl-Q pause** (`tos-api/src/gemdos/console.rs`, `output_break` doc
-comment). Separate future ticket: column counter + typeahead for all console
-functions. `Fwrite` to CON is specified to behave exactly like this
-(`docs/api/gemdos/file/40-fwrite.md`).
+FS11 (2026-10-13) had approved a divergence here (Ctrl-C-only `output_break`,
+raw bytes, no tab expansion, no `glbcolumn`, no BDOS typeahead, no Ctrl-S/Ctrl-Q
+pause). **Revoked by user decision 2026-10-18 (TASK/CON01):** `Cconws` is
+`prt_line` = `tabout(h, (unsigned char)*p++)` per byte (`bdos/console.c:459-472`)
+with the same `tabout`/`conout`/`conbrk` as `Cconout` (`02-cconout.md` "NewTOS
+implementation notes"): tab expansion from the tracked column, Ctrl-S pauses
+until Ctrl-Q, Ctrl-X flushes the typeahead, Ctrl-C flushes it and requests
+`Pterm(-32)` (the rest of the string is not written), every other pending key
+goes into the BDOS typeahead and comes back on the next `Cconin`/`Cnecin`/
+`Crawcin`/`Crawio`/`Cconrs`/`Fread`. The verification criteria and edge cases
+above hold for NewTOS. The return value stays the count of string bytes
+processed (D-009; a TAB counts once however many spaces it expands to).
+`Fwrite` to CON is the same per-byte `tabout` (`docs/api/gemdos/file/40-fwrite.md`).

@@ -191,3 +191,7 @@ Ctrl-C terminates the process rather than returning an error.
 ## NewTOS implementation notes
 
 (Empty during Phase 00.)
+
+TASK/CON01 (2026-10-18): `conbrk(h)` then `getch(h)` (BDOS typeahead first, else
+`Bconin(h)`), no echo, Ctrl-C → `Pterm(-32)` (`bdos/console.c:414-426`;
+`tos-api/src/gemdos/console.rs` `cnecin`).

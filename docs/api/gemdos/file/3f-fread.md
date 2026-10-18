@@ -178,7 +178,8 @@ so BIOS 0..2 always use `bconin_vec[]` (`bios/chardev.c:34-36`).
 ### Test cases (device path; **EmuTOS reference expectations**)
 
 > These are the EmuTOS results. The NewTOS expectations (decisions of
-> 2026-10-13, AUX = port present/no cable (option A), absent PRN entry, `edit_line` echo) are the
+> 2026-10-13, AUX = port present/no cable (option A), absent PRN entry; the
+> `edit_line` echo follows EmuTOS `cgets` again since TASK/CON01, 2026-10-18) are the
 > table "NewTOS host tests" at the end of this section; where the two
 > differ, the NewTOS table is the one the Developer implements.
 
@@ -223,9 +224,9 @@ notes" below): CON = real console, **AUX (BIOS 1) = the "port present, no cable"
 documented absent-device entry** (`Bconin` → 0, `Bconout` → 0,
 `Bconstat` → 0, `Bcostat` → 0). "Echo" = bytes handed to `Bconout(dev, …)` of
 the device the read is on. Rows marked **(=)** are unchanged from the EmuTOS
-table; **(≠)** differ and give the NewTOS value; "buffer/return only" means the
-echo byte stream is *not* asserted because NewTOS' `edit_line` echoes differently
-(see notes).
+table; **(≠)** differ and give the NewTOS value. (Until TASK/CON01, 2026-10-18,
+R9-R12 were "buffer/return only" / raw-echo rows because `edit_line` had no
+`glbcolumn`/`cookdout`; they are EmuTOS rows now.)
 
 | # | Call / setup | NewTOS expected |
 |---|---|---|
@@ -234,13 +235,13 @@ echo byte stream is *not* asserted because NewTOS' `edit_line` echoes differentl
 | R3 | **(=)** `Q('h','i',CR)`; `Fread(-1,80,b)` | 2, `b="hi"` (no CR/LF/NUL stored), echo `"hi\r"` |
 | R4 | **(=)** `Q('h','i',LF)`; `Fread(-1,80,b)` | 2, `b="hi"`, echo `"hi\r"` |
 | R5 | **(=)** `Q(CR)`; `Fread(-1,80,b)` | 0, echo `"\r"` |
-| R6 | **(=)** `Q('a','b','c','d')`; `Fread(-1,3,b)` | 3, `b="abc"`, `'d'` still queued, no CR echoed |
+| R6 | **(=)** `Q('a','b','c','d')`; `Fread(-1,3,b)` | 3, `b="abc"`, `'d'` still queued (moved by the echo's `conbrk` into the BDOS typeahead; the next read returns it), no CR echoed |
 | R7 | **(=)** `Q('a','b',BS,'c',CR)`; `Fread(-1,80,b)` | 2, `b="ac"`, echo contains `BS SP BS` for the erase |
 | R8 | **(=)** `Q('a',DEL,DEL,'b',CR)`; `Fread(-1,80,b)` | 1, `b="b"` |
-| R9 | **(≠ echo)** `Q('a','b',^X,'c',CR)` | 1, `b="c"` (buffer/return only) |
-| R10 | **(≠ echo)** `Q('a','b',^U,'c',CR)` | 1, `b="c"` (buffer/return only; NewTOS echoes `BS SP BS` take-back, not `#`+CR+LF+`stcol` — `edit_line` divergence, no `glbcolumn`) |
-| R11 | **(≠)** `Q('a',TAB,'b',CR)`; `Fread(-1,80,b)` | 3, `b="a\tb"`; echo is the **raw** `61 09 62 0D` (no tab expansion, `edit_line` has no `cookdout`) |
-| R12 | **(≠)** `Q(ESC,CR)`; `Fread(-1,80,b)` | 1, `b[0]=0x1B`; echo raw `1B 0D` (no `^[`) |
+| R9 | **(=)** `Q('a','b',^X,'c',CR)` | 1, `b="c"`; echo erases both characters with `BS SP BS` |
+| R10 | **(=)** `Q('a','b',^U,'c',CR)` | 1, `b="c"`, echo contains `#`,CR,LF,`stcol` spaces |
+| R11 | **(=)** `Q('a',TAB,'b',CR)`; `Fread(-1,80,b)` | 3, `b="a\tb"`; echo `a` + 7 spaces + `b` + CR |
+| R12 | **(=)** `Q(ESC,CR)`; `Fread(-1,80,b)` | 1, `b[0]=0x1B`, echo `"^["` + CR |
 | R13 | **(=)** `Fread(-1,0,b)` | 0, nothing consumed/echoed |
 | R14 | **(=)** `Fread(-1,0x10000,b)`, `Fread(-1,-1,b)`, `Fread(-1,0x7FFFFFFF,b)` | 0 each (high word set) |
 | R15 | **(=)** `Fread(-1,0x8000,b)`, `Fread(-1,0xFFFF,b)` | 0 each |
@@ -512,21 +513,20 @@ No-handshake argument (*cited*): `bconout1` waits only on `bcostat1` (`serport.c
 - `Fread` never returns an error for an absent device; there is no "device absent"
   status.
 
-**2. `Fwrite` on CON** is specified in `40-fwrite.md` (same Ctrl-C-only approved
-divergence as `Cconout`/`Cconws`); it does not affect `Fread` except that CON echo
-is written without any break check.
+**2. `Fwrite` on CON** is specified in `40-fwrite.md` (EmuTOS `tabout` since
+TASK/CON01, 2026-10-18); the `Fread` echo uses the same `conout` (`conbrk` +
+`glbcolumn`).
 
 **3. Edge cases follow EmuTOS** (cited above): HUGE (`pw[2]!=0`) → 0; `len`
 32768..65535 → 0; `len==0` → 0; `len==1` → `conin` semantics (echo, CR stored, no
-line editing, Ctrl-C stored as data); `len>=2` on CON → `cgets` semantics via the
-existing `edit_line` (`tos-api/src/gemdos/console.rs`, `Cconrs` editor). **Within
-the existing approved `edit_line` divergences** (no `glbcolumn`; no `cookdout` `^X`
-control echo, no tab expansion; Ctrl-U/Ctrl-X/Ctrl-R echo differs; documented at
-`console.rs` `edit_line` and `0a-cconrs.md:72-73`): the **buffer contents and the
-return value are EmuTOS-exact**, only the echo byte stream differs. No BDOS
-typeahead (`getch` buffer) either: keys stay in the single console input ring.
-`edit_line` must be driven through the device table (a `LineEditIo` over
-`Bconin(dev)`/`Bconout(dev)`), not hard-wired to the console.
+line editing, Ctrl-C stored as data); `len>=2` on CON → `cgets` semantics via
+`edit_line` (`tos-api/src/gemdos/console.rs`, the `Cconrs` editor). Since
+TASK/CON01 (2026-10-18) the editor is EmuTOS `cgets` including the echo
+(`glbcolumn`, `cookdout` `^X` control echo, tab expansion, `#` + `newline(h,
+stcol)` for Ctrl-U/Ctrl-R) and `getch` reads the BDOS typeahead first; the
+earlier "buffer/return exact, echo differs" divergence is revoked. `edit_line`
+runs over the device table (`getch`/`conout` of `dev`), not hard-wired to the
+console.
 
 Host tests the Developer implements for this spec: **R1..R32, RT1..RT3** (table
 "NewTOS host tests"). Pointer faults while storing to the user buffer follow the
@@ -564,7 +564,8 @@ FS11 (2026-10-13). Re-read against both sides today: EmuTOS
 `cgets`; `Fwrite`: CON Ctrl-C-only break + raw byte (EmuTOS: `tabout`), other devices `Bconout` with
 short count on 0). Verdict: **confirmed implemented**; no repair needed. Only
 residual differences, all already documented above: no tab expansion / Ctrl-C-only
-break on CON (approved divergences of 2026-10-13), AUX/PRN backends are the
+break on CON (approved divergences of 2026-10-13 — revoked and aligned with
+EmuTOS by TASK/CON01, 2026-10-18), AUX/PRN backends are the
 absent/no-cable device-table entries (TASK/IO01), and a handle `>= NUMHANDLES`
 answers `EIHNDL` where EmuTOS reads `sft[]` out of bounds (`:578-579`, contract
 per `42-fseek.md`). Tests: `tos-api/tests/fs11_device_rw.rs`,

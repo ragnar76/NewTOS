@@ -17,12 +17,24 @@
 //! handles that is CON (2) for stdin/stdout, AUX (1) for stdaux, PRN (0) for
 //! stdprn.
 //!
+//! Between the GEMDOS calls and the BIOS devices sits EmuTOS' BDOS console
+//! layer (`bdos/console.c:27-582`, TASK/CON01): a column counter per device
+//! (`glbcolumn[]`, for tab expansion and line editing), a 64-key typeahead for
+//! AUX and CON that `conbrk` fills while output is written and `getch` reads
+//! first, and the Ctrl-C / Ctrl-S / Ctrl-Q / Ctrl-X handling in `conbrk`. The
+//! AES is not part of this: it takes its keys from the BIOS key queue
+//! directly, as EmuTOS' `chkkbd` → `gsx_char` → `Bconstat`/`Bconin(2)` does
+//! (`aes/gemdisp.c:158-177`, `vdi/vdi_input.c:220`); only the BDOS character
+//! calls ever move a key into the typeahead.
+//!
 //! All functions take a borrow of [`TrapArgs`] and return a `Long`
 //! (`i32` in `x0`). The semantics mirror EmuTOS exactly so binary
 //! programs see TOS-bit-compatible behaviour; per-function citations
 //! point to the EmuTOS source location used to derive the code.
 
-use crate::bios::chardev::{self, pack_console_key, CharDevice, DEV_AUX, DEV_CON};
+use core::sync::atomic::{AtomicI16, AtomicI32, AtomicU32, Ordering};
+
+use crate::bios::chardev::{self, DEV_AUX, DEV_CON};
 use crate::host::host;
 use crate::trap::TrapArgs;
 use tos_types::error::EUNDEV;
@@ -64,14 +76,14 @@ fn std_dev(std: u16) -> u16 {
     hxform(crate::bdos::fs::file::std_handle(std))
 }
 
-/// EmuTOS `constat(h)` (`bdos/console.c:136-146`): only AUX (1) and CON (2)
-/// have an input status (NewTOS has no BDOS typeahead buffer to look at
-/// first); every other device answers `0`.
+/// EmuTOS `constat(h)` (`bdos/console.c:143-153`): only AUX (1) and CON (2)
+/// have an input status — `-1` while their BDOS typeahead holds a key, else
+/// the device's `Bconstat`; every other device answers `0`.
 fn constat(dev: u16) -> Long {
-    if dev == DEV_AUX || dev == DEV_CON {
-        chardev::bconstat_handle(dev)
-    } else {
-        0
+    match typeahead(dev) {
+        Some(t) if t.has_input() => -1,
+        Some(_) => chardev::bconstat_handle(dev),
+        None => 0,
     }
 }
 
@@ -105,7 +117,7 @@ fn redirected_std(fn_id: usize) -> Option<u16> {
 /// | Cconin, Cauxin, Crawcin, Cnecin | one byte read, **sign-extended** (`char ctmp`); [`EOF_INDICATOR`] when it is not read |
 /// | Cconout, Cauxout, Cprnout | the low byte of the WORD written; `0` |
 /// | Cconws | `strlen(s)` bytes written raw; `0` |
-/// | Cconrs | bytes read one by one into `p[2..]` until `max`, EOF or CR (stored, not counted; the byte after it read and dropped); `p[1]` = count; `0` |
+/// | Cconrs | bytes read one by one into `p[2..]` until `max` (unsigned — named deviation, see the arm), EOF or CR (stored, not counted; the byte after it read and dropped); `p[1]` = count; `0` |
 /// | Cconis, Cauxis | `0` at EOF (or no file), else `-1` |
 /// | Cconos, Cprnos, Cauxos | `-1` |
 ///
@@ -178,13 +190,17 @@ pub fn redirect_to_file(fn_id: usize, args: &TrapArgs) -> Option<Long> {
             if pb2 == 0 {
                 return Some(0);
             }
-            // `max = *pb2++` — a plain (signed) `char` into an `int`, and the
-            // loop runs `while (max--)`: a value with bit 7 set counts down
-            // through the whole `int` range, so only CR or EOF stops it.
+            // `max = *pb2++` is a plain (signed) `char` in EmuTOS
+            // (`bdosmain.c:537-539`): from 128 on the `while (max--)` loop
+            // counts through the whole `int` range and only CR or EOF stops
+            // it, past the record. NewTOS reads the byte unsigned and stops
+            // after `max` bytes — named deviation, user decision 2026-10-18
+            // (`docs/COMPATIBILITY.md` "Sanctioned deviations", TASK/PROC04);
+            // identical for `max` <= 127.
             let Ok(m) = args.space.get_u8(pb2) else {
                 return Some(crate::uaccess::FAULTED);
             };
-            let mut max = m as i8 as i32 as u32;
+            let mut max = u32::from(m);
             let mut i: u32 = 0;
             while max != 0 {
                 max -= 1;
@@ -219,39 +235,239 @@ pub fn redirect_to_file(fn_id: usize, args: &TrapArgs) -> Option<Long> {
 }
 
 // ---------------------------------------------------------------------------
-// Output-side break check — NewTOS' Ctrl-C-only subset of EmuTOS' `conbrk`
-// (bdos/console.c:206-244), run before each output byte by Cconout/Cconws.
+// The BDOS console layer (EmuTOS `bdos/console.c:27-582`, TASK/CON01):
+// typeahead, column counter, `conbrk`, `conout`, `tabout`, `cookdout`,
+// `getch`, `conin`.
 // ---------------------------------------------------------------------------
 
-/// Console output break check, run before every output byte by
-/// [`cconout`] / [`cconws`]. It **non-destructively** peeks the front of
-/// the console input queue; if a Ctrl-C (0x03) is pending it consumes that
-/// one key and records the deferred `terminate()` (`Pterm(-32)`, the same
-/// path as the `Cconrs` Ctrl-C arm), returning `true` so the caller aborts
-/// the output. Any other pending key — **including Ctrl-S (0x13) and
-/// Ctrl-Q (0x11)** — is left in the queue untouched, so normal type-ahead
-/// survives for the next `Cconin`/`Cconrs` (no read-path regress).
-///
-/// **Divergence from EmuTOS (documented, approved).** EmuTOS' `conbrk`
-/// consumes each pending key into a BDOS *typeahead* buffer while scanning
-/// for control chars, which also gives it Ctrl-S/Ctrl-Q flow control.
-/// NewTOS has a single lock-free SPSC input ring and no typeahead buffer,
-/// so a faithful scan-and-keep is not possible without re-architecting the
-/// shared console-input path (deferred). NewTOS therefore implements the
-/// **Ctrl-C-only** subset: it aborts a running output but does **not** do
-/// Ctrl-S/Ctrl-Q flow control (those bytes stay in the queue and are read
-/// as data later). A Ctrl-C queued strictly behind unread normal keys is
-/// deferred until those keys are read (the peek only sees the front). See
-/// `docs/api/gemdos/console/{02-cconout,09-cconws}.md`.
-pub(crate) fn output_break(h: &dyn crate::host::Host) -> bool {
-    match h.console_peek_key() {
-        Some(word) if (word & 0xFF) as u8 == CTRL_C => {
-            // Consume exactly the peeked front key, then defer terminate.
-            let _ = h.console_try_read_key();
-            crate::bdos::process::request_terminate(CTRLC_RC);
-            true
+/// Size of a BDOS typeahead buffer (`KBBUFSZ`, `bdos/fs.h:46`).
+const KBBUFSZ: u32 = 64;
+/// Index mask of a typeahead buffer (`KBBUFMASK`, `bdos/fs.h:47`).
+const KBBUFMASK: u32 = KBBUFSZ - 1;
+
+/// One BDOS typeahead buffer (EmuTOS `TYPEAHEAD`, `bdos/console.c:30-34`):
+/// whole `Bconin` LONGs (scancode and ASCII), `add`/`remove` counting up and
+/// both reset to 0 whenever the buffer runs empty (`buflush`). The counters
+/// are compared by their distance, so a buffer that never runs empty cannot
+/// overflow them.
+struct Typeahead {
+    add: AtomicU32,
+    remove: AtomicU32,
+    glbkbchar: [AtomicI32; KBBUFSZ as usize],
+}
+
+impl Typeahead {
+    const fn new() -> Typeahead {
+        Typeahead {
+            add: AtomicU32::new(0),
+            remove: AtomicU32::new(0),
+            glbkbchar: [const { AtomicI32::new(0) }; KBBUFSZ as usize],
         }
-        _ => false,
+    }
+
+    /// EmuTOS `buflush` (`bdos/console.c:252-255`).
+    fn flush(&self) {
+        self.add.store(0, Ordering::Relaxed);
+        self.remove.store(0, Ordering::Relaxed);
+    }
+
+    /// `add > remove` (`bdos/console.c:152,359`).
+    fn has_input(&self) -> bool {
+        self.add.load(Ordering::Relaxed) != self.remove.load(Ordering::Relaxed)
+    }
+
+    /// The `default` arm of `conbrk` (`bdos/console.c:236-239`): store `ch`
+    /// while there is room; `false` when the buffer is full (the caller rings
+    /// the bell).
+    fn push(&self, ch: Long) -> bool {
+        let add = self.add.load(Ordering::Relaxed);
+        if add.wrapping_sub(self.remove.load(Ordering::Relaxed)) >= KBBUFSZ {
+            return false;
+        }
+        self.glbkbchar[(add & KBBUFMASK) as usize].store(ch, Ordering::Relaxed);
+        self.add.store(add.wrapping_add(1), Ordering::Relaxed);
+        true
+    }
+
+    /// The typeahead half of `getch` (`bdos/console.c:356-366`): the oldest
+    /// key, the buffer flushed once it is empty.
+    fn pop(&self) -> Option<Long> {
+        if !self.has_input() {
+            return None;
+        }
+        let remove = self.remove.load(Ordering::Relaxed);
+        let ch = self.glbkbchar[(remove & KBBUFMASK) as usize].load(Ordering::Relaxed);
+        self.remove.store(remove.wrapping_add(1), Ordering::Relaxed);
+        if !self.has_input() {
+            self.flush();
+        }
+        Some(ch)
+    }
+}
+
+/// `aux_typeahead` (`bdos/console.c:44`).
+static AUX_TYPEAHEAD: Typeahead = Typeahead::new();
+/// `con_typeahead` (`bdos/console.c:45`).
+static CON_TYPEAHEAD: Typeahead = Typeahead::new();
+
+/// EmuTOS `buffer[h]` (`bdos/console.c:46,115-117`): AUX (1) and CON (2) have
+/// a typeahead buffer, PRN (0) has none (`NULL`) — and neither has any other
+/// device.
+fn typeahead(dev: u16) -> Option<&'static Typeahead> {
+    match dev {
+        DEV_AUX => Some(&AUX_TYPEAHEAD),
+        DEV_CON => Some(&CON_TYPEAHEAD),
+        _ => None,
+    }
+}
+
+/// Cells of [`GLBCOLUMN`]: one per BIOS device table slot 0..7, and one shared
+/// by every `HXFORM` value outside the table (a standard handle forced below
+/// `H_Print`).
+const NCOLUMN: usize = 9;
+
+/// EmuTOS `glbcolumn[]` (`bdos/console.c:54`): the screen column `conout`
+/// keeps per device, for tab expansion and `cgets`. EmuTOS has cells for PRN,
+/// AUX and CON only and indexes past them for any other device; NewTOS gives
+/// every table slot its own cell (unobservable for 0..2).
+static GLBCOLUMN: [AtomicI16; NCOLUMN] = [const { AtomicI16::new(0) }; NCOLUMN];
+
+/// The column cell of BIOS device `dev`.
+fn glbcolumn(dev: u16) -> &'static AtomicI16 {
+    &GLBCOLUMN[(dev as usize).min(NCOLUMN - 1)]
+}
+
+/// The typeahead and column half of EmuTOS `stdhdl_init`
+/// (`bdos/console.c:114-125`, run once from `osinit`, `bdos/bdosmain.c:347`):
+/// both typeahead buffers empty, every column 0. Called with the boot PDs
+/// (`bdos::process::standin::init`).
+pub fn stdhdl_init_console() {
+    AUX_TYPEAHEAD.flush();
+    CON_TYPEAHEAD.flush();
+    for c in &GLBCOLUMN {
+        c.store(0, Ordering::Relaxed);
+    }
+}
+
+/// `conbrk` saw a Ctrl-C: the typeahead is flushed and `terminate()`
+/// (`Pterm(-32)`) is requested ([`crate::bdos::process::request_terminate`];
+/// the SVC handler performs it after the call). EmuTOS' `terminate()` does not
+/// return, so whoever receives this stops at once and does nothing more.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Terminated;
+
+/// EmuTOS `conbrk(h)` (`bdos/console.c:206-244`), run before every byte
+/// `conout` writes and at the start of `Cconin`/`Cnecin`: if device `dev`
+/// reports input (`Bconstat`), take one key with `Bconin` —
+///
+/// * Ctrl-C: flush the typeahead and terminate ([`Terminated`]);
+/// * Ctrl-S: stop — keep reading keys (blocking) until a Ctrl-Q;
+/// * Ctrl-Q: resume;
+/// * Ctrl-X: flush the typeahead, then store the Ctrl-X like any other key;
+/// * any other key: into the typeahead, or the bell (`Bconout(dev, 7)`) when
+///   it is full.
+///
+/// While stopped every key read is handled the same way, so a key typed
+/// during the pause is kept. EmuTOS has no typeahead for PRN
+/// (`buffer[0] = NULL`) and would dereference it if PRN had input; NewTOS
+/// leaves the key in the device there — no table entry but AUX and CON has
+/// input, so this is never observable.
+///
+/// `Bconstat` of CON gives the polled keyboard of `board-rpi4` a turn when the
+/// key ring is empty (`kernel/src/host_env.rs` `fill_from_device`) — the
+/// stand-in for the keyboard interrupt that fills EmuTOS' queue while output
+/// is written. The blocking reads of the pause never give way to a `kbdvec`
+/// hook: keys may already be in the typeahead.
+fn conbrk(dev: u16) -> Result<(), Terminated> {
+    if chardev::bconstat_handle(dev) == 0 {
+        return Ok(());
+    }
+    let (Some(buf), Some(d)) = (typeahead(dev), chardev::device(dev)) else {
+        return Ok(());
+    };
+    let mut stop = false;
+    loop {
+        let ch = d.bconin();
+        match ch as u8 {
+            CTRL_C => {
+                buf.flush();
+                crate::bdos::process::request_terminate(CTRLC_RC);
+                return Err(Terminated);
+            }
+            CTRL_S => stop = true,
+            CTRL_Q => stop = false,
+            c => {
+                if c == CTRL_X {
+                    buf.flush();
+                }
+                if !buf.push(ch) {
+                    let _ = d.bconout(BEL);
+                }
+            }
+        }
+        if !stop {
+            return Ok(());
+        }
+    }
+}
+
+/// EmuTOS `conout(h, ch)` (`bdos/console.c:263-273`): `conbrk`, then the byte
+/// to the device (`Bconout`, result ignored), then the column: `+1` for a byte
+/// `>= ' '` (as `unsigned char`, so 0x80..0xFF count), `0` after a CR, `-1`
+/// after a BS — CR and BS compared on the whole `ch`, as EmuTOS compares the
+/// `int`.
+fn conout(dev: u16, ch: u16) -> Result<(), Terminated> {
+    conbrk(dev)?;
+    chardev::bconout_handle(dev, ch as u8);
+    let col = glbcolumn(dev);
+    if ch as u8 >= b' ' {
+        col.fetch_add(1, Ordering::Relaxed);
+    } else if ch == u16::from(CR) {
+        col.store(0, Ordering::Relaxed);
+    } else if ch == u16::from(BS) {
+        col.fetch_sub(1, Ordering::Relaxed);
+    }
+    Ok(())
+}
+
+/// EmuTOS `tabout(h, ch)` (`bdos/console.c:292-303`): a TAB is written as
+/// spaces up to the next multiple of 8 of the tracked column — at least one —
+/// anything else goes to [`conout`].
+fn tabout(dev: u16, ch: u16) -> Result<(), Terminated> {
+    if ch == u16::from(TAB) {
+        loop {
+            conout(dev, u16::from(b' '))?;
+            if glbcolumn(dev).load(Ordering::Relaxed) & 7 == 0 {
+                return Ok(());
+            }
+        }
+    }
+    conout(dev, ch)
+}
+
+/// EmuTOS `getch(h)` (`bdos/console.c:351-369`): the oldest key of the
+/// typeahead (AUX, CON), else the device's `Bconin` — blocking and never
+/// giving way to a `kbdvec` hook (the read of `cgets`, which may already have
+/// stored keys). A device past the table answers `0` (`bios/bios.c:973-976`).
+fn getch(dev: u16) -> Long {
+    if let Some(ch) = typeahead(dev).and_then(Typeahead::pop) {
+        return ch;
+    }
+    chardev::device(dev).map_or(0, |d| d.bconin())
+}
+
+/// [`getch`] for the single-key reads with no side effect before their key
+/// (`Cconin`, `Cnecin`, `Crawcin`, a one-byte `Fread`): `None` when the
+/// `Bconin` has to give way to the running process's `kbdvec` hook (KEYS02;
+/// the caller requests the restart and returns without side effects). Keys
+/// already in the typeahead stay there across the restart.
+fn getch_restartable(dev: u16) -> Option<Long> {
+    if let Some(ch) = typeahead(dev).and_then(Typeahead::pop) {
+        return Some(ch);
+    }
+    match chardev::device(dev) {
+        Some(d) => d.bconin_restartable(),
+        None => Some(0),
     }
 }
 
@@ -261,29 +477,21 @@ pub(crate) fn output_break(h: &dyn crate::host::Host) -> bool {
 // Spec:   docs/api/gemdos/console/02-cconout.md
 // ---------------------------------------------------------------------------
 
-/// `Cconout(ch)` — write `ch` (low 8 bits) to the console output.
+/// `Cconout(ch)` — write `ch` to the console output with tab expansion.
 /// Always returns `1` (per `docs/api/gemdos/console/02-cconout.md`
 /// and discrepancy `D-001`: EmuTOS unconditionally returns `1`,
 /// even though Compendium and Profibuch document the value as
 /// "undefined" or "the function code"). NewTOS follows EmuTOS.
 ///
-/// The device is stdout's, `HXFORM(run->p_uft[1])` (`bdos/console.c:281`,
-/// [`std_dev`]); CON by default. EmuTOS' `xconout` runs `conbrk` before
-/// writing; NewTOS mirrors that on CON with the Ctrl-C-only
-/// [`output_break`] — a pending Ctrl-C aborts the write and defers
-/// `Pterm(-32)`. On another device there is no break check: every non-CON
-/// table entry has no input (`Bconstat` 0), where EmuTOS' `conbrk` does
-/// nothing either (the `Fwrite` device path, [`device_write`], does the
-/// same). The byte goes out through that device's table entry (`Bconout`,
-/// return ignored as in `conout`).
+/// EmuTOS `xconout` = `tabout(HXFORM(run->p_uft[1]), ch)`
+/// (`bdos/console.c:279-283`, [`std_dev`]; CON by default) with the whole
+/// WORD `ch`: [`tabout`] → [`conout`] → [`conbrk`] — a pending Ctrl-C ends
+/// the call and requests `Pterm(-32)`, Ctrl-S pauses until Ctrl-Q, other keys
+/// go into the BDOS typeahead.
 pub fn cconout(args: &TrapArgs) -> Long {
-    let ch = args.arg_u16(0) as u8;
-    let h = host_or_eundev!();
-    let dev = std_dev(STDOUT);
-    if dev == DEV_CON && output_break(h) {
-        return 1; // Ctrl-C: aborted; SVC handler redirects to Pterm.
-    }
-    chardev::bconout_handle(dev, ch);
+    let _ = host_or_eundev!();
+    // A Ctrl-C has requested the terminate; the SVC handler performs it.
+    let _ = tabout(std_dev(STDOUT), args.arg_u16(0));
     1
 }
 
@@ -374,18 +582,12 @@ pub fn crawio(args: &TrapArgs) -> Long {
     let w = args.arg_u16(0);
     let h = host_or_eundev!();
     if w == 0x00FF {
+        // `constat(i) ? getch(i) : 0` (`bdos/console.c:445-449`): a key in
+        // the BDOS typeahead first, else the device's own input — the whole
+        // `Bconin` LONG, so a non-ASCII key (arrow / function) keeps its
+        // scancode. `constat` said a key is there, so `getch` does not wait.
         let dev = std_dev(STDIN);
-        if dev != DEV_CON {
-            // `constat(i) ? getch(i) : 0` on that device.
-            return if constat(dev) != 0 { chardev::bconin_handle(dev) } else { 0 };
-        }
-        // Read side: non-blocking; return 0 if no input. Uses the whole
-        // key word so a pending non-ASCII key (arrow / function) is not
-        // silently dropped.
-        match h.console_try_read_key() {
-            Some(word) => pack_console_key(word),
-            None => 0,
-        }
+        if constat(dev) != 0 { getch(dev) } else { 0 }
     } else {
         let dev = std_dev(STDOUT);
         if dev == DEV_CON {
@@ -424,8 +626,25 @@ const CTRL_R: u8 = 0x12;
 /// (`bdos/console.c:566`).
 const CTRL_U: u8 = 0x15;
 /// ASCII CAN — Ctrl-X. `cgets` erases the whole line
-/// (`bdos/console.c:560`).
+/// (`bdos/console.c:560`); `conbrk` flushes the typeahead (`:232`).
 const CTRL_X: u8 = 0x18;
+/// ASCII DC3 — Ctrl-S. `conbrk` stops output (`bdos/console.c:226`).
+const CTRL_S: u8 = 0x13;
+/// ASCII DC1 — Ctrl-Q. `conbrk` resumes output (`bdos/console.c:229`).
+const CTRL_Q: u8 = 0x11;
+/// Carriage return (`cr`, `bdos/console.c:95`).
+const CR: u8 = 0x0D;
+/// Line feed (`lf`, `bdos/console.c:96`).
+const LF: u8 = 0x0A;
+/// Horizontal tab (`tab`, `bdos/console.c:97`).
+const TAB: u8 = 0x09;
+/// Rubout / DEL (`rub`, `bdos/console.c:98`).
+const RUB: u8 = 0x7F;
+/// Backspace (`bs`, `bdos/console.c:99`).
+const BS: u8 = 0x08;
+/// The bell `conbrk` rings when the typeahead is full (`Bconout(h, 7)`,
+/// `bdos/console.c:239`).
+const BEL: u8 = 0x07;
 
 // ---------------------------------------------------------------------------
 // 0x01 Cconin — read one char from the console, **with echo**, Ctrl-C
@@ -435,26 +654,32 @@ const CTRL_X: u8 = 0x18;
 
 /// `Cconin()` — blocking read of one character with echo. Ctrl-C
 /// terminates the calling process (`Pterm(-32)`). Returns the packed
-/// console LONG (scancode in bits 16-23, ASCII in bits 0-7); non-ASCII
-/// keys echo nothing (their ASCII byte is 0).
+/// console LONG (scancode in bits 16-23, ASCII in bits 0-7).
 ///
-/// The device is stdin's, `HXFORM(run->p_uft[0])` (`bdos/console.c:401`,
-/// [`std_dev`]), and the echo goes to that same device (`conin(h)`).
+/// EmuTOS `xconin` (`bdos/console.c:396-408`) on stdin's device
+/// `HXFORM(run->p_uft[0])` ([`std_dev`]): [`conbrk`], then `conin` — the key
+/// from [`getch`] (BDOS typeahead first) echoed unconditionally through
+/// [`conout`] on the same device (also the NUL of a scancode-only key, and the
+/// Ctrl-C itself) — then the Ctrl-C check.
 pub fn cconin(_: &TrapArgs) -> Long {
     let dev = std_dev(STDIN);
-    // `Bconin` of that entry (CON: the packed key LONG), or `0` after a
-    // `kbdvec` restart request (KEYS02) — ASCII 0, so nothing below happens
-    // and the trap handler re-executes the call.
-    let key = chardev::bconin_handle(dev);
-    let ascii = (key & 0xFF) as u8;
-    if ascii == CTRL_C {
+    if conbrk(dev).is_err() {
+        return 0; // value ignored — handler redirects to Pterm.
+    }
+    // `Bconin` of that entry gives way to a `kbdvec` hook (KEYS02): ask for
+    // the restart, nothing has been echoed yet.
+    let Some(ch) = getch_restartable(dev) else {
+        crate::xbios::kbdvecs::request_restart();
+        return 0;
+    };
+    if conout(dev, u16::from(ch as u8)).is_err() {
+        return 0;
+    }
+    if ch as u8 == CTRL_C {
         crate::bdos::process::request_terminate(CTRLC_RC);
         return 0; // value ignored — handler redirects to Pterm.
     }
-    if ascii != 0 {
-        chardev::bconout_handle(dev, ascii); // echo (conin → conout)
-    }
-    key
+    ch
 }
 
 // ---------------------------------------------------------------------------
@@ -469,8 +694,15 @@ pub fn cconin(_: &TrapArgs) -> Long {
 ///
 /// The device is stdin's, `HXFORM(run->p_uft[0])` (`bdos/console.c:377`).
 pub fn crawcin(_: &TrapArgs) -> Long {
-    // `Bconin` of that entry (restart request → 0, discarded).
-    chardev::bconin_handle(std_dev(STDIN))
+    // `getch(h)` (`bdos/console.c:375-378`): the BDOS typeahead first, else
+    // `Bconin` of that entry; no `conbrk`.
+    match getch_restartable(std_dev(STDIN)) {
+        Some(ch) => ch,
+        None => {
+            crate::xbios::kbdvecs::request_restart();
+            0 // discarded — the trap handler re-executes the call
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -485,9 +717,16 @@ pub fn crawcin(_: &TrapArgs) -> Long {
 ///
 /// The device is stdin's, `HXFORM(run->p_uft[0])` (`bdos/console.c:419`).
 pub fn cnecin(_: &TrapArgs) -> Long {
-    // `Bconin` of that entry (restart request → 0, discarded).
-    let key = chardev::bconin_handle(std_dev(STDIN));
-    if (key & 0xFF) as u8 == CTRL_C {
+    // `xnecin` (`bdos/console.c:414-426`): `conbrk`, `getch`, Ctrl-C check.
+    let dev = std_dev(STDIN);
+    if conbrk(dev).is_err() {
+        return 0; // value ignored — handler redirects to Pterm.
+    }
+    let Some(key) = getch_restartable(dev) else {
+        crate::xbios::kbdvecs::request_restart();
+        return 0;
+    };
+    if key as u8 == CTRL_C {
         crate::bdos::process::request_terminate(CTRLC_RC);
         return 0; // value ignored — handler redirects to Pterm.
     }
@@ -500,25 +739,30 @@ pub fn cnecin(_: &TrapArgs) -> Long {
 // Spec: docs/api/gemdos/console/0a-cconrs.md
 // ---------------------------------------------------------------------------
 
-/// Byte-level I/O backend for the [`cconrs`] line editor, abstracted out
-/// of the trap path so the editing logic ([`edit_line`]) can be exercised
-/// by a QEMU/EL1 selftest against a scripted input + captured echo,
-/// without a live console or user-memory access.
+/// Device-level I/O backend for the [`cconrs`] line editor (EmuTOS `cgets`),
+/// abstracted out of the trap path so the editing logic ([`edit_line`]) can
+/// be exercised by a QEMU/EL1 selftest against a scripted input + captured
+/// echo, without a live console or user-memory access.
 ///
-/// The trap wrapper implements it over the blocking console read, the
-/// console byte writer, and the caller's length-prefixed user record
-/// (unprivileged `ldtrb`/`sttrb`); a selftest implements it over an
-/// in-memory input script and buffer (see `kernel::selftest_console`).
+/// The trap path implements it over a BIOS device and the caller's buffer
+/// ([`DeviceLineIo`]: [`getch`], [`conout`], `glbcolumn`); a selftest
+/// implements it over an in-memory input script and buffer (see
+/// `kernel::selftest_console`).
 pub trait LineEditIo {
-    /// Blocking read of the next input byte from the edit device.
+    /// The next input byte: the low byte of EmuTOS `getch(h)` (`char ch`,
+    /// `bdos/console.c:542,548`) — BDOS typeahead first, else a blocking
+    /// `Bconin`.
     fn read_byte(&mut self) -> u8;
-    /// Echo one byte to the edit device's output.
-    fn echo_byte(&mut self, b: u8);
+    /// EmuTOS `conout(h, ch)`: `conbrk`, the byte to the device, the column
+    /// update. `Err` when `conbrk` saw a Ctrl-C (terminate requested).
+    fn conout(&mut self, b: u8) -> Result<(), Terminated>;
+    /// The device's tracked column, `glbcolumn[h]`.
+    fn column(&self) -> i16;
     /// Store a data byte at buffer position `i` (0-based within the data
     /// area, i.e. the record's `p[2 + i]`). `i < max` is guaranteed.
     fn store_byte(&mut self, i: usize, b: u8);
     /// Read back a data byte previously stored at position `i` — used by
-    /// the Ctrl-R redisplay to re-echo the accumulated line.
+    /// `backsp` and the Ctrl-R redisplay.
     fn load_byte(&self, i: usize) -> u8;
     /// `true` once a [`Self::store_byte`]/[`Self::load_byte`] could not reach
     /// the buffer (ARCH03 3a: the caller's record is not writable/readable
@@ -534,8 +778,9 @@ pub enum LineEdit {
     /// The user finished the line (CR/LF) or filled the buffer; the value
     /// is the number of data bytes stored (the record's `p[1]`).
     Done(usize),
-    /// The user pressed Ctrl-C; the caller must terminate the process
-    /// (`Pterm(-32)`) and must **not** write the length byte.
+    /// The user pressed Ctrl-C (or `conbrk` saw one during an echo); the
+    /// caller must terminate the process (`Pterm(-32)`) and must **not**
+    /// write the length byte.
     Terminated,
     /// The record could not be written (or read back): the buffer access
     /// faulted ([`LineEditIo::faulted`]). EmuTOS takes the bus error at the
@@ -543,175 +788,184 @@ pub enum LineEdit {
     Faulted,
 }
 
-/// Erase one echoed character position: `BS SP BS`. NewTOS assumes a
-/// one-column echo per character (no `glbcolumn` tracking, serial/fbcon
-/// profile), so this is the erase width for every printable byte — the
-/// same simplification the plain Backspace already uses. See the
-/// divergence note on [`edit_line`].
-fn erase_one<Io: LineEditIo>(io: &mut Io) {
-    io.echo_byte(0x08);
-    io.echo_byte(b' ');
-    io.echo_byte(0x08);
+/// Why [`edit_line`] stopped early.
+enum Stop {
+    Terminated,
+    Faulted,
 }
 
-/// The `Cconrs`/`cgets` line editor (`bdos/console.c:540`), factored to
-/// run over any [`LineEditIo`]. Reads and echoes bytes until CR/LF or the
-/// buffer fills, honouring the EmuTOS editing keys:
+impl From<Terminated> for Stop {
+    fn from(_: Terminated) -> Stop {
+        Stop::Terminated
+    }
+}
+
+/// EmuTOS `cookdout(h, ch)` (`bdos/console.c:312-325`) over a
+/// [`LineEditIo`]: TAB expanded (`tabout`, `:292-303`), a control byte below
+/// `' '` as `^` and `ch | 0x40`, anything else as is.
+fn io_cookdout<Io: LineEditIo>(io: &mut Io, ch: u8) -> Result<(), Terminated> {
+    if ch == TAB {
+        // `tabout`: spaces to the next multiple of 8, at least one.
+        loop {
+            io.conout(b' ')?;
+            if io.column() & 7 == 0 {
+                return Ok(());
+            }
+        }
+    }
+    let mut ch = ch;
+    if ch < b' ' {
+        io.conout(b'^')?;
+        ch |= 0x40;
+    }
+    io.conout(ch)
+}
+
+/// EmuTOS `newline(h, startcol)` (`bdos/console.c:480-489`): CR, LF, then
+/// spaces back to the start column. EmuTOS counts `while (startcol)` down
+/// from an `int`, so a negative start column (`glbcolumn` below 0 after a BS
+/// at column 0) would write about 2^32 spaces; NewTOS writes them only while
+/// `startcol > 0` (pending a user decision, `0a-cconrs.md` "NewTOS
+/// implementation notes"; identical for every column >= 0).
+fn newline<Io: LineEditIo>(io: &mut Io, startcol: i32) -> Result<(), Terminated> {
+    io.conout(CR)?;
+    io.conout(LF)?;
+    let mut n = startcol;
+    while n > 0 {
+        io.conout(b' ')?;
+        n -= 1;
+    }
+    Ok(())
+}
+
+/// EmuTOS `backsp(h, cbuf, retlen, col)` (`bdos/console.c:494-525`): drop the
+/// last byte, recompute the column the remaining line ends at from the start
+/// column `col` (TAB to the next multiple of 8, a control byte 2 columns,
+/// anything else 1), then `BS SP BS` until the tracked column is there.
+fn backsp<Io: LineEditIo>(io: &mut Io, retlen: usize, col: i32) -> Result<usize, Stop> {
+    let retlen = retlen.saturating_sub(1);
+    let mut col = col;
+    for i in 0..retlen {
+        let ch = io.load_byte(i);
+        if io.faulted() {
+            return Err(Stop::Faulted);
+        }
+        if ch == TAB {
+            col += 8;
+            col &= !7;
+        } else if ch < b' ' {
+            col += 2;
+        } else {
+            col += 1;
+        }
+    }
+    while i32::from(io.column()) > col {
+        io.conout(BS)?;
+        io.conout(b' ')?;
+        io.conout(BS)?;
+    }
+    Ok(retlen)
+}
+
+/// The `Cconrs`/`Fread` line editor — EmuTOS `cgets(h, maxlen, buf)`
+/// (`bdos/console.c:540-582`) over any [`LineEditIo`]. The start column is
+/// the device's column on entry; keys are read until CR/LF or until `max`
+/// bytes are stored:
 ///
 /// | Key                    | Action |
 /// |------------------------|--------|
 /// | CR (0x0D) / LF (0x0A)  | echo CR, finish, return `Done(len)`. |
-/// | BS (0x08) / RUB (0x7F) | erase the last character. |
+/// | BS (0x08) / RUB (0x7F) | `backsp`: drop the last byte, erase back to its column. |
 /// | Ctrl-C (0x03)          | return `Terminated`. |
-/// | Ctrl-X (0x18)          | erase the whole line (`len = 0`). |
-/// | Ctrl-U (0x15)          | kill the line (`len = 0`). |
-/// | Ctrl-R (0x12)          | CR/LF, redisplay the buffer; `len` kept. |
-/// | any other byte         | store in `buf[len++]`, echo it. |
+/// | Ctrl-X (0x18)          | `backsp` until the line is empty. |
+/// | Ctrl-U (0x15)          | echo `#`, `newline` to the start column, `len = 0`. |
+/// | Ctrl-R (0x12)          | echo `#`, `newline` to the start column, re-echo the line. |
+/// | any other byte         | store in `buf[len++]`, echo through `cookdout` (TAB expanded, control bytes as `^X`). |
 ///
-/// **Divergence from EmuTOS echo (spec `0a-cconrs.md:72-73`, documented
-/// low-priority):** EmuTOS renders Ctrl-U / Ctrl-R by echoing `#` then a
-/// `newline(h, stcol)` that re-indents to the captured *starting column*.
-/// NewTOS keeps no per-device column (`glbcolumn`), so it cannot re-indent:
-/// Ctrl-U instead takes the echoed characters back in place with `BS SP BS`
-/// (identical to Ctrl-X in this model — both reduce to `len = 0`), and
-/// Ctrl-R re-shows the line with a plain `CR LF` before re-echoing. The
-/// **observable buffer contract matches EmuTOS exactly**: Ctrl-U/Ctrl-X
-/// leave `len = 0` (subsequent input starts at `p[1] = 0`), Ctrl-R leaves
-/// `len` unchanged. The `cookdout` `^X` control-echo and tab expansion of
-/// full `cgets` are likewise not modelled (see F5/F6 in the console audit).
+/// Every echo goes through [`LineEditIo::conout`], whose `conbrk` may see a
+/// Ctrl-C (→ `Terminated`) or pause on Ctrl-S.
 pub fn edit_line<Io: LineEditIo>(io: &mut Io, max: usize) -> LineEdit {
-    let mut len: usize = 0;
-    while len < max {
-        let b = io.read_byte();
-        match b {
-            0x0D | 0x0A => {
-                io.echo_byte(0x0D); // echo CR only (no LF), per cgets
-                return LineEdit::Done(len);
+    match cgets(io, max) {
+        Ok(n) => LineEdit::Done(n),
+        Err(Stop::Terminated) => LineEdit::Terminated,
+        Err(Stop::Faulted) => LineEdit::Faulted,
+    }
+}
+
+fn cgets<Io: LineEditIo>(io: &mut Io, max: usize) -> Result<usize, Stop> {
+    let stcol = i32::from(io.column());
+    let mut retlen: usize = 0;
+    while retlen < max {
+        let ch = io.read_byte();
+        match ch {
+            CR | LF => {
+                io.conout(CR)?;
+                return Ok(retlen);
             }
-            CTRL_C => return LineEdit::Terminated,
-            0x08 | 0x7F => {
-                if len > 0 {
-                    len -= 1;
-                    erase_one(io);
+            BS | RUB => retlen = backsp(io, retlen, stcol)?,
+            CTRL_C => return Err(Stop::Terminated),
+            CTRL_X => loop {
+                retlen = backsp(io, retlen, stcol)?;
+                if retlen == 0 {
+                    break;
                 }
-            }
-            // Ctrl-X (erase line) and Ctrl-U (kill line) both reduce to
-            // `len = 0`; with no column tracking their echo collapses to
-            // the same in-place `BS SP BS` take-back (see divergence note).
-            CTRL_X | CTRL_U => {
-                while len > 0 {
-                    len -= 1;
-                    erase_one(io);
-                }
+            },
+            CTRL_U => {
+                io.conout(b'#')?;
+                newline(io, stcol)?;
+                retlen = 0;
             }
             CTRL_R => {
-                // Redisplay: fresh line, then re-echo the kept buffer.
-                io.echo_byte(0x0D);
-                io.echo_byte(0x0A);
-                for i in 0..len {
+                io.conout(b'#')?;
+                newline(io, stcol)?;
+                for i in 0..retlen {
                     let c = io.load_byte(i);
                     if io.faulted() {
-                        return LineEdit::Faulted;
+                        return Err(Stop::Faulted);
                     }
-                    io.echo_byte(c);
+                    io_cookdout(io, c)?;
                 }
             }
             _ => {
-                io.store_byte(len, b);
+                io.store_byte(retlen, ch);
                 if io.faulted() {
-                    return LineEdit::Faulted;
+                    return Err(Stop::Faulted);
                 }
-                len += 1;
-                io.echo_byte(b); // echo
+                retlen += 1;
+                io_cookdout(io, ch)?;
             }
         }
     }
-    LineEdit::Done(len)
-}
-
-/// [`LineEditIo`] over the trap path: the installed console host + the
-/// caller's record pointer `p` (`[max, len, buf…]`). Buffer bytes are read
-/// and written in the caller's space (ARCH03 3a, [`crate::uaccess`]): an EL0
-/// program's record through the fault-recovered unprivileged byte accesses,
-/// permission-checked as EL0 — the `Cconrs` contract that `p` is a user
-/// pointer — an in-kernel caller's as the kernel address it is.
-struct TrapLineIo {
-    host: &'static dyn crate::host::Host,
-    /// Whose address space `p` is in.
-    space: crate::uaccess::Space,
-    /// The caller's length-prefixed record pointer (`p`).
-    p: u64,
-    /// A buffer access faulted ([`LineEditIo::faulted`]).
-    faulted: core::cell::Cell<bool>,
-}
-
-impl LineEditIo for TrapLineIo {
-    fn read_byte(&mut self) -> u8 {
-        self.host.console_read_byte_blocking()
-    }
-    fn echo_byte(&mut self, b: u8) {
-        self.host.console_write_byte(b);
-    }
-    fn store_byte(&mut self, i: usize, b: u8) {
-        // `i < max`, so `p + 2 + i` is within the record's buffer area.
-        if self.space.put_u8(self.p + 2 + i as u64, b).is_err() {
-            self.faulted.set(true);
-        }
-    }
-    fn load_byte(&self, i: usize) -> u8 {
-        // `i < len <= max`: a byte this call stored before.
-        self.space.get_u8(self.p + 2 + i as u64).unwrap_or_else(|_| {
-            self.faulted.set(true);
-            0
-        })
-    }
-    fn faulted(&self) -> bool {
-        self.faulted.get()
-    }
+    Ok(retlen)
 }
 
 /// `Cconrs(p)` — read an edited line into the caller's record.
 ///
 /// `p[0]` (IN) = max length, `p[1]` (OUT) = actual length, `p[2..]` =
-/// buffer. Blocking, with the [`edit_line`] line editor: CR/LF finishes
-/// (echo CR), BS/DEL erases one char, Ctrl-X / Ctrl-U kill the line,
-/// Ctrl-R redisplays it, Ctrl-C terminates (`Pterm(-32)`), other bytes
-/// are stored + echoed. The buffer is **not** NUL-terminated — callers
-/// use `p[1]` as the length (TOS contract). Returns `0` (`xconrs` is
-/// `void`). See [`edit_line`] for the EmuTOS echo divergence.
+/// buffer. Blocking, with the [`edit_line`] line editor (EmuTOS `cgets`).
+/// The buffer is **not** NUL-terminated — callers use `p[1]` as the length
+/// (TOS contract). Returns `0` (`xconrs` is `void`).
 ///
 /// The device is stdin's, `HXFORM(run->p_uft[0])` (`bdos/console.c:535`,
-/// [`std_dev`]): CON reads and echoes through the console host
-/// ([`TrapLineIo`]); any other device runs the same editor over that table
-/// entry (`cgets(h, …)`, as `Fread` on a device does).
+/// [`std_dev`]), for the input and for the echo. A BIOS handle with no table
+/// entry (`p_uft[0]` below `H_Print`) answers `Bconin` 0 and refuses the echo
+/// (`bios/bios.c:973-976,1008-1010`), so `cgets` stores NULs until `max`.
 pub fn cconrs(args: &TrapArgs) -> Long {
-    let h = host_or_eundev!();
+    let _ = host_or_eundev!();
     let p = args.arg_u64(0);
     if p == 0 {
         return 0;
     }
-    // The record is in the caller's space (`TrapLineIo`); a record the
-    // program cannot read or write ends the call at the first such byte and
-    // — through the syscall tail — the program (EmuTOS: bus error in
-    // `cgets`, `docs/api/bios/_exception-crash.md`).
+    // The record is in the caller's space; a record the program cannot read
+    // or write ends the call at the first such byte and — through the syscall
+    // tail — the program (EmuTOS: bus error in `cgets`,
+    // `docs/api/bios/_exception-crash.md`).
     let Ok(max) = args.space.get_u8(p) else {
         return crate::uaccess::FAULTED;
     };
-    let dev = std_dev(STDIN);
-    let outcome = if dev == DEV_CON {
-        let mut io = TrapLineIo { host: h, space: args.space, p, faulted: core::cell::Cell::new(false) };
-        edit_line(&mut io, max as usize)
-    } else {
-        // A BIOS handle with no table entry (`p_uft[0]` below `H_Print`):
-        // EmuTOS' `Bconin`/`Bconout` answer 0 there (`bios/bios.c:973-976,
-        // 1008-1010`), so `cgets` stores NULs until `max` — the absent
-        // device's behaviour.
-        let d = chardev::device(dev).unwrap_or(&chardev::Absent);
-        let buf = SpaceBuf { space: args.space, base: p + 2 };
-        let mut io = DeviceLineIo { dev: d, buf: &buf, faulted: core::cell::Cell::new(false) };
-        edit_line(&mut io, max as usize)
-    };
-    let len = match outcome {
+    let buf = SpaceBuf { space: args.space, base: p + 2 };
+    let mut io = DeviceLineIo { dev: std_dev(STDIN), buf: &buf, faulted: core::cell::Cell::new(false) };
+    let len = match edit_line(&mut io, max as usize) {
         LineEdit::Done(n) => n,
         LineEdit::Terminated => {
             crate::bdos::process::request_terminate(CTRLC_RC);
@@ -734,16 +988,14 @@ pub fn cconrs(args: &TrapArgs) -> Long {
 // ---------------------------------------------------------------------------
 
 /// `Cconws(s)` — write zero-terminated string `s` to the console.
-/// Returns the byte count actually written.
+/// Returns the number of string bytes written (D-009; a TAB counts once).
 ///
-/// EmuTOS' `prt_line` writes each byte via `conout`, which runs `conbrk`
-/// first; NewTOS mirrors that with the Ctrl-C-only [`output_break`] before
-/// each byte — a pending Ctrl-C stops the write early (the rest of the
-/// string is not emitted) and defers `Pterm(-32)`.
-///
-/// The device is stdout's, `HXFORM(run->p_uft[1])` (`bdos/console.c:461`,
-/// [`std_dev`]); on a device other than CON there is no break check, as in
-/// [`cconout`].
+/// EmuTOS `xconws` → `prt_line(HXFORM(run->p_uft[1]), s)` = `tabout` per
+/// byte (`bdos/console.c:459-472`, [`std_dev`]): tab expansion from the
+/// tracked column, and before every byte [`conbrk`] — a pending Ctrl-C stops
+/// the write (the rest of the string is not emitted) and requests
+/// `Pterm(-32)`, Ctrl-S pauses until Ctrl-Q, other keys go into the BDOS
+/// typeahead.
 ///
 /// # User pointer
 ///
@@ -758,7 +1010,7 @@ pub fn cconws(args: &TrapArgs) -> Long {
     if p.is_null() {
         return 0;
     }
-    let h = host_or_eundev!();
+    let _ = host_or_eundev!();
     let dev = std_dev(STDOUT);
     let mut count: Long = 0;
     // Hard cap to prevent runaway loops if the caller forgot the NUL.
@@ -778,11 +1030,9 @@ pub fn cconws(args: &TrapArgs) -> Long {
         if b == 0 {
             break;
         }
-        // conbrk before each output byte (Ctrl-C aborts the string).
-        if dev == DEV_CON && output_break(h) {
+        if tabout(dev, u16::from(b)).is_err() {
             break; // Ctrl-C: stop writing; SVC handler redirects to Pterm.
         }
-        chardev::bconout_handle(dev, b);
         // SAFETY: same provenance as `p`; bounded by `MAX` above.
         p = unsafe { p.add(1) };
         count += 1;
@@ -892,23 +1142,25 @@ impl DevBuf for SpaceBuf {
     }
 }
 
-/// [`LineEditIo`] over one device-table entry and the caller's buffer — the
-/// `cgets(h, …)` of `Fread`: input from that device's `Bconin` (its low byte,
-/// `char ch`, `console.c:542`), echo to that device's `Bconout`.
+/// [`LineEditIo`] over BIOS device `dev` and the caller's buffer — the
+/// `cgets(h, …)` of `Cconrs` and `Fread`: input from [`getch`] (`char ch`,
+/// `console.c:542`), echo through [`conout`], the column `glbcolumn[dev]`.
 struct DeviceLineIo<'a, B: DevBuf> {
-    dev: &'static dyn CharDevice,
+    dev: u16,
     buf: &'a B,
     faulted: core::cell::Cell<bool>,
 }
 
 impl<B: DevBuf> LineEditIo for DeviceLineIo<'_, B> {
     fn read_byte(&mut self) -> u8 {
-        // Never gives way to a `kbdvec` hook: keys may already be stored
-        // (the same blocking read `Cconrs` uses).
-        self.dev.bconin() as u8
+        // Never gives way to a `kbdvec` hook: keys may already be stored.
+        getch(self.dev) as u8
     }
-    fn echo_byte(&mut self, b: u8) {
-        let _ = self.dev.bconout(b); // `conout` ignores the BIOS result
+    fn conout(&mut self, b: u8) -> Result<(), Terminated> {
+        conout(self.dev, u16::from(b))
+    }
+    fn column(&self) -> i16 {
+        glbcolumn(self.dev).load(Ordering::Relaxed)
     }
     fn store_byte(&mut self, i: usize, b: u8) {
         if !self.buf.put(i as u64, b) {
@@ -934,9 +1186,9 @@ pub(crate) fn device_read(numl: i16, space: crate::uaccess::Space, len: i32, ubu
 
 fn device_read_with<B: DevBuf>(numl: i16, len: i32, buf: &B) -> Long {
     let dev = hxform(numl);
-    let Some(d) = chardev::device(dev) else {
+    if chardev::device(dev).is_none() {
         return 0;
-    };
+    }
     // "HUGE read": the high word of the LONG is tested (`pw[2]`), which also
     // catches every negative `len`.
     if (len as u32) >> 16 != 0 {
@@ -945,16 +1197,19 @@ fn device_read_with<B: DevBuf>(numl: i16, len: i32, buf: &B) -> Long {
     // `pw[3]` is a signed WORD: 32768..65535 are negative here.
     let lo = len as u16 as i16;
     if lo == 1 {
-        // `conin(dev)`: one key, echoed, stored as the low byte of the
-        // `Bconin` LONG — CR and Ctrl-C included, no line editing. No side
-        // effect happens before the key arrives, so the read may give way to
-        // a `kbdvec` hook (KEYS02) and be re-executed.
-        let Some(key) = d.bconin_restartable() else {
+        // `conin(dev)` (`console.c:384-390`): one key from `getch` (BDOS
+        // typeahead first), echoed through `conout`, stored as its low byte —
+        // CR and Ctrl-C included, no line editing. No side effect happens
+        // before the key arrives, so the read may give way to a `kbdvec` hook
+        // (KEYS02) and be re-executed.
+        let Some(key) = getch_restartable(dev) else {
             crate::xbios::kbdvecs::request_restart();
             return 0; // discarded — the trap handler re-executes the call
         };
         let ch = key as u8;
-        let _ = d.bconout(ch);
+        if conout(dev, u16::from(ch)).is_err() {
+            return 0; // Ctrl-C in the echo's `conbrk`: handler redirects to Pterm.
+        }
         if !buf.put(0, ch) {
             return crate::uaccess::FAULTED;
         }
@@ -965,7 +1220,7 @@ fn device_read_with<B: DevBuf>(numl: i16, len: i32, buf: &B) -> Long {
         return 0;
     }
     // `cgets(dev, len, buf)` = the `Cconrs` line editor over this device.
-    let mut io = DeviceLineIo { dev: d, buf, faulted: core::cell::Cell::new(false) };
+    let mut io = DeviceLineIo { dev, buf, faulted: core::cell::Cell::new(false) };
     match edit_line(&mut io, lo as usize) {
         LineEdit::Done(n) => n as Long,
         LineEdit::Terminated => {
@@ -981,10 +1236,11 @@ fn device_read_with<B: DevBuf>(numl: i16, len: i32, buf: &B) -> Long {
 ///
 /// `count <= 0` returns `count` itself. Each byte is read from the buffer
 /// first (an unreadable byte → [`crate::uaccess::FAULTED`], the bytes before
-/// it stay written). CON: the Ctrl-C-only [`output_break`], then the raw byte
-/// (`Cconws` behaviour, the approved divergence from `tabout`), result
-/// `count`. Any other device: the raw byte to its `Bconout`, no break check;
-/// a `0` from `Bconout` ends the call with the number of bytes before it.
+/// it stay written). CON: [`tabout`] (`:631`; a Ctrl-C in its `conbrk` ends
+/// the call with the number of bytes before it and requests the terminate),
+/// result `count`. Any other device: the raw byte to its `Bconout`, no break
+/// check; a `0` from `Bconout` ends the call with the number of bytes before
+/// it.
 pub(crate) fn device_write(numl: i16, space: crate::uaccess::Space, count: i32, ubuf: u64) -> Long {
     device_write_with(numl, count, &SpaceBuf { space, base: ubuf })
 }
@@ -993,7 +1249,8 @@ fn device_write_with<B: DevBuf>(numl: i16, count: i32, buf: &B) -> Long {
     if count <= 0 {
         return count;
     }
-    let Some(d) = chardev::device(hxform(numl)) else {
+    let dev = hxform(numl);
+    let Some(d) = chardev::device(dev) else {
         return 0;
     };
     for n in 0..count as u64 {
@@ -1001,10 +1258,9 @@ fn device_write_with<B: DevBuf>(numl: i16, count: i32, buf: &B) -> Long {
             return crate::uaccess::FAULTED;
         };
         if numl == H_CONSOLE {
-            if host().is_some_and(output_break) {
+            if tabout(dev, u16::from(b)).is_err() {
                 return n as Long; // Ctrl-C: SVC handler redirects to Pterm.
             }
-            let _ = d.bconout(b); // `tabout` is void
         } else if d.bconout(b) == 0 {
             return n as Long;
         }
@@ -1025,6 +1281,7 @@ mod tests {
         fault_at: usize,
         faulted: bool,
         echoed: usize,
+        col: i16,
     }
 
     impl LineEditIo for FaultingIo {
@@ -1033,8 +1290,19 @@ mod tests {
             self.at += 1;
             b
         }
-        fn echo_byte(&mut self, _b: u8) {
+        fn conout(&mut self, b: u8) -> Result<(), Terminated> {
             self.echoed += 1;
+            // The `conout` column rule.
+            match b {
+                0x20..=0xFF => self.col += 1,
+                CR => self.col = 0,
+                BS => self.col -= 1,
+                _ => {}
+            }
+            Ok(())
+        }
+        fn column(&self) -> i16 {
+            self.col
         }
         fn store_byte(&mut self, i: usize, b: u8) {
             if i >= self.fault_at {
@@ -1053,7 +1321,7 @@ mod tests {
 
     #[test]
     fn edit_line_stops_at_the_first_store_that_faults() {
-        let mut io = FaultingIo { script: b"abcd\r", at: 0, buf: [0; 16], fault_at: 2, faulted: false, echoed: 0 };
+        let mut io = FaultingIo { script: b"abcd\r", at: 0, buf: [0; 16], fault_at: 2, faulted: false, echoed: 0, col: 0 };
         assert!(matches!(edit_line(&mut io, 10), LineEdit::Faulted));
         // 'a' and 'b' were stored and echoed; 'c' faulted and was not echoed,
         // and no further key was read.
@@ -1113,7 +1381,7 @@ mod tests {
 
     #[test]
     fn edit_line_without_faults_is_unchanged() {
-        let mut io = FaultingIo { script: b"ab\x08c\r", at: 0, buf: [0; 16], fault_at: 16, faulted: false, echoed: 0 };
+        let mut io = FaultingIo { script: b"ab\x08c\r", at: 0, buf: [0; 16], fault_at: 16, faulted: false, echoed: 0, col: 0 };
         assert!(matches!(edit_line(&mut io, 10), LineEdit::Done(2)));
         assert_eq!(&io.buf[..2], b"ac");
     }

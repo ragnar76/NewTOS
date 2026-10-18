@@ -190,7 +190,8 @@ there); the EmuTOS behaviour is the target:**
    `console::redirect_to_file` before the table (the `osif` file block,
    `_dispatcher.md` §5: raw one-byte reads sign-extended / `EOF_INDICATOR`,
    writes return 0, `Cconrs` byte-wise to CR with the following byte eaten
-   and `max` as a signed `char`, `Cconis`/`Cauxis` 0 only at EOF, output
+   and `max` read unsigned — EmuTOS reads it as a signed `char`, named
+   deviation 2026-10-18 in `docs/COMPATIBILITY.md` —, `Cconis`/`Cauxis` 0 only at EOF, output
    status -1, `Crawio` excluded); the 15 bodies take their BIOS device from
    `HXFORM(run->p_uft[n])` (`console::std_dev`). `run` without a running
    process is the stand-in PD (`file::std_handle` → `kernel_run_uft`, always

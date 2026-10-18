@@ -39,6 +39,8 @@ const CAUXIS: u16 = 0x12;
 const CAUXOS: u16 = 0x13;
 const CCONOUT: u16 = 0x02;
 const CCONWS: u16 = 0x09;
+const CRAWCIN: u16 = 0x07;
+const CCONIS: u16 = 0x0B;
 
 const BCONSTAT: u16 = 0x01;
 const BCONIN: u16 = 0x02;
@@ -56,6 +58,7 @@ const TAB: u8 = 0x09;
 const ESC: u8 = 0x1B;
 const CTRL_C: u8 = 0x03;
 const CTRL_S: u8 = 0x13;
+const CTRL_Q: u8 = 0x11;
 const CTRL_U: u8 = 0x15;
 const CTRL_X: u8 = 0x18;
 
@@ -92,12 +95,19 @@ impl Drop for Pd {
 
 /// The per-test setup: the file-system lock, the host with an empty console,
 /// a running process with the default standard handles, and no stale
-/// terminate request.
+/// terminate request. The BDOS console state (TASK/CON01) is reset through
+/// the interface: the typeahead drained (`Crawcin` while `Cconis`), the CON
+/// column put to 0 by a CR.
 fn setup() -> (std::sync::MutexGuard<'static, ()>, &'static DiskHost, Pd) {
     let (g, host) = fs();
     host.reset_console();
     let _ = process::take_pending_terminate();
     let pd = Pd::new();
+    while gemdos0(CCONIS) != 0 {
+        let _ = gemdos0(CRAWCIN);
+    }
+    let _ = call(CCONOUT, [CR as u64, 0, 0, 0, 0, 0, 0, 0]);
+    host.reset_console();
     (g, host, pd)
 }
 
@@ -313,7 +323,9 @@ fn r03_r04_r05_line_read_ends_at_cr_or_lf() {
     assert_eq!(host.take_output(), b"\r", "R5 echo");
 }
 
-/// R6: the line read ends at `len` without consuming the next key.
+/// R6: the line read ends at `len`; the next key stays queued — the echo's
+/// `conbrk` moved it into the BDOS typeahead (TASK/CON01), so the next read
+/// returns it.
 #[test]
 fn r06_line_read_ends_at_len() {
     let (_g, host, _p) = setup();
@@ -321,8 +333,10 @@ fn r06_line_read_ends_at_len() {
     host.type_keys(b"abcd");
     assert_eq!(fread(-1, &mut b), 3, "R6");
     assert_eq!(&b, b"abc");
-    assert_eq!(host.pending_keys(), vec![b'd' as u16], "R6 'd' still queued");
     assert!(!host.take_output().contains(&CR), "R6 no CR echoed");
+    let mut b = [0u8; 1];
+    assert_eq!(fread(-1, &mut b), 1, "R6 'd' still queued");
+    assert_eq!(b[0], b'd');
 }
 
 /// R7, R8: BS / DEL erase the last character; on an empty buffer nothing.
@@ -342,8 +356,8 @@ fn r07_r08_backspace_and_delete() {
     assert_eq!(b[0], b'b');
 }
 
-/// R9, R10: Ctrl-X / Ctrl-U discard the line (buffer/return only — the echo
-/// is the approved `edit_line` divergence).
+/// R9, R10: Ctrl-X erases the line (`BS SP BS` per column), Ctrl-U echoes
+/// `#` and a newline to the start column (`cgets`, TASK/CON01).
 #[test]
 fn r09_r10_ctrl_x_and_ctrl_u_discard_the_line() {
     let (_g, host, _p) = setup();
@@ -351,29 +365,32 @@ fn r09_r10_ctrl_x_and_ctrl_u_discard_the_line() {
     host.type_keys(&[b'a', b'b', CTRL_X, b'c', CR]);
     assert_eq!(fread(-1, &mut b), 1, "R9");
     assert_eq!(b[0], b'c');
+    assert_eq!(host.take_output(), [b'a', b'b', BS, b' ', BS, BS, b' ', BS, b'c', CR], "R9 echo");
 
     let mut b = [0u8; 80];
     host.type_keys(&[b'a', b'b', CTRL_U, b'c', CR]);
     assert_eq!(fread(-1, &mut b), 1, "R10");
     assert_eq!(b[0], b'c');
+    // The start column is 0 here (the CR echo of R9).
+    assert_eq!(host.take_output(), b"ab#\r\nc\r", "R10 echo");
 }
 
-/// R11, R12: TAB and ESC are stored and echoed raw (no tab expansion, no
-/// `^[`).
+/// R11, R12: TAB and ESC are stored raw; the echo is `cookdout`: TAB
+/// expanded to column 8, ESC as `^[` (TASK/CON01).
 #[test]
-fn r11_r12_tab_and_esc_are_stored_and_echoed_raw() {
+fn r11_r12_tab_and_esc_are_stored_raw_and_echoed_cooked() {
     let (_g, host, _p) = setup();
     let mut b = [0u8; 80];
     host.type_keys(&[b'a', TAB, b'b', CR]);
     assert_eq!(fread(-1, &mut b), 3, "R11");
     assert_eq!(&b[..3], &[b'a', TAB, b'b']);
-    assert_eq!(host.take_output(), [0x61, 0x09, 0x62, 0x0D], "R11 echo");
+    assert_eq!(host.take_output(), b"a       b\r", "R11 echo: 7 spaces to column 8");
 
     let mut b = [0u8; 80];
     host.type_keys(&[ESC, CR]);
     assert_eq!(fread(-1, &mut b), 1, "R12");
     assert_eq!(b[0], ESC);
-    assert_eq!(host.take_output(), [0x1B, 0x0D], "R12 echo");
+    assert_eq!(host.take_output(), b"^[\r", "R12 echo");
 }
 
 /// R13, R14, R15: `len == 0`, HUGE (high word set, incl. negative) and a
@@ -640,24 +657,31 @@ fn w01_w02_console_writes() {
     }
 }
 
-/// W3-W8: no tab expansion, no column state, no CR inserted.
+/// W3-W8: `tabout` — TAB to the next multiple of 8 of the tracked column,
+/// CR resets it, no CR inserted for LF (TASK/CON01).
 #[test]
-fn w03_to_w08_bytes_go_out_raw() {
+fn w03_to_w08_tabs_follow_the_column() {
     let (_g, host, _p) = setup();
+    let sp = |n: usize| vec![b' '; n];
     assert_eq!(fwrite(-1, b"\tX"), 2, "W3");
-    assert_eq!(host.take_output(), [0x09, 0x58]);
+    assert_eq!(host.take_output(), [sp(8), b"X".to_vec()].concat());
+    assert_eq!(fwrite(-1, b"\r"), 1);
     assert_eq!(fwrite(-1, b"ab\tX"), 4, "W4");
-    assert_eq!(host.take_output(), [0x61, 0x62, 0x09, 0x58]);
-    assert_eq!(fwrite(-1, b"12345"), 5);
+    assert_eq!(host.take_output(), [b"\rab".to_vec(), sp(6), b"X".to_vec()].concat());
+    assert_eq!(fwrite(-1, b"\r12345"), 6);
     assert_eq!(fwrite(-1, b"\tX"), 2, "W5");
-    assert_eq!(&host.take_output()[5..], [0x09, 0x58]);
-    assert_eq!(fwrite(-1, b"\t"), 1, "W6");
-    assert_eq!(host.take_output(), [0x09]);
+    assert_eq!(&host.take_output()[6..], [sp(3), b"X".to_vec()].concat());
+    assert_eq!(fwrite(-1, b"\r1234567"), 8);
+    let _ = host.take_output();
+    assert_eq!(fwrite(-1, b"\t"), 1, "W6 (column 8 → at least one space)");
+    assert_eq!(host.take_output(), sp(1));
+    assert_eq!(fwrite(-1, b"\t"), 1, "W6 at column 8");
+    assert_eq!(host.take_output(), sp(8));
     assert_eq!(fwrite(-1, b"a\nb"), 3, "W7");
     assert_eq!(host.take_output(), [0x61, 0x0A, 0x62]);
     assert_eq!(fwrite(-1, b"a\rb"), 3, "W8");
     assert_eq!(fwrite(-1, b"\t"), 1, "W8 tab");
-    assert_eq!(host.take_output(), [0x61, 0x0D, 0x62, 0x09]);
+    assert_eq!(host.take_output(), [b"a\rb".to_vec(), sp(7)].concat());
 }
 
 /// W9, W10, W11: `count <= 0` returns `count` itself; NULs are written.
@@ -672,13 +696,14 @@ fn w09_w10_w11_counts_and_nuls() {
     assert_eq!(host.take_output(), [0x61, 0x00, 0x62]);
 }
 
-/// W12: a pending key is not consumed by a console write.
+/// W12: a pending key is moved by the write's `conbrk` from the key ring into
+/// the BDOS typeahead and returned by the next read (TASK/CON01).
 #[test]
-fn w12_pending_key_is_not_consumed() {
+fn w12_pending_key_goes_to_the_typeahead() {
     let (_g, host, _p) = setup();
     host.type_keys(b"k");
     assert_eq!(fwrite(-1, b"x"), 1, "W12");
-    assert_eq!(host.pending_keys(), vec![b'k' as u16]);
+    assert!(host.pending_keys().is_empty(), "taken from the key ring");
     let mut b = [0u8; 1];
     assert_eq!(fread(-1, &mut b), 1);
     assert_eq!(b[0], b'k');
@@ -696,14 +721,17 @@ fn w13_ctrl_c_terminates_before_the_first_byte() {
     assert!(host.pending_keys().is_empty(), "W13 key consumed");
 }
 
-/// W14: no Ctrl-S pause; the key stays queued.
+/// W14: Ctrl-S pauses the write until Ctrl-Q; both are consumed, neither
+/// stored (TASK/CON01; the pause itself is timed in
+/// `con01_console_typeahead.rs`).
 #[test]
-fn w14_no_ctrl_s_pause() {
+fn w14_ctrl_s_pauses_until_ctrl_q() {
     let (_g, host, _p) = setup();
-    host.type_keys(&[CTRL_S]);
+    host.type_keys(&[CTRL_S, CTRL_Q]);
     assert_eq!(fwrite(-1, b"abc"), 3, "W14");
     assert_eq!(host.take_output(), b"abc");
-    assert_eq!(host.pending_keys(), vec![CTRL_S as u16]);
+    assert!(host.pending_keys().is_empty());
+    assert_eq!(gemdos0(CCONIS), 0, "nothing stored in the typeahead");
 }
 
 // ═══ Fwrite, AUX / PRN ═══════════════════════════════════════════════════

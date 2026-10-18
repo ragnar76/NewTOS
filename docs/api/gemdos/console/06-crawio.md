@@ -231,3 +231,7 @@ character" and "read a NUL byte").
 
 PHASE-02: `Crawio` write returns `0` (D-011); an early drift to returning the
 byte was corrected.
+
+TASK/CON01 (2026-10-18): the read side is `constat(h) ? getch(h) : 0` on every
+device (`bdos/console.c:445-449`) — a key in the BDOS typeahead is returned
+first; the write side stays a raw `Bconout` (no `conbrk`, no column update).

@@ -251,6 +251,9 @@ pub unsafe fn init(bootdev: u16) -> Option<u64> {
     ib.p_flags = PF_STANDARD; // bdosmain.c:340
     ib.p_env = double_nul_va as Long; // bdosmain.c:341
     ib.p_uft = DEFAULT_HANDLE; // console.c:107-112
+    // The rest of `stdhdl_init`: typeahead buffers empty, columns 0
+    // (console.c:114-125).
+    crate::gemdos::console::stdhdl_init_console();
     ib.p_curdrv = bootdev as u8; // bios.c:827 (xsetdrv: run->p_curdrv)
     p.initial = ib;
 

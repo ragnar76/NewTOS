@@ -182,3 +182,7 @@ None. The device is `run->p_uft[0]`, not a parameter.
 ## NewTOS implementation notes
 
 (Empty during Phase 00.)
+
+TASK/CON01 (2026-10-18): `getch(h)` — BDOS typeahead first, else `Bconin(h)`;
+no `conbrk`, no echo (`bdos/console.c:375-378`; `tos-api/src/gemdos/console.rs`
+`crawcin`).

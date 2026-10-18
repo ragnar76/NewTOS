@@ -189,3 +189,6 @@ error code — it is indistinguishable from "no input".
 ## NewTOS implementation notes
 
 (Empty during Phase 00.)
+
+TASK/CON01 (2026-10-18): `constat(h)` with the BDOS typeahead check first, as
+above (`tos-api/src/gemdos/console.rs` `constat`).

@@ -1,0 +1,37 @@
+measurement-2026-10-18-con01 -- Developer run for TASK/CON01 (BDOS console layer as EmuTOS bdos/console.c: glbcolumn per device,
+64-key typeahead for AUX/CON, conbrk Ctrl-C/S/Q/X + bell, tabout/cookdout, cgets echo with newline(h, stcol), getch typeahead
+first) and TASK/PROC04 decision "Cconrs from a redirected file stops at max read unsigned" (named deviation, docs/COMPATIBILITY.md).
+Base HEAD 1e371915, UNCOMMITTED working tree. Host macOS, QEMU -M raspi4b -append serial=on, one QEMU at a time, per-run APFS clone
+of one private 64 MiB FAT16 card (never a real card, no Pi). Scratch: session scratchpad .../scratchpad/con01 (method/env.sh).
+
+WHAT CHANGED (code): tos-api/src/gemdos/console.rs (Typeahead, AUX_/CON_TYPEAHEAD, GLBCOLUMN, conbrk, conout, tabout, getch,
+getch_restartable, constat with typeahead, edit_line = cgets with backsp/newline/cookdout over LineEditIo {read_byte, conout,
+column, ...}; Cconin/Cnecin/Crawcin/Crawio-read/Cconis/Cconout/Cconws/Cconrs/Fread-dev/Fwrite-CON on that layer; output_break
+removed; redirect_to_file Cconrs max unsigned), tos-api/src/bdos/process/standin.rs (stdhdl_init_console at boot), doc-only
+tos-api/src/host.rs + kernel/src/host_env.rs, kernel/src/selftest_console.rs (unwired selftest follows the new trait/contract).
+Spec first: docs/api/gemdos/console/{01,02,06,07,08,09,0a,0b,12}, file/{3f-fread,40-fwrite}.md, _dispatcher.md §5, _state.md §2,
+docs/COMPATIBILITY.md.
+
+1 HOST TESTS RED (spec + tests changed, code still HEAD): serial/hosttest-red.log
+  con01_console_typeahead (new, 16): 14 FAILED, 2 pass (cconrs_ctrl_x_erases_the_line, raw_output_does_not_take_keys = guards)
+  fs11_device_rw: 5 FAILED (R9/R10 echo, R11/R12 cooked echo, W3-W8 tabs, W12 typeahead, W14 Ctrl-S pause)
+  proc04_console_redirect: 1 FAILED (a_cconrs_max_is_unsigned: max 200 read 250 bytes past the record)
+2 HOST TESTS GREEN: serial/hosttest-green-con01-fs11-proc04.log (16/44/12 pass); full `cargo xtask test` checks/green-host-tests.txt
+  = 1465 passed / 0 failed / 1 ignored (before: 1449/0/1; +16 new).
+3 BUILD/CLIPPY/DRIFT/SDK (method/checks.sh green; checks/green-*.txt): release builds rpi4 and qemu-virt rc=0, 0 errors,
+  kernel=94 tos-api=64 warnings each (= baseline); clippy both boards tos-api=76 kernel=125 (= baseline), no hit in a touched file;
+  desk drift probe TOTAL 0; sdk host tests 20/0/0.
+4 QEMU EmuCON SESSION (method/build-inj.sh head|wt, card.sh, run.sh, con01.script; injector armed on launch:P4Z2, EmuCON in C:\SUB):
+  'cat tabs.txt', 'cat long.txt' (6000 lines), Ctrl-S at +2560, 'ver' typed at +2700, Ctrl-Q at +3600, Enter at +3700.
+  wt  (serial/emucon-wt.log, kernel8-wt-inj sha 3a2461ae...): TABS expanded to spaces in the serial bytes; on screen
+      "ABCDEFGHIJKLMNOP\r\tZ|" shows "        Z|KLMNOP" (tab spaces overwrite, screendumps/emucon-wt-t26.png). Output stops after
+      "line 00063" right after the Ctrl-S feed (hz_200 5641) and resumes after Ctrl-Q (6681): t30 == t32 identical frames
+      (emucon-wt-t30/t32.png, both at line 00063), t34 moves on. 'ver' + Enter typed during pause/output land in the BDOS typeahead
+      and execute at the next prompt after "END OF LONG.TXT" (emucon-wt-t60.png: "C:\SUB> ver / NewTOS 0.5 ..."). 0 EXC/PANIC.
+  head (serial/emucon-head.log, kernel8-head-inj sha c1e97e02...): TAB raw (cursor jump, "ABCDEFGHZ|KLMNOP",
+      emucon-head-t26.png); no pause (t30 != t32); the injector could not even feed during the output (no pump on the old peek
+      path: every key of +2560..+3700 is fed only at hz_200 10634, after "END OF LONG.TXT"). Final frame identical to wt.
+  Output duration of the 6000-line cat: head about 26 s, wt about 27 s plus the 5 s pause (2-s screendump grid) -- no visible
+  slow-down from the per-byte Bconstat pump on raspi4b (no USB there; real-Pi4 cost not measured).
+  checks/kernels-cards.sha256 (kernels, card, LONG.TXT), checks/screendumps-all.sha256 (all 2-s dumps of both runs; 11 kept).
+NOT RUN (Tester): APITEST, S2ALL/S2ALLS, VFORK, desktop/TeraDesk/QED typing, qemu-virt boot, memprot modes, real Pi 4.
