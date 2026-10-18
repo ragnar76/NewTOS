@@ -126,3 +126,11 @@ alle Fragen aus §7: **EmuTOS-treu**.
 
 Reihenfolge (seriell): Spec fuer alles → Stufe 1 + B4 → PROC04 Punkt 2 →
 Analyse Stufe 3/B5 → Bau Stufe 3/B5. Jeweils rot/gruen + unabhaengiger Tester.
+
+## Stufe 1 + B4 erledigt (2026-10-18, QEMU)
+
+Bau `31db1d1c`; Belege
+`measurements/measurement-2026-10-18-proc03-s1/` (rot/gruen) und
+`measurements/measurement-2026-10-18-proc03-s1-test/` (Tester PASS).
+Naechstes: PROC04 Punkt 2; B5 wartet auf Anwenderentscheidung (Konflikt mit
+ARCH03 E15, `_run-ownership-curdir.md` D-8/D-9).
