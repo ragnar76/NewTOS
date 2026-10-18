@@ -1,0 +1,29 @@
+measurement-2026-10-18-proc04-curdir-test -- Tester: independent regression test of the UNCOMMITTED PROC04 point-2 working tree
+(per-PD current drive/directory, tos-api/src/bdos/fs/curdir.rs) against HEAD bee5a392. No product code touched, nothing committed/stashed/
+checked out (git status before/after identical). Host macOS, QEMU -M raspi4b (-append serial=on [memprot=strict|off]), -M virt (boot only),
+one QEMU at a time, per-run APFS clones (cp -c) deleted after each run, private 64 MiB FAT16 cards (labels P3PRB/T113/A113API), never a real card.
+Scratch = session scratchpad .../scratchpad/tc (kernels, trees, cards). Developer's dir measurement-2026-10-18-proc04-curdir untouched (read/copy only).
+Kernels: fresh `git archive bee5a392` trees (+ uncommitted kernel/ tos-api/ files for side wt), release rpi4, SOURCE_DATE_EPOCH=1792152000;
+bit-identical to the developer's: head-plain 654c2f1b, wt-plain af0f7ed8, wt-inj 7483ceae (checks/kernels.sha256). Injectors on scratch trees only.
+
+1 DEVELOPER'S PROBE (method/run-probe.sh, p4probe card): wt on/strict/off: 6 RESULT lines each (AUTO, ACC, Z, Z2, EMU, EMU), all fails=0, 0 FAIL lines,
+  0 EXC/PANIC (serial/p4-wt-*.log). head on (red control): AUTO 6, ACC 1, Z 6, Z2 5, EMU 1 + only one EMU line (serial/p4-head-on.log).
+2 REGRESSION (method/regress/series.sh, wt vs head, on/strict/off; checks/series-*.out): APITEST 109/0/5 all six, 117 result lines identical head=wt per mode;
+  S2ALL (on/off) / S2ALLS (strict, 4 intended [crash] lines) PASS, VFORKT PASS, PASS/FAIL lines identical. S2ALLS strict: wt log has 2 fewer trailing
+  "[inj] launch:SALLS feed" lines than head (Space injector runs on wall time; run ended 1 s earlier) -- after "S2ALL: PASS", not a behaviour difference.
+  TeraDesk -> F1 -> QED: 12/12 dumps byte-identical (sha 5d8e72ff..), viewed: QED menu bar (German, from qed.rsc), green hatched work area.
+3 INTERACTIVE (new scripts scripts/n/*.spec; cards-n.sh; cwdprobe.c = Tester scaffolding printing "[CWD tag] drv path mark pd37"; DL=1.0 s):
+  dn NEWDESK (c-nd): C: window, AFOLD, BSUB, launch CWDB.NAP in \AFOLD\BSUB, closer to AFOLD, launch CWDA, closer to root, launch CWDR.
+  tn TeraDesk (c-nt): same path (double-click folders, closer = parent, double-click programs).
+  qn QED (c-nq): Ctrl-O fsel, drive C, click AFOLD, click BSUB, double-click MARK.TXT -> QED loads C:\AFOLD\BSUB\MARK.TXT ("sub-B").
+  wt: CWDB drv=C path='\AFOLD\BSUB' mark='sub-B', CWDA '\AFOLD' 'folder-A', CWDR '' 'root-mark' (relative Fopen of MARK.TXT proves cwd), pd37=2, in dn and tn.
+  head: same drv/path/mark; pd37=0x00000000 (HEAD never sets PD+0x37) -> the only observable difference, in line with the change.
+  Pixels head vs wt: dn 11/11, tn 11/11, qn 5/5 byte-identical (screendumps/n).
+4 MATRIX kd (desk / acc(SYSACC.NAC 812ddd57) / td / qed, scripts/m113, head vs wt): desk 18/18, acc 18/18, td 24/24 identical; qed 20/21 first run:
+  q3-ctrl-q DIFF 99 px (head: pointer visible at 330,300; wt: pointer not drawn, 1-px artifact at bottom) = desktop redraw after Ctrl-Q caught mid-frame (the
+  desktop is armed +/-1 tick apart in both logs). 3 repeats of qed head+wt (screendumps/rep, 63 dump pairs): all identical -> one non-reproducible timing
+  deviation, cause not established. Serial volume identical in all: desk 236/236, acc 260/260 (sched-switch 12/12), td 319/319, qed 291/291. 0 EXC/PANIC.
+5 QEMU-VIRT boot (method/virt-boot.sh, fresh release tree): "[proc] stand-in PDs ..." and "[desk] desktop up (0 drives)", 0 EXC/PANIC (serial/virt-wt-boot.log).
+6 HOST: cargo xtask test 1435 passed / 0 failed / 1 ignored incl. proc04_curdir_per_pd.rs (checks/host-tests.txt); sdk/run-host-tests.sh 20/0/0 (checks/sdk-host.txt).
+NOT RUN: real Pi 4, memprot=verify, clippy/warning delta (not requested; developer reports 64/94, 76/125), head qemu-virt baseline, accessory Dsetpath (B5 open),
+  a hand-typed EmuCON session (the developer's emucon.script is injector-driven), program launched from a folder on a second drive.
