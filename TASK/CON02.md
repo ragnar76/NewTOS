@@ -1,6 +1,6 @@
 # CON02 — `Cconout`/`Cconws` folgen nicht der Umlenkung von Handle 1
 
-Status: **OFFEN** · Prioritaet: **P3** · Typ: Konformitaet — Nebenfund LIBC-FSTAT (2026-10-17)
+Status: **ERLEDIGT** 2026-10-18 (mit PROC04 Punkt 1, `1a306120`) · Prioritaet: **P3** · Typ: Konformitaet — Nebenfund LIBC-FSTAT (2026-10-17)
 
 NewTOS-`Cconws` schreibt immer auf CON, auch wenn Handle 1 per `Fforce`
 umgelenkt ist (`measurements/measurement-2026-10-17-libc-fstat/`). EmuTOS
@@ -12,3 +12,7 @@ C-Funktionen betroffen sind), Spec `docs/api/gemdos/console/*` ergaenzen,
 dann Developer. Beruehrt FS11 (Geraetetabelle) und CON01.
 
 [Gemeinsame Regeln](README.md) gelten.
+
+## Erledigt (2026-10-18) — mit PROC04 Punkt 1 (`1a306120`)
+
+Siehe [PROC04](PROC04.md); Belege `measurements/measurement-2026-10-18-proc04-redir*/`.

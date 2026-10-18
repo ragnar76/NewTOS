@@ -78,3 +78,9 @@ spaeteres Schreiben/`Fclose` ueber den Handle fasst die Karte nicht mehr an
   benannte Abweichung in `docs/COMPATIBILITY.md`; fuer `max` ≤ 127 identisch.
   Umsetzung zusammen mit CON01.
 - Zeichenweises Zurueckschreiben bei Umlenkung auf eine Datei → [FS16](FS16.md).
+
+## Punkt 1 erledigt (2026-10-18, QEMU, `1a306120`)
+
+Belege `measurements/measurement-2026-10-18-proc04-redir/` (rot → gruen) und
+`measurements/measurement-2026-10-18-proc04-redir-test/` (Tester PASS). Damit
+ist auch [CON02](CON02.md) erledigt.
