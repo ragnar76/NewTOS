@@ -21,3 +21,14 @@ Abhaengigkeiten: —
 
 Jeden Punkt gegen die EmuTOS-Quelle bestaetigen, Spec ergaenzen, 1:1 umsetzen,
 Hosttests; Abnahme: QEMU-Reihe wie `measurements/measurement-2026-10-06-proc02/`.
+
+## Punkt 2 erledigt (2026-10-18, QEMU, `59c8eb4c`)
+
+Laufwerk und Verzeichnis je PD wie EmuTOS (Teil des PROC03-Pakets,
+Anwenderentscheidung 2026-10-18). Belege
+`measurements/measurement-2026-10-18-proc04-curdir/` (rot 19 Fehler → gruen)
+und `measurements/measurement-2026-10-18-proc04-curdir-test/` (Tester PASS,
+`4f4602aa`: Ordnernavigation in NEWDESK/TeraDesk, Start aus Ordner, QED-fsel).
+Accessories: eigener PD bis B5 entschieden. Nebenbefunde: 16 statt 26
+Laufwerke (`BLKDEVNUM`/`NUMCURDIR`, vgl. FS12), Pfade auf 63 statt 111 Byte.
+Punkte 1, 3, 4, 5 offen.
