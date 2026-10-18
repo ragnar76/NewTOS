@@ -24,23 +24,41 @@ darauf, das du noch brauchst.
 2. Installation
 ---------------
 
-WICHTIG: NewTOS liest zur Zeit nur FAT16. Die Karte braucht eine
-MBR-Partitionstabelle und eine erste Partition mit FAT16 (hoechstens
-2 GB). FAT32 und exFAT werden noch nicht erkannt.
+WICHTIG — so muss die Karte aussehen:
+
+- Partitionstabelle: MBR (nicht GPT).
+- Erste Partition: FAT16, HOECHSTENS 2 GB. Darauf kommt NewTOS (Laufwerk C:).
+- FAT32 und exFAT erkennt NewTOS noch nicht. Der Raspberry Pi Imager und
+  das normale Formatieren unter Windows/macOS erzeugen FAT32 oder exFAT —
+  das funktioniert NICHT.
+- Die Grenze von 2 GB ist hart: FAT16 mit mehr als 2 GB braucht 64-KB-
+  Cluster (Windows erlaubt das bis 4 GB), NewTOS nimmt hoechstens
+  32-KB-Cluster an — wie das Atari-TOS.
+- Optional: bis zu drei weitere primaere Partitionen, ebenfalls FAT16 bis
+  2 GB, erscheinen als Laufwerke D:, E:, F:. Der Rest der Karte bleibt
+  einfach frei.
 
 macOS (Terminal, DISK durch die Karte ersetzen, z. B. disk4 —
 mit "diskutil list" pruefen, sonst loeschst du die falsche Platte):
 
-    diskutil partitionDisk /dev/DISK 1 MBR "MS-DOS FAT16" NEWTOS 2G
+    diskutil partitionDisk /dev/DISK 2 MBR "MS-DOS FAT16" NEWTOS 2G "Free Space" FREI R
 
-Windows (Eingabeaufforderung als Administrator, X: = Kartenlaufwerk,
-Karte vorher mit einer Partition von hoechstens 2 GB anlegen):
+Windows (Eingabeaufforderung als Administrator; N = Nummer der Karte aus
+"list disk" — genau pruefen, "clean" loescht die ganze Platte!):
 
-    format X: /FS:FAT /V:NEWTOS /Q
+    diskpart
+    list disk
+    select disk N
+    clean
+    convert mbr
+    create partition primary size=2000
+    format fs=fat quick label=NEWTOS
+    assign
+    exit
 
-Linux:
+Linux (sdX = die Karte, mit "lsblk" pruefen):
 
-    sudo parted /dev/sdX --script mklabel msdos mkpart primary fat16 1MiB 2GiB
+    sudo parted /dev/sdX --script mklabel msdos mkpart primary fat16 1MiB 2000MiB
     sudo mkfs.fat -F 16 -n NEWTOS /dev/sdX1
 
 Dann den INHALT dieses ZIP-Ordners "KARTE" auf die Partition kopieren
