@@ -131,8 +131,9 @@ pub enum EnvSpec<'a> {
     /// (`bdos/proc.c:419-420`). With no running process `run` is the
     /// kernel's stand-in PD ([`super::standin::kernel_run_env`],
     /// TASK/PPARENT): `initial_basepage`'s empty double-NUL env
-    /// (`bdos/bdosmain.c:341`) before the AES, the AES environment
-    /// (`default_env`, `bios/bios.c:626-636`) after it. A parent whose
+    /// (`bdos/bdosmain.c:341`) before the AES, the AES / accdesk / EmuCON
+    /// environment (copies of `default_env`, `bios/bios.c:626-636`;
+    /// TASK/PROC03) after it. A parent whose
     /// `p_env` is 0, or a kernel with no stand-ins yet, hands down the empty
     /// env.
     Inherit,
@@ -1499,8 +1500,9 @@ unsafe fn alloc_env_for(env: EnvSpec<'_>, prgflags: u32) -> Result<Option<Long>,
 /// `run->p_env` up to and with its double NUL. `run` is the running
 /// process's basepage (kernel alias); with no running process (`null`) it is
 /// the kernel's stand-in PD (TASK/PPARENT, [`super::standin::kernel_run_env`]):
-/// `initial_basepage`'s `double_nul` before the AES, the AES environment
-/// after it. A `p_env` of 0, or no stand-ins yet, gives the empty env.
+/// `initial_basepage`'s `double_nul` before the AES, the AES / accdesk /
+/// EmuCON environment after it (TASK/PROC03). A `p_env` of 0, or no stand-ins
+/// yet, gives the empty env.
 ///
 /// # Safety
 ///

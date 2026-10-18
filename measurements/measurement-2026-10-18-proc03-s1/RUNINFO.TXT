@@ -1,0 +1,70 @@
+measurement-2026-10-18-proc03-s1 -- TASK/PROC03 stage 1 + B4 (user decision 2026-10-18 "alles EmuTOS-treu"): accdesk and
+EmuCON stand-in PDs (p_parent chain X -> accdesk -> AES -> initial_basepage -> 0, EmuCON child X -> EmuCON -> accdesk -> ...),
+Pterm returning through p_parent (D-5), decisions D-1..D-4. Developer self-evidence; the Tester's verdict is separate.
+
+Date 2026-10-18, branch main, HEAD d45082a8 + this change (uncommitted). Host macOS, QEMU -M raspi4b, -append "serial=on
+[memprot=strict|off]", one QEMU at a time, per-run APFS clones (cp -c) of one base card per content, deleted after each run.
+No SD card, Pi or TT touched; tools/make-sd-image.sh not used. Scratch = session scratchpad .../scratchpad/ps1 (method/env.sh).
+Spec: docs/api/gemdos/process/_parent-and-environment.md (§1.1, §2.3, §2.4, §3, §4.4 as built) and
+_run-ownership-curdir.md (§2, §6.4 decisions D-1..D-5). EmuTOS pin 1a7484ab.
+
+METHOD
+  method/p3s1probe.c       probe WITH expectations (replaces the read-only measurement-2026-10-17-proc03 p3probe.c):
+                           P3AUTO.NCP (AUTO), P3Z.NAP (#Z), P3Z2.NAP (shel_write), P3ACC.NAC (accessory), P3E.NCP (run
+                           from the in-kernel EmuCON). Checks chain depth per spec §1.1, the stand-in fields (D-1 p_tbase 0,
+                           D-2 p_hitpa p+0x100, D-3 p_xdta &p_cmdlin, flags, env copies, p_uft), shel_envrn, D-4 (AES
+                           p_cmdlin = ad_stail), B4: grandkid bends p_parent to Z -> Z resumes with 0x77 (kid never
+                           resumed); p_parent 0x12345000 / 0 / AES stand-in -> back to the kid; Z2's kid bends p_parent to
+                           accdesk -> Z2 ends, sh_ldapp sees rc 0x66. Own-env check accepts libc's joined "PATH=C:\"
+                           (sdk/libc/tests/cmdargs-host.c:353) -- first red run used the raw form only (log overwritten).
+  method/build-p3s1.sh, card.sh, mkcard.sh, p3s1.inf (#Z C:\P3Z.NAP), runts-mode.sh (timed serial)
+  method/emucon.script     tools/inject-arm.py launch:P3Z2 -- types "run p3e.ncp" + Enter, later "exit" + Enter into the
+                           EmuCON that P3Z2 requested by shel_write(EMUCON) (headless EmuCON child: REACHABLE).
+  method/build-kernels.sh  git archive d45082a8 (+ the working-tree kernel/ tos-api/ files for side wt) into scratch trees,
+                           release rpi4, SOURCE_DATE_EPOCH=1792152000; plain / inj / s2s / tdq (inject-arm on scratch only).
+  method/checks.sh         static checks on the shared tree (cargo xtask test, fresh release builds + clippy both boards,
+                           desk drift probe, SDK host tests) -> checks/wt-*.txt, checks/wt-summary.txt
+  method/regress/          build-s2.sh + tests/ (copied from measurement-2026-10-13-libc-tty-acceptance; ENVKID from
+                           envkidm.c as the S2ALLM runs of measurement-2026-10-13-mem05-acceptance -- plain envkid.c is stale
+                           since crt0-main), api-build.sh / api-card.sh (from measurement-2026-10-17-rst01-test), cards.sh,
+                           run.sh, series.sh, space.script (strict S2ALLS crash prompts), f1.script + TERADESK-QED.INF
+                           (F1 in TeraDesk starts QED), all for side head and wt.
+
+RED (serial/red-head-on.log, red-head-strict.log; kernel8-head-inj, = HEAD + injector)
+  AUTO 0 fails, ACC 0 fails. Z: depth 4 (want 5), the "accdesk" is the AES stand-in (its parent initial), the "AES" is
+  initial (lowtpa 0, no env), B4 unwind FAIL (kid resumed, Z got 0x99), D-4 FAIL -> 7 fails. Z2: same chain FAILs, kid R's
+  Pterm resumed Z2 (FAIL) -> 7. EMU: depth 4 (want 6), parent = AES stand-in -> 8 fails. Identical on and strict.
+
+GREEN (serial/green-wt-{on,strict,off}.log; kernel8-wt-inj a40cf53c..., memprot strings checked in each log)
+  boot: "[proc] stand-in PDs: initial_basepage 0x00268000, AES PD 0x00268100, accdesk 0x00268300, EmuCON 0x00268400"
+  AUTO RESULT fails=0, ACC fails=0, Z fails=0, Z2 fails=0 (and its unwind: "[shell] sh_ldapp: 'C:\P3Z2.NAP' exited with
+  rc=102" = 0x66), EMU fails=0 -- in on, strict and off; 0 EXC/PANIC; desktop up again after EmuCON "exit".
+  [pterm] lines: "p_parent names the PD 1 launch(es) further up -- unwinding to it" (Z's grandkid, Z2's kid) and three
+  "p_parent 0x12345000 / 0x00000000 / 0x00268100 names no resume point ... returning to the parent it was started from".
+  NOT probed: NEWDESK's own p_parent (embedded binary; same launch() -> set_kernel_parent path as #Z).
+
+STATIC CHECKS (checks/wt-summary.txt, final tree)        baseline (ticket / rst01-test)   this tree
+  host tests (cargo xtask test) pass/fail/ignored         1418/0/1                         1424/0/1 (+6: proc03_chain_and_pterm_return.rs)
+  release warnings tos-api / kernel, rpi4 and qemu-virt   64/94                            64/94 both, 0 errors
+  clippy tos-api / kernel, rpi4 and qemu-virt             76/125                           76/125 both (one explicit_counter_loop
+                                                                                           in pterm.rs found and fixed before this run)
+  desk drift probe                                         0                                0
+  SDK host tests                                           20/0/0                           20/0/0
+
+REGRESSION (serial/rg-<side>-<mode>-*.log, side head = kernel8-head-*, wt = kernel8-wt-*; modes on/strict/off)
+  APITEST (#Z)            head 109/0/5, wt 109/0/5 in all three modes; the 118 [OK]/[FAIL]/[SKIP]/TOTAL lines identical
+                          head vs wt per mode (unmasked).
+  S2ALL (on/off), S2ALLS (strict, 2 intended crashes answered by the s2s injector)
+                          S2ALL: PASS head and wt in every mode; verdict lines identical head vs wt (numbers masked).
+  VFORKT alone            VFORK: PASS head and wt, all modes, verdict lines identical.
+  TeraDesk -> F1 -> QED   QED menu bar on screen at t25/t40 in every mode; screendumps byte-identical head vs wt
+                          (sha256 5d8e72ff..., checks/screendumps.sha256; screendumps/rg-{head,wt}-on-tdqed-t40.png).
+  Accessory + desktop     covered by the probe runs (P3ACC loaded, Pexec kid, desktop up after EmuCON) -- no separate
+                          desktop/accessory screendump comparison was taken (Tester).
+
+BINARIES (not kept): checks/kernels.sha256 (kernel8-head-plain fed8a420... = the HEAD kernel of
+measurement-2026-10-17-proc03; kernel8-wt-plain 654c2f1b... = archive + working-tree files; kernel8-wt d3e6f324... /
+kernel-virt-wt f596f1b3... from checks.sh on the shared tree), checks/probe-programs.sha256, checks/regress-programs.sha256.
+
+NOT RUN: qemu-virt boot (only built), real Pi 4, desk/accessory pixel comparison, memprot=verify, CRASHTST/E10/MPROT crash
+series, Doom, PORT10. Scratch cleaned at the end (see report).

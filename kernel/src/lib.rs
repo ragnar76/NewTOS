@@ -480,20 +480,25 @@ extern "C" fn kernel_main_rust(dtb_phys: usize, entry_el: u64) -> ! {
     // EmuTOS shows its AUTO programs on the console before the GUI.
     fbcon::clear_and_home();
 
-    // The two PDs EmuTOS's `run` is while kernel code is on the stack
-    // (TASK/PPARENT, `tos_api::bdos::process::standin`): `initial_basepage`
-    // (`bdos/bdosmain.c:337-347`, with `Dsetdrv(bootdev)` at `bios/bios.c:827`)
-    // and the AES PD with its copy of `default_env` (`init_default_environment`,
-    // `bios/bios.c:626-636,828`; the PD itself `:862-865`). Built here, where
+    // The PDs EmuTOS's `run` is while kernel code is on the stack
+    // (TASK/PPARENT, TASK/PROC03, `tos_api::bdos::process::standin`):
+    // `initial_basepage` (`bdos/bdosmain.c:337-347`, with `Dsetdrv(bootdev)`
+    // at `bios/bios.c:827`) and the AES PD with its copy of `default_env`
+    // (`init_default_environment`, `bios/bios.c:626-636,828`; the PD itself
+    // `:862-865`); the accdesk and EmuCON PDs live in the same page and are
+    // built when they start (`enter_accdesk`, `enter_emucon`). Built here, where
     // the boot drive is known and no program has run yet, and published
     // read-only to every process, so the AUTO programs below already find
     // `initial_basepage` as their `p_parent` and its empty environment.
     // SAFETY: boot CPU, before the first program; pools and user tables exist.
     match unsafe { tos_api::bdos::process::standin::init(tos_api::bdos::fs::drive::boot_drive()) } {
         Some(va) => kprintln!(
-            "[proc] stand-in PDs: initial_basepage 0x{:08x}, AES PD 0x{:08x} (read-only to all)",
+            "[proc] stand-in PDs: initial_basepage 0x{:08x}, AES PD 0x{:08x}, accdesk 0x{:08x}, \
+             EmuCON 0x{:08x} (read-only to all)",
             va,
             tos_api::bdos::process::standin::aes_pd() as u64,
+            tos_api::bdos::process::standin::accdesk_pd() as u64,
+            tos_api::bdos::process::standin::emucon_pd() as u64,
         ),
         None => kprintln!(
             "[proc] stand-in PDs NOT published: programs cannot read their p_parent chain"
@@ -511,10 +516,9 @@ extern "C" fn kernel_main_rust(dtb_phys: usize, entry_el: u64) -> ! {
     embedded::register();
 
     // The AES starts — EmuTOS `exec_os` after `autoexec` (`bios/bios.c:
-    // 855-866`): from here on the kernel's `run` is the AES PD, the parent and
-    // the environment source of the desktop's, the `#Z` and the EmuCON
-    // programs and of the accessories' environments (`aes/gemshlib.c:645`,
-    // `util/gemdos.c:34`; TASK/PPARENT).
+    // 855-866`): from here on the kernel's `run` is the AES PD while the AES
+    // initialises (`aes/geminit.c:753-894`); each session below runs as the
+    // accdesk PD (TASK/PPARENT, TASK/PROC03).
     tos_api::bdos::process::standin::enter_aes();
 
     // ── The AES session loop — EmuTOS `gemstart.S:86-124` `aes_restart` ──
@@ -535,6 +539,17 @@ extern "C" fn kernel_main_rust(dtb_phys: usize, entry_el: u64) -> ! {
     // `SHW_SHUTDOWN`, so the `halt()` below is as unreachable as EmuTOS'
     // `Pterm0` after `ui_start`, and just as deliberately present.
     loop {
+        // `aes_run_rom_program(accdesk_start)` (EmuTOS `gem_main`,
+        // `geminit.c:894`; `gemshlib.c:570-581`) — the session runs in its own
+        // process, the accdesk PD (`p_parent` = the AES PD, a copy of its
+        // environment): `run` for everything `run_accs_and_desktop` does
+        // (`geminit.c:654-750`), so the accessories are loaded under it and
+        // the desktop, the `#Z` program and every program the desktop asks
+        // for get it as `p_parent` (`gemshlib.c:600-611,645`). A fresh PD per
+        // session (`gemstart.S:121-124`). TASK/PROC03 stage 1,
+        // `docs/api/gemdos/process/_parent-and-environment.md` §2.3.
+        tos_api::bdos::process::standin::enter_accdesk();
+
         // `gsx_init()` (EmuTOS `run_accs_and_desktop`, `geminit.c:675`) — the
         // AES opens the physical VDI workstation (`v_opnwk` → `gl_handle`,
         // `aes/gemgsxif.c:169-186`) and sets it up (`gsx_start`,
@@ -596,6 +611,11 @@ extern "C" fn kernel_main_rust(dtb_phys: usize, entry_el: u64) -> ! {
         // stays (`vdi/vdi_control.c:573-590`). On the shutdown path too, as
         // EmuTOS closes before `run_accs_and_desktop` returns.
         tos_api::aes::gsxif::gsx_wsclose();
+
+        // `run_accs_and_desktop` returns into `accdesk_start`, which ends with
+        // `Pterm0` (`gemstart.S:160-163`): `run` is the AES PD again
+        // (`bdos/proc.c:609`) for `gem_main`'s restart or shutdown.
+        tos_api::bdos::process::standin::leave_accdesk();
 
         if exit == tos_api::aes::shell::ShExit::Shutdown {
             break;

@@ -454,6 +454,77 @@ from accdesk at `PE_LOAD` time and are never used afterwards.
 | D-9 | Which §1.3 rows to reproduce for accessories beyond `Malloc` ownership (cwd, DTA, std handles, file owner, `p_flags` pool choice, `Pterm`, `Pexec` parent) | "as EmuTOS" says all; none is guarded, several are footguns | reproduce all (consistent with the decision) or list explicit exceptions |
 | D-10 | Leak of `dirtbl` use counts for accessory PDs (§4.5) | EmuTOS accident | not reproduced (invisible except exhaustion) |
 
+### 6.4 Developer decisions D-1…D-5 (TASK/PROC03 stage 1 + B4, 2026-10-18)
+
+Built as described in [`_parent-and-environment.md`](./_parent-and-environment.md)
+§4.4. D-6…D-10 are **not** decided here (B5 — the user still has to decide the
+D-8 conflict); memory ownership is unchanged.
+
+**D-1 — `p_tbase` of the AES, accdesk and EmuCON PDs: 0 (deviation by
+absence).** The source defines the field's *meaning* — the entry of the code
+the PD's process runs (`exec_os`, `accdesk_start`, `coma_start`, in ROM) — not
+a value a program can use. In NewTOS that code is kernel code: it has no
+address in any program's map (the kernel image is not EL0-readable, and the
+OSHEADER's `os_beg`/`os_end` bound no "ROM" a program could compare with,
+`loader.rs` OSHEADER notes). The candidates were (a) a fixed placeholder —
+invented, forbidden by the user decision ("Analyse vorlegen statt Werte zu
+erfinden") — and (b) the kernel function's physical address — a number no
+program can dereference and that changes with every build. No program in the
+SDK reads the field of a parent (`TASK/PROC03.md` §4). So 0, documented as
+absence, as Way A had it for the AES PD. `p_tlen`/`p_dlen`/`p_blen` are 0 in
+EmuTOS too.
+
+**D-2 — `p_hitpa`: `p + 0x100`; the stand-ins stay a kernel page outside the
+pools (option (a)).** EmuTOS's `p + max` is the largest free block at creation
+and goes stale at once: the code `Mshrink`s its block to the 0x100-byte PD
+without touching the field (`aes/gemstart.S:59-69,143-152`,
+`cli/cmdasm.S:26-37`); `p + 0x100` is the block as it really is afterwards.
+Option (b) — allocating the stand-ins with `alloc_tpa` in the pools — was
+rejected because it is the option that would **block** stage 3: there the
+stand-ins become memory *owners* (`m_own = run`, D-6), and an owner tag must
+never be confusable with a block of a real process. A kernel-page PD address
+can never be the address of a pool block (a real process's PD always is one),
+it survives every `Pterm`/`free_all_owned`, and the same address can be used
+for "free everything accdesk owned" at `leave_accdesk()` (EmuTOS's accdesk
+`Pterm0`, `bdos/proc.c:136-140`) before the next session reuses it. With (b)
+the PD block would itself be owned by the stand-in, would need its own
+publication to every process (pool blocks are per-owner under `memprot`), and
+`p + max` would point at memory the next allocations hand to others.
+
+**D-3 — `p_xdta`: `&p_cmdlin` of the stand-in.** EmuTOS's initial value
+(`init_pd_fields`, `bdos/proc.c:375`). Its later changes by AES-internal
+`dos_sdta(&D.g_dta)` (`aes/geminit.c:273,810`) have no counterpart — NewTOS's
+AES keeps its DTAs in kernel buffers — and no program can tell.
+
+**D-4 — AES PD `p_cmdlin` = `ad_stail`.** Representable, so built: every write
+of `ad_stail` in `tos-api/src/aes/shell.rs` (`set_launch_info`,
+`shel_write(SHW_EXEC)`, `shel_write(SHW_RESCHNG)`, `reinit`) mirrors the
+128-byte buffer into the AES stand-in (`standin::set_aes_cmdlin`); before the
+AES starts nothing is mirrored and `enter_aes()` gives the PD its empty tail
+(`init_pd_fields`). The accdesk and EmuCON PDs keep the empty tail EmuTOS
+gives them.
+
+**D-5 — `Pterm` returns through `p_parent`; a changed value is honoured when
+it names a resume point on the process's launch chain, otherwise the recorded
+parent resumes.** `tos-api/src/bdos/process/pterm.rs` `return_target`, read
+before the teardown as `bdos/proc.c:609` reads it before `ixterm`:
+
+| live `p_parent` at `Pterm` | Outcome | EmuTOS |
+|---|---|---|
+| = the value written at start (`Process::launch_parent`) | the recorded parent resumes (unchanged path) | same |
+| the PD of an ancestor slot `n + 1` launches up (suspended in its `Pexec`) | that ancestor's `Pexec` returns `rc & 0xFFFF`; the `n` processes between are **terminated** (files, memory, AES client released) and never resumed | resumes the ancestor's saved context with `rc`; the processes between are never resumed and **leak** (§2.2 row 3) — NewTOS frees instead of leaking |
+| the PD that started the chain's root (the stand-in the kernel launcher, or EmuCON, wrote; or an accessory root's own PD) | the root ends too; the launcher / EmuCON / accessory resumes with `rc` (`sh_ldapp` sees the program end with `rc`) | same (`run = accdesk` resumes `sh_ldapp`'s `dos_exec`) |
+| anything else: 0, not a PD, a process not on the chain, a stand-in with no resume point here (e.g. the AES PD or `initial_basepage` for a desktop program), the process itself | the recorded parent resumes as if the field were unchanged; the kernel logs one `[pterm]` line | 0: NULL `run`, crash; otherwise writes `rc` into whatever is there and jumps through its `P_A7SAVE` — undefined (§2.2 rows 4-5) |
+
+Why the fallback is "the recorded parent" and not "kill the parent too": the
+recorded parent is the only context NewTOS *knows* is waiting for this child
+(its frame is stored with the child's slot), it is what every unchanged
+program gets, and it is exactly the observable result of EmuTOS when the
+field is not changed — the safe outcome §5 asks for. The ancestor case is
+reproduced because it is the only changed value with a defined EmuTOS meaning
+(a suspended PD's saved context). Accessory `Pexec` children are unchanged by
+this stage (their `p_parent` is still the accessory's PD — B5).
+
 ## Related
 
 - [`_parent-and-environment.md`](./_parent-and-environment.md) — the chains and PD field contents.

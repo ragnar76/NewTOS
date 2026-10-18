@@ -708,21 +708,25 @@ programs (`bdos/bdosmain.c:337-342`, `bios/bios.c:685-695,855-866`,
 `aes/gemshlib.c:600-611,645`; **corrected 2026-10-18, TASK/PROC03**: this
 paragraph named the AES PD). NewTOS runs the AES and the desktop in the kernel,
 so `initial_basepage` and the AES PD exist as read-only stand-ins in a
-published kernel page with EmuTOS's field contents; the accdesk and EmuCON PDs
-are specified (`docs/api/gemdos/process/_parent-and-environment.md` §2.3-2.4)
-and not built yet. An AUTO program's
-`p_parent` is the `initial_basepage` stand-in, a desktop / `#Z` program's the
-AES-PD stand-in **today (EmuTOS: the accdesk PD — a deviation until PROC03
-stage 1)**, an accessory's 0 (never `proc_go`ed, `bdos/proc.c:370,541`);
+published kernel page with EmuTOS's field contents, and so (since TASK/PROC03
+stage 1, 2026-10-18) do the accdesk PD (one per AES session) and the EmuCON PD
+(one per console start; `docs/api/gemdos/process/_parent-and-environment.md`
+§2.3-2.4, §4.4). An AUTO program's
+`p_parent` is the `initial_basepage` stand-in, a desktop / `#Z` / `shel_write`
+program's the accdesk stand-in (whose parent is the AES PD), a program started
+from EmuCON the EmuCON stand-in, an accessory's 0 (never `proc_go`ed,
+`bdos/proc.c:370,541`);
 every process gets an environment (`alloc_env`, `bdos/proc.c:413-432`; the
 AES's is `default_env` `"PATH=\0X:\\\0"`, `bios/bios.c:626-636`), and
 `shel_envrn` searches the AES-PD stand-in's. **Observable differences:** the
 stand-ins are read-only to programs, never the running process (`*os_run`
-during the desktop is unchanged), the AES PD has `p_hitpa = p_lowtpa + 0x100`
-and `p_tbase = 0` (no AES TPA, no AES code in the user address space), and a
-`Pexec` from the in-kernel EmuCON gets the AES-PD stand-in as parent where
-EmuTOS has an EmuCON PD, whose own parent is the accdesk PD
-(`TASK/PROC03.md`).
+during the desktop is unchanged), the AES, accdesk and EmuCON PDs have
+`p_hitpa = p_lowtpa + 0x100` and `p_tbase = 0` (no TPA, no code in the user
+address space; decisions D-1/D-2 in
+`docs/api/gemdos/process/_run-ownership-curdir.md` §6.4). `Pterm` returns
+through `p_parent` (`bdos/proc.c:609`); a value changed to something that is
+not an ancestor on the launch chain returns to the recorded parent instead of
+EmuTOS's crash (D-5).
 Spec: `docs/api/gemdos/process/_parent-and-environment.md`.
 
 **`PRGFLAGS` travel in an ELF note** (ARCH03 stage 2a, plan E8b, user

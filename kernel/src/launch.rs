@@ -178,7 +178,10 @@ fn launch(path: &[u8], name: &[u8], tail: &[u8], kind: Launch) -> i32 {
     // `sh_ldapp` passes `ad_envrn`, the AES PD's `p_env` (`aes/gemshlib.c:645`,
     // `aes/gemstart.S:78-96`). Both are `EnvSpec::Inherit` with no running
     // process: the kernel's stand-in `run` (TASK/PPARENT,
-    // `tos_api::bdos::process::standin`). The command `tail` is copied into
+    // `tos_api::bdos::process::standin`) — in the shell loop the accdesk PD,
+    // whose environment is a copy of `ad_envrn` with the same bytes
+    // (`docs/api/gemdos/process/_parent-and-environment.md` §3; nothing writes
+    // either block). The command `tail` is copied into
     // the child's `p_cmdlin` (offset 0x80) by the loader.
     // SAFETY: single-CPU boot/desktop context; the BDOS is not concurrently
     // locked, and the returned `LoadedChild` borrows nothing past this call.
@@ -246,8 +249,10 @@ fn launch(path: &[u8], name: &[u8], tail: &[u8], kind: Launch) -> i32 {
     }
     // `proc_go`: `p->p_parent = run` (`bdos/proc.c:541`) — `run` is kernel
     // code here, so the stand-in PD of this moment: `initial_basepage` for an
-    // AUTO program (`bios/bios.c:693`), the AES PD for the desktop's and the
-    // `#Z` program (`aes/gemshlib.c:645`; TASK/PPARENT).
+    // AUTO program (`bios/bios.c:693`), the accdesk PD for NEWDESK, the
+    // desktop's, the `shel_write` and the `#Z` program (`aes/gemshlib.c:
+    // 600-611,645`, run in the accdesk process; TASK/PPARENT, corrected by
+    // TASK/PROC03).
     // SAFETY: single-CPU kernel context; the slot holds the loaded image.
     unsafe { process::pexec::set_kernel_parent(child.slot) };
     set_current(process::pd_of(child.slot));

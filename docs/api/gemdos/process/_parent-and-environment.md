@@ -222,7 +222,7 @@ in the AES or in EmuCON writes the environment (`ad_envrn` is only read,
 
 ## 4. NewTOS mapping
 
-### 4.1 Way A as built (reference; superseded by §4.2 for the chain)
+### 4.1 Way A as built 2026-10-06 (reference; superseded by §4.4)
 
 NewTOS has no AES process and no `initial_basepage`: the AES and the shell run
 in the kernel and `RUN` is `null` while kernel code is on the stack. Way A
@@ -274,6 +274,52 @@ running process copies the `kernel_run()` stand-in's environment.
 | `Pexec` from EmuCON | **EmuCON** stand-in | the EmuCON stand-in's environment (= AES copy) |
 
 Chain read from a `#Z` program: accdesk → AES → `initial_basepage` → 0.
+
+### 4.4 As built (TASK/PROC03 stage 1 + B4, 2026-10-18)
+
+`tos-api/src/bdos/process/standin.rs` — the one stand-in page (kernel-writable,
+published read-only to every process at VA = PA, `PROT_PR`) now holds four
+PDs; the Way-A offsets are unchanged:
+
+| Page offset | Content |
+|---|---|
+| +0x000 | `initial_basepage` (§2.1) |
+| +0x100 | AES PD (§2.2) |
+| +0x200 / +0x210 | `double_nul` / AES environment = `ad_envrn` (12 bytes) |
+| +0x300 | **accdesk PD** (§2.3), rebuilt by `enter_accdesk()` at the start of every AES session |
+| +0x400 | **EmuCON PD** (§2.4), rebuilt by `enter_emucon()` at every console start |
+| +0x500 / +0x510 | accdesk / EmuCON environment (copies of their parent's, 12 bytes) |
+
+`kernel_run()` (EmuTOS `run` while kernel code is on the stack) follows §1.2 of
+the companion file: `initial_basepage` → `enter_aes()` (`kernel/src/lib.rs`,
+after the AUTO folder) → AES PD → `enter_accdesk()` at the top of each pass of
+the AES session loop (= `aes_run_rom_program(accdesk_start)`, before
+`gsx_init`/`load_accs`) → accdesk PD → `leave_accdesk()` after `gsx_wsclose`
+(= `accdesk_start`'s `Pterm0`) → AES PD. `enter_emucon()`/`leave_emucon()`
+bracket the in-kernel EmuCON (`kernel/src/shell.rs`, `run_console`,
+`run_console_without_desktop`); the EmuCON PD's parent is whatever `run` was
+(the accdesk PD in the shell loop's CONSOLE arm and its fallbacks).
+
+Fields: §2.3/§2.4 with the Developer decisions of
+[`_run-ownership-curdir.md`](./_run-ownership-curdir.md) §6.4 — `p_tbase = 0`
+(D-1), `p_hitpa = p + 0x100` (D-2), `p_xdta = &p_cmdlin` (D-3); the AES PD's
+`p_cmdlin` mirrors `ad_stail` (D-4, every write in `tos-api/src/aes/shell.rs`).
+`p_uft` and `p_curdrv` are copied from the creating stand-in (`init_pd_files`);
+`p_curdir[]` stays 0 until PROC04 point 2.
+
+Resulting chains (measured, `measurements/measurement-2026-10-18-proc03-s1/`,
+QEMU raspi4b, memprot on/off/strict): AUTO depth 3; `#Z` and `shel_write`
+programs depth 5 (X → accdesk → AES → `initial_basepage` → 0); a program
+started by EmuCON depth 6; accessory 0; a `Pexec` child → its caller. NEWDESK
+takes the same `launch()` path as the `#Z` program (`set_kernel_parent` →
+accdesk); it was not probed (embedded binary).
+
+Not changed in this stage (B5, `_run-ownership-curdir.md` §6.3 D-6…D-9, user
+decision pending): `RUN`/`*os_run` are still `null`/the per-process cell in
+kernel context and during an accessory, memory owner tags of kernel-context
+allocations are the kernel sentinel, an accessory's `Pexec` child gets the
+accessory's PD as `p_parent` (EmuTOS: `run`, §1.1). The accessory environment
+is now the accdesk copy (same bytes as before).
 
 ## Edge cases
 

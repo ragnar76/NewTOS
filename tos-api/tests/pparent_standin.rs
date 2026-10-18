@@ -4,8 +4,11 @@
 //! EmuTOS (`references/emutos`, pin `1a7484ab`): `p_parent` is written only by
 //! `proc_go`, `p->p_parent = run` (`bdos/proc.c:541`); `run` is
 //! `&initial_basepage` while the BIOS runs the AUTO folder
-//! (`bdos/bdosmain.c:337-342`, `bios/bios.c:685-695`) and the AES PD from the
-//! AES on (`bios/bios.c:855-866`, `aes/gemshlib.c:569-580,645`); an accessory
+//! (`bdos/bdosmain.c:337-342`, `bios/bios.c:685-695`), the AES PD while the
+//! AES initialises (`bios/bios.c:855-866`) and the accdesk PD — the parent of
+//! the desktop's and the `#Z` programs — from `aes_run_rom_program
+//! (accdesk_start)` on (`aes/geminit.c:894`, `aes/gemshlib.c:570-581,645`;
+//! corrected by TASK/PROC03, see `proc03_chain_and_pterm_return.rs`); an accessory
 //! is never `proc_go`ed and keeps 0 (`util/gemdos.c:29-47`,
 //! `bdos/proc.c:370`). `ad_envrn` is the AES PD's `p_env`
 //! (`aes/gemstart.S:78-96`), a copy of `default_env` "PATH=\0X:\\\0"
@@ -80,15 +83,18 @@ fn an_auto_program_has_initial_basepage_as_parent_and_an_empty_environment() {
 }
 
 #[test]
-fn a_desktop_or_autorun_program_has_the_aes_pd_as_parent_and_its_environment() {
+fn a_desktop_or_autorun_program_has_the_accdesk_pd_as_parent_and_the_aes_environment() {
     let _g = lock();
     standin::enter_aes();
+    standin::enter_accdesk();
     let c = Child::new();
     // SAFETY: under the lock.
     unsafe { pexec::set_kernel_parent(c.slot) };
-    assert_eq!(c.p_parent(), low32(standin::aes_pd()));
-    // `ad_envrn` = the AES PD's environment, `default_env` for C:, envsize 11.
+    assert_eq!(c.p_parent(), low32(standin::accdesk_pd()), "TASK/PROC03: accdesk, not the AES PD");
+    // accdesk's environment = a copy of `ad_envrn`, `default_env` for C:,
+    // envsize 11.
     assert_eq!(standin::kernel_run_env().unwrap(), b"PATH=\0C:\\\0\0");
+    standin::leave_accdesk();
     standin::leave_aes();
 }
 
@@ -112,15 +118,20 @@ fn the_chain_ends_at_initial_basepage() {
 fn a_pexec_from_a_process_keeps_the_callers_pd_and_a_kernel_caller_gets_the_stand_in() {
     let _g = lock();
     standin::enter_aes();
+    standin::enter_accdesk();
+    standin::enter_emucon();
     let parent = Box::into_raw(Box::new([0u8; 256])) as *mut BasePage;
     let c = Child::new();
     // SAFETY: under the lock; memory protection is off on the host.
     unsafe { pexec::set_parent(c.slot, parent) };
     assert_eq!(c.p_parent(), low32(parent), "p->p_parent = run (a process)");
-    // An EL1 caller (the in-kernel EmuCON's `run`): no process is running.
+    // An EL1 caller (the in-kernel EmuCON's `run`): no process is running,
+    // `run` is the EmuCON PD (`aes/gemshlib.c:614-620`, TASK/PROC03).
     // SAFETY: as above.
     unsafe { pexec::set_parent(c.slot, core::ptr::null_mut()) };
-    assert_eq!(c.p_parent(), low32(standin::aes_pd()), "run = the AES PD stand-in");
+    assert_eq!(c.p_parent(), low32(standin::emucon_pd()), "run = the EmuCON PD stand-in");
+    standin::leave_emucon();
+    standin::leave_accdesk();
     standin::leave_aes();
     drop(c);
     // SAFETY: nothing names the box any more.

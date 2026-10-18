@@ -423,6 +423,16 @@ NewTOS keys the parent's saved context by the child (`parent_slot`,
 `tos-api/src/bdos/process/pterm.rs:246-260`); EmuTOS keys it by the PD that
 was `run` at the last trap #1 (`bdos/rwa.S:188-224,262-267`).
 
+**Built 2026-10-18 (TASK/PROC03 B4, decision D-5 in
+[`_run-ownership-curdir.md`](./_run-ownership-curdir.md) §6.4):** `Pterm`,
+`Pterm0`, `Ptermres`, the console Ctrl-C and the crash path read the dying
+process's `p_parent` before the teardown (`pterm::return_target`). Unchanged
+→ the recorded parent resumes; changed to an ancestor on the launch chain →
+the processes between are terminated and the ancestor's `Pexec` returns the
+exit code (`PtermResume::unwind`, `terminate_unwound`, the loop in
+`finish_terminate`); anything else → the recorded parent resumes and the
+kernel logs `[pterm] p_parent 0x… names no resume point …`.
+
 TASK/PROC02 (2026-10-06): the file half of `ixterm` (`bdos/proc.c:116-123`) —
 `xclose` of every `p_uft[i] > 0`, then of every `sft[]` entry owned by the
 dying PD — runs in `terminate_inner` (`Pterm`, `Pterm0`, `Ptermres`) before

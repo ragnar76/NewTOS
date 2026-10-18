@@ -1520,7 +1520,7 @@ fn finish_terminate(
 ) {
     use core::sync::atomic::Ordering;
 
-    let resume = match result {
+    let mut resume = match result {
         Ok(r) => r,
         Err(_) => {
             // Misuse — leave the frame alone and report EINVFN so
@@ -1529,6 +1529,51 @@ fn finish_terminate(
             return;
         }
     };
+
+    // `run = run->p_parent` (EmuTOS `xterm`, `bdos/proc.c:609`; TASK/PROC03
+    // B4, `docs/api/gemdos/process/_run-ownership-curdir.md` §6.4 D-5): the
+    // dying process's `p_parent` decides where this returns
+    // (`pterm::return_target`).
+    if let Some(v) = resume.ignored_parent {
+        crate::kprintln!(
+            "[pterm] p_parent 0x{:08x} names no resume point on this launch chain \
+             — returning to the parent it was started from",
+            v
+        );
+    }
+    if resume.unwind > 0 {
+        // The field names an ancestor: the processes in between end without
+        // being resumed (EmuTOS never resumes them either). Their frames are
+        // discarded, each is terminated in turn (`terminate_unwound`, `RUN`
+        // is already it), and the last one's `parent_frame` is the resume
+        // point below. The boot tables go in first: the slots released here
+        // take their page tables with them while `TTBR0` still names the
+        // dying process's (the final restore below re-installs as usual).
+        crate::kprintln!(
+            "[pterm] p_parent names the PD {} launch(es) further up — unwinding to it",
+            resume.unwind
+        );
+        // SAFETY: trap context, single-CPU; no kernel code holds a low-half
+        // VA reference across this point (same as the restore below).
+        unsafe { crate::arch::aarch64::user_entry::restore_boot_ttbr0() };
+        for _ in 0..resume.unwind {
+            tos_api::bdos::process::sched::resume_parent_of_child(resume.parent_frame_slot);
+            // SAFETY: BDOS lock (caller contract); this slot's frame is not
+            // used — the process it would resume is terminated next.
+            unsafe { tos_api::bdos::process::pterm::release_slot(resume.parent_frame_slot) };
+            // SAFETY: trap context, BDOS lock; `RUN` is the next process.
+            match unsafe { tos_api::bdos::process::pterm::terminate_unwound() } {
+                Ok(r) => resume = r,
+                Err(e) => {
+                    // `return_target` checked every slot on the way (a
+                    // started process with a resume record), so this is a
+                    // table inconsistency: nothing is left to resume.
+                    crate::kprintln!("[pterm] unwind stopped: {:?} — halting", e);
+                    crate::arch::aarch64::halt();
+                }
+            }
+        }
+    }
 
     let pf = &tos_api::bdos::process::PROCESS_TABLE[resume.parent_frame_slot]
         .parent_frame;

@@ -16,10 +16,19 @@ const BANNER: &[u8] = b"NewTOS console (EmuCON) - 'help' for commands, 'exit' to
 /// Run the console REPL until the user types `exit`/`quit`, then return.
 /// This is the EmuCON-style console launched from the desktop ("Execute
 /// EmuCON"); on return the caller redraws the desktop.
+///
+/// It runs as its own process, the EmuCON PD (EmuTOS
+/// `aes_run_rom_program(coma_start)`, `aes/gemshlib.c:614-620`; the
+/// stand-in `tos_api::bdos::process::standin::enter_emucon`): while it
+/// executes that PD is `run`, so a program it starts with `run` gets it as
+/// `p_parent` (`cli/cmdexec.c:52`); `exit` is its `Pterm0` and `run` is its
+/// parent (the accdesk PD) again (TASK/PROC03 stage 1).
 pub fn run_console() {
+    tos_api::bdos::process::standin::enter_emucon();
     crate::fbcon::clear_and_home();
     puts(BANNER);
     repl();
+    tos_api::bdos::process::standin::leave_emucon();
 }
 
 /// [`run_console`] in place of a desktop program that could not be loaded
@@ -29,6 +38,7 @@ pub fn run_console() {
 /// of the console, so it is on the screen as well as on the serial line — a
 /// machine without a serial cable still tells its user.
 pub fn run_console_without_desktop(desktop: &[u8], rc: i32) {
+    tos_api::bdos::process::standin::enter_emucon();
     crate::fbcon::clear_and_home();
     puts(BANNER);
     puts(b"No desktop: ");
@@ -40,6 +50,7 @@ pub fn run_console_without_desktop(desktop: &[u8], rc: i32) {
     put_u32(rc.unsigned_abs());
     puts(b").\r\n\r\n");
     repl();
+    tos_api::bdos::process::standin::leave_emucon();
 }
 
 /// The console's read-execute loop, until `exit`/`quit`.

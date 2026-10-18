@@ -68,6 +68,20 @@ pub struct PtermResume {
     /// useful for the D6 selftest assert and for Phase 06 D3
     /// `Pexec` stat reporting.
     pub freed_mds: usize,
+    /// How many processes **above** the terminated one end with it before
+    /// anything is resumed (TASK/PROC03 B4): `0` normally; `n` when the
+    /// dying process's `p_parent` names the PD `n + 1` launches up its chain
+    /// ([`return_target`]). The handler then discards the frame in
+    /// [`Self::parent_frame_slot`], terminates the running process again
+    /// with [`terminate_unwound`] `n` times, and resumes the last one's
+    /// parent — EmuTOS's `run = run->p_parent` (`bdos/proc.c:609`) resuming
+    /// the PD the field names, the processes in between never resumed.
+    pub unwind: usize,
+    /// `Some(value)`: the dying process's `p_parent` had been changed to
+    /// `value`, which names no PD with a resume point on its launch chain, so
+    /// the return goes to the recorded parent instead (D-5). For the
+    /// handler's log line only.
+    pub ignored_parent: Option<u32>,
 }
 
 /// Failure modes for [`terminate`].
@@ -137,7 +151,99 @@ pub fn exit_code_for_caller(rc: i32) -> u64 {
 /// trap frame still on the kernel stack.
 pub unsafe fn terminate(_rc: i32) -> Result<PtermResume, PtermError> {
     // SAFETY: forwarded — same BDOS-lock / trap-context contract.
-    unsafe { terminate_inner(false) }
+    unsafe { terminate_inner(false, true) }
+}
+
+/// Terminate the running process as one of the processes an unwinding
+/// `Pterm` passes through ([`PtermResume::unwind`], TASK/PROC03 B4): the
+/// same teardown as [`terminate`] (files, memory, unstarted children, `RUN`
+/// to its parent), but its own `p_parent` is not consulted — EmuTOS never
+/// looks at it: `run = run->p_parent` jumped over it (`bdos/proc.c:609`).
+/// Called by the handler after it has released the slot below, with `RUN`
+/// already this process ([`terminate_inner`] set it).
+///
+/// # Safety
+///
+/// Same as [`terminate`].
+pub unsafe fn terminate_unwound() -> Result<PtermResume, PtermError> {
+    // SAFETY: forwarded.
+    unsafe { terminate_inner(false, false) }
+}
+
+/// Where the `Pterm` of the process in `slot_idx` returns — EmuTOS `xterm`:
+/// `run = run->p_parent` (`bdos/proc.c:609`), with **no** check of the value
+/// (TASK/PROC03 B4, `_run-ownership-curdir.md` §2, decision D-5 §6.4).
+///
+/// `Ok(0)`: the live `p_parent` is the value the process was started with
+/// ([`super::Process::launch_parent`]) — return to the recorded parent, the
+/// normal case. `Ok(n)`: the field was changed to the PD of the process
+/// `n + 1` launches up this process's chain (an ancestor slot suspended in
+/// its `Pexec`, or — for the chain's root — the PD that started it, whose
+/// resume point is the root's own launch frame: the kernel launcher, EmuCON
+/// or the root's `Pexec` caller). EmuTOS resumes that PD's pending
+/// `Pexec` with `rc` and never resumes the processes in between; NewTOS
+/// does the same and, unlike EmuTOS, terminates them (their files and memory
+/// are freed instead of leaked; nothing of theirs runs again in either).
+///
+/// `Err(value)`: the field names nothing with a resume point — 0, an
+/// arbitrary number, a process not on the chain, a stand-in other than the
+/// root's starter. EmuTOS would write the exit code through it and jump
+/// through whatever `P_A7SAVE` holds there (a NULL `run` for 0) — a crash or
+/// worse; NewTOS keeps the documented safe outcome and returns to the
+/// recorded parent, as if the field were unchanged (D-5).
+fn return_target(slot_idx: usize) -> Result<usize, u32> {
+    let slot = &super::PROCESS_TABLE[slot_idx];
+    let kva = slot.basepage_kva.load(Ordering::Acquire);
+    if kva.is_null() {
+        return Ok(0);
+    }
+    // SAFETY: the kernel alias of the dying process's live basepage.
+    let live = unsafe { (*kva).p_parent } as u32;
+    if live == slot.launch_parent.load(Ordering::Acquire) {
+        return Ok(0);
+    }
+    if live == 0 {
+        return Err(live);
+    }
+    let mut cur = slot_idx;
+    // `levels` = processes passed over so far (the chain has at most one
+    // slot per process, so the walk is bounded by the table).
+    for levels in 0..super::MAX_PROCESSES {
+        let ps = super::PROCESS_TABLE[cur].parent_slot.load(Ordering::Acquire);
+        if ps == super::NO_PARENT {
+            // `cur` is the chain's root: its starter has a resume point (the
+            // root's own launch frame) when the root was started through
+            // `set_parent`/`set_kernel_parent` and is not an accessory.
+            let root = &super::PROCESS_TABLE[cur];
+            let lp = root.launch_parent.load(Ordering::Acquire);
+            return if cur != slot_idx
+                && lp != 0
+                && lp == live
+                && !root.parent_frame_full.load(Ordering::Acquire)
+                && root.parent_frame.elr().load(Ordering::Acquire) != 0
+            {
+                Ok(levels)
+            } else {
+                Err(live)
+            };
+        }
+        let ps = ps as usize;
+        if ps >= super::MAX_PROCESSES {
+            return Err(live);
+        }
+        if super::pd_of(ps) as u64 as u32 == live {
+            return Ok(levels);
+        }
+        // `ps` is passed over: it is terminated too, so it must be a started
+        // process with its own resume record (every `Pexec`ed slot is).
+        if super::PROCESS_TABLE[ps].parent_frame.elr().load(Ordering::Acquire) == 0
+            || super::PROCESS_TABLE[ps].parent_frame_full.load(Ordering::Acquire)
+        {
+            return Err(live);
+        }
+        cur = ps;
+    }
+    Err(live)
 }
 
 /// `Ptermres` (GEMDOS 0x31) — terminate but leave the process's memory
@@ -167,17 +273,19 @@ pub unsafe fn terminate_resident(blkln: i32, _rc: i32) -> Result<PtermResume, Pt
         let _ = unsafe { crate::bdos::mem::traps::mshrink(0, bp as u64 as tos_types::Long, blkln) };
     }
     // SAFETY: forwarded.
-    unsafe { terminate_inner(true) }
+    unsafe { terminate_inner(true, true) }
 }
 
-/// Shared body of [`terminate`] / [`terminate_resident`]. `reserve`
-/// selects whether the dying process's owned pool blocks are freed
-/// (`false`, `Pterm`) or kept resident (`true`, `Ptermres`).
+/// Shared body of [`terminate`] / [`terminate_resident`] /
+/// [`terminate_unwound`]. `reserve` selects whether the dying process's
+/// owned pool blocks are freed (`false`, `Pterm`) or kept resident (`true`,
+/// `Ptermres`); `follow_parent` whether its `p_parent` decides the return
+/// ([`return_target`]) — not for a process an unwind passes through.
 ///
 /// # Safety
 ///
 /// See [`terminate`].
-unsafe fn terminate_inner(reserve: bool) -> Result<PtermResume, PtermError> {
+unsafe fn terminate_inner(reserve: bool, follow_parent: bool) -> Result<PtermResume, PtermError> {
     // AES trap tracer: write the trace to `C:` before the process is torn
     // down, so the file survives the application exiting. Runs on the kernel
     // exception stack (this is called from `rust_sync_handler`'s `Pterm`
@@ -200,6 +308,17 @@ unsafe fn terminate_inner(reserve: bool) -> Result<PtermResume, PtermError> {
         return Err(PtermError::NoParentResumeContext);
     }
     let parent_l0_pa = slot.parent_l0_pa.load(Ordering::Acquire);
+
+    // `run = run->p_parent` (`bdos/proc.c:609`) is read before the teardown,
+    // as EmuTOS reads it before `ixterm` (TASK/PROC03 B4).
+    let (unwind, ignored_parent) = if follow_parent {
+        match return_target(slot_idx) {
+            Ok(n) => (n, None),
+            Err(v) => (0, Some(v)),
+        }
+    } else {
+        (0, None)
+    };
 
     // AES resource lists: drop the dying process's entries (A39, R6). EmuTOS
     // needs no such step — its resource state is the three words in the
@@ -248,7 +367,9 @@ unsafe fn terminate_inner(reserve: bool) -> Result<PtermResume, PtermError> {
     // again, so the parent's own subsequent `Pterm` / BDOS calls see
     // a valid `RUN`. A boot-launched process (no user parent —
     // `parent_slot == NO_PARENT`, the Phase-06 D6 path) clears `RUN`
-    // to null instead; the kernel resume path takes over there.
+    // to null instead; the kernel resume path takes over there. On an
+    // unwind (`unwind > 0`) this is the next process to terminate, which
+    // is what [`terminate_unwound`] expects in `RUN`.
     //
     // The slot's other atomics stay populated until the handler calls
     // `release_slot` — it still needs `parent_frame` for the frame
@@ -264,6 +385,8 @@ unsafe fn terminate_inner(reserve: bool) -> Result<PtermResume, PtermError> {
         parent_l0_pa,
         parent_frame_slot: slot_idx,
         freed_mds: freed,
+        unwind,
+        ignored_parent,
     })
 }
 

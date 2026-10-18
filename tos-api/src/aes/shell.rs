@@ -397,6 +397,19 @@ pub fn set_launch_info(cmd: &[u8], tail: &[u8]) {
         store_str(&mut *S.s_cmd.get(), cmd);
         store_tail_image(&mut *S.s_tail.get(), tail);
     }
+    mirror_tail();
+}
+
+/// D-4 (TASK/PROC03, `docs/api/gemdos/process/_run-ownership-curdir.md`
+/// §6.4): in EmuTOS `ad_stail` *is* the AES PD's `p_cmdlin`
+/// (`aes/gemstart.S:54-57`, AES PD + 0x80), so a program that walks its
+/// `p_parent` chain to the AES PD reads the tail `sh_write` stored there
+/// (`aes/gemshlib.c:170,191`). Called after every write of `ad_stail`, so the
+/// AES-PD stand-in holds the same bytes.
+fn mirror_tail() {
+    // SAFETY: single-CPU AES; a shared read of the cell just written.
+    let tail = unsafe { &*S.s_tail.get() };
+    crate::bdos::process::standin::set_aes_cmdlin(tail);
 }
 
 /// Copy a command-tail image slice into `dst` by the [`tail_in`] rule: the
@@ -503,6 +516,7 @@ pub fn shel_write(pb: &Aespb) {
                     let m = s_tail.len().min(tail.len());
                     s_tail[..m].copy_from_slice(&tail[..m]);
                 }
+                mirror_tail();
                 *S.sh_doexec.get() = doex;
                 // `strcmp(pcmd, DEF_CONSOLE) == 0 ? CONSOLE_APP : NORMAL_APP`
                 // (gemshlib.c:172) — the one magic name a caller can type.
@@ -533,6 +547,7 @@ pub fn shel_write(pb: &Aespb) {
                 // `D.s_cmd[0] = '\0'; ad_stail[0] = '\0';` (:190-191).
                 (*S.s_cmd.get())[0] = 0;
                 (*S.s_tail.get())[0] = 0;
+                mirror_tail();
             }
             _ => {}
         }
@@ -873,6 +888,9 @@ pub(super) fn reinit() {
         // itself is reset by `gem_rsc_init` (`super::init::gem_rsc`).
         (*SHOW_NAME.0.get()).fill(0);
     }
+    // `ad_stail` was cleared above; the AES-PD stand-in's `p_cmdlin` is the
+    // same cell (D-4).
+    mirror_tail();
     // `gl_shgem` is FALSE at power-up and `sh_main_init` raises it (`:703`).
     set_gl_shgem(false);
 }

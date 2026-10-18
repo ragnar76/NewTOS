@@ -1,63 +1,85 @@
-//! The two process descriptors EmuTOS has and NewTOS has no process for —
-//! `initial_basepage` and the AES PD — as read-only **stand-ins** (TASK/PPARENT,
-//! user decision 2026-10-06 "Way A").
+//! The process descriptors EmuTOS has and NewTOS has no process for —
+//! `initial_basepage`, the AES PD, the **accdesk PD** and the **EmuCON PD** —
+//! as **stand-ins** (TASK/PPARENT "Way A", 2026-10-06; extended by TASK/PROC03
+//! stage 1, user decision 2026-10-18 "alles EmuTOS-treu").
 //!
-//! Spec: `docs/api/gemdos/process/_parent-and-environment.md`.
+//! Spec: `docs/api/gemdos/process/_parent-and-environment.md` (§1 the chain,
+//! §2 the field contents, §3 the environments, §4.4 as built) and
+//! `docs/api/gemdos/process/_run-ownership-curdir.md` §6.4 (the decisions
+//! D-1…D-4 for the fields the source defines but NewTOS cannot represent).
 //!
 //! EmuTOS writes `p_parent` only in `proc_go`, `p->p_parent = run`
 //! (`bdos/proc.c:541`), and gives every process an environment, a copy of
 //! `run->p_env` unless the caller names one (`alloc_env`, `bdos/proc.c:413-432`).
-//! While the BIOS runs the AUTO folder `run` is the static `initial_basepage`
-//! (`bdos/bdosmain.c:78,337-342`, `bios/bios.c:685-695`); from the start of
-//! the AES on it is the AES's own PD (`bios/bios.c:855-866`), which is what the
-//! desktop, the `#Z` program and every program the desktop asks for get as
-//! their parent (`aes/gemshlib.c:569-580,645`).
+//! `run` over time (`_run-ownership-curdir.md` §1.2):
 //!
-//! NewTOS runs the AES and the desktop in the kernel; `RUN` is `null` while
-//! kernel code is on the stack. This module provides the two PDs that `run`
-//! would be there: real, readable basepages with EmuTOS's field contents, in
-//! one kernel page that is published read-only to every process at VA = PA
-//! (`usermem::expose`, `PROT_PR`, ADR-023), so a program can follow its
-//! `p_parent` chain in every protection mode. They are **never** the running
-//! process: `RUN`, `os_run`, owner tags, `parent_slot` and the `Pterm` return
-//! path do not see them (Way B — the AES as a real process — is
-//! `TASK/PROC03.md`).
+//! * `initial_basepage` while the BIOS runs the AUTO folder
+//!   (`bdos/bdosmain.c:78,337-342`, `bios/bios.c:685-695`);
+//! * the **AES PD** while the AES initialises (`bios/bios.c:855-866`,
+//!   `aes/geminit.c:753-894`);
+//! * the **accdesk PD** from `aes_run_rom_program(accdesk_start)`
+//!   (`aes/geminit.c:894`, `aes/gemshlib.c:570-581`) for the whole of
+//!   `run_accs_and_desktop` (`aes/geminit.c:654-750`): the accessories are
+//!   loaded under it and the desktop, the `#Z` program and every program the
+//!   desktop asks for get it as their parent (`aes/gemshlib.c:600-611,645`);
+//! * the **EmuCON PD** while the console runs (`aes/gemshlib.c:614-620`),
+//!   parent of what it `Pexec`s (`cli/cmdexec.c:52`).
+//!
+//! NewTOS runs the AES, the shell loop and EmuCON in the kernel; `RUN` is
+//! `null` while kernel code is on the stack. This module provides the PDs that
+//! `run` would be there: real, readable basepages with EmuTOS's field
+//! contents, in one kernel page that is published read-only to every process
+//! at VA = PA (`usermem::expose`, `PROT_PR`, ADR-023), so a program can follow
+//! its `p_parent` chain in every protection mode. The kernel writes the page
+//! (the accdesk and EmuCON PDs are rebuilt at every start, the AES PD's
+//! `p_cmdlin` is `ad_stail`, D-4); programs cannot. They are **never** the
+//! running process: `RUN`, `os_run`, memory owner tags, `parent_slot` and the
+//! `Pterm` return path of a process do not see them (owner tags and `os_run`
+//! are TASK/PROC03 B5, not built).
 //!
 //! What uses them: [`super::pexec::set_parent`] and
 //! [`super::pexec::set_kernel_parent`] (`p_parent` of a program a kernel
-//! caller starts), the loader's `EnvSpec::Inherit` with no running process
-//! ([`kernel_run_env`]), and `shel_envrn` (`ad_envrn` is the AES PD's `p_env`,
-//! `aes/gemstart.S:78-96` — [`aes_env`]).
+//! caller starts), the loader's `EnvSpec::Inherit` and handle inheritance with
+//! no running process ([`kernel_run_env`], [`kernel_run_uft`]), the file
+//! table's owner of kernel-context opens, and `shel_envrn` (`ad_envrn` is the
+//! AES PD's `p_env`, `aes/gemstart.S:78-96` — [`aes_env`]).
 
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
-use tos_types::{BasePage, Long, NUMSTD, PF_STANDARD};
+use tos_types::{BasePage, Long, NUMSTD, PDCLSIZE, PF_STANDARD};
 
 use super::kva_to_user_va;
 
 /// `ENV_SIZE` (`bios/bios.c:77`): "sufficient for standard PATH=^X:\^^
 /// (^=nul byte)" — the size of `default_env`, and (11 counted bytes rounded
-/// up to even, `bdos/proc.c:421`) of the AES PD's copy of it.
+/// up to even, `bdos/proc.c:421`) of the AES PD's copy of it. The accdesk and
+/// EmuCON copies have the same size (`alloc_env` of the same bytes).
 pub const AES_ENV_SIZE: usize = 12;
 
 /// `default_handle` (`bdos/console.c:60-68`): `H_Console`, `H_Console`,
 /// `H_Aux`, `H_Print`, `H_Console`, `H_Console` (`bdos/console.h:23-25`) —
 /// what `stdhdl_init` puts into `initial_basepage.p_uft`
-/// (`bdos/console.c:107-112`) and `init_pd_files` copies into the AES PD
-/// (`bdos/proc.c:390-398`, a handle `<= 0` is copied as is). `Fclose` of a
-/// standard handle reverts it to this (`get_default_handle`,
-/// `bdos/console.c:132-135`, `bdos/fsopnclo.c:453`).
+/// (`bdos/console.c:107-112`) and `init_pd_files` copies into every PD the
+/// AES and its shell create (`bdos/proc.c:390-398`, a handle `<= 0` is copied
+/// as is). `Fclose` of a standard handle reverts it to this
+/// (`get_default_handle`, `bdos/console.c:132-135`, `bdos/fsopnclo.c:453`).
 pub const DEFAULT_HANDLE: [i8; NUMSTD] = [-1, -1, -2, -3, -1, -1];
 
-/// Offset of the AES PD in the page.
-const AES_OFFSET: usize = 0x100;
-/// Offset of `double_nul`.
-const DOUBLE_NUL_OFFSET: usize = 0x200;
-/// Offset of the AES environment.
-const AES_ENV_OFFSET: usize = 0x210;
+/// Size of one PD (`sizeof(PD)`, 0x100).
+const PD_SIZE: usize = core::mem::size_of::<BasePage>();
 
-/// The page: both PDs and the two environments their `p_env` name, and
+/// Offsets in the page. The first four are those of TASK/PPARENT and stay
+/// where they were; the accdesk and EmuCON PDs and their environments follow.
+const AES_OFFSET: usize = 0x100;
+const DOUBLE_NUL_OFFSET: usize = 0x200;
+const AES_ENV_OFFSET: usize = 0x210;
+const ACCDESK_OFFSET: usize = 0x300;
+const EMUCON_OFFSET: usize = 0x400;
+const ACCDESK_ENV_OFFSET: usize = 0x500;
+const EMUCON_ENV_OFFSET: usize = 0x510;
+
+/// The page: the four PDs and the environments their `p_env` name, and
 /// nothing else — the whole page becomes readable to every process.
 #[repr(C, align(4096))]
 struct Page {
@@ -67,28 +89,51 @@ struct Page {
     aes: BasePage,
     /// `double_nul` (`bdos/bdosmain.c:81`), +0x200.
     double_nul: [u8; 2],
-    _pad: [u8; AES_ENV_OFFSET - DOUBLE_NUL_OFFSET - 2],
+    _pad0: [u8; AES_ENV_OFFSET - DOUBLE_NUL_OFFSET - 2],
     /// The AES PD's environment, a copy of `default_env`
-    /// (`bios/bios.c:626-636`), +0x210.
+    /// (`bios/bios.c:626-636`) — `ad_envrn`, +0x210.
     aes_env: [u8; AES_ENV_SIZE],
+    _pad1: [u8; ACCDESK_OFFSET - AES_ENV_OFFSET - AES_ENV_SIZE],
+    /// The accdesk PD (`aes/gemshlib.c:570-581` with `accdesk_start`), +0x300.
+    accdesk: BasePage,
+    /// The EmuCON PD (`aes/gemshlib.c:614-620`, `coma_start`), +0x400.
+    emucon: BasePage,
+    /// The accdesk PD's environment, a copy of the AES PD's, +0x500.
+    accdesk_env: [u8; AES_ENV_SIZE],
+    _pad2: [u8; EMUCON_ENV_OFFSET - ACCDESK_ENV_OFFSET - AES_ENV_SIZE],
+    /// The EmuCON PD's environment, a copy of its parent's, +0x510.
+    emucon_env: [u8; AES_ENV_SIZE],
 }
 
 const _: () = assert!(core::mem::offset_of!(Page, aes) == AES_OFFSET);
 const _: () = assert!(core::mem::offset_of!(Page, double_nul) == DOUBLE_NUL_OFFSET);
 const _: () = assert!(core::mem::offset_of!(Page, aes_env) == AES_ENV_OFFSET);
+const _: () = assert!(core::mem::offset_of!(Page, accdesk) == ACCDESK_OFFSET);
+const _: () = assert!(core::mem::offset_of!(Page, emucon) == EMUCON_OFFSET);
+const _: () = assert!(core::mem::offset_of!(Page, accdesk_env) == ACCDESK_ENV_OFFSET);
+const _: () = assert!(core::mem::offset_of!(Page, emucon_env) == EMUCON_ENV_OFFSET);
 const _: () = assert!(core::mem::size_of::<Page>() <= 4096);
 
 struct Cell(UnsafeCell<Page>);
-// SAFETY: written only by [`init`] on the boot CPU before any program runs;
-// read afterwards (the BDOS giant lock / single-CPU trap context).
+// SAFETY: written by [`init`] on the boot CPU before any program runs, and
+// afterwards only from kernel context on the single CPU (the shell loop and
+// EmuCON entering/leaving, the AES writing `ad_stail`) — never while a trap
+// handler holds a reference into the page; programs only read it through
+// their read-only mapping.
 unsafe impl Sync for Cell {}
 
 static PAGE: Cell = Cell(UnsafeCell::new(Page {
     initial: BasePage::zeroed(),
     aes: BasePage::zeroed(),
     double_nul: [0, 0],
-    _pad: [0; AES_ENV_OFFSET - DOUBLE_NUL_OFFSET - 2],
+    _pad0: [0; AES_ENV_OFFSET - DOUBLE_NUL_OFFSET - 2],
     aes_env: [0; AES_ENV_SIZE],
+    _pad1: [0; ACCDESK_OFFSET - AES_ENV_OFFSET - AES_ENV_SIZE],
+    accdesk: BasePage::zeroed(),
+    emucon: BasePage::zeroed(),
+    accdesk_env: [0; AES_ENV_SIZE],
+    _pad2: [0; EMUCON_ENV_OFFSET - ACCDESK_ENV_OFFSET - AES_ENV_SIZE],
+    emucon_env: [0; AES_ENV_SIZE],
 }));
 
 /// The page is built ([`init`]).
@@ -97,18 +142,55 @@ static READY: AtomicBool = AtomicBool::new(false);
 /// Which stand-in is `run` while kernel code is on the stack.
 const RUN_INITIAL: u8 = 0;
 const RUN_AES: u8 = 1;
+const RUN_ACCDESK: u8 = 2;
+const RUN_EMUCON: u8 = 3;
 static KERNEL_RUN: AtomicU8 = AtomicU8::new(RUN_INITIAL);
+/// `run` before [`enter_emucon`] — the EmuCON PD's parent, which `Pterm0`
+/// makes `run` again (`cli/cmdasm.S:48-49`, `bdos/proc.c:609`).
+static EMUCON_PARENT: AtomicU8 = AtomicU8::new(RUN_ACCDESK);
+
+/// The page offset of stand-in `which`'s PD.
+const fn pd_offset(which: u8) -> usize {
+    match which {
+        RUN_AES => AES_OFFSET,
+        RUN_ACCDESK => ACCDESK_OFFSET,
+        RUN_EMUCON => EMUCON_OFFSET,
+        _ => 0,
+    }
+}
 
 /// The user address (= physical address, VA = PA) of the page's byte `off`.
 fn user_va(off: usize) -> u64 {
     kva_to_user_va(PAGE.0.get() as u64 + off as u64)
 }
 
-/// Build both PDs and the AES environment for boot drive `bootdev`
-/// (0 = `A:`), and publish the page read-only to every process. Returns the
-/// page's user address, or `None` when it could not be published (no program
-/// could then read the chain; the kernel reports it). Idempotent in content:
-/// a second call rebuilds the same page.
+/// Kernel pointer to stand-in `which`'s PD.
+fn pd_ptr(which: u8) -> *mut BasePage {
+    // SAFETY: in bounds of the static page (`pd_offset` names a PD field).
+    unsafe { (PAGE.0.get() as *mut u8).add(pd_offset(which)) as *mut BasePage }
+}
+
+/// The bytes the environment of stand-in `which` holds, up to and including
+/// its double NUL (EmuTOS `envsize`, `bdos/proc.c:150-159`).
+fn env_of(which: u8) -> &'static [u8] {
+    // SAFETY: shared read of a field of the static page; written only from
+    // kernel context while no such reference is alive (`Cell` contract).
+    let p = unsafe { &*PAGE.0.get() };
+    match which {
+        RUN_INITIAL => &p.double_nul,
+        RUN_AES => env_image(&p.aes_env),
+        RUN_ACCDESK => env_image(&p.accdesk_env),
+        _ => env_image(&p.emucon_env),
+    }
+}
+
+/// Build all PDs that exist at boot — `initial_basepage` and the AES PD —
+/// and the AES environment for boot drive `bootdev` (0 = `A:`), and publish
+/// the page read-only to every process. Returns the page's user address, or
+/// `None` when it could not be published (no program could then read the
+/// chain; the kernel reports it). Idempotent in content: a second call
+/// rebuilds the same page (the accdesk and EmuCON PDs are cleared; they are
+/// built when they start, [`enter_accdesk`], [`enter_emucon`]).
 ///
 /// What EmuTOS does at these points:
 ///
@@ -131,7 +213,6 @@ pub unsafe fn init(bootdev: u16) -> Option<u64> {
     // SAFETY: caller contract — exclusive access during boot.
     let p = unsafe { &mut *PAGE.0.get() };
     let initial_va = user_va(0);
-    let aes_va = user_va(AES_OFFSET);
     let double_nul_va = user_va(DOUBLE_NUL_OFFSET);
     let aes_env_va = user_va(AES_ENV_OFFSET);
 
@@ -163,21 +244,16 @@ pub unsafe fn init(bootdev: u16) -> Option<u64> {
     // empty tail; `p_flags = PF_STANDARD` (`:234`); `init_pd_files` (`:388-409`)
     // — the handles, the current drive of `run` = `initial_basepage`;
     // `p_tbase = exec_os`, `p_tlen = p_dlen = p_blen = 0` (`bios/bios.c:
-    // 863-864`); `proc_go`: `p_parent = run` (`bdos/proc.c:541`).
-    //
-    // No counterpart in NewTOS (deviations by absence, spec §4): the AES has
-    // no TPA — its "TPA" is its basepage, so `p_hitpa = p + 0x100`; and no
-    // code in the user address space — `p_tbase = 0`.
-    let mut aes = BasePage::zeroed();
-    aes.p_lowtpa = aes_va as Long;
-    aes.p_hitpa = (aes_va + core::mem::size_of::<BasePage>() as u64) as Long;
-    aes.p_xdta = (aes_va + core::mem::offset_of!(BasePage, p_cmdlin) as u64) as Long;
-    aes.p_parent = initial_va as Long;
-    aes.p_flags = PF_STANDARD;
-    aes.p_env = aes_env_va as Long;
-    aes.p_uft = p.initial.p_uft;
-    aes.p_curdrv = p.initial.p_curdrv;
-    p.aes = aes;
+    // 863-864`); `proc_go`: `p_parent = run` (`bdos/proc.c:541`). The fields
+    // NewTOS cannot represent follow the decisions of `_run-ownership-curdir.md`
+    // §6.4 (D-1 `p_tbase` 0, D-2 `p_hitpa` p + 0x100) — see [`rom_pd`].
+    p.aes = rom_pd(AES_OFFSET, initial_va, aes_env_va, &p.initial);
+
+    // Not started yet: built by `enter_accdesk` / `enter_emucon`.
+    p.accdesk = BasePage::zeroed();
+    p.emucon = BasePage::zeroed();
+    p.accdesk_env = [0; AES_ENV_SIZE];
+    p.emucon_env = [0; AES_ENV_SIZE];
 
     READY.store(true, Ordering::Release);
 
@@ -206,6 +282,74 @@ pub unsafe fn init(bootdev: u16) -> Option<u64> {
     }
 }
 
+/// A PD as `Pexec(PE_BASEPAGEFLAGS, PF_STANDARD, "", env)` creates it and
+/// `proc_go` starts it — the AES PD (`bios/bios.c:861-865`), the accdesk and
+/// the EmuCON PD (`aes_run_rom_program`, `aes/gemshlib.c:570-581`) — at page
+/// offset `off`, with parent `parent_va`, environment block `env_va`, and the
+/// handles and current drive of the creating `run`, `creator`.
+///
+/// * `init_pd_fields` (`bdos/proc.c:367-384`): zeroed, `p_lowtpa = p`,
+///   `p_xdta = &p_cmdlin` (D-3: EmuTOS's later AES-internal `dos_sdta` has
+///   no counterpart — NewTOS's AES keeps its DTAs in kernel buffers), the
+///   empty tail (`p_cmdlin` all zero);
+/// * `p_flags = PF_STANDARD` (`:234`);
+/// * `init_pd_files` (`:388-409`): `p_uft` and `p_curdrv` of `run`
+///   (`p_curdir[]` is PROC04 point 2);
+/// * `proc_go`: `p_parent = run` (`:541`);
+/// * `p_tbase` (the entry `exec_os`/`accdesk_start`/`coma_start`) is **0**
+///   — decision D-1, `_run-ownership-curdir.md` §6.4: the code is kernel
+///   code, at no address of any program's map; a non-zero value would be
+///   invented or a kernel address no program can use;
+/// * `p_hitpa` is **`p + 0x100`** — decision D-2: EmuTOS's `p + max` is the
+///   size of the largest free block at creation, which the code `Mshrink`s
+///   to the 0x100-byte PD at once without updating the field
+///   (`aes/gemstart.S:59-69,143-152`, `cli/cmdasm.S:26-37`); `p + 0x100` is
+///   what the block really is. The PD stays a kernel page outside the pools,
+///   so its address can never be a pool block's (see D-2 for stage 3).
+fn rom_pd(off: usize, parent_va: u64, env_va: u64, creator: &BasePage) -> BasePage {
+    let va = user_va(off);
+    let mut pd = BasePage::zeroed();
+    pd.p_lowtpa = va as Long;
+    pd.p_hitpa = (va + PD_SIZE as u64) as Long;
+    pd.p_xdta = (va + core::mem::offset_of!(BasePage, p_cmdlin) as u64) as Long;
+    pd.p_parent = parent_va as Long;
+    pd.p_flags = PF_STANDARD;
+    pd.p_env = env_va as Long;
+    pd.p_uft = creator.p_uft;
+    pd.p_curdrv = creator.p_curdrv;
+    pd
+}
+
+/// Start a stand-in that `aes_run_rom_program` creates (`which` = accdesk or
+/// EmuCON) under the current kernel `run`, `parent`: build its PD and its
+/// environment — a copy of `run->p_env` (`env == NULL`, `bdos/proc.c:419-429`)
+/// — and make it the kernel's `run` (`PE_GOTHENFREE` → `proc_go`, `:575`).
+fn start_rom_pd(which: u8, env_off: usize, parent: u8) {
+    if !ready() {
+        return;
+    }
+    let parent_env = env_of(parent);
+    let mut env = [0u8; AES_ENV_SIZE];
+    let n = parent_env.len().min(AES_ENV_SIZE);
+    env[..n].copy_from_slice(&parent_env[..n]);
+    // SAFETY: the parent PD is a field of the static page; short shared read.
+    let creator = unsafe { &*pd_ptr(parent) };
+    let pd = rom_pd(pd_offset(which), user_va(pd_offset(parent)), user_va(env_off), creator);
+    // SAFETY: kernel context, single CPU; no reference into the page is alive
+    // (`Cell` contract). Field-wise raw writes.
+    unsafe {
+        let page = PAGE.0.get();
+        if which == RUN_ACCDESK {
+            (*page).accdesk_env = env;
+            (*page).accdesk = pd;
+        } else {
+            (*page).emucon_env = env;
+            (*page).emucon = pd;
+        }
+    }
+    KERNEL_RUN.store(which, Ordering::Release);
+}
+
 /// `true` once [`init`] has built the page.
 pub fn ready() -> bool {
     READY.load(Ordering::Acquire)
@@ -213,8 +357,14 @@ pub fn ready() -> bool {
 
 /// The AES has started — EmuTOS `exec_os` (`bios/bios.c:855-866`), which
 /// follows `autoexec`: from now on `run` while kernel code is on the stack is
-/// the AES PD, not `initial_basepage`.
+/// the AES PD, not `initial_basepage`. The AES PD is created now in EmuTOS,
+/// with an empty `p_cmdlin` (`init_pd_fields`, `bdos/proc.c:378-384`) — which
+/// is `ad_stail` from here on (D-4, [`set_aes_cmdlin`]).
 pub fn enter_aes() {
+    if ready() {
+        // SAFETY: kernel context, single CPU (`Cell` contract).
+        unsafe { (*PAGE.0.get()).aes.p_cmdlin = [0; PDCLSIZE] };
+    }
     KERNEL_RUN.store(RUN_AES, Ordering::Release);
 }
 
@@ -222,6 +372,66 @@ pub fn enter_aes() {
 /// it; host tests do.
 pub fn leave_aes() {
     KERNEL_RUN.store(RUN_INITIAL, Ordering::Release);
+}
+
+/// `aes_run_rom_program(accdesk_start)` (`aes/geminit.c:894`,
+/// `aes/gemshlib.c:570-581`) — one AES session's accdesk process starts:
+/// its PD is created under the AES PD (`p_parent` = AES PD, environment a
+/// copy of the AES PD's, handles and drive of the AES PD) and is `run` from
+/// now on, for everything `run_accs_and_desktop` does (`aes/geminit.c:
+/// 654-750`): the accessories are loaded under it, the desktop, the `#Z`
+/// program and the programs the desktop asks for are its children. A new PD
+/// per AES session (`aes/gemstart.S:121-124`); NewTOS rebuilds the one
+/// stand-in at the same address.
+pub fn enter_accdesk() {
+    start_rom_pd(RUN_ACCDESK, ACCDESK_ENV_OFFSET, RUN_AES);
+}
+
+/// `accdesk_start` ends (`Pterm0`, `aes/gemstart.S:160-163`): `run =
+/// run->p_parent` = the AES PD (`bdos/proc.c:609`) — shutdown or resolution
+/// change.
+pub fn leave_accdesk() {
+    if KERNEL_RUN.load(Ordering::Acquire) == RUN_ACCDESK {
+        KERNEL_RUN.store(RUN_AES, Ordering::Release);
+    }
+}
+
+/// `aes_run_rom_program(coma_start)` (`aes/gemshlib.c:614-620`) — the
+/// in-kernel EmuCON starts: its PD is created under the current `run` (the
+/// accdesk PD in the shell loop's CONSOLE arm and its fallbacks; EmuTOS's
+/// early console would have `initial_basepage`, `bios/bios.c:834-843`),
+/// environment a copy of that PD's, and is `run` while EmuCON executes — so
+/// what EmuCON `Pexec`s gets it as `p_parent` (`cli/cmdexec.c:52`,
+/// [`super::pexec::set_parent`] with a kernel caller).
+pub fn enter_emucon() {
+    let parent = KERNEL_RUN.load(Ordering::Acquire);
+    let parent = if parent == RUN_EMUCON { EMUCON_PARENT.load(Ordering::Acquire) } else { parent };
+    EMUCON_PARENT.store(parent, Ordering::Release);
+    start_rom_pd(RUN_EMUCON, EMUCON_ENV_OFFSET, parent);
+}
+
+/// EmuCON ends (`Pterm0`, `cli/cmdasm.S:48-49`): `run` is its parent again.
+pub fn leave_emucon() {
+    if KERNEL_RUN.load(Ordering::Acquire) == RUN_EMUCON {
+        KERNEL_RUN.store(EMUCON_PARENT.load(Ordering::Acquire), Ordering::Release);
+    }
+}
+
+/// D-4: `ad_stail` **is** the AES PD's `p_cmdlin` (`aes/gemstart.S:54-57`,
+/// AES PD + 0x80; written by `sh_write`, `aes/gemshlib.c:170,191`, read by
+/// `sh_read`, `:105`). NewTOS keeps `ad_stail` in the AES shell
+/// (`crate::aes::shell`), which mirrors every write here, so a program that
+/// reads the AES PD finds the same bytes. A no-op before the AES has started
+/// (no AES PD exists in EmuTOS then; [`enter_aes`] gives it its empty tail).
+pub fn set_aes_cmdlin(tail: &[u8]) {
+    if !ready() || KERNEL_RUN.load(Ordering::Acquire) == RUN_INITIAL {
+        return;
+    }
+    let mut c = [0u8; PDCLSIZE];
+    let n = tail.len().min(PDCLSIZE);
+    c[..n].copy_from_slice(&tail[..n]);
+    // SAFETY: kernel context, single CPU (`Cell` contract).
+    unsafe { (*PAGE.0.get()).aes.p_cmdlin = c };
 }
 
 /// User address of the `initial_basepage` stand-in (`null` before [`init`]).
@@ -234,49 +444,60 @@ pub fn aes_pd() -> *mut BasePage {
     if ready() { user_va(AES_OFFSET) as *mut BasePage } else { core::ptr::null_mut() }
 }
 
-/// EmuTOS's `run` while kernel code is on the stack: the `initial_basepage`
-/// stand-in until [`enter_aes`], the AES-PD stand-in after it. A user address
-/// (`null` before [`init`]) — what `p_parent` of a program a kernel caller
-/// starts holds (`proc_go`, `bdos/proc.c:541`).
+/// User address of the accdesk-PD stand-in (`null` before [`init`]). Its
+/// content is valid from the first [`enter_accdesk`] on.
+pub fn accdesk_pd() -> *mut BasePage {
+    if ready() { user_va(ACCDESK_OFFSET) as *mut BasePage } else { core::ptr::null_mut() }
+}
+
+/// User address of the EmuCON-PD stand-in (`null` before [`init`]). Its
+/// content is valid from the first [`enter_emucon`] on.
+pub fn emucon_pd() -> *mut BasePage {
+    if ready() { user_va(EMUCON_OFFSET) as *mut BasePage } else { core::ptr::null_mut() }
+}
+
+/// EmuTOS's `run` while kernel code is on the stack: `initial_basepage`
+/// until [`enter_aes`], the AES PD until [`enter_accdesk`], then the accdesk
+/// PD — or the EmuCON PD while EmuCON runs. A user address (`null` before
+/// [`init`]) — what `p_parent` of a program a kernel caller starts holds
+/// (`proc_go`, `bdos/proc.c:541`).
 pub fn kernel_run() -> *mut BasePage {
-    if KERNEL_RUN.load(Ordering::Acquire) == RUN_AES { aes_pd() } else { initial_basepage() }
+    if !ready() {
+        return core::ptr::null_mut();
+    }
+    user_va(pd_offset(KERNEL_RUN.load(Ordering::Acquire))) as *mut BasePage
 }
 
 /// The standard handles of [`kernel_run`] — what `init_pd_files` inherits
-/// when the caller is the kernel (`bdos/proc.c:391-398`, TASK/PROC02). Both
-/// stand-ins hold `default_handle` (`stdhdl_init`, `bdos/bdosmain.c:347`;
-/// the AES PD copies it). Before [`init`] it is still `default_handle`:
-/// EmuTOS's `run` is `initial_basepage` with those handles from BDOS
-/// initialisation on, before any program exists.
+/// when the caller is the kernel (`bdos/proc.c:391-398`, TASK/PROC02). Every
+/// stand-in holds `default_handle` (`stdhdl_init`, `bdos/bdosmain.c:347`; the
+/// AES, accdesk and EmuCON PDs copy it). Before [`init`] it is still
+/// `default_handle`: EmuTOS's `run` is `initial_basepage` with those handles
+/// from BDOS initialisation on, before any program exists.
 pub fn kernel_run_uft() -> [i8; NUMSTD] {
     if !ready() {
         return DEFAULT_HANDLE;
     }
-    // SAFETY: written only by `init` (boot); shared reads afterwards.
-    let p = unsafe { &*PAGE.0.get() };
-    if KERNEL_RUN.load(Ordering::Acquire) == RUN_AES { p.aes.p_uft } else { p.initial.p_uft }
+    // SAFETY: a field of the static page, read by value (`Cell` contract).
+    unsafe { (*pd_ptr(KERNEL_RUN.load(Ordering::Acquire))).p_uft }
 }
 
 /// The environment of [`kernel_run`] as the kernel reads it — what
 /// `alloc_env(flags, NULL)` copies when the caller is the kernel
-/// (`bdos/proc.c:419-420`): `double_nul` before the AES, the AES environment
-/// after it, each with its terminating double NUL. `None` before [`init`].
+/// (`bdos/proc.c:419-420`): `double_nul` before the AES, the AES / accdesk /
+/// EmuCON environment after it (the same bytes, `_parent-and-environment.md`
+/// §3), each with its terminating double NUL. `None` before [`init`].
 pub fn kernel_run_env() -> Option<&'static [u8]> {
     if !ready() {
         return None;
     }
-    // SAFETY: written only by `init` (boot); shared reads afterwards.
-    let p = unsafe { &*PAGE.0.get() };
-    if KERNEL_RUN.load(Ordering::Acquire) == RUN_AES {
-        Some(env_image(&p.aes_env))
-    } else {
-        Some(&p.double_nul)
-    }
+    Some(env_of(KERNEL_RUN.load(Ordering::Acquire)))
 }
 
 /// `ad_envrn` — the AES PD's environment (`aes/gemstart.S:78-96`), as the
 /// whole `ENV_SIZE` block, with its kernel address and its published user
-/// address. `None` before [`init`].
+/// address. `shel_envrn` searches this block whatever `run` is
+/// (`aes/gemshlib.c:338-347`). `None` before [`init`].
 pub fn aes_env() -> Option<(&'static [u8], u64)> {
     if !ready() {
         return None;
@@ -352,6 +573,10 @@ mod tests {
         // SAFETY: a null `run` is the documented kernel case.
         let auto_env = unsafe { super::super::loader::inherited_env(core::ptr::null()) };
         assert_eq!(auto_env, &[0u8, 0][..], "the loader's Inherit from a kernel caller, AUTO");
+        // D-4 before the AES: no AES PD exists, the tail is not mirrored.
+        set_aes_cmdlin(&[3, b'a', b'b', b'c']);
+        // SAFETY: as above.
+        assert_eq!(unsafe { (*PAGE.0.get()).aes.p_cmdlin[0] }, 0);
         enter_aes();
         assert_eq!(kernel_run() as u64, av);
         // envsize = 11 (bdos/proc.c:150-159): up to and with the double NUL.
@@ -359,6 +584,62 @@ mod tests {
         // SAFETY: as above.
         let desk_env = unsafe { super::super::loader::inherited_env(core::ptr::null()) };
         assert_eq!(desk_env, b"PATH=\0C:\\\0\0", "the loader's Inherit from a kernel caller, AES");
+        // D-4: ad_stail is the AES PD's p_cmdlin.
+        set_aes_cmdlin(&[2, b'Z', b'2']);
+        // SAFETY: as above.
+        assert_eq!(unsafe { &(&(*PAGE.0.get()).aes.p_cmdlin)[..4] }, &[2, b'Z', b'2', 0]);
+        set_aes_cmdlin(&[0]);
+        // SAFETY: as above.
+        assert_eq!(unsafe { (*PAGE.0.get()).aes.p_cmdlin[1] }, 0);
+
+        // The accdesk PD (gemshlib.c:570-581; proc.c:367-432,541).
+        let dv = accdesk_pd() as u64;
+        assert_eq!(dv, iv + 0x300);
+        enter_accdesk();
+        assert_eq!(kernel_run() as u64, dv, "run = accdesk between programs");
+        // SAFETY: as above.
+        let d = unsafe { &*(dv as *const BasePage) };
+        assert_eq!(d.p_parent as u32, av as u32, "accdesk.p_parent = AES PD");
+        assert_eq!(d.p_lowtpa as u32, dv as u32);
+        assert_eq!(d.p_hitpa as u32, (dv + 0x100) as u32, "D-2");
+        assert_eq!(d.p_xdta as u32, (dv + 0x80) as u32, "D-3");
+        assert_eq!((d.p_tbase, d.p_tlen, d.p_dlen, d.p_blen), (0, 0, 0, 0), "D-1");
+        assert_eq!(d.p_flags, PF_STANDARD);
+        assert_eq!(d.p_env as u32, (iv + 0x500) as u32, "its own environment block");
+        assert_eq!(d.p_uft, DEFAULT_HANDLE);
+        assert_eq!(d.p_curdrv, 2);
+        assert_eq!(kernel_run_env().unwrap(), b"PATH=\0C:\\\0\0", "a copy of ad_envrn");
+        assert_eq!(kernel_run_uft(), DEFAULT_HANDLE);
+
+        // The EmuCON PD under accdesk (gemshlib.c:614-620).
+        let ev = emucon_pd() as u64;
+        assert_eq!(ev, iv + 0x400);
+        enter_emucon();
+        assert_eq!(kernel_run() as u64, ev);
+        // SAFETY: as above.
+        let e = unsafe { &*(ev as *const BasePage) };
+        assert_eq!(e.p_parent as u32, dv as u32, "EmuCON.p_parent = accdesk");
+        assert_eq!(e.p_lowtpa as u32, ev as u32);
+        assert_eq!(e.p_env as u32, (iv + 0x510) as u32);
+        assert_eq!(kernel_run_env().unwrap(), b"PATH=\0C:\\\0\0");
+        leave_emucon();
+        assert_eq!(kernel_run() as u64, dv, "Pterm0 of EmuCON: run = accdesk");
+        leave_emucon();
+        assert_eq!(kernel_run() as u64, dv, "a second leave changes nothing");
+        leave_accdesk();
+        assert_eq!(kernel_run() as u64, av, "Pterm0 of accdesk: run = AES PD");
+
+        // EmuCON before the AES (EmuTOS's early console): parent initial,
+        // environment double_nul.
+        leave_aes();
+        enter_emucon();
+        // SAFETY: as above.
+        let e = unsafe { &*(ev as *const BasePage) };
+        assert_eq!(e.p_parent as u32, iv as u32);
+        assert_eq!(kernel_run_env().unwrap(), &[0u8, 0][..]);
+        leave_emucon();
+        assert_eq!(kernel_run() as u64, iv);
+
         // A running process whose `p_env` is 0 hands down the empty env.
         let bp = BasePage::zeroed();
         // SAFETY: a live basepage with `p_env == 0`.

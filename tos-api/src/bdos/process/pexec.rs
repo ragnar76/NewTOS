@@ -467,8 +467,9 @@ fn resolve_handle(handle: u64) -> Option<usize> {
 /// `bdos/proc.c:541` — `p->p_parent = run`): the child's `p_parent`
 /// becomes the caller's PD pointer, or, when the caller is no process (an
 /// EL1 caller such as the in-kernel EmuCON), the stand-in PD that is
-/// EmuTOS's `run` there ([`write_parent`], TASK/PPARENT). The rights the
-/// child inherits follow the **real** caller: none from a kernel caller.
+/// EmuTOS's `run` there — the EmuCON PD while EmuCON runs ([`write_parent`],
+/// TASK/PPARENT, TASK/PROC03). The rights the child inherits follow the
+/// **real** caller: none from a kernel caller.
 ///
 /// # Safety
 ///
@@ -486,11 +487,13 @@ pub unsafe fn set_parent(child: usize, parent_pd: *mut BasePage) {
 /// `p_parent` of a program the **kernel launcher** starts (`kernel/src/
 /// launch.rs`: the AUTO folder, the desktop's and the `#Z` program — EmuTOS
 /// `Pexec(PE_LOADGO)` from the BIOS, `bios/bios.c:693`, and `dos_exec` from
-/// the AES, `aes/gemshlib.c:645`): `run` there is kernel code, so the
+/// the shell, `aes/gemshlib.c:645`): `run` there is kernel code, so the
 /// child's parent is the stand-in PD of that moment —
 /// [`super::standin::kernel_run`]: `initial_basepage` before the AES, the
-/// AES PD after it (TASK/PPARENT). Only the basepage field: the launcher
-/// changes no rights (a kernel caller lends none).
+/// accdesk PD in the shell loop (TASK/PPARENT, corrected by TASK/PROC03:
+/// `aes/gemshlib.c:600-611,645` run in the accdesk process). Only the
+/// basepage field: the launcher changes no rights (a kernel caller lends
+/// none).
 ///
 /// # Safety
 ///
@@ -513,9 +516,13 @@ unsafe fn write_parent(child: usize, parent_pd: *mut BasePage) {
         return;
     }
     let run = if parent_pd.is_null() { super::standin::kernel_run() } else { parent_pd };
+    let value = run as u64 as tos_types::Long;
     // SAFETY: `kva` is the kernel alias of the child's live basepage;
     // `p_parent` is a plain 32-bit LONG (user addresses are below 4 GiB).
-    unsafe { (*kva).p_parent = run as u64 as tos_types::Long };
+    unsafe { (*kva).p_parent = value };
+    // What `Pterm` compares the live field with (TASK/PROC03 B4,
+    // `pterm::return_target`).
+    PROCESS_TABLE[child].launch_parent.store(value as u32, Ordering::Release);
 }
 
 /// Release every slot holding a program that `owner` loaded with `PE_LOAD`

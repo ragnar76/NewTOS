@@ -285,6 +285,23 @@ pub struct Process {
     /// `Pterm` to return control to the parent's resume PC.
     pub parent_slot: AtomicU32,
 
+    /// The `p_parent` value this process was started with — what
+    /// [`pexec::set_parent`] / [`pexec::set_kernel_parent`] wrote (EmuTOS
+    /// `proc_go`, `p->p_parent = run`, `bdos/proc.c:541`): the caller's PD,
+    /// or the stand-in PD that was the kernel's `run`. `0` for a process
+    /// that was never started that way (an accessory, a selftest launch).
+    ///
+    /// `Pterm` compares the dying process's live `p_parent` with it
+    /// (TASK/PROC03 B4, `pterm::return_target`): equal — return to the
+    /// recorded parent, the normal case; changed — EmuTOS's `run =
+    /// run->p_parent` (`bdos/proc.c:609`) resumes whatever the field names,
+    /// which NewTOS honours only for a PD that has a resume point on this
+    /// process's launch chain (`_run-ownership-curdir.md` §6.4 D-5).
+    ///
+    /// [`pexec::set_parent`]: pexec::set_parent
+    /// [`pexec::set_kernel_parent`]: pexec::set_kernel_parent
+    pub launch_parent: AtomicU32,
+
     /// The parent's cooperative run-set membership ([`Self::runnable`]) at the
     /// instant it launched **this** child, so the child's `Pterm` can put it
     /// back exactly as it found it.
@@ -779,6 +796,7 @@ impl Process {
             entry_va: AtomicU64::new(0),
             sp_el0: AtomicU64::new(0),
             parent_slot: AtomicU32::new(NO_PARENT),
+            launch_parent: AtomicU32::new(0),
             parent_runnable: AtomicBool::new(false),
             parent_frame: ParentFrame::zeroed(),
             parent_l0_pa: AtomicU64::new(0),
@@ -1137,6 +1155,7 @@ pub fn free_slot(idx: usize) {
     p.entry_va.store(0, Ordering::Release);
     p.sp_el0.store(0, Ordering::Release);
     p.parent_slot.store(NO_PARENT, Ordering::Release);
+    p.launch_parent.store(0, Ordering::Release);
     p.parent_runnable.store(false, Ordering::Release);
     p.parent_frame.clear();
     p.parent_l0_pa.store(0, Ordering::Release);
