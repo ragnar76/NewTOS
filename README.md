@@ -44,8 +44,9 @@ what we need. A photo of the crash report helps a lot.
 
 - Raspberry Pi 4 (BCM2711); QEMU `raspi4b` and `virt` for development
 - HDMI framebuffer up to Full HD, true colour
-- SD card as the hard disk: FAT partitions as drives `C:`–`F:`, multi-block
-  4-bit transfers (~10 MB/s), a 32 MB block read cache
+- SD card as the hard disk: every FAT16 partition (primary or logical, up to
+  2 GB each) becomes a drive, `C:` upward to `P:`; programs see the 8.3
+  names; ~10 MB/s with a 32 MB read cache
 - USB keyboard and mouse (incl. wheel) through the VL805 xHCI controller
 - US and German keyboard layouts built in, or any `C:\KEYBOARD.KBD`
 - Per-program memory protection after the FreeMiNT model: a crashing program
