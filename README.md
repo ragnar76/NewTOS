@@ -9,9 +9,11 @@ no Shifter, no MFP in the kernel — the TOS API itself is implemented in Rust,
 running natively on the Cortex-A72.
 
 Atari programs written in C are recompiled from their original sources with
-the NewTOS SDK and run as native AArch64 programs. Their sources stay
-untouched; whatever a 64-bit, little-endian target needs is fixed in the
-toolchain.
+the NewTOS SDK and run as native AArch64 programs. The upstream sources are
+kept unchanged as archives. What a 64-bit, little-endian target needs in
+general is fixed in the SDK (libc, headers, start-up code); what a single
+program needs is kept as a separate patch file next to its sources
+(`sdk/overlays/<program>/`).
 
 The specification is EmuTOS: every TOS function is extracted from the EmuTOS
 source into [`docs/api/`](docs/api/) and implemented against that, then
@@ -66,7 +68,7 @@ what we need. A photo of the crash report helps a lot.
 - A few NewTOS extensions via `Ssystem` (CPU clock, temperature, system
   information), in the FreeMiNT style
 
-**Ported software** (recompiled, sources unmodified)
+**Ported software** (recompiled; per-program patches in `sdk/overlays/`)
 
 - QED (text editor), TeraDesk (desktop), zView (image viewer with ten codec
   modules), EmuCON
