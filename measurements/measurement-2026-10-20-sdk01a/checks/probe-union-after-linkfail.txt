@@ -1,0 +1,24 @@
+FAIL __gethostid: undefined symbol: gethostbyname 
+FAIL add_trap: undefined symbol: add_trap 
+FAIL errors: undefined symbol: errors 
+FAIL func1_stack: undefined symbol: func1_stack 
+FAIL func2_stack: undefined symbol: func2_stack 
+FAIL generate_bindings_impl: undefined symbol: generate_bindings_impl 
+FAIL generate_bindings_old: undefined symbol: generate_bindings_old 
+FAIL generate_bindings_proto: undefined symbol: generate_bindings_proto 
+FAIL generate_traps_h: undefined symbol: generate_traps_h 
+FAIL gethostid: undefined symbol: gethostbyname 
+FAIL if_getifflags: undefined symbol: socket 
+FAIL if_getlnkflags: undefined symbol: socket 
+FAIL if_link: undefined symbol: socket 
+FAIL if_setifflags: undefined symbol: socket 
+FAIL if_setlnkflags: undefined symbol: socket 
+FAIL is_syscall: undefined symbol: is_syscall 
+CCFAIL main
+FAIL parse_syscall_description: undefined symbol: parse_syscall_description 
+FAIL print_head: undefined symbol: print_head 
+FAIL qecvt: undefined symbol: __divtf3 undefined symbol: __eqtf2 undefined symbol: __getf2 undefined symbol: __lttf2 undefined symbol: __multf3 undefined symbol: __trunctfdf2 
+FAIL qecvt_r: undefined symbol: __divtf3 undefined symbol: __eqtf2 undefined symbol: __getf2 undefined symbol: __lttf2 undefined symbol: __multf3 undefined symbol: __trunctfdf2 
+FAIL qfcvt: undefined symbol: __divtf3 undefined symbol: __eqtf2 undefined symbol: __getf2 undefined symbol: __lttf2 undefined symbol: __multf3 undefined symbol: __trunctfdf2 
+FAIL qfcvt_r: undefined symbol: __divtf3 undefined symbol: __eqtf2 undefined symbol: __getf2 undefined symbol: __lttf2 undefined symbol: __multf3 undefined symbol: __trunctfdf2 
+FAIL qgcvt: undefined symbol: __divtf3 undefined symbol: __eqtf2 undefined symbol: __getf2 undefined symbol: __lttf2 undefined symbol: __multf3 undefined symbol: __trunctfdf2 

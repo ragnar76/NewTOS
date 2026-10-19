@@ -25,6 +25,12 @@
  *             GEMDOS function 0x104 (tos-api/src/gemdos/mod.rs, id > MAX_FN),
  *             which is the -ENOSYS __isatty needs to take its Fseek probe.
  *
+ *   Ffstat64 -- answers EINVFN (-32) for every call: NewTOS has no GEMDOS
+ *             0x15d either (same dispatcher). It records the handle and the
+ *             buffer it was given, so the harness sees that __sys_fstat
+ *             (TASK/SDK01 A) makes the real trap with its own arguments and
+ *             returns the kernel's answer unchanged.
+ *
  * Every Fseek/Fcntl call is counted (fh_trap_count) so the harness can see
  * __isatty's cache answer without a trap. fh_reset_cache() clears
  * __open_stat[] as mintlib's start-up does (mintlib/main.c:161-162), i.e. what
@@ -34,6 +40,7 @@
  * plain integers, so the harness (fstat-host.c) can use the host's headers.
  */
 #include <string.h>
+#include <errno.h>
 #include <stdio.h>
 #include <sys/stat.h>
 #include <unistd.h>		/* __isatty */
@@ -60,6 +67,18 @@ fh_test_Fcntl (short h, void *arg, short cmd)
 	(void) h; (void) arg; (void) cmd;
 	traps++;
 	return -32;				/* EINVFN: no GEMDOS 0x104 */
+}
+
+static short ffstat64_h = -999;
+static void *ffstat64_buf;
+
+long
+fh_test_Ffstat64 (short h, void *st)
+{
+	traps++;
+	ffstat64_h = h;
+	ffstat64_buf = st;
+	return -32;				/* EINVFN: no GEMDOS 0x15d */
 }
 
 long
@@ -177,3 +196,21 @@ fh_probe_isatty (int fd, int *status, int *flags)
 int fh_fh_isatty (void) { return FH_ISATTY; }
 int fh_fh_isafile (void) { return FH_ISAFILE; }
 int fh_crmod_echo (void) { return CRMOD | ECHO; }
+
+/* __sys_fstat(fd, &st, exact) (TASK/SDK01 A): its result; *is_enosys = the
+ * result is mintlib's -ENOSYS; *handle_ok/*buf_ok = the Ffstat64 trap got fd
+ * and &st; *ntraps = traps made by the call. */
+long
+fh_probe_sys_fstat (int fd, int exact, int *is_enosys, int *handle_ok, int *buf_ok, long *ntraps)
+{
+	struct stat st;
+	long t0 = traps, r;
+	ffstat64_h = -999;
+	ffstat64_buf = NULL;
+	r = __sys_fstat ((short) fd, &st, exact);
+	*is_enosys = r == -ENOSYS;
+	*handle_ok = ffstat64_h == (short) fd;
+	*buf_ok = ffstat64_buf == (void *) &st;
+	*ntraps = traps - t0;
+	return r;
+}

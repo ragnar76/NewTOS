@@ -179,6 +179,24 @@ report waith-host $rc "mintlib tree absent or host not little-endian LP64"
 [ $rc -eq 0 ] || [ $rc -eq 77 ] || sed 's/^/      /' "$WORK/malloc-host.log"
 report malloc-host $rc "mintlib tree absent or host not LP64"
 
+# lp64-limits (SDK01 A): SIZE_MAX, PTRDIFF_MIN/MAX, SSIZE_MAX (and the
+# neighbouring LONG/INTPTR/INTMAX limits) match their AArch64/LP64 types --
+# all _Static_assert, compiled for the target with build-libc.sh's flags.
+# With mintlib's pristine stdint.h + bits/posix1_lim.h 10 assertions fail.
+"$SDK/libc/tests/lp64-limits.sh" > "$WORK/lp64-limits.log" 2>&1; rc=$?
+[ $rc -eq 0 ] || [ $rc -eq 77 ] || sed 's/^/      /' "$WORK/lp64-limits.log"
+report lp64-limits $rc "mintlib tree absent"
+
+# libc-link (SDK01 A): against the built libc.a, tmpfile/mkstemp/glob/
+# wordexp/getlogin/sem_open (pwdgrp/), ttyname/ctermid (__sys_fstat),
+# gets/getwd/siggetmask (.stabs overlays) and the nf_* family (newtos-arch/
+# nf_ops.c) link; a program without main does not (no test program's main
+# in the archive); no member references the syscall generator's yyparse.
+# Against the pre-SDK01 libc.a: 0 of 31 link, plus the two archive checks.
+"$SDK/libc/tests/libc-link.sh" > "$WORK/libc-link.log" 2>&1; rc=$?
+[ $rc -eq 0 ] || [ $rc -eq 77 ] || sed 's/^/      /' "$WORK/libc-link.log"
+report libc-link $rc "libc.a not built"
+
 # --- app host tests --------------------------------------------------------------
 # c2p-host (PORT06, user decision 2026-10-04): DOOM's table chunky-to-planar
 # (sdk/apps/doom/doomgeneric_gem.c, compiled without its GEM half) equals the

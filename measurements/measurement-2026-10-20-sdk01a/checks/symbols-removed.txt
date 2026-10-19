@@ -1,0 +1,12 @@
+add_trap
+errors
+func1_stack
+func2_stack
+generate_bindings_impl
+generate_bindings_old
+generate_bindings_proto
+generate_traps_h
+is_syscall
+main
+parse_syscall_description
+print_head

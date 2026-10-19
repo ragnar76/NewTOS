@@ -1,0 +1,34 @@
+FAIL  tmpfile does not link: undefined symbol: endgrent undefined symbol: getgrent undefined symbol: getpwuid undefined symbol: setgrent 
+FAIL  mkstemp does not link: undefined symbol: endgrent undefined symbol: getgrent undefined symbol: getpwuid undefined symbol: setgrent 
+FAIL  mktemp does not link: undefined symbol: endgrent undefined symbol: getgrent undefined symbol: getpwuid undefined symbol: setgrent 
+FAIL  mkdtemp does not link: undefined symbol: endgrent undefined symbol: getgrent undefined symbol: getpwuid undefined symbol: setgrent 
+FAIL  tmpnam does not link: undefined symbol: endgrent undefined symbol: getgrent undefined symbol: getpwuid undefined symbol: setgrent 
+FAIL  tmpnam_r does not link: undefined symbol: endgrent undefined symbol: getgrent undefined symbol: getpwuid undefined symbol: setgrent 
+FAIL  tempnam does not link: undefined symbol: endgrent undefined symbol: getgrent undefined symbol: getpwuid undefined symbol: setgrent 
+FAIL  glob does not link: undefined symbol: __getpwnam_r undefined symbol: getpwuid 
+FAIL  globfree does not link: undefined symbol: __getpwnam_r undefined symbol: getpwuid 
+FAIL  wordexp does not link: undefined symbol: __getpwnam_r undefined symbol: __getpwuid_r undefined symbol: getpwuid 
+FAIL  wordfree does not link: undefined symbol: __getpwnam_r undefined symbol: __getpwuid_r undefined symbol: getpwuid 
+FAIL  getlogin does not link: undefined symbol: getpwuid 
+FAIL  cuserid does not link: undefined symbol: getpwuid 
+FAIL  getpwuid does not link: undefined symbol: getpwuid 
+FAIL  getgrent does not link: undefined symbol: getgrent 
+FAIL  sem_open does not link: undefined symbol: endgrent undefined symbol: getgrent undefined symbol: getpwuid undefined symbol: setgrent 
+FAIL  sem_unlink does not link: undefined symbol: endgrent undefined symbol: getgrent undefined symbol: getpwuid undefined symbol: setgrent 
+FAIL  ttyname does not link: undefined symbol: __sys_fstat 
+FAIL  ttyname_r does not link: undefined symbol: __sys_fstat 
+FAIL  ctermid does not link: undefined symbol: __sys_fstat 
+FAIL  gets does not link: undefined symbol: gets 
+FAIL  getwd does not link: undefined symbol: getwd 
+FAIL  siggetmask does not link: undefined symbol: siggetmask 
+FAIL  nf_init does not link: undefined symbol: nf_init 
+FAIL  nf_get_id does not link: undefined symbol: nf_get_id 
+FAIL  nf_version does not link: undefined symbol: nf_init 
+FAIL  nf_debug does not link: undefined symbol: nf_init 
+FAIL  nf_debugprintf does not link: undefined symbol: nf_init 
+FAIL  nf_get_name does not link: undefined symbol: nf_init 
+FAIL  nf_shutdown does not link: undefined symbol: nf_init 
+FAIL  nf_exec does not link: undefined symbol: nf_init 
+libc-link: 0/31 functions link
+FAIL  a program without main LINKED -- libc.a defines main: stdlib__dtest.o: 0000000000000000 T main tz__date.o: 0000000000000000 T main tz__tzinit.o: 0000000000000000 T main unix__ucontext.o: 0000000000000000 T main 
+FAIL  libc.a still references the syscall generator's yyin/yyparse

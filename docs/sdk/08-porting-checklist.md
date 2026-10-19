@@ -57,8 +57,8 @@ Tick each line; every line points at the section that explains it.
       not — an app that takes arguments only through the environment must read
       `p_cmdlin` or `shel_read`
       → [05 B6](05-abi-pitfalls.md#b6-argcargv-the-command-tail-and-the-environment)
-- [ ] `uintptr_t`/`intptr_t` are pointer-wide since TASK/PORT10; `SIZE_MAX`
-      and `PTRDIFF_MAX` from mintlib's `stdint.h` are still the 32-bit values
+- [ ] `uintptr_t`/`intptr_t` are pointer-wide since TASK/PORT10; `SIZE_MAX`,
+      `PTRDIFF_MIN/MAX` and `SSIZE_MAX` are the 64-bit values since TASK/SDK01 A
       → [05 B7](05-abi-pitfalls.md#b7-mintlibs-stdinth-gives-a-32-bit-uintptr_t-on-our-lp64-build)
 - [ ] `.RSC` converted with `tools/mkrsc.py convert` (kernel loader) or
       `--rshdr` (own loader); shipped beside the `.NAP` → [05 B8](05-abi-pitfalls.md#b8-resource-files-format-alignment-and-who-loads-them)

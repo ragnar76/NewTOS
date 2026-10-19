@@ -1,0 +1,101 @@
+FAIL __diraccess: undefined symbol: endgrent undefined symbol: getgrent undefined symbol: getpwuid undefined symbol: setgrent 
+FAIL __euidaccess: undefined symbol: endgrent undefined symbol: getgrent undefined symbol: getpwuid undefined symbol: setgrent 
+FAIL __exists: undefined symbol: endgrent undefined symbol: getgrent undefined symbol: getpwuid undefined symbol: setgrent 
+FAIL __fgetpwent_r: undefined symbol: __fgetpwent_r 
+FAIL __get_tmpdir: undefined symbol: endgrent undefined symbol: getgrent undefined symbol: getpwuid undefined symbol: setgrent 
+FAIL __getgrouplist: undefined symbol: __getgrouplist 
+FAIL __getgroups: undefined symbol: endgrent undefined symbol: getgrent undefined symbol: getpwuid undefined symbol: setgrent 
+FAIL __gethostid: undefined symbol: gethostbyname 
+FAIL __getpw: undefined symbol: __getpw 
+FAIL __getpwent_r: undefined symbol: __getpwent_r 
+FAIL __getpwnam_r: undefined symbol: __getpwnam_r 
+FAIL __getpwuid_r: undefined symbol: __getpwuid_r 
+FAIL __glob_pattern_p: undefined symbol: __getpwnam_r undefined symbol: getpwuid 
+FAIL __group_member: undefined symbol: endgrent undefined symbol: getgrent undefined symbol: getpwuid undefined symbol: setgrent 
+FAIL __initgroups: undefined symbol: __initgroups 
+FAIL __sys_fstat: undefined symbol: __sys_fstat 
+FAIL __tmp_letters: undefined symbol: endgrent undefined symbol: getgrent undefined symbol: getpwuid undefined symbol: setgrent 
+FAIL add_trap: undefined symbol: yyin undefined symbol: yyparse 
+FAIL ctermid: undefined symbol: __sys_fstat 
+FAIL cuserid: undefined symbol: getpwuid 
+FAIL eaccess: undefined symbol: endgrent undefined symbol: getgrent undefined symbol: getpwuid undefined symbol: setgrent 
+FAIL endgrent: undefined symbol: endgrent 
+FAIL endpwent: undefined symbol: endpwent 
+FAIL errors: undefined symbol: yyin undefined symbol: yyparse 
+FAIL euidaccess: undefined symbol: endgrent undefined symbol: getgrent undefined symbol: getpwuid undefined symbol: setgrent 
+FAIL fgetgrent: undefined symbol: fgetgrent 
+FAIL fgetpwent: undefined symbol: fgetpwent 
+FAIL fgetpwent_r: undefined symbol: fgetpwent_r 
+FAIL func1_stack: duplicate symbol: main 
+FAIL func2_stack: duplicate symbol: main 
+FAIL generate_bindings_impl: undefined symbol: yyin undefined symbol: yyparse 
+FAIL generate_bindings_old: undefined symbol: yyin undefined symbol: yyparse 
+FAIL generate_bindings_proto: undefined symbol: yyin undefined symbol: yyparse 
+FAIL generate_traps_h: undefined symbol: yyin undefined symbol: yyparse 
+FAIL getgrent: undefined symbol: getgrent 
+FAIL getgrgid: undefined symbol: getgrgid 
+FAIL getgrgid_r: undefined symbol: getgrgid_r 
+FAIL getgrnam: undefined symbol: getgrnam 
+FAIL getgrnam_r: undefined symbol: getgrnam_r 
+FAIL getgrouplist: undefined symbol: getgrouplist 
+FAIL getgroups: undefined symbol: endgrent undefined symbol: getgrent undefined symbol: getpwuid undefined symbol: setgrent 
+FAIL gethostid: undefined symbol: gethostbyname 
+FAIL getlogin: undefined symbol: getpwuid 
+FAIL getpw: undefined symbol: getpw 
+FAIL getpwent: undefined symbol: getpwent 
+FAIL getpwent_r: undefined symbol: getpwent_r 
+FAIL getpwnam: undefined symbol: getpwnam 
+FAIL getpwnam_r: undefined symbol: getpwnam_r 
+FAIL getpwuid: undefined symbol: getpwuid 
+FAIL getpwuid_r: undefined symbol: getpwuid_r 
+FAIL gets: undefined symbol: gets 
+FAIL getwd: undefined symbol: getwd 
+FAIL glob: undefined symbol: __getpwnam_r undefined symbol: getpwuid 
+FAIL glob_pattern_p: undefined symbol: __getpwnam_r undefined symbol: getpwuid 
+FAIL globfree: undefined symbol: __getpwnam_r undefined symbol: getpwuid 
+FAIL group_member: undefined symbol: endgrent undefined symbol: getgrent undefined symbol: getpwuid undefined symbol: setgrent 
+FAIL if_getifflags: undefined symbol: socket 
+FAIL if_getlnkflags: undefined symbol: socket 
+FAIL if_link: undefined symbol: socket 
+FAIL if_setifflags: undefined symbol: socket 
+FAIL if_setlnkflags: undefined symbol: socket 
+FAIL initgroups: undefined symbol: initgroups 
+FAIL is_syscall: undefined symbol: yyin undefined symbol: yyparse 
+CCFAIL main
+FAIL mkdtemp: undefined symbol: endgrent undefined symbol: getgrent undefined symbol: getpwuid undefined symbol: setgrent 
+FAIL mkstemp: undefined symbol: endgrent undefined symbol: getgrent undefined symbol: getpwuid undefined symbol: setgrent 
+FAIL mktemp: undefined symbol: endgrent undefined symbol: getgrent undefined symbol: getpwuid undefined symbol: setgrent 
+FAIL nf_catch_sigsys: undefined symbol: nf_catch_sigsys 
+FAIL nf_debug: undefined symbol: nf_init 
+FAIL nf_debugprintf: undefined symbol: nf_init 
+FAIL nf_debugvprintf: undefined symbol: nf_init 
+FAIL nf_exec: undefined symbol: nf_init 
+FAIL nf_execv: undefined symbol: nf_init 
+FAIL nf_get_fullname: undefined symbol: nf_init 
+FAIL nf_get_id: undefined symbol: nf_get_id 
+FAIL nf_get_name: undefined symbol: nf_init 
+FAIL nf_init: undefined symbol: nf_init 
+FAIL nf_shutdown: undefined symbol: nf_init 
+FAIL nf_version: undefined symbol: nf_init 
+FAIL parse_syscall_description: undefined symbol: yyin undefined symbol: yyparse 
+FAIL print_head: undefined symbol: yyin undefined symbol: yyparse 
+FAIL putgrent: undefined symbol: putgrent 
+FAIL putpwent: undefined symbol: putpwent 
+FAIL qecvt: undefined symbol: __divtf3 undefined symbol: __eqtf2 undefined symbol: __getf2 undefined symbol: __lttf2 undefined symbol: __multf3 undefined symbol: __trunctfdf2 
+FAIL qecvt_r: undefined symbol: __divtf3 undefined symbol: __eqtf2 undefined symbol: __getf2 undefined symbol: __lttf2 undefined symbol: __multf3 undefined symbol: __trunctfdf2 
+FAIL qfcvt: undefined symbol: __divtf3 undefined symbol: __eqtf2 undefined symbol: __getf2 undefined symbol: __lttf2 undefined symbol: __multf3 undefined symbol: __trunctfdf2 
+FAIL qfcvt_r: undefined symbol: __divtf3 undefined symbol: __eqtf2 undefined symbol: __getf2 undefined symbol: __lttf2 undefined symbol: __multf3 undefined symbol: __trunctfdf2 
+FAIL qgcvt: undefined symbol: __divtf3 undefined symbol: __eqtf2 undefined symbol: __getf2 undefined symbol: __lttf2 undefined symbol: __multf3 undefined symbol: __trunctfdf2 
+FAIL sem_open: undefined symbol: endgrent undefined symbol: getgrent undefined symbol: getpwuid undefined symbol: setgrent 
+FAIL sem_unlink: undefined symbol: endgrent undefined symbol: getgrent undefined symbol: getpwuid undefined symbol: setgrent 
+FAIL setgrent: undefined symbol: setgrent 
+FAIL setpwent: undefined symbol: setpwent 
+FAIL siggetmask: undefined symbol: siggetmask 
+FAIL tempnam: undefined symbol: endgrent undefined symbol: getgrent undefined symbol: getpwuid undefined symbol: setgrent 
+FAIL tmpfile: undefined symbol: endgrent undefined symbol: getgrent undefined symbol: getpwuid undefined symbol: setgrent 
+FAIL tmpnam: undefined symbol: endgrent undefined symbol: getgrent undefined symbol: getpwuid undefined symbol: setgrent 
+FAIL tmpnam_r: undefined symbol: endgrent undefined symbol: getgrent undefined symbol: getpwuid undefined symbol: setgrent 
+FAIL ttyname: undefined symbol: __sys_fstat 
+FAIL ttyname_r: undefined symbol: __sys_fstat 
+FAIL wordexp: undefined symbol: __getpwnam_r undefined symbol: __getpwuid_r undefined symbol: getpwuid 
+FAIL wordfree: undefined symbol: __getpwnam_r undefined symbol: __getpwuid_r undefined symbol: getpwuid 

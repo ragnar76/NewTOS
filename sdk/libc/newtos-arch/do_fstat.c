@@ -76,6 +76,7 @@
 #include <sys/stat.h>     /* struct stat, S_IFCHR, S_IFREG, S_BLKSIZE */
 #include <unistd.h>       /* __isatty (mintlib/isatty.c) */
 #include <mint/osbind.h>  /* Fseek (GEMDOS 0x42) */
+#include <mint/mintbind.h> /* Ffstat64 (GEMDOS 0x15d) */
 #include "lib.h"
 
 /* First GEMDOS file handle: 0..5 are the standard handles (EmuTOS NUMSTD,
@@ -115,4 +116,29 @@ __do_fstat (int fd, struct stat *st, int exact)
 	st->st_nlink   = 1;
 
 	return 0;
+}
+
+/*
+ * __sys_fstat -- the native handle stat, which mintlib/do_fstat.c (excluded,
+ * see build-libc.sh) defined next to __do_fstat. mintlib/ttyname.c:81 and
+ * ttyname_r.c:80 call it (lib.h:155), so without it ttyname, ttyname_r and
+ * ctermid did not link (TASK/SDK01 A, docs/analysis/sdk-inventory-2026-10-20.md
+ * W3). Same lean pattern as __sys_stat in newtos-arch/do_stat.c: make the
+ * real native trap, Ffstat64, and return the kernel's actual result -- no
+ * hardcoded value. NewTOS has no Ffstat64, so the trap answers -ENOSYS
+ * (EINVFN) and the caller treats it as "no native stat", exactly as on a
+ * TOS without MiNT. The Fcntl(FSTAT64)/Fcntl(FSTAT) fallbacks and the
+ * timestamp conversion of the mintlib original are dropped, as in
+ * __sys_stat (`exact` selects only that conversion).
+ *
+ * On NewTOS __mint is 0 (mintlib/globals.c; only crtinit.c would set it), so
+ * ttyname()/ttyname_r() take their TOS branch ("/dev/con", "/dev/aux") and do
+ * not reach this call; it is the MiNT branch's native probe.
+ * Signature as declared in mintlib/lib.h:155.
+ */
+long
+__sys_fstat (short fd, struct stat *st, int exact)
+{
+	(void) exact;   /* NewTOS lean: no timestamp conversion (see above) */
+	return Ffstat64 (fd, st);
 }

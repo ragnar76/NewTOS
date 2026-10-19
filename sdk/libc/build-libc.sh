@@ -68,6 +68,16 @@
 #                                order (same int layout: exit code bits
 #                                8..15, termsig 0..6), so WEXITSTATUS & co.
 #                                read wait4's status word (TASK/PORT-WAITH)
+#       include/stdint.h         + SIZE_MAX, PTRDIFF_MIN/MAX 64-bit on LP64;
+#       include/bits/posix1_lim.h  SSIZE_MAX = LONG_MAX on LP64 (TASK/SDK01 A,
+#                                checked by tests/lp64-limits.sh)
+#       stdio/gets.c, mintlib/getwd.c, signal/siggetmask.c  without their
+#                                link_warning line (an a.out `.stabs' directive
+#                                clang rejects -- the files did not compile;
+#                                TASK/SDK01 A)
+#   - newtos-arch/nf_ops.c replaces the m68k mintlib/nf_ops.c (NatFeats: "not
+#     available" on AArch64), and newtos-arch/do_fstat.c also provides
+#     __sys_fstat (ttyname/ctermid) -- TASK/SDK01 A, see EXCLUDE below.
 #   - TASK/PROC01: mintlib's vfork (unix/vfork.S) and _setstack
 #     (mintlib/setstack.S) are m68k; newtos-arch/vfork.S and setstack.S are
 #     their AArch64 retargets. With them and thread.c, posix/system.c is
@@ -145,7 +155,16 @@ INCS=(-I"$TOP" -I"$TOP/include" -I"$TOP/mintlib" -I"$TOP/stdlib" -isystem "$RES"
 
 # mintlib core directories the linker draws from (buildrules `srcdirs` subset
 # relevant to a stdio/stdlib/malloc client; the archive is lazily resolved).
-DIRS="stdio stdlib string mintlib unix syscall time misc multibyte signal termios locale dirent gmp posix tz"
+# pwdgrp/ (passwd/group database: getpwuid, getgrent, getpwnam_r, ...) since
+# TASK/SDK01 A: unix/getgroups.c, posix/glob.c and posix/wordexp.c reference
+# it, and through __exists -> __euidaccess -> __group_member -> getgroups the
+# whole temp-file family (tmpfile, mkstemp, mktemp, tmpnam, tempnam) and
+# glob, wordexp, getlogin, cuserid, sem_open did not link without it
+# (docs/analysis/sdk-inventory-2026-10-20.md W1). All 16 files compile
+# unchanged. At run time mintlib reads /etc/passwd and /etc/group, which a
+# NewTOS volume does not carry: getpwuid() then returns NULL and the group
+# scan finds nothing -- mintlib's own behaviour on a plain TOS system.
+DIRS="stdio stdlib string mintlib unix syscall time misc multibyte signal termios locale dirent gmp posix tz pwdgrp"
 
 # mintlib .c files replaced by lean NewTOS glue in newtos-arch/ (see below).
 # These are dropped from the archive so the linker takes OUR definitions:
@@ -168,7 +187,12 @@ DIRS="stdio stdlib string mintlib unix syscall time misc multibyte signal termio
 # it treated the basepage fields as native pointers, and NewTOS had no
 # Pexec 5/6/7. It builds now from the LP64 overlay (overlay/mintlib/thread.c)
 # against the kernel's Pexec 5 + 4 (ARCH03 stage 2).
-EXCLUDE="mintlib/do_fstat.c mintlib/do_stat.c unix/access.c unix/ioctl.c"
+# mintlib/nf_ops.c -> newtos-arch/nf_ops.c  (NatFeats detection; the original
+#   is m68k asm in all three compiler variants and never compiled here, so
+#   nf_init was undefined and no libc nf_* function linked. The replacement
+#   reports "NatFeats not available" -- there is no emulator host on
+#   AArch64 -- through the API's documented absent-path; TASK/SDK01 A.)
+EXCLUDE="mintlib/do_fstat.c mintlib/do_stat.c unix/access.c unix/ioctl.c mintlib/nf_ops.c"
 is_excluded() { case " $EXCLUDE " in *" $1 "*) return 0;; esac; return 1; }
 
 echo "clang : $($CLANG --version | head -1)"
@@ -194,7 +218,23 @@ for d in $DIRS; do
         # (syscall/SRCFILES). In libc.a it was a trap -- it defines `main`
         # and a second `_stksize` (64 KiB, main.c:41), so a program without
         # its own main, or one that looks up `_stksize`, could pull it in.
-        case "$d/$b" in syscall/main) echo "$d/$b.c" >> "$BUILD/excluded.txt"; continue;; esac
+        #
+        # The other syscall/ sources are the rest of that same generator
+        # (gen_objs = check generate main pars scan traps, + syscallparser.c);
+        # in libc.a they were members referencing the generator's yyin/yyparse
+        # (TASK/SDK01 A, inventory W6). unix/ucontext.c is mintlib's
+        # getcontext/swapcontext TEST program -- not in unix/SRCFILES, defines
+        # `main`, func1_stack, func2_stack -- so a program without a main of
+        # its own linked against it silently. Same treatment as main.c. The
+        # same holds for three more mintlib PROGRAMS that defined `main' in
+        # libc.a: stdlib/dtest.c (stdlib/Makefile EXTRAPRGS), tz/tzinit.c
+        # (tz/Makefile bootsbin_PROGRAMS) and tz/date.c (tz/Makefile: "The
+        # date program contained here is not used") -- like ftest/zdump/zic/
+        # tzselect above, none is a library member upstream.
+        case "$d/$b" in
+            syscall/main|syscall/check|syscall/generate|syscall/syscallparser|syscall/traps|unix/ucontext|stdlib/dtest|tz/tzinit|tz/date)
+                echo "$d/$b.c" >> "$BUILD/excluded.txt"; continue;;
+        esac
         if is_excluded "$d/$b.c"; then echo "$d/$b.c" >> "$BUILD/excluded.txt"; continue; fi
         o="$OBJ/${d}__${b}.o"
         # Per-file DEFS, replicating mintlib buildrules. ident.c needs the
@@ -277,6 +317,10 @@ lib_check_failures "libc" "$BUILD/failed.txt" "$LIBC/expected-failures.txt" \
     -c "$LIBC/newtos-arch/access.c"    -o "$OBJ/arch__access.o"    || exit 1
 "$CLANG" "${CFLAGS[@]}" "${INCS[@]}" \
     -c "$LIBC/newtos-arch/softfloat.c" -o "$OBJ/arch__softfloat.o" || exit 1
+# NatFeats detection (replaces the m68k mintlib/nf_ops.c, see EXCLUDE above):
+# nf_init/nf_get_id/nf_catch_sigsys, so mintlib's own nf_*.c members link.
+"$CLANG" "${CFLAGS[@]}" "${INCS[@]}" \
+    -c "$LIBC/newtos-arch/nf_ops.c"    -o "$OBJ/arch__nf_ops.o"    || exit 1
 
 # --- archive -----------------------------------------------------------------
 rm -f "$LIBC/libc.a"

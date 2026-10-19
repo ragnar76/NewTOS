@@ -315,8 +315,10 @@ half; CoreMark's `check_data_types()` would report a size error.
 disagree by include order — and sets `INTPTR_MIN/MAX`, `UINTPTR_MAX`;
 `inttypes.h`'s `PRI*PTR`/`SCN*PTR` follow. QED and TeraDesk rebuilt: 0
 undefined, two TeraDesk `environm.c` truncation warnings gone, none new.
-**Still 32-bit in the same header**: `PTRDIFF_MIN/MAX` and `SIZE_MAX` (not
-part of the fix). Code that already spells `__UINTPTR_TYPE__` (CoreMark's
+`PTRDIFF_MIN/MAX` and `SIZE_MAX` (same header) and `SSIZE_MAX` (overlay
+`include/bits/posix1_lim.h`) stayed 32-bit until TASK/SDK01 A (2026-10-20)
+and are the LP64 values since (`sdk/libc/tests/lp64-limits.sh`, all
+`_Static_assert`). Code that already spells `__UINTPTR_TYPE__` (CoreMark's
 `core_portme.h`) stays correct.
 
 ### B8. Resource files: format, alignment, and who loads them

@@ -1,0 +1,23 @@
+== qed
+LINK OK -> /Volumes/Daten/Development/PiRusTOS/sdk/apps/qed/build/QED.NAP (527472 bytes)
+undefined symbols in the final image (goal 0): 0
+== teradesk
+LINK OK -> /Volumes/Daten/Development/PiRusTOS/sdk/apps/teradesk/build/DESKTOP.NAP (318064 bytes)
+undefined symbols in the final image (goal 0): 0
+== coremark
+LINK OK -> /Volumes/Daten/Development/PiRusTOS/sdk/apps/coremark/build/CORE.NCP (116816 bytes, undefined symbols: 0)
+LINK OK -> /Volumes/Daten/Development/PiRusTOS/sdk/apps/coremark/build/COREVAL.NCP (116816 bytes, undefined symbols: 0)
+== doom
+LINK OK -> /Volumes/Daten/Development/PiRusTOS/sdk/apps/doom/build/DOOM.NAP (740824 bytes, undefined symbols: 0)
+== zview
+LINK OK -> ZVIEW.NAP (504608 bytes, SharedObject (0x3), undefined symbols: 0)
+LINK OK -> BMP.NLD (55576 bytes, SharedObject (0x3), undefined symbols: 0)
+LINK OK -> DEGAS.NLD (55448 bytes, SharedObject (0x3), undefined symbols: 0)
+LINK OK -> EUREKA.NLD (55584 bytes, SharedObject (0x3), undefined symbols: 0)
+LINK OK -> GODPAINT.NLD (54088 bytes, SharedObject (0x3), undefined symbols: 0)
+LINK OK -> IMG.NLD (59224 bytes, SharedObject (0x3), undefined symbols: 0)
+LINK OK -> NEO.NLD (54200 bytes, SharedObject (0x3), undefined symbols: 0)
+LINK OK -> TGA.NLD (54848 bytes, SharedObject (0x3), undefined symbols: 0)
+LINK OK -> GIF.NLD (69496 bytes, SharedObject (0x3), undefined symbols: 0)
+LINK OK -> PNG.NLD (398960 bytes, SharedObject (0x3), undefined symbols: 0)
+LINK OK -> JPG.NLD (698304 bytes, SharedObject (0x3), undefined symbols: 0)

@@ -1,0 +1,56 @@
+measurement-2026-10-20-sdk01a -- Developer: TASK/SDK01 package A, libc gaps (docs/analysis/sdk-inventory-2026-10-20.md W1, W3,
+W5, W6, W7). SDK/libc only, no kernel/tos-api change. Base HEAD 7d5a3f08, change UNCOMMITTED in the working tree.
+Developer self-evidence; the Tester's verdict is separate.
+Host macOS, clang (Apple) + rust-lld/llvm-nm of the pinned nightly; QEMU -M raspi4b -append "serial=on [memprot=strict|off]",
+one QEMU at a time, per-run APFS clones (cp -c) of one base card per content, deleted after each run (fsck_msdos -n + mtools
+listing of the clone first); private 64 MiB FAT16 images only, no SD card, no Pi. Scratch = session scratchpad .../scratchpad/sdk01a
+(method/env.sh); binaries not kept here, sha256 in checks/binaries.sha256.
+
+CHANGE (sdk/ only)
+  sdk/libc/build-libc.sh          DIRS += pwdgrp (16/16 files compile unchanged); excluded from the archive like syscall/main.c:
+                                  syscall/{check,generate,syscallparser,traps}.c (host generator), unix/ucontext.c (test program,
+                                  own main), and stdlib/dtest.c, tz/date.c, tz/tzinit.c (mintlib PROGRAMS with their own main, not
+                                  library members upstream -- found by this run's probe, same class as ucontext.c);
+                                  EXCLUDE += mintlib/nf_ops.c, newtos-arch/nf_ops.c compiled in.
+  sdk/libc/newtos-arch/do_fstat.c + __sys_fstat = the Ffstat64 trap only (lean, like __sys_stat in do_stat.c).
+  sdk/libc/newtos-arch/nf_ops.c   new: nf_init = NULL (no NatFeats host on AArch64), nf_get_id/nf_catch_sigsys mintlib's bodies.
+  sdk/libc/overlay/include/stdint.h          SIZE_MAX, PTRDIFF_MIN/MAX 64-bit under __LP64__.
+  sdk/libc/overlay/include/bits/posix1_lim.h new: SSIZE_MAX = LONG_MAX under __LP64__.
+  sdk/libc/overlay/{stdio/gets.c,mintlib/getwd.c,signal/siggetmask.c}  new: pristine minus the link_warning (.stabs) line.
+  sdk/libc/expected-failures.txt  nf_ops.c, gets.c, getwd.c, siggetmask.c no longer recorded failures (9 -> 5).
+  sdk/libc/tests/lp64-limits.{c,sh}, libc-link.sh  new; fstat-host{.c,-fs.c,-gemdos.h} + __sys_fstat checks; run-host-tests.sh.
+  docs/sdk/07-mintlib-limits.md (sections 1, 2, 4, 6, new 11), 02 / 05 B7 / 08: SIZE_MAX facts only.
+
+1 LINK PROBE PER SYMBOL (method/link-probe.sh = the inventory's method: one program per global defined symbol of libc.a,
+  crt0.S + newtos.ld + libc.a; symbol set = llvm-nm -g --defined-only, types T D B R C V W S, i.e. incl. weak aliases --
+  the inventory counted 913 without them, 58 FAIL + main)
+  before (fresh MINTLIB_REFRESH=1 build of HEAD): 1204 symbols, 64 fail   checks/probe-before-{symbols,linkfail}.txt
+  after:                                          1229 symbols, 12 fail   checks/probe-after-{symbols,linkfail}.txt
+  union of both symbol sets (1241): before 101 fail, after 24 = the same 12 + 12 symbols that no longer exist (9 syscall
+  generator functions, func1_stack/func2_stack of ucontext.c, and main)   checks/probe-union-*.txt, symbols-{added,removed}.txt
+  remaining 12: qecvt qecvt_r qfcvt qfcvt_r qgcvt (binary128 compiler-rt, package E), gethostid __gethostid if_link
+  if_getifflags if_setifflags if_getlnkflags if_setlnkflags (socket/ not built).
+  unresolved references over libc.a (llvm-nm): 23 -> 10 (checks/libc-unresolved.txt).
+2 HOST TESTS  sdk/run-host-tests.sh 22/0/0 (baseline 20/0/0 + lp64-limits + libc-link; fstat-host 95 checks incl. 3 new
+  __sys_fstat checks)  checks/sdk-host-tests.txt.  Red: libc-link against the before libc.a: 0/31 link + program without main
+  links + yyin/yyparse referenced (rc 33, checks/libc-link-red-old-libc.txt); lp64-limits with pristine stdint.h +
+  posix1_lim.h: 10 static assertions fail (checks/lp64-limits-red-pristine-headers.txt).
+  cargo xtask test: 1493/0/1 (checks/kernel-hosttests.txt), unchanged.
+3 APP BUILDS (after the final libc): QED, TeraDesk, CoreMark (CORE+COREVAL), Doom, zView (ZVIEW.NAP + 10 .NLD) rc=0, every
+  link "undefined symbols: 0" (checks/app-builds.txt). TeraDesk keeps its own nf_ops.c overlay; no duplicate symbol.
+4 QEMU PROBE SDKP (method/sdkp.c -> C:\AUTO\SDKP.NCP + C:\SDKK.NCP, build-probes.sh, cards.sh, run-probe.sh): stat (file,
+  dir, ENOENT), ttyname(0) = /dev/con, ctermid, mkstemp in C:\TMP (created, 7 bytes written, stat, unlink, gone), tmpnam/tempnam
+  (name only, nothing created), glob("/sub/*") = /sub/a.txt + /sub/b.txt, getpwuid(0) = NULL, getlogin = "user" (mintlib's
+  last fallback), getwd = /dev/c/, siggetmask, nf_version/nf_get_id/nf_debug = 0, tmpfile() in a child: 1000 bytes written +
+  read back, one new \TMP entry during, \TMP empty after the child's exit (mintlib atexit delete).
+  on / strict / off: SP RESULT fails=0, 23 ok each, 0 EXC/PANIC, desktop up; fsck rc=0, card C:\TMP empty
+  (serial/sp-{on,strict,off}{.log,-fsck.txt,-card.txt}).
+  First run (serial/sp-on-1*, SDKP.NCP sha256 a10f4b30cfac6b38...): 1 FAIL = the probe's glob pattern "C:\SUB\*": mintlib's
+  glob splits on '/' only, a DOS pattern is one file-name pattern -> GLOB_NOMATCH (upstream behaviour, not an SDK defect);
+  probe changed to "/sub/*" for the three runs above.
+5 APITEST (rebuilt against the new libc.a, #Z autorun, api-card.sh; series-api.sh): TOTAL 109/0/5 on, strict, off; 0 EXC/PANIC
+  (serial/api-{on,strict,off}.log).
+Kernel: release rpi4 from `git archive 7d5a3f08` (build-kernel.sh refuses kernel-side working-tree changes; none), SOURCE_DATE_EPOCH
+  1792152000. The kernel build does not link sdk/libc/libc.a (tools/xtask has no reference to it).
+NOT RUN: real Pi 4; qemu-virt boot (kernel unchanged); gets() at run time (needs stdin input); wordexp, sem_open, getgrent at run
+  time (link only); QED/TeraDesk/zView/Doom at run time with the new libc (build only; 0 undefined).

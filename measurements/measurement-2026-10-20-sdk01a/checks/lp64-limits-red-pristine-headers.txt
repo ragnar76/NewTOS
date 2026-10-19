@@ -1,0 +1,10 @@
+  /Volumes/Daten/Development/PiRusTOS/sdk/libc/tests/lp64-limits.c:24:16: error: static assertion failed due to requirement '(4294967295U) == (unsigned long)-1': SIZE_MAX != (size_t)-1
+  /Volumes/Daten/Development/PiRusTOS/sdk/libc/tests/lp64-limits.c:25:16: error: static assertion failed due to requirement 'sizeof ((4294967295U)) == sizeof(unsigned long)': SIZE_MAX width
+  /Volumes/Daten/Development/PiRusTOS/sdk/libc/tests/lp64-limits.c:26:16: error: static assertion failed due to requirement '(2147483647) == 9223372036854775807L': PTRDIFF_MAX
+  /Volumes/Daten/Development/PiRusTOS/sdk/libc/tests/lp64-limits.c:27:16: error: static assertion failed due to requirement '(-2147483647 - 1) == -9223372036854775807L - 1': PTRDIFF_MIN
+  /Volumes/Daten/Development/PiRusTOS/sdk/libc/tests/lp64-limits.c:28:16: error: static assertion failed due to requirement 'sizeof ((2147483647)) == sizeof(long)': PTRDIFF_MAX width
+  /Volumes/Daten/Development/PiRusTOS/sdk/libc/tests/lp64-limits.c:30:16: error: static assertion failed due to requirement '2147483647 == (long)(((unsigned long)-1) >> 1)': SSIZE_MAX
+  /Volumes/Daten/Development/PiRusTOS/sdk/libc/tests/lp64-limits.c:31:16: error: static assertion failed due to requirement 'sizeof (2147483647) == sizeof(long)': SSIZE_MAX width
+  /Volumes/Daten/Development/PiRusTOS/sdk/libc/tests/lp64-limits.c:38:16: error: static assertion failed due to requirement '(2147483647) == 9223372036854775807L': INTPTR_MAX
+  /Volumes/Daten/Development/PiRusTOS/sdk/libc/tests/lp64-limits.c:39:16: error: static assertion failed due to requirement '(-2147483647 - 1) == -9223372036854775807L - 1': INTPTR_MIN
+  /Volumes/Daten/Development/PiRusTOS/sdk/libc/tests/lp64-limits.c:41:16: error: static assertion failed due to requirement 'sizeof(unsigned int) == sizeof(void *)': uintptr_t width

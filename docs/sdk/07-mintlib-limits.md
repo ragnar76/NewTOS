@@ -19,7 +19,11 @@ updated §1 and §5: `newtos-arch/cmdargs.c` is now all of `parseargs()` —
 `environ` from `p_env`, the `ARGV=` extension with `NULL:`,
 `program_invocation_name`. TASK/MEM05 part B (2026-10-13) updated §5
 (`malloc`) and added §10: the overlay `mintlib/malloc.c` lets malloc's hunks
-keep doubling up to 16 MiB.
+keep doubling up to 16 MiB. TASK/SDK01 A (2026-10-20) updated §1, §2, §4,
+§6 and added §11: `pwdgrp/` is compiled (the temp-file family, `glob`,
+`wordexp`, `getlogin` link), `__sys_fstat` (`ttyname`, `ctermid`),
+`gets`/`getwd`/`siggetmask` from overlays, `newtos-arch/nf_ops.c`, no test
+program's `main` in `libc.a`; 627 compiled, 5 failed, 14 excluded.
 
 ## 1. mintlib files that do not compile (recorded, not repaired)
 
@@ -29,12 +33,10 @@ on any failure not in it (`sdk/lib-stale.sh:229-283`). What each costs:
 | File | Reason (from the record) | What a program loses |
 |------|--------------------------|----------------------|
 | `mintlib/linea.c` | m68k inline asm — ST Line-A | Line-A (NewTOS has none) |
-| `mintlib/nf_ops.c` | m68k inline asm — ARAnyM NatFeats | `nf_init`/`nf_get_id` (an app that needs the symbols supplies its own, as the TeraDesk overlay does) |
+| ~~`mintlib/nf_ops.c`~~ | m68k inline asm — ARAnyM NatFeats; excluded and replaced by `newtos-arch/nf_ops.c` since TASK/SDK01 A (§2) | — |
 | `mintlib/crtinit.c` | m68k asm + two LP64 basepage casts | nothing any more: `newtos-arch/cmdargs.c` is `parseargs()` with AArch64 pointer widths — `argc`/`argv` (PORT01), `environ`, the `ARGV=` extension and `program_invocation_name` (PORT09) — and `newtos-arch/heap_init.c` is `_crtinit`/`_acc_main` (`_base`, `_stksize`, Mshrink; T05, E9) — see §5 |
 | ~~`mintlib/spawnve.c`, `spawnvp.c`~~ | compile since TASK/PORT10 (`sdk/libc/overlay/mintlib/`, `va_arg` instead of `va_list` arithmetic) | — the `spawn*` family works (synchronous `Pexec(0)`, QEMU-verified); `system()` is mintlib's own since TASK/PROC01 — §8 |
-| `stdio/gets.c` | `.stabs` directive rejected by the integrated assembler | `gets` |
-| `mintlib/getwd.c` | same | `getwd` (`getcwd` is available) |
-| `signal/siggetmask.c` | same | `siggetmask` |
+| ~~`stdio/gets.c`~~, ~~`mintlib/getwd.c`~~, ~~`signal/siggetmask.c`~~ | `.stabs` directive (`link_warning`) rejected by the integrated assembler; compile since TASK/SDK01 A from overlays without that line (`sdk/libc/overlay/{stdio,mintlib,signal}/`) | — `gets`, `getwd`, `siggetmask` are in `libc.a` (without the GNU-ld link-time warning) |
 | `mintlib/syscall.c` | needs the generated `syscall-list.h` | the generic `syscall()` |
 | `gmp/support.c` | `mathimpl.h` not on the include path | part of the GMP float-printing helpers (the rest of `gmp/` compiles) |
 | `tz/dumpstate.c` | struct members missing | `tz` debug dump only |
@@ -47,9 +49,10 @@ tail that has no TOS analogue is dropped.
 
 | mintlib file | Shim | What is different |
 |--------------|------|-------------------|
-| `mintlib/do_fstat.c` | `do_fstat.c` | fills `st_mode` (`S_IFCHR\|0600` for a standard handle 0–5 that `__isatty` reports as a terminal — the same `__open_stat[]` cache and `Fseek` probe as `isatty()`, so a standard handle `Fforce`d to a file is `S_IFREG`, as in mintlib's own TOS branch `mintlib/do_fstat.c:102-121`, TASK/LIBC-FSTAT; `S_IFREG\|0644` otherwise, handles ≥ 6 without the probe), an honest `st_size` via `Fseek`, `st_blksize` (**32 KiB for a handle ≥ 0 that is not a terminal and whose size `Fseek` could read, `BUFSIZ` = 1024 otherwise** — named deviation, see below), `st_blocks`, `st_nlink = 1`; **times and owner stay zero** (`:1-30`) |
+| `mintlib/do_fstat.c` | `do_fstat.c` | `__sys_fstat` (since TASK/SDK01 A; `ttyname`, `ttyname_r`, `ctermid` need it) = the `Ffstat64` trap only, as `__sys_stat` below — NewTOS answers `EINVFN` (= `-ENOSYS`); `ttyname` reaches it only on MiNT (`__mint >= 9`), on NewTOS it answers `/dev/con` (`/dev/aux` for -2). `__do_fstat` fills `st_mode` (`S_IFCHR\|0600` for a standard handle 0–5 that `__isatty` reports as a terminal — the same `__open_stat[]` cache and `Fseek` probe as `isatty()`, so a standard handle `Fforce`d to a file is `S_IFREG`, as in mintlib's own TOS branch `mintlib/do_fstat.c:102-121`, TASK/LIBC-FSTAT; `S_IFREG\|0644` otherwise, handles ≥ 6 without the probe), an honest `st_size` via `Fseek`, `st_blksize` (**32 KiB for a handle ≥ 0 that is not a terminal and whose size `Fseek` could read, `BUFSIZ` = 1024 otherwise** — named deviation, see below), `st_blocks`, `st_nlink = 1`; **times and owner stay zero** (`:1-30`) |
 | `mintlib/do_stat.c` | `do_stat.c` | `__sys_stat` = the `Fstat64` trap; `__do_stat` = `__quickstat` (mode/size/uid/gid honest, **no timestamps**) (`:1-27`, `:42-56`) |
 | ~~`mintlib/isatty.c`~~ | built again since TASK/LIBC-TTY (2026-10-13); the shim (`isatty(fd)` = `fd >= 0 && fd <= 2`, `__open_stat[].flags` never set) is gone | mintlib's own `__isatty`, as on TOS: `Fcntl(fd, .., TIOCGPGRP)` is `EINVFN` (= `-ENOSYS`), so the `Fseek` probe decides — `Fseek(1, fd, SEEK_CUR) == 0` (a character device, since TASK/FS10) = tty, a position or an error = file, the position is put back (`mintlib/isatty.c:28-48`); a tty gets `__open_stat[].status = FH_ISATTY`, `flags = CRMOD\|ECHO` (`:54-58`), which sends `read()` on the console through `Fread` (§5 "console `read()`"); a standard handle `Fforce`d to a file is a file; `isatty(-1)` is 1 (CON:); the answer is cached per handle until `open`/`close`/`dup`/`dup2` (an `Fforce` after the first query is not seen — upstream). The file also defines `__open_stat[]` |
+| `mintlib/nf_ops.c` | `nf_ops.c` (TASK/SDK01 A) | NatFeats are an m68k emulator-host interface (opcodes 0x7300/0x7301, `__NF` cookie with m68k code pointers); there is no host on AArch64, so `nf_init()` = NULL ("not available", `nf_ops.h`); `nf_get_id`, `nf_catch_sigsys` keep mintlib's bodies. mintlib's own `nf_*.c` then give `nf_version()` 0, `nf_get_name()` NULL, `nf_debug()` 0, `nf_debugprintf()` -1/`ENOSYS`, `nf_shutdown()` 0, `nf_exec()` -32 |
 | `unix/ioctl.c` | `ioctl.c` | forwards to `Fcntl(fd, arg, request)`; the m68k tty line-discipline path is gone (`:1-16`) |
 | `unix/access.c` | `access.c` | checks the owner `rwx` bits from `__quickstat` only; no group/passwd database (`:1-19`) |
 | ~~`mintlib/thread.c`~~ | builds since TASK/PROC01 from `sdk/libc/overlay/mintlib/thread.c` (LP64 casts for the 32-bit basepage fields, plus one fix: `tfork` frees the saved `Pexec(PE_CBASEPAGE)` environment instead of `b->p_env`, §8) | `tfork`, `__waitval`, `__waittime` — `vfork`'s TOS branch, `wait4` |
@@ -127,14 +130,22 @@ checks)`, `measurements/measurement-2026-09-21-t07/`).
 
 ## 4. mintlib directories not compiled at all
 
-`DIRS` (`build-libc.sh:109`) covers `stdio stdlib string mintlib unix syscall
-time misc multibyte signal termios locale dirent gmp posix tz`. Not compiled:
-`argp`, `conf`, `crypt`, `login`, `pwdgrp`, `shadow`, `socket`, `startup`,
+`DIRS` (`build-libc.sh`) covers `stdio stdlib string mintlib unix syscall
+time misc multibyte signal termios locale dirent gmp posix tz pwdgrp`
+(`pwdgrp` since TASK/SDK01 A). Not compiled:
+`argp`, `conf`, `crypt`, `login`, `shadow`, `socket`, `startup`,
 `stdiio`, `sunrpc`, `sysvipc`. Consequences: no sockets (`socket`,
-`gethostbyname` are dangling references), no `crypt`, no passwd/group
-database (`getpwuid`, `getgrent`, … dangling), no SysV IPC, no `argp`, no
-integer-only `stdiio` (the full `printf` is linked instead,
+`gethostbyname` are dangling references), no `crypt`, no SysV IPC, no
+`argp`, no integer-only `stdiio` (the full `printf` is linked instead,
 `build-qed.sh:30-31`).
+
+The passwd/group database (`pwdgrp/`) links since TASK/SDK01 A; it reads
+`/etc/passwd` and `/etc/group`, which a NewTOS volume does not carry, so
+`getpwuid()`/`getpwnam()` return NULL and `getgrent()` finds nothing —
+mintlib's behaviour on a plain TOS. `getlogin()` answers mintlib's fallback
+(`user` in the SDK01 A QEMU run). Of `syscall/` only the host generator's
+sources exist (`syscall/SRCFILES` = the generated trap files, which NewTOS
+does not generate), so none of it goes into `libc.a` any more.
 
 **libm: OpenLibm (T07, 2026-09-21).** mintlib never contained a libm nor a
 `<math.h>` (on m68k both came from the compiler's PML/fdlibm; its
@@ -203,28 +214,20 @@ neither uses the libm). `libm.a` needs three libc symbols, `memset`, `_ctype`
 
 ## 6. References `libc.a` leaves unresolved (measured)
 
-`llvm-nm` over the archive: **31** symbols are referenced by some member but
-defined by none (33 before PORT01: `newtos-arch/cmdargs.c` now defines
-`__libc_argc`/`__libc_argv`, which only `posix/wordexp.c` referenced). A link
-only fails if the member that references them is pulled in —
-`build/why.txt` (written by every link, `--why-extract`) shows the chain.
-Re-measured 2026-09-21 after T07: **still 33, the same list** —
-`setjmp.S`'s two references (`_sigmask`, `__mint`) resolve inside the archive
-(`signal/initsig.c`, `mintlib/globals.c`), and the libm is a separate archive
-(its own list follows). `setjmp`/`longjmp` were never in this list because no
-mintlib member references them; they were simply undefined.
+Re-measured 2026-10-20 after TASK/SDK01 A (`llvm-nm` over the archive,
+referenced by a member, defined by none): **10**, from 23 before SDK01 A
+(`measurements/measurement-2026-10-20-sdk01a/`). A link only fails if the
+member that references them is pulled in — `build/why.txt` (written by every
+link, `--why-extract`) shows the chain.
 
 ```
-__divtf3 __eqtf2 __getf2 __lttf2 __multf3 __trunctfdf2      quad-float compiler-rt (long double)
-__getpwnam_r __getpwuid_r getpwuid getgrent setgrent endgrent pututline   passwd/group/utmp DB
-__sys_fstat                                                 other excluded/unbuilt members
-getcontext makecontext swapcontext                          m68k .S never assembled
-(__waitval __waittime vfork: defined since TASK/PROC01 -- thread.c, vfork.S)
-nf_init                                                     nf_ops.c (does not compile)
-(spawnlp spawnvp: defined since TASK/PORT10 -- spawnvp.c compiles)
-socket gethostbyname                                        socket/ not compiled
-bios_table gemdos_table xbios_table yyin yyparse            syscall/ generator tools
+__divtf3 __eqtf2 __getf2 __lttf2 __multf3 __trunctfdf2      quad-float compiler-rt (long double): qecvt/qfcvt/qgcvt(_r)
+socket gethostbyname                                        socket/ not compiled: if_link, if_*flags, gethostid
+main                                                        the program's own (mintlib/main.c calls it)
 _end                                                        provided by sdk/newtos.ld at link
+(gone with SDK01 A: getpwuid getgrent setgrent endgrent __getpwnam_r __getpwuid_r -- pwdgrp/ compiled;
+ __sys_fstat -- newtos-arch/do_fstat.c; nf_init -- newtos-arch/nf_ops.c; getcontext makecontext swapcontext,
+ pututline, yyin yyparse -- referenced only by the test programs and the syscall generator, no longer in libc.a)
 ```
 
 QED (37 files, cflib+gemlib+libc) and TeraDesk (48 files, gemlib+libc) link
@@ -508,3 +511,40 @@ counts equal the post-E9 QEMU measurement (1/3/19/87/173/254/255); with it
 give the same; a hello-world takes one 8 KiB hunk and a 32 KiB buffer gets
 its own hunk without advancing the doubling; `_mallocChunkSize(64 KiB)` still
 wins. With the setter's body emptied 10 of 30 checks fail.
+
+## 11. Functions that do not link (measured per symbol, TASK/SDK01 A)
+
+Method (`docs/analysis/sdk-inventory-2026-10-20.md` §0 step 2): for every
+global symbol `libc.a` defines, one program that references exactly that
+symbol, linked as an application links (`sdk/libc/crt0.S` + `sdk/newtos.ld` +
+`libc.a`). Measured 2026-10-20 (`measurements/measurement-2026-10-20-sdk01a/`):
+
+| | before SDK01 A | after |
+|---|---|---|
+| global symbols defined (incl. weak aliases) | 1204 | 1229 |
+| symbols that do not link | 64 (incl. 9 syscall-generator symbols, the 2 `ucontext.c` test arrays and `main`) | **12** |
+
+Linking since SDK01 A: `tmpfile`, `mkstemp`, `mktemp`, `mkdtemp`, `tmpnam`,
+`tmpnam_r`, `tempnam`, `glob`, `globfree`, `glob_pattern_p`, `wordexp`,
+`wordfree`, `getlogin`, `cuserid`, `getgroups`, `group_member`, `euidaccess`,
+`eaccess`, `sem_open`, `sem_unlink`, the passwd/group functions (`getpwuid`,
+`getpwnam`, `getgrent`, … §4), `ttyname`, `ttyname_r`, `ctermid`, `gets`,
+`getwd`, `siggetmask`, `nf_init`, `nf_get_id`, `nf_version`, `nf_get_name`,
+`nf_get_fullname`, `nf_debug`, `nf_debugprintf`, `nf_debugvprintf`,
+`nf_shutdown`, `nf_exec`, `nf_execv` (§2). `tmpfile`, `mkstemp`, `tmpnam`,
+`tempnam`, `glob`, `ttyname`, `ctermid`, `getwd`, `getpwuid`, `getlogin`,
+`stat` and the `nf_*` absent-path ran on NewTOS in QEMU raspi4b, memprot
+on/strict/off: the temp files were really created and removed (a `tmpfile`
+in a child is gone after its `exit`, mintlib's TOS path), `fsck` clean.
+
+Still not linking (12):
+
+| Function | Missing | Reason |
+|---|---|---|
+| `qecvt`, `qecvt_r`, `qfcvt`, `qfcvt_r`, `qgcvt` | `__divtf3`, `__eqtf2`, `__getf2`, `__lttf2`, `__multf3`, `__trunctfdf2` | 128-bit `long double` compiler-rt builtins (§6) |
+| `gethostid`, `__gethostid` | `gethostbyname` | `socket/` not compiled (§4) |
+| `if_link`, `if_getifflags`, `if_setifflags`, `if_getlnkflags`, `if_setlnkflags` | `socket` | same |
+
+Not in `libc.a` at all (no symbol, so not in the count): `getcontext`,
+`makecontext`, `setcontext`, `swapcontext` (§3); the libm gaps are listed in
+§4/§6 of the libm part.

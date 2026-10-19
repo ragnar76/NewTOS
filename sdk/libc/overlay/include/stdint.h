@@ -312,7 +312,15 @@ typedef unsigned long int uintmax_t;
 /* Limits of other integer types.  */
 
 /* Limits of `ptrdiff_t' type.  */
-# ifdef __MSHORT__
+/* NewTOS/AArch64 (TASK/SDK01 A): on LP64 ptrdiff_t and size_t are `long' /
+   `unsigned long' (64 bits, clang __PTRDIFF_TYPE__/__SIZE_TYPE__), so their
+   limits are the 64-bit ones; the pristine header had only the two m68k
+   cases, and SIZE_MAX == (size_t)-1 was false (docs/analysis/
+   sdk-inventory-2026-10-20.md W5). */
+# if defined (__LP64__)
+# define PTRDIFF_MIN            (-9223372036854775807L-1)
+# define PTRDIFF_MAX            (9223372036854775807L)
+# elif defined (__MSHORT__)
 # define PTRDIFF_MIN            (-2147483647L-1)
 # define PTRDIFF_MAX            (2147483647L)
 # else
@@ -330,7 +338,9 @@ typedef unsigned long int uintmax_t;
 # endif
 
 /* Limit of `size_t' type.  */
-# ifdef __MSHORT__
+# if defined (__LP64__)
+# define SIZE_MAX               (18446744073709551615UL)
+# elif defined (__MSHORT__)
 # define SIZE_MAX               (4294967295UL)
 # else
 # define SIZE_MAX               (4294967295U)

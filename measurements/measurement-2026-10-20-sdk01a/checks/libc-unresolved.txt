@@ -1,0 +1,2 @@
+before: 23: __divtf3 __eqtf2 __getf2 __getpwnam_r __getpwuid_r __lttf2 __multf3 __sys_fstat __trunctfdf2 _end endgrent getcontext getgrent gethostbyname getpwuid makecontext nf_init pututline setgrent socket swapcontext yyin yyparse 
+libc: 10: __divtf3 __eqtf2 __getf2 __lttf2 __multf3 __trunctfdf2 _end gethostbyname main socket 

@@ -49,6 +49,12 @@
  *                 (BIOS device): 1 (upstream); a second query is answered from
  *                 __open_stat[] without a trap.
  *
+ *   __sys_fstat   (TASK/SDK01 A: ttyname/ttyname_r/ctermid link against it)
+ *                 handles 0, 6, -1, exact 0 and 1: one Ffstat64 trap with the
+ *                 caller's handle and stat buffer, the kernel's EINVFN
+ *                 returned unchanged (= mintlib's -ENOSYS, the "no native
+ *                 stat" answer ttyname's MiNT branch expects).
+ *
  * Exit status: number of failed checks; 77 = host is not LP64.
  */
 #include <stdio.h>
@@ -65,6 +71,7 @@ void fh_reset_cache (void);
 int fh_fh_isatty (void);
 int fh_fh_isafile (void);
 int fh_crmod_echo (void);
+long fh_probe_sys_fstat (int, int, int *, int *, int *, long *);
 
 #define WANT_FILE_BLKSIZE 32768L	/* do_fstat.c NEWTOS_FILE_BLKSIZE */
 
@@ -203,6 +210,19 @@ stale_case (int fd, long size)
   check (reg && !chr && sz == size && bs == WANT_FILE_BLKSIZE, w);
 }
 
+static void
+sys_fstat_case (int fd, int exact)
+{
+  int en, hok, bok;
+  long n, r;
+  char w[200];
+
+  r = fh_probe_sys_fstat (fd, exact, &en, &hok, &bok, &n);
+  snprintf (w, sizeof w, "__sys_fstat(%d, exact %d): one Ffstat64 trap with fd and buffer, EINVFN = -ENOSYS returned (got %ld, enosys %d, fd %d, buf %d, traps %ld)",
+	    fd, exact, r, en, hok, bok, n);
+  check (r == -32 && en && hok && bok && n == 1, w);
+}
+
 int
 main (void)
 {
@@ -255,6 +275,9 @@ main (void)
   isatty_case (7, 0, 0, "empty regular file");
   isatty_case (9, 0, -1, "not open");
   isatty_case (-1, 1, -1, "BIOS device");
+  sys_fstat_case (0, 0);
+  sys_fstat_case (6, 1);
+  sys_fstat_case (-1, 0);
   printf ("fstat-host: %d checks, %d failed\n", checks, failed);
   return failed;
 }
