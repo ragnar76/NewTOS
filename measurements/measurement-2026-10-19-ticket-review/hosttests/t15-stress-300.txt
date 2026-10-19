@@ -1,0 +1,3 @@
+aes_cicon_draw: 300 iterations, 0 failed
+aes_object_nicelines: 300 iterations, 0 failed
+aes_object_font: 300 iterations, 0 failed

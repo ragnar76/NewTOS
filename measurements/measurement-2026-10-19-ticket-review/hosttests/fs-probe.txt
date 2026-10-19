@@ -1,0 +1,25 @@
+test fs14_cross_directory_rename_to_empty_name ... PROBE FS14 Frename(C:\FS14\X.TXT, C:\) -> 0  (EmuTOS: -34 EPTHNF)
+PROBE FS14 root listing after: ["SUB", "HELLO.TXT", "FS14", ""]
+PROBE FS14 FS14 listing after: [".", ".."]
+test fs15_device_names_in_fopen ... PROBE FS15 Fopen(CON:,1) -> -33 (EmuTOS: CON:/con: 0xFFFF, AUX: 0xFFFE, PRN: 0xFFFD; mixed case -> normal path)
+PROBE FS15 Fcreate(CON:,0) -> -34
+PROBE FS15 Fopen(con:,1) -> -33 (EmuTOS: CON:/con: 0xFFFF, AUX: 0xFFFE, PRN: 0xFFFD; mixed case -> normal path)
+PROBE FS15 Fcreate(con:,0) -> -34
+PROBE FS15 Fopen(AUX:,1) -> -33 (EmuTOS: CON:/con: 0xFFFF, AUX: 0xFFFE, PRN: 0xFFFD; mixed case -> normal path)
+PROBE FS15 Fcreate(AUX:,0) -> -34
+PROBE FS15 Fopen(PRN:,1) -> -33 (EmuTOS: CON:/con: 0xFFFF, AUX: 0xFFFE, PRN: 0xFFFD; mixed case -> normal path)
+PROBE FS15 Fcreate(PRN:,0) -> -34
+PROBE FS15 Fopen(Con:,1) -> -33 (EmuTOS: CON:/con: 0xFFFF, AUX: 0xFFFE, PRN: 0xFFFD; mixed case -> normal path)
+PROBE FS15 Fcreate(Con:,0) -> -34
+test fs17_1_fdelete_folder ... PROBE FS17.1 Fdelete(folder) -> -36 (EmuTOS: -33 EFILNF, scan FA_NORM)
+test fs17_2_two_fopen_share_length ... PROBE FS17.2 write 5 via h1 (len 3 -> 8, w=5); Fseek(0,h2,SEEK_END) -> 3 (EmuTOS shared DFD: 8)
+PROBE FS17.2 close h1 -> 0, close h2 -> 0; length on disk after both closes -> 8 (EmuTOS: 8)
+test fs17_3_rename_open_file_same_directory ... PROBE FS17.3 Frename A->C (same dir, closed) -> 0; order [".", "..", "B.TXT", "C.TXT"] (EmuTOS: in place -> ., .., C.TXT, B.TXT)
+PROBE FS17.3 open D, Frename D->E -> 0, Fwrite 1000 -> 1000, Fclose -> 0; E.TXT length -> 0 (EmuTOS: same slot, ixclose writes o_fileln -> 1000)
+PROBE FS17.3 listing after: [".", "..", "B.TXT", "C.TXT", "E.TXT"]
+test fs17_3b_rename_open_file_leaks_clusters ... PROBE FS17.3b free clusters before=4990 after write+close=4984 after Fdelete(E.TXT)=0 -> 4984 (leak = before - after = 6)
+test fs17_4_fdatime_set_then_close ... PROBE FS17.4 Fdatime set 1234/4321 -> 0, Fwrite, Fclose; read back 1234/4321 (EmuTOS: o_td set, written on close -> same)
+test fs17_5_archive_bit_on_close ... PROBE FS17.5 Fcreate(attr 0) attr while open=0, after Fclose=0 (EmuTOS: Fcreate sets O_DIRTY -> ixclose attr|=FA_ARCHIVE -> 0x20=32)
+PROBE FS17.5 after Fattrib(set 0)=0; after Fopen+Fwrite(extend)+Fclose=0 (EmuTOS: 32)
+test fs17_6_fcreate_over_existing_reuses_slot ... PROBE FS17.6 order after Fdelete X + Fcreate over Z: [".", "..", "Z.TXT", "Y.TXT"] (EmuTOS: ixcreat scans for space from Z's own position -> ., .., Y.TXT, Z.TXT)
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

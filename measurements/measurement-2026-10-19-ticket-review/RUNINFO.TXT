@@ -1,0 +1,51 @@
+measurement-2026-10-19-ticket-review -- Auditor: re-check of the open P3 ticket list of docs/STATUS.md ("Offen", Stand 2026-10-17) after
+the kernel work of 2026-10-17..19 (A112, A113, RST01, PROC03, PROC04, CON01). Analysis: docs/analysis/open-tickets-review-2026-10-19.md.
+Base HEAD e8d245bd (main), tree clean at start and at end except this directory and the analysis file. No product code changed, nothing
+committed/stashed/checked out. Host macOS; QEMU -M raspi4b -append serial=on; no SD card, no Pi. Scratch: session scratchpad .../scratchpad/tr
+(scratch tree, kernel, probe binary, card image) -- deleted at the end.
+
+RESULT
+  Host probes (FS14, FS15, FS17): every probed deviation reproduced; one of them (FS17 item 3) is a data-loss defect: an open file renamed
+  in the same directory, then written and closed, ends with length 0 and its clusters leaked (6 clusters for 3000 bytes).
+  T15: the three unlocked drawing-test binaries 300/300 each, run concurrently with --test-threads=32 (no failure).
+  LIBC-BUF (QEMU): a FILE from fopen() whose first output is fprintf() gets the 32 KiB buffer (0x8000) -- the fopen case is NOT affected;
+  stdout (console here) goes 0x400 -> 0 after the first printf, as the ticket observed.
+
+1 HOST PROBES (method/zz_review_probe_fs.rs, copied TEMPORARILY to tos-api/tests/, `cargo test -p tos-api --test zz_review_probe_fs --
+  --nocapture --test-threads=1`, removed afterwards; harness = tos-api/tests/fatvol (RAM FAT16 image, real GEMDOS dispatcher).
+  Output: hosttests/fs-probe.txt. Observation only, no expectation asserted; the EmuTOS value printed next to each is from source:
+  FS14  Frename(C:\FS14\X.TXT, "C:\") -> 0, a blank-named entry appears in C:\        EmuTOS: ixcreat "" -> EPTHNF (fsdir.c:1016-1020,
+                                                                                       fsopnclo.c:120-121)
+  FS15  Fopen/Fcreate of CON: con: AUX: PRN: -> -33 / -34                               EmuTOS: osif specname_table -> 0xFFFF/0xFFFE/0xFFFD
+                                                                                       (bdosmain.c:100-110,648-663)
+  FS17.1 Fdelete(folder) -> -36                                                          EmuTOS: scan FA_NORM -> EFILNF (fsopnclo.c:603-605)
+  FS17.2 two Fopen, h1 extends 3 -> 8, Fseek(0,h2,2) -> 3                                EmuTOS: shared DFD o_fileln -> 8
+  FS17.3 same-dir Frename moves the entry to a free slot (order B,C instead of C,B); open D, Frename D->E, Fwrite 1000, Fclose -> E.TXT
+         length 0; free clusters 4990 -> 4984 after write+close, still 4984 after Fdelete(E.TXT) = 6 clusters leaked
+                                                                                       EmuTOS: name overwritten in place (fsdir.c:1076-1083),
+                                                                                       ixclose writes o_td/len to that slot (fsopnclo.c:530-549)
+  FS17.4 Fdatime set on an open handle, Fwrite, Fclose -> value kept                     same observable result as EmuTOS (not a finding here)
+  FS17.5 Fcreate(attr 0)+Fclose -> attr 0; extend+Fclose after clearing -> attr 0        EmuTOS: O_DIRTY -> attr |= FA_ARCHIVE (fsopnclo.c:541-545)
+  FS17.6 Fdelete X, Fcreate over Z -> order Z, Y                                         EmuTOS: space scan starts at Z's own slot -> Y, Z
+                                                                                       (fsopnclo.c:150-186)
+
+2 T15 STRESS (method/t15-stress.sh 300): hosttests/t15-stress-300.txt -- aes_cicon_draw, aes_object_font, aes_object_nicelines each 300
+  iterations, the three binaries concurrently, --test-threads=32: 0 failures each.
+
+3 LIBC-BUF QEMU PROBE
+  kernel: method/build-kernel.sh = `git archive e8d245bd` into a scratch tree, `cargo xtask build --board rpi4 --release`,
+          SOURCE_DATE_EPOCH=1792368000 -> sha256 02c3cda3cf470caa7414edb50516d4c56dc1f507a211bcfe8af1fa9509ba97eb
+  probe:  method/libcbuf.c, method/build-libcbuf.sh -> LIBCBUF.NCP sha256 820881f2c69e2cd02bf11f1ef2821bafa6d2e0408692c934b54269099534397c,
+          linked against sdk/libc/libc.a sha256 b98eb9e8e31ec185c14e9c3e64f61000aca71bd959793533511ea1e809b38ba5 (the LIBC-FSTAT libc)
+  card:   method/mkcard.sh (copied from measurement-2026-10-19-proc04-fdelete-test/method, label TKTREV) with C:\AUTO\LIBCBUF.NCP, lb.inf;
+          one APFS clone per run (method/regress/run.sh, copied from the same run), fsck_msdos -n + mtools listing before deletion.
+  run:    serial/libcbuf-on.log (serial=on), 0 EXC/PANIC; fsck rc=0 (serial/libcbuf-on-fsck.txt); card listing serial/libcbuf-on-card.txt.
+          [LB] A fopen bufsize 0 buffer 0 -> after first fprintf bufsize 0x8000 buffer 1 -> after fputs 0x8000
+          [LB] B fopen bufsize 0 -> after first fputs 0x8000 -> after fprintf 0x8000
+          [LB] stdout (console) before printf 0x400 buffer 0 -> after printf bufsize 0 buffer 0
+  Side observation (not a ticket here): LB1.TXT/LB2.TXT carry 1980-01-01 00:00 -- this card has no C:\KERNEL8.IMG to seed the clock from
+  (QEMU -kernel), so the boot clock starts at the DOS epoch; expected for this card.
+
+NOT RUN: real Pi 4; QEMU reproductions of the DESK tickets (decided by reading: the missing code is absent); INPUT02 hang probe (decided by
+reading: decode_key runs only on the trap-side pump); MEM08 timing; the redirected-stdout variant of LIBC-BUF (observed already in
+measurement-2026-10-17-libc-fstat).
