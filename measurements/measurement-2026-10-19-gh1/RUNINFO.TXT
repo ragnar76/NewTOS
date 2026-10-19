@@ -1,0 +1,55 @@
+measurement-2026-10-19-gh1 -- Auditor: root cause of TASK/GH1 (GitHub issue #1: the directory window behind the "NewTOS System
+Information" accessory dialog draws itself over the dialog when a popup of the dialog is opened). Evidence only: no product code
+changed, nothing committed/stashed/checked out. issue1-photo.png is the reporter's photo (not touched).
+
+WHAT / HOW
+  Host macOS, QEMU -M raspi4b -append serial=on (memprot default), headless, one QEMU at a time, per-run APFS clone (cp -c) of one
+  base card. Card (method/card.sh, method/mkcard.sh): 64 MiB MBR+FAT16, label GH1PRB, NEWDESK.INF = method/gh1.inf (C:\ACC\ window
+  open at 16,64 384x256 in the 640x480 screen), C:\ACC\SYSACC.NAC = sdk/examples/sysacc.c of HEAD 3084efa9 built with sdk/build.sh
+  (38688 bytes = the size in the reporter's photo). Kernels: fresh release rpi4 builds from `git archive <rev>` in scratch trees
+  (method/build-kernel.sh), the scripted IKBD injector armed on "desktop" (tools/inject-arm.py, scratch tree only).
+    rev HEAD 3084efa9         = current
+    rev 785d2f34~1 = f34f9306 = the commit before A112 (A112 fix old 1762e837 -> new 785d2f34 via tools/oldhash.sh)
+  Variants: plain (product code + injector only), log (method/instrument.py: "[gh1]" serial lines at AES dispatch, post_msg,
+  compose/draw_frame_pieces, update_beg/update_end, the three MU_BUTTON firing sites in event.rs, post_button completions,
+  set_mown), own (log + method/experiment-owner.py: post_button restricted to the mouse owner's wait = EmuTOS
+  post_button(gl_mowner,...) -- a scratch EXPERIMENT to measure the blast radius of that change alone, not a fix), tr (aes-trace
+  feature; ring shrunk to 4096/512 in the scratch tree because 8192 overruns STRAM_OS_RESERVE at HEAD).
+  Injector scripts: method/gh1.script (Desk -> System Info, click the row-2 "Next start" popup button at ~480,250, Esc after 7 s,
+  Cancel), method/gh1-pick.script (pick items instead of Esc), method/gh1-dbl.script (double-click on static dialog text over the
+  window's row; its Cancel coordinate misses -- the dialog stays open, see below). Runner method/run.py (screendump N s after the
+  injector feed line "(+tick)").
+  Instrument versions: head-log.log / head-own.log / head-dbl.log = final instrument.py; pre-log.log / head-pick.log = the version
+  before the button lines were added (no BTN/post_button/set_mown lines). head-log.log and head-own.log were squeezed with
+  method/squeeze.py (runs of identical "set_mown" lines collapsed with their count; raw sha256 in checks/raw-serial-before-squeeze.sha256).
+  Binaries (kernels, SYSACC.NAC, card) not kept: checks/binaries.sha256.
+
+RESULTS
+ 1 Reproduced, both kernels, plain builds: screendumps/head-plain-popup.png, pre-plain-popup.png: after the click on the popup
+   button the C:\ACC\ window frame (title bar, info line, scroll bars, sizer) is drawn over the dialog; it stays after Esc
+   (head-plain-esc.png) until the dialog closes. Window work area NOT painted in QEMU (the photo shows it white: not reproduced).
+   0 EXC/PANIC in all runs.
+ 2 Sequence (serial/head-log.log, lines with [gh1]):
+   a) menu press (+500) -> AC_OPEN posted at once; the accessory runs wind_update(BEG_UPDATE), form_center, form_dial, objc_draw
+      and form_do's fm_own(TRUE) BEFORE the release (+510): no "set_mown -> 0" -> the mouse owner stays the desktop (id 1).
+   b) popup-button press (+1600): "post_button new=1 completes wait #0 (mowner_pd=1)" AND "... wait #1" -- the accessory's and
+      NEWDESK's parked button waits are both completed.
+   c) form_do returns, NEWDESK's evnt_multi returns MU_BUTTON (480,250, bret 1) -- no wind_update(BEG_UPDATE) by NEWDESK --
+      wind_find, wind_get, wind_set(1, WF_INFO) -> "frame h=1 top=true pc=None" = the whole frame of window 1 repainted over the
+      dialog, while the accessory holds the screen lock (tas=2) and is inside BEG_MCTRL.
+   d) second form_do (after the popup, owner correctly = accessory, mowner_pd=0): the Cancel press again completes wait #0 AND
+      wait #1 -> NEWDESK gets the Cancel click (468,455) as well.
+ 3 A112 is not the trigger: pre-A112 (f34f9306) shows the same delivery (serial/pre-log.log: NEWDESK evnt_multi MU_BUTTON 480,250,
+   wind_set(1,WF_INFO), frame pc=None) and the same picture (pre-plain-popup.png; the frame there also covers the popup box,
+   because NEWDESK ran after the popup was drawn).
+ 4 Experiment own (serial/head-own.log, screendumps/head-own-popup.png): owner-only post_button alone does NOT fix it: the popup
+   press now completes only wait #1 = NEWDESK (owner still the desktop from 2a); the accessory's form_do still returns (the
+   in-kernel form_do loop does not use the parked wait), NEWDESK still draws the frame. The Cancel press (owner = accessory)
+   completes only wait #0 there.
+ 5 Double-click variant (serial/head-dbl.log): the presses complete NEWDESK's wait too (wait #1 at +1600), but NEWDESK does not run
+   while the accessory sits in the in-kernel form_do; the completed wait is only returned after form_do ends.
+
+NOT RUN / OPEN: real Pi 4 (reporter's 1920x1080 card); why the photo shows the window work area painted white; a desktop action
+  triggered by a phantom click (selection/launch of an item hidden behind the dialog) -- not driven; the aes-trace run
+  (serial/head-tr.log) captured only 165 records (none of the accessory's dialog calls) -- tracer not investigated (out of scope).
+Scratch (session scratchpad gh1/) deleted at the end.
