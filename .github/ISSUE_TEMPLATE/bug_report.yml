@@ -1,69 +1,70 @@
-name: Fehler melden / Bug report
-description: Etwas funktioniert nicht oder verhaelt sich anders als auf einem echten Atari.
+name: Bug report (Fehler melden)
+description: Something does not work or behaves differently from a real Atari. / Etwas funktioniert nicht oder verhaelt sich anders als auf einem echten Atari.
 title: "[Bug] "
 labels: ["bug", "neu"]
 body:
   - type: markdown
     attributes:
       value: |
-        Danke fuers Testen! Je genauer die Schritte, desto schneller finden wir den Fehler.
-        Bei einem Absturzbericht (Text mit "pc=" und Registern): bitte ein Foto anhaengen.
+        Thanks for testing! The more exact the steps, the faster we find the bug. English or German, both are fine.
+        Danke fuers Testen! English oder Deutsch, beides ist willkommen.
+        Crash report (text with "pc=" and registers)? Please attach a photo. / Absturzbericht? Bitte ein Foto anhaengen.
   - type: input
     id: version
     attributes:
-      label: NewTOS-Version
-      description: Steht im Startbildschirm und unter "Desk > Desktop info".
+      label: NewTOS version (Version)
+      description: Shown on the boot screen and under "Desk > Desktop info".
       placeholder: "0.6"
     validations:
       required: true
   - type: textarea
     id: steps
     attributes:
-      label: Was hast du gemacht?
-      description: Schritt fuer Schritt, so dass es jemand nachmachen kann.
+      label: What did you do? (Was hast du gemacht?)
+      description: Step by step, so someone else can repeat it.
       placeholder: |
-        1. QED gestartet
-        2. Datei C:\TEST.TXT geoeffnet
+        1. Started QED
+        2. Opened C:\TEST.TXT
         3. ...
     validations:
       required: true
   - type: textarea
     id: actual
     attributes:
-      label: Was ist passiert?
+      label: What happened? (Was ist passiert?)
     validations:
       required: true
   - type: textarea
     id: expected
     attributes:
-      label: Was hast du erwartet?
-      description: Wie verhaelt es sich auf einem echten Atari (TOS 4 / EmuTOS), falls bekannt?
+      label: What did you expect? (Was hast du erwartet?)
+      description: How does a real Atari (TOS 4 / EmuTOS) behave, if you know?
   - type: dropdown
     id: repro
     attributes:
-      label: Passiert es wieder?
+      label: Does it happen again? (Passiert es wieder?)
       options:
-        - immer
-        - manchmal
-        - nur einmal gesehen
+        - always / immer
+        - sometimes / manchmal
+        - seen only once / nur einmal
     validations:
       required: true
   - type: dropdown
     id: after
     attributes:
-      label: Lief das System danach weiter?
+      label: Did the system keep running? (Lief das System weiter?)
       options:
-        - ja
-        - nach Tastendruck (Absturzbericht)
-        - nur nach Neustart / Strom aus
+        - yes / ja
+        - after a key press (crash report) / nach Tastendruck
+        - only after restart or power cycle / nur nach Neustart
   - type: textarea
     id: setup
     attributes:
-      label: Dein Aufbau
-      description: Pi-4-RAM, Monitor/Aufloesung, Tastatur und Maus, SD-Karte, weitere USB-Geraete.
-      placeholder: "Pi 4, 4 GB; Dell 24\" 1920x1080 HDMI; Cherry-Tastatur DE; Logitech-Maus; SanDisk 16 GB, FAT16 2 GB"
+      label: Your setup (Dein Aufbau)
+      description: Pi 4 RAM, monitor/resolution, keyboard and mouse, SD card, other USB devices.
+      placeholder: "Pi 4, 4 GB; Dell 24in 1920x1080 HDMI; Cherry keyboard DE; Logitech mouse; SanDisk 16 GB, FAT16 2 GB"
   - type: textarea
     id: extra
     attributes:
-      label: Fotos, Logs, Sonstiges
-      description: Bilder hier hineinziehen. Wer eine serielle Konsole hat, gern den Log.
+      label: Photos, logs, anything else (Fotos, Logs, Sonstiges)
+      description: Drag images here. If you have a serial console, the log helps.

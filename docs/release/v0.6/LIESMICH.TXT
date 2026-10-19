@@ -1,6 +1,8 @@
 NewTOS 0.6 — Alpha-Testversion
 ==============================
 
+(English: see README.TXT)
+
 NewTOS ist das Atari-TOS (GEMDOS, BIOS, XBIOS, VDI, AES) als eigenes
 Betriebssystem fuer den Raspberry Pi 4 — kein Emulator. Atari-Programme
 werden aus ihren Quellen fuer ARM neu uebersetzt und laufen nativ.

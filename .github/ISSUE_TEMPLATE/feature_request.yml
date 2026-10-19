@@ -1,20 +1,20 @@
-name: Wunsch / Feature request
-description: Ein Programm, das portiert werden soll, oder eine Funktion, die fehlt.
-title: "[Wunsch] "
+name: Wish / feature request (Wunsch)
+description: A program to port or a missing feature. / Ein Programm zum Portieren oder eine fehlende Funktion.
+title: "[Wish] "
 labels: ["wunsch"]
 body:
   - type: textarea
     id: what
     attributes:
-      label: Was wuenschst du dir?
+      label: What would you like? (Was wuenschst du dir?)
     validations:
       required: true
   - type: textarea
     id: why
     attributes:
-      label: Wofuer brauchst du es?
+      label: What do you need it for? (Wofuer?)
   - type: input
     id: source
     attributes:
-      label: Quelltext / Link (bei Programmen)
-      description: Fuer eine Portierung braucht NewTOS den Quelltext des Programms.
+      label: Source code / link (for programs)
+      description: Porting a program to NewTOS needs its source code. / Fuer eine Portierung braucht NewTOS den Quelltext.
