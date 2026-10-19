@@ -15,6 +15,7 @@ Grundlage: `docs/analysis/sdk-inventory-2026-10-20.md` (`a36b3280`).
 | E | libm: compiler-rt-Builtins fuer 128-Bit-Gleitkomma und komplexe Multiplikation (`powf`, `remainder` …) | M | offen |
 | F | `stat`/`fstat`-Zeitstempel aus der DTA wie Upstream-mintlib | M | offen |
 | G | Linux-Weg fuer das SD-Abbild (`make-sd-image.sh` nur macOS) | M | offen |
+| H | **Abnahme durch Portieren:** nach B–D ein bisher nicht portiertes Atari-Programm nur mit der neuen Doku portieren (Anwender 2026-10-20: „weitere Apps kompilieren“); jede Luecke, auf die man stoesst, geht zurueck in Doku/SDK. Kandidaten: Thing, das neuere zView, HighWire (ohne Netz eingeschraenkt), weitere bekannte Atari-Programme | M–L | offen |
 | — | spaeter/bei Bedarf: `-Wno-error=int-conversion`-Entscheidung, gemeinsamer LP64-Header, socket/crypt/shadow/argp, C++-Laufzeit | — | — |
 
 [Gemeinsame Regeln](README.md) gelten.
