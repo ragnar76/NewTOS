@@ -1,0 +1,6 @@
+run b5-wt-on: 143 lines; end: 1; EXC/PANIC: 0
+run b5-wt-strict: 143 lines; end: 1; EXC/PANIC: 0
+run b5-wt-off: 145 lines; end: 1; EXC/PANIC: 0
+run b5-head-on: 128 lines; end: 1; EXC/PANIC: 0
+run b5-head-strict: 128 lines; end: 1; EXC/PANIC: 0
+run b5-head-off: 128 lines; end: 1; EXC/PANIC: 0

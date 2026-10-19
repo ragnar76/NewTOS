@@ -1,0 +1,25 @@
+t=26.6s -> aq-head-on-qed-qed.png {"return": {}}
+t=29.6s -> aq-head-on-qed-open.png {"return": {}}
+t=32.9s -> aq-head-on-qed-after.png {"return": {}}
+run aq-head-on-qed: rc=0 fsck: fsck rc=0 Warning: 19 files, 64286 KiB free (32143 clusters)  EXC/PANIC: 0 lines: 101 sched-switch: 8
+t=26.6s -> aq-head-strict-qed-qed.png {"return": {}}
+t=29.6s -> aq-head-strict-qed-open.png {"return": {}}
+t=32.9s -> aq-head-strict-qed-after.png {"return": {}}
+run aq-head-strict-qed: rc=0 fsck: fsck rc=0 Warning: 19 files, 64286 KiB free (32143 clusters)  EXC/PANIC: 0 lines: 101 sched-switch: 8
+t=26.3s -> aq-head-off-qed-qed.png {"return": {}}
+t=29.3s -> aq-head-off-qed-open.png {"return": {}}
+t=32.9s -> aq-head-off-qed-after.png {"return": {}}
+run aq-head-off-qed: rc=0 fsck: fsck rc=0 Warning: 19 files, 64286 KiB free (32143 clusters)  EXC/PANIC: 0 lines: 101 sched-switch: 8
+t=26.5s -> aq-wt-on-qed-qed.png {"return": {}}
+t=29.5s -> aq-wt-on-qed-open.png {"return": {}}
+t=32.8s -> aq-wt-on-qed-after.png {"return": {}}
+run aq-wt-on-qed: rc=0 fsck: fsck rc=0 Warning: 19 files, 64286 KiB free (32143 clusters)  EXC/PANIC: 0 lines: 101 sched-switch: 8
+t=26.6s -> aq-wt-strict-qed-qed.png {"return": {}}
+t=29.6s -> aq-wt-strict-qed-open.png {"return": {}}
+t=32.9s -> aq-wt-strict-qed-after.png {"return": {}}
+run aq-wt-strict-qed: rc=0 fsck: fsck rc=0 Warning: 19 files, 64286 KiB free (32143 clusters)  EXC/PANIC: 0 lines: 101 sched-switch: 8
+t=26.5s -> aq-wt-off-qed-qed.png {"return": {}}
+t=29.5s -> aq-wt-off-qed-open.png {"return": {}}
+t=32.8s -> aq-wt-off-qed-after.png {"return": {}}
+run aq-wt-off-qed: rc=0 fsck: fsck rc=0 Warning: 19 files, 64286 KiB free (32143 clusters)  EXC/PANIC: 0 lines: 101 sched-switch: 8
+Q5-DONE

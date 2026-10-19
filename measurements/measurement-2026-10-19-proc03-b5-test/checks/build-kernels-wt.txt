@@ -1,0 +1,15 @@
+working-tree files over cfa8a8be (wt):
+  kernel/src/arch/aarch64/exceptions.rs
+  tos-api/src/bdos/process.rs
+  tos-api/src/bdos/process/loader.rs
+  tos-api/src/bdos/process/pexec.rs
+  tos-api/src/bdos/process/pterm.rs
+  tos-api/src/bdos/process/standin.rs
+  tos-api/tests/proc03_b5_accessory_run.rs
+789e1e15b4f813245518aa314cc02b400a8708127a66d6cc78effe07493115e6  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t5/bin/kernel8-wt-plain.img
+inject-arm.py: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t5/trees/wt-inj: tag [inj], launch:P3Z2 (34 bytes)
+c00d254e7566400f406df208146e311bb0b5a8414ac5508e988231d7d19cdc29  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t5/bin/kernel8-wt-inj.img
+inject-arm.py: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t5/trees/wt-s2s: tag [inj], launch:S2ALLS (120 bytes)
+b1c8f3d10c2955724dc194eb81fd2c0d04623d2e93302c93433b31afbd187eb7  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t5/bin/kernel8-wt-s2s.img
+inject-arm.py: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t5/trees/wt-tdq: tag [inj], up:DESKTOP (2 bytes)
+f69fdd98741583d43ddb1f4a6089d48b1b1e7dbdee5a19aa6af1c73f87cb5565  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t5/bin/kernel8-wt-tdq.img

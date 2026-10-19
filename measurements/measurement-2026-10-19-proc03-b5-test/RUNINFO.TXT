@@ -1,0 +1,54 @@
+measurement-2026-10-19-proc03-b5-test -- Tester: independent regression test of the UNCOMMITTED working tree over HEAD cfa8a8be
+(TASK/PROC03 B5 option 2: while a desk accessory runs, *os_run and the p_parent of its Pexec child show EmuTOS's `run`).
+Tree under test: kernel/ + tos-api/ diff over HEAD, sha256 of `git diff HEAD -- kernel tos-api` cf48c5e5... identical at start and end;
+tests/proc03_b5_accessory_run.rs b33afb15... identical at start and end. No product code touched, nothing committed/stashed/checked out;
+the developer's run dir measurements/measurement-2026-10-19-proc03-b5/ was not edited (method/ COPIED here, env.sh -> scratch t5).
+Host macOS, QEMU -M raspi4b -append "serial=on [memprot=strict|off]" (+ -M virt for the boot smoke), one QEMU at a time, per-run APFS clones
+(cp -c), private 64 MiB FAT16 cards (labels P3PRB/P4FPRB/A113API/EVPRB), no SD card, no Pi. Kernels: fresh release rpi4 builds from `git archive
+cfa8a8be` (side head) and the same + the 7 working-tree files (side wt), SOURCE_DATE_EPOCH=1792152000; injector variants (tools/inject-arm.py) on
+scratch trees only. checks/kernels.sha256 (head-plain 9c72fd56, wt-plain 789e1e15 = the developer's hashes), programs.sha256, cards.sha256.
+
+method/ : copied unchanged from the developer's run (build-b5.sh card.sh b5probe.c ... s1/ a113/ regress/), plus own additions:
+  fd/ (copy of measurement-2026-10-19-proc04-fdelete-test/method: inter/ delete/copy/save matrices), a112/ (copy of a112-fix/method, SER path fixed),
+  acc.script (from desk43-u10-test), acc-late.script, tdq-acc.script, b5probe-w.c + build-b5w.sh (TESTER probe, see 7), q1..q6.sh, t1-b5.sh.
+  (acc-late.script/acl kernel and acq kernel: the injector's up:QED / launch:QED arms never fire for a QED started by TeraDesk's F1 -> those
+   runs (serial/am-*-qed*, al-*-qed*) are MISSING-marker runs, kept as evidence of the failed attempt, NOT results; replaced by tdq-acc.script, aq-*.)
+
+RESULTS
+ 1 B5 re-run (t1-b5.sh; wt = kernel8-wt-plain, head = control)
+   wt on/strict/off: B5 ACC RESULT fails=0, B5 Z RESULT fails=0, 0 FAIL, 0 EXC/PANIC (serial/b5-wt-*.log).
+   head on/strict/off (red control): ACC fails=5, Z fails=1, 7 FAIL lines each (serial/b5-head-*.log) -> probe discriminates.
+ 2 PROC03 stage-1 probe (s1, inj kernel, on/strict/off, head AND wt): head: AUTO/ACC/Z/Z2/EMU all fails=0, 0 FAIL, all modes.
+   wt: AUTO 0, Z 0, Z2 0, EMU 0, ACC fails=1 in all modes. The changed check is one: "kid p_parent == caller PD" of the accessory's child
+   (reported in two roles: [P3S1 Z] FAIL got=0x001c2300 and [P3S1 ACC] FAIL "accessory Pexec kid K ... got=0x43 want=0x42"); got = accdesk
+   stand-in (0x001c2300), was the accessory's PD in head. Nothing else changed.
+ 3 Accessory regression head vs wt
+   a) NEWDESK + SYSACC (desk-acc.sh, t25/t40, on/strict/off): 12 dumps, all sha a3bd102e..., identical head=wt; also TeraDesk->F1->QED t25/t40
+      x3 modes: all 5d8e72ff... = earlier runs.
+   b) SYSACC opened from the Desk menu by an injected click (acc.script), dumps desk/open/after, on/strict/off, 0 EXC/PANIC, fsck rc=0:
+      idle NEWDESK (am-*-idle), TeraDesk in front (am-*-td), QED in front (aq-*-qed, up:DESKTOP tdq-acc.script F1 then click): 27 dump pairs,
+      byte-identical head=wt (27/27). Viewed: "NewTOS System Information" dialog opens (all three), "after" = dialog closed, desktop back.
+   c) A112 wake probes (a112/run-all.sh f1 f1b f2 f3, head+wt): ACCA ticks 236/236 (dev green 235), ACCD ticks f1b 14/14, f3 74/74, MAIN loop
+      lines 35/35, f2 both WM_REDRAW (w3=1 and w3=2) 4.0 s after the cover window in both; 0 EXC/PANIC. Only difference: the count of
+      "[sched]" trace lines in f2 (head 47/35/35/47, wt 35/47/47/47 over 4+4 runs) = run-to-run jitter, not a side effect.
+   d) A113 idprobe (head+wt): identical lines head vs wt except the kernel image size and the stand-in page address; probes sha identical to
+      a113-fix probes-green.sha256 (serial/a113-probes-final.sha256); 0 EXC/PANIC.
+   e) Screendump matrices (fd/inter, memprot default, markers): dsk (NEWDESK trash x2), tdd (TeraDesk trash), qsv (QED save+save-over), dcm
+      (desktop copy/move/delete folder), tcp (TeraDesk copy/delete): 61 head/wt pairs, 57 identical, 4 differ: tdd-t2-selected 322 px, dcm-c1
+      (404 px), dcm-e1 (441 px) = pointer/drag-outline phase of the "selected" frame; qsv-q6-saved-over 54 px = QED text caret blink
+      (viewed, crops in the session scratchpad; same class as the developer-of-PROC04 report). fsck_msdos -n rc=0 and card listings equal on all.
+   f) "Program ends while an accessory sits in Pexec of a live child" (TESTER probe b5probe-w.c, kernel plain, on/strict/off, head+wt): ACC replies to Z,
+      then Pexecs kid W (appl_init, evnt_timer(4000)); Z Pterms meanwhile, NEWDESK is relaunched, W wakes. wt: W's p_parent = Z's PD
+      (= run), Z exits (rc 0) and "desktop up" appears while W sleeps, W returns 0x45 to the accessory, *os_run afterwards = NEWDESK, the desk phase
+      (kid K p_parent == run, block intact, Mfree==0) passes: ACC fails=0, Z fails=0, 0 EXC/PANIC, all modes. head: runs through as well, fails=5/1 (the B5
+      checks). No expected value for W's p_parent after Z died exists in the spec -> observed as no crash / correct return only (see report).
+ 4 Regression
+   APITEST (#Z, rg-*-api): TOTAL 109/0/5 in on/strict/off, wt and head; S2ALL PASS on/off, S2ALLS PASS strict (4 [crash] lines = 2 intended crash
+   prompts answered by the injector); VFORK PASS in all modes, wt and head; memprot=verify NOT run (not asked: on/strict/off/verify -> verify missing).
+   qemu-virt (release flat kernel-virt-wt): "[desk] desktop up", 65 serial lines, 0 EXC/PANIC (serial/virt-smoke-serial.log).
+   static (checks/wt-*): host tests 1480/0/1; release build rpi4 & qemu-virt rc=0, tos-api 64 / kernel 94 warnings, 0 errors; clippy tos-api 76 /
+   kernel 125 on both boards (= baseline); desk drift probe TOTAL 0; SDK host tests 20/0/0.
+
+NOT RUN: real Pi 4; memprot=verify (APITEST/S2ALL/VFORK); the accessory with the in-kernel EmuCON in front (ec matrix needs the con01 card not rebuilt);
+a QED/TeraDesk started by an injector that arms on it directly (the arms do not fire, see method note); doom/zView/CoreMark.
+Scratch (scratchpad/t5, 21 GB) deleted at the end.

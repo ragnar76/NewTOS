@@ -1,0 +1,283 @@
+run rg-wt-on-api: 336 lines; end: 1; EXC/PANIC: 0
+run rg-wt-on-s2all: 262 lines; end: 1; EXC/PANIC: 0
+run rg-wt-on-vforkt: 80 lines; end: 1; EXC/PANIC: 0
+run rg-wt-on-tdqed: 59 lines; end: 0; EXC/PANIC: 0
+run rg-wt-strict-api: 336 lines; end: 1; EXC/PANIC: 0
+run rg-wt-strict-s2alls: 307 lines; end: 1; EXC/PANIC: 4
+run rg-wt-strict-vforkt: 80 lines; end: 1; EXC/PANIC: 0
+run rg-wt-strict-tdqed: 59 lines; end: 0; EXC/PANIC: 0
+run rg-wt-off-api: 336 lines; end: 1; EXC/PANIC: 0
+run rg-wt-off-s2all: 262 lines; end: 1; EXC/PANIC: 0
+run rg-wt-off-vforkt: 80 lines; end: 1; EXC/PANIC: 0
+run rg-wt-off-tdqed: 59 lines; end: 0; EXC/PANIC: 0
+run rg-head-on-api: 336 lines; end: 1; EXC/PANIC: 0
+run rg-head-on-s2all: 262 lines; end: 1; EXC/PANIC: 0
+run rg-head-on-vforkt: 80 lines; end: 1; EXC/PANIC: 0
+run rg-head-on-tdqed: 59 lines; end: 0; EXC/PANIC: 0
+run rg-head-strict-api: 336 lines; end: 1; EXC/PANIC: 0
+run rg-head-strict-s2alls: 307 lines; end: 1; EXC/PANIC: 4
+run rg-head-strict-vforkt: 80 lines; end: 1; EXC/PANIC: 0
+run rg-head-strict-tdqed: 59 lines; end: 0; EXC/PANIC: 0
+run rg-head-off-api: 336 lines; end: 1; EXC/PANIC: 0
+run rg-head-off-s2all: 262 lines; end: 1; EXC/PANIC: 0
+run rg-head-off-vforkt: 80 lines; end: 1; EXC/PANIC: 0
+run rg-head-off-tdqed: 59 lines; end: 0; EXC/PANIC: 0
+run s1-wt-on: 267 lines; end: 1; EXC/PANIC: 0
+run s1-wt-strict: 267 lines; end: 1; EXC/PANIC: 0
+run s1-wt-off: 267 lines; end: 1; EXC/PANIC: 0
+run s1-head-on: 267 lines; end: 1; EXC/PANIC: 0
+run s1-head-strict: 267 lines; end: 1; EXC/PANIC: 0
+run s1-head-off: 267 lines; end: 1; EXC/PANIC: 0
+In file included from /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a113/r_ACCX.c:3:
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a113/idprobe.c:41:13: warning: unused function 'timer' [-Wunused-function]
+   41 | static void timer(unsigned ms) { ii[0] = (short)(ms & 0xffff); ii[1] = (short)(ms >> 16); aes(24, 2, 1, 0); }
+      |             ^~~~~
+1 warning generated.
+In file included from /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a113/r_ACCY.c:3:
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a113/idprobe.c:41:13: warning: unused function 'timer' [-Wunused-function]
+   41 | static void timer(unsigned ms) { ii[0] = (short)(ms & 0xffff); ii[1] = (short)(ms >> 16); aes(24, 2, 1, 0); }
+      |             ^~~~~
+1 warning generated.
+In file included from /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a113/r_SECOND.c:2:
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a113/idprobe.c:70:11: warning: unused variable 'msg' [-Wunused-variable]
+   70 |     short msg[8], id; int i, n;
+      |           ^~~
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a113/idprobe.c:70:27: warning: unused variable 'i' [-Wunused-variable]
+   70 |     short msg[8], id; int i, n;
+      |                           ^
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a113/idprobe.c:62:13: warning: unused function 'pmsg' [-Wunused-function]
+   62 | static void pmsg(const char *tag, short ret, short *m)
+      |             ^~~~
+3 warnings generated.
+qemu-system-aarch64: terminating on signal 15 from pid 15127 (<unknown process>)
+In file included from /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a113/r_ACCX.c:3:
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a113/idprobe.c:41:13: warning: unused function 'timer' [-Wunused-function]
+   41 | static void timer(unsigned ms) { ii[0] = (short)(ms & 0xffff); ii[1] = (short)(ms >> 16); aes(24, 2, 1, 0); }
+      |             ^~~~~
+1 warning generated.
+In file included from /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a113/r_ACCY.c:3:
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a113/idprobe.c:41:13: warning: unused function 'timer' [-Wunused-function]
+   41 | static void timer(unsigned ms) { ii[0] = (short)(ms & 0xffff); ii[1] = (short)(ms >> 16); aes(24, 2, 1, 0); }
+      |             ^~~~~
+1 warning generated.
+In file included from /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a113/r_SECOND.c:2:
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a113/idprobe.c:70:11: warning: unused variable 'msg' [-Wunused-variable]
+   70 |     short msg[8], id; int i, n;
+      |           ^~~
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a113/idprobe.c:70:27: warning: unused variable 'i' [-Wunused-variable]
+   70 |     short msg[8], id; int i, n;
+      |                           ^
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a113/idprobe.c:62:13: warning: unused function 'pmsg' [-Wunused-function]
+   62 | static void pmsg(const char *tag, short ret, short *m)
+      |             ^~~~
+3 warnings generated.
+qemu-system-aarch64: terminating on signal 15 from pid 15475 (<unknown process>)
+In file included from /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/r_ACCA.c:2:
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:33:13: warning: unused function 'say' [-Wunused-function]
+   33 | static void say(const char *a, unsigned v) { Cconws(a); puthex(v); Cconws("\r\n"); }
+      |             ^~~
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:68:14: warning: unused function 'wcreate' [-Wunused-function]
+   68 | static short wcreate(short x, short y, short w, short h)
+      |              ^~~~~~~
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:70:13: warning: unused function 'wopen' [-Wunused-function]
+   70 | static void wopen(short hd, short x, short y, short w, short h)
+      |             ^~~~~
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:72:13: warning: unused function 'wclose' [-Wunused-function]
+   72 | static void wclose(short hd) { ii[0]=hd; aes(102,1,1,0); }
+      |             ^~~~~~
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:73:13: warning: unused function 'wdelete' [-Wunused-function]
+   73 | static void wdelete(short hd) { ii[0]=hd; aes(103,1,1,0); }
+      |             ^~~~~~~
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:75:13: warning: unused function 'pmsg' [-Wunused-function]
+   75 | static void pmsg(const char *tag, short w, short *msg)
+      |             ^~~~
+6 warnings generated.
+In file included from /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/r_ACCB.c:2:
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:72:13: warning: unused function 'wclose' [-Wunused-function]
+   72 | static void wclose(short hd) { ii[0]=hd; aes(102,1,1,0); }
+      |             ^~~~~~
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:73:13: warning: unused function 'wdelete' [-Wunused-function]
+   73 | static void wdelete(short hd) { ii[0]=hd; aes(103,1,1,0); }
+      |             ^~~~~~~
+2 warnings generated.
+In file included from /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/r_ACCC.c:2:
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:72:13: warning: unused function 'wclose' [-Wunused-function]
+   72 | static void wclose(short hd) { ii[0]=hd; aes(102,1,1,0); }
+      |             ^~~~~~
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:73:13: warning: unused function 'wdelete' [-Wunused-function]
+   73 | static void wdelete(short hd) { ii[0]=hd; aes(103,1,1,0); }
+      |             ^~~~~~~
+2 warnings generated.
+In file included from /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/r_ACCD.c:2:
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:80:11: warning: unused variable 'msg' [-Wunused-variable]
+   80 |     short msg[8]; short id; int i; unsigned n = 0;
+      |           ^~~
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:68:14: warning: unused function 'wcreate' [-Wunused-function]
+   68 | static short wcreate(short x, short y, short w, short h)
+      |              ^~~~~~~
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:70:13: warning: unused function 'wopen' [-Wunused-function]
+   70 | static void wopen(short hd, short x, short y, short w, short h)
+      |             ^~~~~
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:72:13: warning: unused function 'wclose' [-Wunused-function]
+   72 | static void wclose(short hd) { ii[0]=hd; aes(102,1,1,0); }
+      |             ^~~~~~
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:73:13: warning: unused function 'wdelete' [-Wunused-function]
+   73 | static void wdelete(short hd) { ii[0]=hd; aes(103,1,1,0); }
+      |             ^~~~~~~
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:75:13: warning: unused function 'pmsg' [-Wunused-function]
+   75 | static void pmsg(const char *tag, short w, short *msg)
+      |             ^~~~
+6 warnings generated.
+In file included from /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/r_ACCDF.c:3:
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:80:11: warning: unused variable 'msg' [-Wunused-variable]
+   80 |     short msg[8]; short id; int i; unsigned n = 0;
+      |           ^~~
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:68:14: warning: unused function 'wcreate' [-Wunused-function]
+   68 | static short wcreate(short x, short y, short w, short h)
+      |              ^~~~~~~
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:70:13: warning: unused function 'wopen' [-Wunused-function]
+   70 | static void wopen(short hd, short x, short y, short w, short h)
+      |             ^~~~~
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:72:13: warning: unused function 'wclose' [-Wunused-function]
+   72 | static void wclose(short hd) { ii[0]=hd; aes(102,1,1,0); }
+      |             ^~~~~~
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:73:13: warning: unused function 'wdelete' [-Wunused-function]
+   73 | static void wdelete(short hd) { ii[0]=hd; aes(103,1,1,0); }
+      |             ^~~~~~~
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:75:13: warning: unused function 'pmsg' [-Wunused-function]
+   75 | static void pmsg(const char *tag, short w, short *msg)
+      |             ^~~~
+6 warnings generated.
+In file included from /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/r_POLL.c:2:
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:68:14: warning: unused function 'wcreate' [-Wunused-function]
+   68 | static short wcreate(short x, short y, short w, short h)
+      |              ^~~~~~~
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:70:13: warning: unused function 'wopen' [-Wunused-function]
+   70 | static void wopen(short hd, short x, short y, short w, short h)
+      |             ^~~~~
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:72:13: warning: unused function 'wclose' [-Wunused-function]
+   72 | static void wclose(short hd) { ii[0]=hd; aes(102,1,1,0); }
+      |             ^~~~~~
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:73:13: warning: unused function 'wdelete' [-Wunused-function]
+   73 | static void wdelete(short hd) { ii[0]=hd; aes(103,1,1,0); }
+      |             ^~~~~~~
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:75:13: warning: unused function 'pmsg' [-Wunused-function]
+   75 | static void pmsg(const char *tag, short w, short *msg)
+      |             ^~~~
+5 warnings generated.
+== f1 (wt) 75s
+qemu-system-aarch64: terminating on signal 15 from pid 16111 (<unknown process>)
+== f1b (wt) 75s
+qemu-system-aarch64: terminating on signal 15 from pid 16203 (<unknown process>)
+== f2 (wt) 60s
+qemu-system-aarch64: terminating on signal 15 from pid 16287 (<unknown process>)
+== f3 (wt) 90s
+qemu-system-aarch64: terminating on signal 15 from pid 16357 (<unknown process>)
+In file included from /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/r_ACCA.c:2:
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:33:13: warning: unused function 'say' [-Wunused-function]
+   33 | static void say(const char *a, unsigned v) { Cconws(a); puthex(v); Cconws("\r\n"); }
+      |             ^~~
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:68:14: warning: unused function 'wcreate' [-Wunused-function]
+   68 | static short wcreate(short x, short y, short w, short h)
+      |              ^~~~~~~
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:70:13: warning: unused function 'wopen' [-Wunused-function]
+   70 | static void wopen(short hd, short x, short y, short w, short h)
+      |             ^~~~~
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:72:13: warning: unused function 'wclose' [-Wunused-function]
+   72 | static void wclose(short hd) { ii[0]=hd; aes(102,1,1,0); }
+      |             ^~~~~~
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:73:13: warning: unused function 'wdelete' [-Wunused-function]
+   73 | static void wdelete(short hd) { ii[0]=hd; aes(103,1,1,0); }
+      |             ^~~~~~~
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:75:13: warning: unused function 'pmsg' [-Wunused-function]
+   75 | static void pmsg(const char *tag, short w, short *msg)
+      |             ^~~~
+6 warnings generated.
+In file included from /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/r_ACCB.c:2:
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:72:13: warning: unused function 'wclose' [-Wunused-function]
+   72 | static void wclose(short hd) { ii[0]=hd; aes(102,1,1,0); }
+      |             ^~~~~~
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:73:13: warning: unused function 'wdelete' [-Wunused-function]
+   73 | static void wdelete(short hd) { ii[0]=hd; aes(103,1,1,0); }
+      |             ^~~~~~~
+2 warnings generated.
+In file included from /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/r_ACCC.c:2:
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:72:13: warning: unused function 'wclose' [-Wunused-function]
+   72 | static void wclose(short hd) { ii[0]=hd; aes(102,1,1,0); }
+      |             ^~~~~~
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:73:13: warning: unused function 'wdelete' [-Wunused-function]
+   73 | static void wdelete(short hd) { ii[0]=hd; aes(103,1,1,0); }
+      |             ^~~~~~~
+2 warnings generated.
+In file included from /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/r_ACCD.c:2:
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:80:11: warning: unused variable 'msg' [-Wunused-variable]
+   80 |     short msg[8]; short id; int i; unsigned n = 0;
+      |           ^~~
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:68:14: warning: unused function 'wcreate' [-Wunused-function]
+   68 | static short wcreate(short x, short y, short w, short h)
+      |              ^~~~~~~
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:70:13: warning: unused function 'wopen' [-Wunused-function]
+   70 | static void wopen(short hd, short x, short y, short w, short h)
+      |             ^~~~~
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:72:13: warning: unused function 'wclose' [-Wunused-function]
+   72 | static void wclose(short hd) { ii[0]=hd; aes(102,1,1,0); }
+      |             ^~~~~~
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:73:13: warning: unused function 'wdelete' [-Wunused-function]
+   73 | static void wdelete(short hd) { ii[0]=hd; aes(103,1,1,0); }
+      |             ^~~~~~~
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:75:13: warning: unused function 'pmsg' [-Wunused-function]
+   75 | static void pmsg(const char *tag, short w, short *msg)
+      |             ^~~~
+6 warnings generated.
+In file included from /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/r_ACCDF.c:3:
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:80:11: warning: unused variable 'msg' [-Wunused-variable]
+   80 |     short msg[8]; short id; int i; unsigned n = 0;
+      |           ^~~
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:68:14: warning: unused function 'wcreate' [-Wunused-function]
+   68 | static short wcreate(short x, short y, short w, short h)
+      |              ^~~~~~~
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:70:13: warning: unused function 'wopen' [-Wunused-function]
+   70 | static void wopen(short hd, short x, short y, short w, short h)
+      |             ^~~~~
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:72:13: warning: unused function 'wclose' [-Wunused-function]
+   72 | static void wclose(short hd) { ii[0]=hd; aes(102,1,1,0); }
+      |             ^~~~~~
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:73:13: warning: unused function 'wdelete' [-Wunused-function]
+   73 | static void wdelete(short hd) { ii[0]=hd; aes(103,1,1,0); }
+      |             ^~~~~~~
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:75:13: warning: unused function 'pmsg' [-Wunused-function]
+   75 | static void pmsg(const char *tag, short w, short *msg)
+      |             ^~~~
+6 warnings generated.
+In file included from /Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/r_POLL.c:2:
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:68:14: warning: unused function 'wcreate' [-Wunused-function]
+   68 | static short wcreate(short x, short y, short w, short h)
+      |              ^~~~~~~
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:70:13: warning: unused function 'wopen' [-Wunused-function]
+   70 | static void wopen(short hd, short x, short y, short w, short h)
+      |             ^~~~~
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:72:13: warning: unused function 'wclose' [-Wunused-function]
+   72 | static void wclose(short hd) { ii[0]=hd; aes(102,1,1,0); }
+      |             ^~~~~~
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:73:13: warning: unused function 'wdelete' [-Wunused-function]
+   73 | static void wdelete(short hd) { ii[0]=hd; aes(103,1,1,0); }
+      |             ^~~~~~~
+/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/a112/evprobe.c:75:13: warning: unused function 'pmsg' [-Wunused-function]
+   75 | static void pmsg(const char *tag, short w, short *msg)
+      |             ^~~~
+5 warnings generated.
+== f1 (head) 75s
+qemu-system-aarch64: terminating on signal 15 from pid 16905 (<unknown process>)
+== f1b (head) 75s
+qemu-system-aarch64: terminating on signal 15 from pid 16990 (<unknown process>)
+== f2 (head) 60s
+qemu-system-aarch64: terminating on signal 15 from pid 17075 (<unknown process>)
+== f3 (head) 90s
+qemu-system-aarch64: terminating on signal 15 from pid 17158 (<unknown process>)
+run rg-head-on-dacc: 67 lines; end: 0; EXC/PANIC: 0
+run rg-head-strict-dacc: 67 lines; end: 0; EXC/PANIC: 0
+run rg-head-off-dacc: 67 lines; end: 0; EXC/PANIC: 0
+run rg-wt-on-dacc: 67 lines; end: 0; EXC/PANIC: 0
+run rg-wt-strict-dacc: 67 lines; end: 0; EXC/PANIC: 0
+run rg-wt-off-dacc: 67 lines; end: 0; EXC/PANIC: 0
+Q1-DONE

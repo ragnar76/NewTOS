@@ -1,0 +1,23 @@
+#R 02
+#E 9B 00 00 00 00
+#Q 41 40 43 40 7B 40
+#W 00 00 0A 02 22 0C 00 C:\*.*@
+#W 00 00 2D 02 22 0C 00 C:\*.*@
+#W 00 00 0A 10 22 0C 00 C:\SUB\*.*@
+#W 00 00 00 01 50 1C 00 @
+#W 00 00 00 01 50 1C 00 @
+#W 00 00 00 01 50 1C 00 @
+#M 00 00 FF FF C Hard disk@ @
+#T 00 04 FF FF   Trash@ @
+#X 00 02 FF 07   C:\SUB\NOTE.TXT@ NOTE.TXT@
+#G 06 FF *.NAP@ @
+#F 06 FF *.NCP@ @
+#P 06 FF *.NTP@ @
+#F FF 07 @ *.*@
+#N FF 07 @ *.*@
+#D FF 02 @ *.*@
+#Y 06 FF *.GTP@ @
+#G 06 FF *.APP@ @
+#G 06 FF *.PRG@ @
+#P 06 FF *.TTP@ @
+#F 06 FF *.TOS@ @

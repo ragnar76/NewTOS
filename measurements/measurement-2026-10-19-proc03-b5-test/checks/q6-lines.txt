@@ -1,0 +1,2 @@
+virt smoke: 65 serial lines; desktop up: 1; EXC/PANIC: 0
+Q6-DONE

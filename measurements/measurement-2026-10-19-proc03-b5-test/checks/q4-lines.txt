@@ -1,0 +1,7 @@
+run w-wt-on: 144 lines; end: 1; EXC/PANIC: 0
+run w-wt-strict: 144 lines; end: 1; EXC/PANIC: 0
+run w-wt-off: 144 lines; end: 1; EXC/PANIC: 0
+run w-head-on: 129 lines; end: 1; EXC/PANIC: 0
+run w-head-strict: 129 lines; end: 1; EXC/PANIC: 0
+run w-head-off: 129 lines; end: 1; EXC/PANIC: 0
+Q4-DONE

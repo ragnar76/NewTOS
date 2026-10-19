@@ -1,0 +1,14 @@
+NewTOS desktop drift probe — /Volumes/Daten/Development/PiRusTOS @ cfa8a8be (11 modified file(s))
+desktop source: programs/desktop/src/ (crate programs/desktop/Cargo.toml, 19 .rs file(s), subdirectories included)
+
+A  programs/desktop/src/ -> tos_api::                        0 code line(s)
+
+B  programs/desktop/src/ -> kernel:: (kernel internals)      0 code line(s)
+
+C  kernel/ -> desktop crate (code + kernel/Cargo.toml)       0 code line(s)
+
+D  programs/desktop/Cargo.toml -> deps other than newtos-gem/tos-types   0 code line(s)
+
+unsafe  in programs/desktop/src/                            20 code line(s)   [not in TOTAL; baseline 20, must not rise]
+
+DRIFT-PROBE TOTAL: 0

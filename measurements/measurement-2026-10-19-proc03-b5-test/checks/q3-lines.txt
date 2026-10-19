@@ -1,0 +1,32 @@
+MARKER-MISSING b'\\[inj\\] launch:QED armed'@1
+t=150.3s -> al-head-on-qed-app.png.MISSING.png {"return": {}}
+run al-head-on-qed: rc=3 fsck: fsck rc=0 Warning: 19 files, 64286 KiB free (32143 clusters)  EXC/PANIC: 0 lines: 71 sched-switch: 6
+MARKER-MISSING b'\\[inj\\] launch:QED armed'@1
+t=150.3s -> al-head-strict-qed-app.png.MISSING.png {"return": {}}
+run al-head-strict-qed: rc=3 fsck: fsck rc=0 Warning: 19 files, 64286 KiB free (32143 clusters)  EXC/PANIC: 0 lines: 71 sched-switch: 6
+MARKER-MISSING b'\\[inj\\] launch:QED armed'@1
+t=150.4s -> al-head-off-qed-app.png.MISSING.png {"return": {}}
+run al-head-off-qed: rc=3 fsck: fsck rc=0 Warning: 19 files, 64286 KiB free (32143 clusters)  EXC/PANIC: 0 lines: 71 sched-switch: 6
+MARKER-MISSING b'\\[inj\\] launch:QED armed'@1
+t=150.4s -> al-wt-on-qed-app.png.MISSING.png {"return": {}}
+run al-wt-on-qed: rc=3 fsck: fsck rc=0 Warning: 19 files, 64286 KiB free (32143 clusters)  EXC/PANIC: 0 lines: 71 sched-switch: 6
+qemu-system-aarch64: terminating on signal 15 from pid 24079 (<unknown process>)
+MARKER-MISSING b'\\[inj\\] launch:QED armed'@1
+Traceback (most recent call last):
+  File "/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/fd/inter/mdrive.py", line 51, in <module>
+    dump("%s-%s.MISSING.png" % (tag, name if name != '-' else 'x')); rc = 3; break
+    ~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/fd/inter/mdrive.py", line 38, in dump
+    r = cmd({"execute": "screendump", "arguments": {"filename": p, "format": "png"}})
+  File "/Volumes/Daten/Development/PiRusTOS/measurements/measurement-2026-10-19-proc03-b5-test/method/fd/inter/mdrive.py", line 29, in cmd
+    f.write(json.dumps(o) + '\n'); f.flush()
+                                   ~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socket.py", line 747, in write
+    return self._sock.send(b)
+           ~~~~~~~~~~~~~~~^^^
+BrokenPipeError: [Errno 32] Broken pipe
+Exception ignored while finalizing file <_io.TextIOWrapper mode='rw' encoding='utf-8'>:
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.14/3.14.6/Frameworks/Python.framework/Versions/3.14/lib/python3.14/socket.py", line 747, in write
+OSError: [Errno 9] Bad file descriptor
+run al-wt-strict-qed: rc=1 fsck: fsck rc=0 Warning: 19 files, 64286 KiB free (32143 clusters)  EXC/PANIC: 0 lines: 71 sched-switch: 6

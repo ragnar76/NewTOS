@@ -1,0 +1,10 @@
+working-tree files over cfa8a8be (wt):
+  kernel/src/arch/aarch64/exceptions.rs
+  tos-api/src/bdos/process.rs
+  tos-api/src/bdos/process/loader.rs
+  tos-api/src/bdos/process/pexec.rs
+  tos-api/src/bdos/process/pterm.rs
+  tos-api/src/bdos/process/standin.rs
+  tos-api/tests/proc03_b5_accessory_run.rs
+inject-arm.py: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t5/trees/wt-acl: tag [inj], up:DESKTOP (2 bytes), launch:QED (26 bytes)
+f0d784b13cd4340aaca60bc106d0dc1d5038b9cffcc7d9c6d45ff7a412cf44ed  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t5/bin/kernel8-wt-acl.img

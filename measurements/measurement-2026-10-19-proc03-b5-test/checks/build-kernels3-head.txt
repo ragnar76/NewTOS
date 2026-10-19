@@ -1,0 +1,4 @@
+working-tree files over cfa8a8be (head):
+  
+inject-arm.py: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t5/trees/head-acl: tag [inj], up:DESKTOP (2 bytes), launch:QED (26 bytes)
+bdde66d94920dc5895977fdd5342155c6a7e6443f88af0f235132033601c547f  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t5/bin/kernel8-head-acl.img
