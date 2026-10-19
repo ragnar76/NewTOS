@@ -1,6 +1,6 @@
 # PROC03 — Desktop/AES als echter EL0-Prozess mit eigenem PD (`p_parent` exakt wie EmuTOS)
 
-Status: **OFFEN** · Prioritaet: **P2** · Typ: Abweichung von EmuTOS — aus [ARCH03](ARCH03.md) Nacharbeit E9 (Punkt 1, Weg B)
+Status: **ERLEDIGT** 2026-10-19 (QEMU) — [Quittung](PROC03-STATUS-DONE.MD) · Prioritaet: **P2** · Typ: Abweichung von EmuTOS — aus [ARCH03](ARCH03.md) Nacharbeit E9 (Punkt 1, Weg B)
 
 Abhaengigkeiten: zuerst Weg A (Stellvertreter-PDs) aus der E9-Nacharbeit; Bezug Memory „Desktop must run in user scope“
 
@@ -24,7 +24,7 @@ Beleg: `measurements/measurement-2026-10-06-post-e9/RUNINFO.TXT`,
 
 ## Neufassung (2026-10-17, Entwurf)
 
-Status: **IN ARBEIT — Anwender 2026-10-18: alles EmuTOS-treu (siehe Ende)** · Prioritaet: **P2** · Typ: Abweichung von EmuTOS (beobachtbar + intern, getrennt gekennzeichnet)
+Status: **ERLEDIGT** 2026-10-19 (QEMU) — [Quittung](PROC03-STATUS-DONE.MD) · Prioritaet: **P2** · Typ: Abweichung von EmuTOS (beobachtbar + intern, getrennt gekennzeichnet)
 
 Beleg: `measurements/measurement-2026-10-17-proc03/RUNINFO.TXT` (QEMU-Sonde auf HEAD `7d79f4a4`, on und strict); EmuTOS-Pin `1a7484ab`.
 
