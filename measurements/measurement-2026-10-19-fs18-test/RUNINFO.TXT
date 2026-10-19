@@ -1,0 +1,33 @@
+measurement-2026-10-19-fs18-test -- Tester: independent regression test of the UNCOMMITTED working tree over HEAD 178a4581
+(TASK/FS18 Frename same-dir in place / cross-dir like ixcreat, TASK/FS14). Files under test (sha256 identical at start and end:
+checks/wt-files-start.sha256 == checks/wt-files-end.sha256): tos-api/src/bdos/fs/file.rs, dir.rs, tests/fs18_frename.rs, fs18_frename_lfn.rs, 3 docs.
+No product code touched, nothing committed/stashed/checked out; the developer's run dir measurements/measurement-2026-10-19-fs18/ was not edited
+(method/ COPIED here; env.sh retargeted to scratch .../scratchpad/fs18t; additions: f18x.c, rootscan.py, pngcmp.py, run-probex.sh, inter/dmv|tmv.spec,
+inter/qed-bak.cfg, inter/runall2.sh, dsk/dcm/tcp/tdd specs from measurement-2026-10-19-proc04-fdelete-test).
+Host macOS, QEMU -M raspi4b -append serial=on [memprot=strict|off|verify], -M virt (boot only), one QEMU at a time, per-run APFS clones (cp -c),
+fsck_msdos -n + mtools listing (+ rootscan.py raw root dir) of every clone before deletion; private 64 MiB FAT16 images (FS18PRB/FS18API), no SD
+card, no Pi. Scratch deleted at the end. Kernels: fresh release rpi4 builds from `git archive 178a4581` (head) and + the working-tree files (wt),
+SOURCE_DATE_EPOCH=1792368000 (checks/kernels.sha256; head plain 02c3cda3... and wt plain 82d1e015... are bit-identical to the developer's builds).
+
+1 RE-RUN of the developer's run (method/run-probe.sh, inter/runall.sh)
+  hosttests/green-fs18.txt: fs18_frename 12/12, fs18_frename_lfn 1/1 (+3 more default-threaded runs 12/12).
+  F18 probe wt on/strict/off/verify: "F18 RESULT fails=0x00000000", 0 FAIL, 0 EXC/PANIC, desktop up, fsck rc=0 each (serial/f18-wt-*); verify:
+  5 checks, 0 mismatches. Negative control head/on: fails=0x0c (12 FAIL), fsck rc=206 "6 orphaned clusters" (serial/f18-head-on*).
+  inter drn / trn / qsv, wt + head: fsck rc=0 all six, 0 EXC/PANIC; card listings equal except in-place vs first-free-slot order (drn: RENAMED.TXT at
+  README's slot on wt, first free slot on head); dumps identical except two pre-action frames (drn m0/m1 = selection/pointer phase).
+2 NEW (not run by the developer)
+  f18x probe (method/f18x.c, own cases): folder cross-dir move with a file OPEN inside, folder same-dir rename with open file, is_subdir/exists/
+  same-name/read-only/illegal-char -> EACCDN, two handles + cross-dir move, 40000-byte file there and back, VFAT long-name chains (host-seeded
+  "Long File Name Test.txt", "Another Long Name.txt") renamed same-dir and cross-dir, Fseek/Fread/Fdatime via handle after the move, folder tree move,
+  '..' of moved folders. wt on/strict/off/verify: fails=0, fsck rc=0, 0 EXC (serial/f18x-wt-*; raw root dir serial/f18x-wt-on-root.txt: both LFN chains
+  marked deleted). head/on: fails=4, fsck rc=206 (control).
+  QED with backup: card qsb = qsv card + Apps/QED/qed.cfg (LocalBegin "*" LocalBackup=TRUE, QED reads qed.cfg from its start dir): save as QS.PRG,
+  save over -> back_up() Frename QS.PRG -> QS.BAK: QS.BAK="abc", QS.PRG="abcd", fsck rc=0 on wt and head, dumps identical.
+  desktop/TeraDesk matrix wt vs head: dsk, dcm, tcp, tdd (from the fdelete test), dmv (NEWDESK folder move + file rename + folder rename), tmv (TeraDesk
+  Ctrl-move file, Ctrl-move folder tree, rename folder): fsck rc=0 all 12, 0 EXC/PANIC, card listings equal (order differs only where noted).
+  S2ALL on/off PASS, S2ALLS strict PASS (4 intended crash lines), VFORK x3 PASS, TeraDesk->F1->QED 6 dumps sha 5d8e72ff (= head run and earlier runs),
+  APITEST on/strict/off TOTAL 109/0/5, fsck rc=0 x12.
+3 HOST/BUILD (method/checks.sh wt): cargo xtask test 1493/0/1; release builds rpi4 + qemu-virt rc=0, warnings kernel 94 / tos-api 64; clippy kernel 125 /
+  tos-api 76 both boards, 0 hits in file.rs/dir.rs; desk-drift TOTAL 0; SDK host tests 20/0/0; qemu-virt boot (flat) "desktop up (0 drives)", 0 EXC.
+NOT RUN: real Pi 4; head-side S2ALL/S2ALLS/VFORK/APITEST (baseline = earlier runs); QED restore_back_up() error path (needs a failing write); Ctrl+D in
+  NEWDESK; Fcreate with long names (returns EPTHNF in this kernel, so LFN chains were host-seeded).

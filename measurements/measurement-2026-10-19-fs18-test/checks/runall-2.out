@@ -1,0 +1,76 @@
+t=18.0s -> dsk-wt-a1-note-selected.png {"return": {}}
+t=19.9s -> dsk-wt-a2-delete-box.png {"return": {}}
+t=21.5s -> dsk-wt-a3-note-deleted.png {"return": {}}
+t=24.4s -> dsk-wt-b1-readme-selected.png {"return": {}}
+t=26.2s -> dsk-wt-b2-delete-box.png {"return": {}}
+t=27.8s -> dsk-wt-b3-readme-deleted.png {"return": {}}
+run dsk-wt: rc=0 fsck: fsck rc=0 Warning: 7 files, 65326 KiB free (32663 clusters)  EXC/PANIC: 0 lines: 177 sched-switch: 0
+t=18.3s -> dcm-wt-s0-start.png {"return": {}}
+t=19.1s -> dcm-wt-c1-readme-selected.png {"return": {}}
+t=22.2s -> dcm-wt-c2-copy-box.png {"return": {}}
+t=23.3s -> dcm-wt-c3-copied.png {"return": {}}
+t=29.3s -> dcm-wt-d1-big-box.png {"return": {}}
+t=30.3s -> dcm-wt-d2-big-copied.png {"return": {}}
+t=34.5s -> dcm-wt-e1-fold-selected.png {"return": {}}
+t=38.2s -> dcm-wt-e2-folder-copy-box.png {"return": {}}
+t=39.5s -> dcm-wt-e3-folder-copied.png {"return": {}}
+t=48.8s -> dcm-wt-f1-move-box.png {"return": {}}
+t=49.9s -> dcm-wt-f2-moved.png {"return": {}}
+t=56.1s -> dcm-wt-g1-delete-folder-box.png {"return": {}}
+t=57.7s -> dcm-wt-g2-after-ok.png {"return": {}}
+t=61.9s -> dcm-wt-g3-fold-deleted.png {"return": {}}
+run dcm-wt: rc=0 fsck: fsck rc=0 Warning: 18 files, 65228 KiB free (32614 clusters)  EXC/PANIC: 0 lines: 544 sched-switch: 0
+t=18.0s -> tcp-wt-t1-window-open.png {"return": {}}
+t=20.4s -> tcp-wt-t2-big-selected.png {"return": {}}
+t=22.0s -> tcp-wt-t3-copy-big-dialog.png {"return": {}}
+t=23.6s -> tcp-wt-t4-big-copied.png {"return": {}}
+t=28.5s -> tcp-wt-t5-fold-selected.png {"return": {}}
+t=30.1s -> tcp-wt-t6-copy-fold-dialog.png {"return": {}}
+t=31.7s -> tcp-wt-t7-fold-copied.png {"return": {}}
+t=41.8s -> tcp-wt-t8-delete-dialog.png {"return": {}}
+t=43.4s -> tcp-wt-t9-deleted.png {"return": {}}
+t=47.5s -> tcp-wt-t10-end.png {"return": {}}
+run tcp-wt: rc=0 fsck: fsck rc=0 Warning: 24 files, 64792 KiB free (32396 clusters)  EXC/PANIC: 0 lines: 304 sched-switch: 0
+t=18.0s -> tdd-wt-t1-window-open.png {"return": {}}
+t=20.3s -> tdd-wt-t2-selected.png {"return": {}}
+t=24.5s -> tdd-wt-t3-confirm.png {"return": {}}
+t=26.1s -> tdd-wt-t4-deleted.png {"return": {}}
+run tdd-wt: rc=0 fsck: fsck rc=0 Warning: 13 files, 64890 KiB free (32445 clusters)  EXC/PANIC: 0 lines: 216 sched-switch: 0
+t=18.0s -> dsk-head-a1-note-selected.png {"return": {}}
+t=19.9s -> dsk-head-a2-delete-box.png {"return": {}}
+t=21.5s -> dsk-head-a3-note-deleted.png {"return": {}}
+t=24.3s -> dsk-head-b1-readme-selected.png {"return": {}}
+t=26.2s -> dsk-head-b2-delete-box.png {"return": {}}
+t=27.8s -> dsk-head-b3-readme-deleted.png {"return": {}}
+run dsk-head: rc=0 fsck: fsck rc=0 Warning: 7 files, 65326 KiB free (32663 clusters)  EXC/PANIC: 0 lines: 177 sched-switch: 0
+t=18.0s -> dcm-head-s0-start.png {"return": {}}
+t=18.9s -> dcm-head-c1-readme-selected.png {"return": {}}
+t=22.0s -> dcm-head-c2-copy-box.png {"return": {}}
+t=23.3s -> dcm-head-c3-copied.png {"return": {}}
+t=29.3s -> dcm-head-d1-big-box.png {"return": {}}
+t=30.4s -> dcm-head-d2-big-copied.png {"return": {}}
+t=34.5s -> dcm-head-e1-fold-selected.png {"return": {}}
+t=38.2s -> dcm-head-e2-folder-copy-box.png {"return": {}}
+t=39.3s -> dcm-head-e3-folder-copied.png {"return": {}}
+t=48.6s -> dcm-head-f1-move-box.png {"return": {}}
+t=49.7s -> dcm-head-f2-moved.png {"return": {}}
+t=56.2s -> dcm-head-g1-delete-folder-box.png {"return": {}}
+t=57.7s -> dcm-head-g2-after-ok.png {"return": {}}
+t=61.9s -> dcm-head-g3-fold-deleted.png {"return": {}}
+run dcm-head: rc=0 fsck: fsck rc=0 Warning: 18 files, 65228 KiB free (32614 clusters)  EXC/PANIC: 0 lines: 544 sched-switch: 0
+t=18.0s -> tcp-head-t1-window-open.png {"return": {}}
+t=20.4s -> tcp-head-t2-big-selected.png {"return": {}}
+t=21.9s -> tcp-head-t3-copy-big-dialog.png {"return": {}}
+t=23.5s -> tcp-head-t4-big-copied.png {"return": {}}
+t=28.5s -> tcp-head-t5-fold-selected.png {"return": {}}
+t=30.0s -> tcp-head-t6-copy-fold-dialog.png {"return": {}}
+t=31.6s -> tcp-head-t7-fold-copied.png {"return": {}}
+t=41.7s -> tcp-head-t8-delete-dialog.png {"return": {}}
+t=43.3s -> tcp-head-t9-deleted.png {"return": {}}
+t=47.5s -> tcp-head-t10-end.png {"return": {}}
+run tcp-head: rc=0 fsck: fsck rc=0 Warning: 24 files, 64792 KiB free (32396 clusters)  EXC/PANIC: 0 lines: 304 sched-switch: 0
+t=18.0s -> tdd-head-t1-window-open.png {"return": {}}
+t=20.1s -> tdd-head-t2-selected.png {"return": {}}
+t=24.6s -> tdd-head-t3-confirm.png {"return": {}}
+t=26.2s -> tdd-head-t4-deleted.png {"return": {}}
+run tdd-head: rc=0 fsck: fsck rc=0 Warning: 13 files, 64890 KiB free (32445 clusters)  EXC/PANIC: 0 lines: 216 sched-switch: 0

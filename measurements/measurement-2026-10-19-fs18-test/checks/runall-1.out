@@ -1,0 +1,46 @@
+t=18.0s -> drn-wt-m0-start.png {"return": {}}
+t=18.8s -> drn-wt-m1-selected.png {"return": {}}
+t=22.2s -> drn-wt-m2-move-box.png {"return": {}}
+t=23.3s -> drn-wt-m3-moved.png {"return": {}}
+t=28.2s -> drn-wt-r1-selected.png {"return": {}}
+t=29.0s -> drn-wt-r2-info.png {"return": {}}
+t=31.4s -> drn-wt-r3-typed.png {"return": {}}
+t=32.2s -> drn-wt-r4-renamed.png {"return": {}}
+run drn-wt: rc=0 fsck: fsck rc=0 Warning: 16 files, 65270 KiB free (32635 clusters)  EXC/PANIC: 0 lines: 237 sched-switch: 0
+t=18.0s -> trn-wt-t1-window-open.png {"return": {}}
+t=20.1s -> trn-wt-t2-selected.png {"return": {}}
+t=20.9s -> trn-wt-t3-info.png {"return": {}}
+t=23.5s -> trn-wt-t4-typed.png {"return": {}}
+t=24.4s -> trn-wt-t5-renamed.png {"return": {}}
+t=27.0s -> trn-wt-t6-after.png {"return": {}}
+run trn-wt: rc=0 fsck: fsck rc=0 Warning: 14 files, 64888 KiB free (32444 clusters)  EXC/PANIC: 0 lines: 141 sched-switch: 0
+t=17.7s -> qsv-wt-q1-new.png {"return": {}}
+t=18.8s -> qsv-wt-q2-typed.png {"return": {}}
+t=19.6s -> qsv-wt-q3-saveas.png {"return": {}}
+t=21.5s -> qsv-wt-q4-name.png {"return": {}}
+t=22.3s -> qsv-wt-q5-saved.png {"return": {}}
+t=23.9s -> qsv-wt-q6-saved-over.png {"return": {}}
+run qsv-wt: rc=0 fsck: fsck rc=0 Warning: 11 files, 64764 KiB free (32382 clusters)  EXC/PANIC: 0 lines: 89 sched-switch: 0
+t=18.2s -> drn-head-m0-start.png {"return": {}}
+t=19.0s -> drn-head-m1-selected.png {"return": {}}
+t=22.1s -> drn-head-m2-move-box.png {"return": {}}
+t=23.5s -> drn-head-m3-moved.png {"return": {}}
+t=28.2s -> drn-head-r1-selected.png {"return": {}}
+t=29.0s -> drn-head-r2-info.png {"return": {}}
+t=31.6s -> drn-head-r3-typed.png {"return": {}}
+t=32.4s -> drn-head-r4-renamed.png {"return": {}}
+run drn-head: rc=0 fsck: fsck rc=0 Warning: 16 files, 65270 KiB free (32635 clusters)  EXC/PANIC: 0 lines: 237 sched-switch: 0
+t=18.0s -> trn-head-t1-window-open.png {"return": {}}
+t=20.1s -> trn-head-t2-selected.png {"return": {}}
+t=20.9s -> trn-head-t3-info.png {"return": {}}
+t=23.5s -> trn-head-t4-typed.png {"return": {}}
+t=24.4s -> trn-head-t5-renamed.png {"return": {}}
+t=27.0s -> trn-head-t6-after.png {"return": {}}
+run trn-head: rc=0 fsck: fsck rc=0 Warning: 14 files, 64888 KiB free (32444 clusters)  EXC/PANIC: 0 lines: 141 sched-switch: 0
+t=17.8s -> qsv-head-q1-new.png {"return": {}}
+t=18.8s -> qsv-head-q2-typed.png {"return": {}}
+t=19.7s -> qsv-head-q3-saveas.png {"return": {}}
+t=21.5s -> qsv-head-q4-name.png {"return": {}}
+t=22.3s -> qsv-head-q5-saved.png {"return": {}}
+t=23.9s -> qsv-head-q6-saved-over.png {"return": {}}
+run qsv-head: rc=0 fsck: fsck rc=0 Warning: 11 files, 64764 KiB free (32382 clusters)  EXC/PANIC: 0 lines: 89 sched-switch: 0

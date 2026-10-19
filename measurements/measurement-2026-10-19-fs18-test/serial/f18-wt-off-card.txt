@@ -1,0 +1,103 @@
+== C:/
+ Volume in drive : is FS18PRB    
+ Volume Serial Number is 8070-1505
+Directory for ::/
+
+R18A         <DIR>     1980-01-01   0:00 
+R18O         <DIR>     1980-01-01   0:00 
+SUB          <DIR>     2026-10-19  13:27 
+R18B         <DIR>     1980-01-01   0:00 
+R18C         <DIR>     1980-01-01   0:00 
+TMP          <DIR>     2026-10-19  13:27 
+R14          <DIR>     1980-01-01   0:00 
+R18D         <DIR>     1980-01-01   0:00 
+AUTO         <DIR>     2026-10-19  13:27 
+R18E         <DIR>     1980-01-01   0:00 
+NEWDESK  INF         9 2026-10-17  12:00 
+       11 files                   9 bytes
+                         66 813 952 bytes free
+
+== C:/R18A
+ Volume in drive : is FS18PRB    
+ Volume Serial Number is 8070-1505
+Directory for ::/R18A
+
+.            <DIR>     1980-01-01   0:00 
+..           <DIR>     1980-01-01   0:00 
+KEEP     TXT      3000 1980-01-01   0:00 
+        3 files               3 000 bytes
+                         66 813 952 bytes free
+
+== C:/R18O
+ Volume in drive : is FS18PRB    
+ Volume Serial Number is 8070-1505
+Directory for ::/R18O
+
+.            <DIR>     1980-01-01   0:00 
+..           <DIR>     1980-01-01   0:00 
+C        TXT         0 1980-01-01   0:00 
+B        TXT         0 1980-01-01   0:00 
+        4 files                   0 bytes
+                         66 813 952 bytes free
+
+== C:/R18B
+ Volume in drive : is FS18PRB    
+ Volume Serial Number is 8070-1505
+Directory for ::/R18B
+
+.            <DIR>     1980-01-01   0:00 
+..           <DIR>     1980-01-01   0:00 
+        2 files                   0 bytes
+                         66 813 952 bytes free
+
+== C:/R18C
+ Volume in drive : is FS18PRB    
+ Volume Serial Number is 8070-1505
+Directory for ::/R18C
+
+.            <DIR>     1980-01-01   0:00 
+..           <DIR>     1980-01-01   0:00 
+E        TXT      3000 1980-01-01   0:00 
+        3 files               3 000 bytes
+                         66 813 952 bytes free
+
+== C:/R14
+ Volume in drive : is FS18PRB    
+ Volume Serial Number is 8070-1505
+Directory for ::/R14
+
+.            <DIR>     1980-01-01   0:00 
+..           <DIR>     1980-01-01   0:00 
+X        TXT         0 1980-01-01   0:00 
+        3 files                   0 bytes
+                         66 813 952 bytes free
+
+== C:/R18D
+ Volume in drive : is FS18PRB    
+ Volume Serial Number is 8070-1505
+Directory for ::/R18D
+
+.            <DIR>     1980-01-01   0:00 
+..           <DIR>     1980-01-01   0:00 
+        2 files                   0 bytes
+                         66 813 952 bytes free
+
+== C:/R18E
+ Volume in drive : is FS18PRB    
+ Volume Serial Number is 8070-1505
+Directory for ::/R18E
+
+.            <DIR>     1980-01-01   0:00 
+..           <DIR>     1980-01-01   0:00 
+        2 files                   0 bytes
+                         66 813 952 bytes free
+
+== C:/AUTO
+ Volume in drive : is FS18PRB    
+ Volume Serial Number is 8070-1505
+Directory for ::/AUTO
+
+F18      NCP     52856 2026-10-17  12:00 
+        1 file               52 856 bytes
+                         66 813 952 bytes free
+

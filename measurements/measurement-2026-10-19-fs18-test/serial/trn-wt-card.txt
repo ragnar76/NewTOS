@@ -1,0 +1,16 @@
+== C:/
+ Volume in drive : is FS18PRB    
+ Volume Serial Number is CA0F-1505
+Directory for ::/
+
+RENAMED  TXT        24 2026-10-17  12:00 
+KEEP     TXT         9 2026-10-17  12:00 
+APPS         <DIR>     2026-10-19  13:27  Apps
+NEWDESK  INF       410 2026-10-17  12:00 
+        4 files                 443 bytes
+                         66 445 312 bytes free
+
+== mtype RENAMED.TXT
+0000000    d   e   l   e   t   e       m   e       v   i   a       T   e
+0000020    r   a   D   e   s   k  \r  \n                                
+0000030

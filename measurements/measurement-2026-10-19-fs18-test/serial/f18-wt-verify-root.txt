@@ -1,0 +1,19 @@
+  0 ENTRY    'FS18PRB .   ' attr=28 cl=0 len=0
+  1 ENTRY    'R18A    .   ' attr=10 cl=2 len=0
+  2 ENTRY    'R18O    .   ' attr=10 cl=12 len=0
+  3 LFN      seq=42 chk=e1 "00"
+  4 LFN      seq=01 chk=e1 ".Spotlight-V1"
+  5 ENTRY    'SPOTLI~3.   ' attr=12 cl=4 len=0
+  6 ENTRY    'SUB     .   ' attr=10 cl=10 len=0
+  7 ENTRY    'R18B    .   ' attr=10 cl=14 len=0
+  8 ENTRY    'R18C    .   ' attr=10 cl=15 len=0
+  9 ENTRY    'TMP     .   ' attr=10 cl=13 len=0
+ 10 ENTRY    'R14     .   ' attr=10 cl=19 len=0
+ 11 ENTRY    'R18D    .   ' attr=10 cl=20 len=0
+ 12 ENTRY    'AUTO    .   ' attr=10 cl=16 len=0
+ 13 ENTRY    'R18E    .   ' attr=10 cl=47 len=0
+ 14 DEL      'åAUT~5  .   ' attr=22 cl=17 len=4096
+ 15 ENTRY    'NEWDESK .INF' attr=20 cl=49 len=9
+ 16 LFN-DEL  seq=e5 chk=8b "._NEWDESK.INF"
+ 17 DEL      'åNEWDE~6.INF' attr=22 cl=47 len=4096
+rootscan: live=13 deleted=2 lfn-slots=3

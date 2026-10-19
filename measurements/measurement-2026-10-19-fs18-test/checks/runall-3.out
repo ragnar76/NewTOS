@@ -1,0 +1,134 @@
+t=18.3s -> dsk-wt-a1-note-selected.png {"return": {}}
+t=20.1s -> dsk-wt-a2-delete-box.png {"return": {}}
+t=21.7s -> dsk-wt-a3-note-deleted.png {"return": {}}
+t=24.5s -> dsk-wt-b1-readme-selected.png {"return": {}}
+t=26.4s -> dsk-wt-b2-delete-box.png {"return": {}}
+t=28.0s -> dsk-wt-b3-readme-deleted.png {"return": {}}
+run dsk-wt: rc=0 fsck: fsck rc=0 Warning: 7 files, 65326 KiB free (32663 clusters)  EXC/PANIC: 0 lines: 177 sched-switch: 0
+t=18.3s -> dcm-wt-s0-start.png {"return": {}}
+t=19.1s -> dcm-wt-c1-readme-selected.png {"return": {}}
+t=22.2s -> dcm-wt-c2-copy-box.png {"return": {}}
+t=23.3s -> dcm-wt-c3-copied.png {"return": {}}
+t=29.3s -> dcm-wt-d1-big-box.png {"return": {}}
+t=30.3s -> dcm-wt-d2-big-copied.png {"return": {}}
+t=34.5s -> dcm-wt-e1-fold-selected.png {"return": {}}
+t=38.2s -> dcm-wt-e2-folder-copy-box.png {"return": {}}
+t=39.3s -> dcm-wt-e3-folder-copied.png {"return": {}}
+t=48.6s -> dcm-wt-f1-move-box.png {"return": {}}
+t=49.9s -> dcm-wt-f2-moved.png {"return": {}}
+t=56.1s -> dcm-wt-g1-delete-folder-box.png {"return": {}}
+t=57.7s -> dcm-wt-g2-after-ok.png {"return": {}}
+t=61.9s -> dcm-wt-g3-fold-deleted.png {"return": {}}
+run dcm-wt: rc=0 fsck: fsck rc=0 Warning: 18 files, 65228 KiB free (32614 clusters)  EXC/PANIC: 0 lines: 544 sched-switch: 0
+t=18.0s -> tcp-wt-t1-window-open.png {"return": {}}
+t=20.3s -> tcp-wt-t2-big-selected.png {"return": {}}
+t=21.9s -> tcp-wt-t3-copy-big-dialog.png {"return": {}}
+t=23.5s -> tcp-wt-t4-big-copied.png {"return": {}}
+t=28.4s -> tcp-wt-t5-fold-selected.png {"return": {}}
+t=30.0s -> tcp-wt-t6-copy-fold-dialog.png {"return": {}}
+t=31.6s -> tcp-wt-t7-fold-copied.png {"return": {}}
+t=41.7s -> tcp-wt-t8-delete-dialog.png {"return": {}}
+t=43.3s -> tcp-wt-t9-deleted.png {"return": {}}
+t=47.5s -> tcp-wt-t10-end.png {"return": {}}
+run tcp-wt: rc=0 fsck: fsck rc=0 Warning: 24 files, 64792 KiB free (32396 clusters)  EXC/PANIC: 0 lines: 304 sched-switch: 0
+t=18.0s -> tdd-wt-t1-window-open.png {"return": {}}
+t=20.3s -> tdd-wt-t2-selected.png {"return": {}}
+t=24.5s -> tdd-wt-t3-confirm.png {"return": {}}
+t=26.1s -> tdd-wt-t4-deleted.png {"return": {}}
+run tdd-wt: rc=0 fsck: fsck rc=0 Warning: 13 files, 64890 KiB free (32445 clusters)  EXC/PANIC: 0 lines: 216 sched-switch: 0
+t=18.3s -> dmv-wt-f0-start.png {"return": {}}
+t=19.1s -> dmv-wt-f1-selected.png {"return": {}}
+t=22.7s -> dmv-wt-f2-move-box.png {"return": {}}
+t=23.8s -> dmv-wt-f3-moved.png {"return": {}}
+t=31.3s -> dmv-wt-b1-selected.png {"return": {}}
+t=32.2s -> dmv-wt-b2-info.png {"return": {}}
+t=34.5s -> dmv-wt-b3-typed.png {"return": {}}
+t=35.3s -> dmv-wt-b4-renamed.png {"return": {}}
+t=39.0s -> dmv-wt-d1-selected.png {"return": {}}
+t=39.8s -> dmv-wt-d2-info.png {"return": {}}
+t=41.9s -> dmv-wt-d3-typed.png {"return": {}}
+t=42.7s -> dmv-wt-d4-renamed.png {"return": {}}
+t=46.3s -> dmv-wt-d5-after.png {"return": {}}
+run dmv-wt: rc=0 fsck: fsck rc=0 Warning: 16 files, 65270 KiB free (32635 clusters)  EXC/PANIC: 0 lines: 276 sched-switch: 0
+t=18.1s -> tmv-wt-t1-window-open.png {"return": {}}
+t=20.1s -> tmv-wt-t2-big-selected.png {"return": {}}
+t=22.0s -> tmv-wt-t3-move-big-dialog.png {"return": {}}
+t=23.6s -> tmv-wt-t4-big-moved.png {"return": {}}
+t=27.7s -> tmv-wt-t4b-after.png {"return": {}}
+t=29.3s -> tmv-wt-t5-fold-selected.png {"return": {}}
+t=31.2s -> tmv-wt-t6-move-fold-dialog.png {"return": {}}
+t=32.8s -> tmv-wt-t7-fold-moved.png {"return": {}}
+t=38.0s -> tmv-wt-t7b-after.png {"return": {}}
+t=40.1s -> tmv-wt-t8-sub-selected.png {"return": {}}
+t=40.9s -> tmv-wt-t9-info.png {"return": {}}
+t=43.0s -> tmv-wt-t10-typed.png {"return": {}}
+t=43.8s -> tmv-wt-t11-renamed.png {"return": {}}
+t=47.4s -> tmv-wt-t12-after.png {"return": {}}
+run tmv-wt: rc=0 fsck: fsck rc=0 Warning: 23 files, 64832 KiB free (32416 clusters)  EXC/PANIC: 0 lines: 221 sched-switch: 0
+t=18.1s -> dsk-head-a1-note-selected.png {"return": {}}
+t=19.9s -> dsk-head-a2-delete-box.png {"return": {}}
+t=21.5s -> dsk-head-a3-note-deleted.png {"return": {}}
+t=24.4s -> dsk-head-b1-readme-selected.png {"return": {}}
+t=26.2s -> dsk-head-b2-delete-box.png {"return": {}}
+t=27.8s -> dsk-head-b3-readme-deleted.png {"return": {}}
+run dsk-head: rc=0 fsck: fsck rc=0 Warning: 7 files, 65326 KiB free (32663 clusters)  EXC/PANIC: 0 lines: 177 sched-switch: 0
+t=18.3s -> dcm-head-s0-start.png {"return": {}}
+t=19.1s -> dcm-head-c1-readme-selected.png {"return": {}}
+t=22.2s -> dcm-head-c2-copy-box.png {"return": {}}
+t=23.3s -> dcm-head-c3-copied.png {"return": {}}
+t=29.3s -> dcm-head-d1-big-box.png {"return": {}}
+t=30.3s -> dcm-head-d2-big-copied.png {"return": {}}
+t=34.5s -> dcm-head-e1-fold-selected.png {"return": {}}
+t=38.2s -> dcm-head-e2-folder-copy-box.png {"return": {}}
+t=39.2s -> dcm-head-e3-folder-copied.png {"return": {}}
+t=48.8s -> dcm-head-f1-move-box.png {"return": {}}
+t=49.9s -> dcm-head-f2-moved.png {"return": {}}
+t=56.1s -> dcm-head-g1-delete-folder-box.png {"return": {}}
+t=57.6s -> dcm-head-g2-after-ok.png {"return": {}}
+t=61.8s -> dcm-head-g3-fold-deleted.png {"return": {}}
+run dcm-head: rc=0 fsck: fsck rc=0 Warning: 18 files, 65228 KiB free (32614 clusters)  EXC/PANIC: 0 lines: 544 sched-switch: 0
+t=18.0s -> tcp-head-t1-window-open.png {"return": {}}
+t=20.3s -> tcp-head-t2-big-selected.png {"return": {}}
+t=21.9s -> tcp-head-t3-copy-big-dialog.png {"return": {}}
+t=23.5s -> tcp-head-t4-big-copied.png {"return": {}}
+t=28.4s -> tcp-head-t5-fold-selected.png {"return": {}}
+t=30.0s -> tcp-head-t6-copy-fold-dialog.png {"return": {}}
+t=31.6s -> tcp-head-t7-fold-copied.png {"return": {}}
+t=41.7s -> tcp-head-t8-delete-dialog.png {"return": {}}
+t=43.3s -> tcp-head-t9-deleted.png {"return": {}}
+t=47.4s -> tcp-head-t10-end.png {"return": {}}
+run tcp-head: rc=0 fsck: fsck rc=0 Warning: 24 files, 64792 KiB free (32396 clusters)  EXC/PANIC: 0 lines: 304 sched-switch: 0
+t=18.0s -> tdd-head-t1-window-open.png {"return": {}}
+t=20.3s -> tdd-head-t2-selected.png {"return": {}}
+t=24.5s -> tdd-head-t3-confirm.png {"return": {}}
+t=26.1s -> tdd-head-t4-deleted.png {"return": {}}
+run tdd-head: rc=0 fsck: fsck rc=0 Warning: 13 files, 64890 KiB free (32445 clusters)  EXC/PANIC: 0 lines: 216 sched-switch: 0
+t=18.3s -> dmv-head-f0-start.png {"return": {}}
+t=19.1s -> dmv-head-f1-selected.png {"return": {}}
+t=22.7s -> dmv-head-f2-move-box.png {"return": {}}
+t=23.8s -> dmv-head-f3-moved.png {"return": {}}
+t=31.3s -> dmv-head-b1-selected.png {"return": {}}
+t=32.1s -> dmv-head-b2-info.png {"return": {}}
+t=34.5s -> dmv-head-b3-typed.png {"return": {}}
+t=35.3s -> dmv-head-b4-renamed.png {"return": {}}
+t=39.0s -> dmv-head-d1-selected.png {"return": {}}
+t=39.8s -> dmv-head-d2-info.png {"return": {}}
+t=41.9s -> dmv-head-d3-typed.png {"return": {}}
+t=42.7s -> dmv-head-d4-renamed.png {"return": {}}
+t=46.3s -> dmv-head-d5-after.png {"return": {}}
+run dmv-head: rc=0 fsck: fsck rc=0 Warning: 16 files, 65270 KiB free (32635 clusters)  EXC/PANIC: 0 lines: 276 sched-switch: 0
+t=18.1s -> tmv-head-t1-window-open.png {"return": {}}
+t=20.2s -> tmv-head-t2-big-selected.png {"return": {}}
+t=22.0s -> tmv-head-t3-move-big-dialog.png {"return": {}}
+t=23.6s -> tmv-head-t4-big-moved.png {"return": {}}
+t=27.8s -> tmv-head-t4b-after.png {"return": {}}
+t=29.4s -> tmv-head-t5-fold-selected.png {"return": {}}
+t=31.2s -> tmv-head-t6-move-fold-dialog.png {"return": {}}
+t=32.8s -> tmv-head-t7-fold-moved.png {"return": {}}
+t=38.0s -> tmv-head-t7b-after.png {"return": {}}
+t=40.2s -> tmv-head-t8-sub-selected.png {"return": {}}
+t=41.0s -> tmv-head-t9-info.png {"return": {}}
+t=43.1s -> tmv-head-t10-typed.png {"return": {}}
+t=43.9s -> tmv-head-t11-renamed.png {"return": {}}
+t=47.5s -> tmv-head-t12-after.png {"return": {}}
+run tmv-head: rc=0 fsck: fsck rc=0 Warning: 23 files, 64832 KiB free (32416 clusters)  EXC/PANIC: 0 lines: 221 sched-switch: 0

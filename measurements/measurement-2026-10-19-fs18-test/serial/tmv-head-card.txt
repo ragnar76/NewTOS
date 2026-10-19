@@ -1,0 +1,19 @@
+== C:/
+ Volume in drive : is FS18PRB    
+ Volume Serial Number is F9E2-1505
+Directory for ::/
+
+NEWSUB       <DIR>     2026-10-19  13:27 
+README   TXT        13 2026-10-17  12:00 
+LONGNAME TXT        16 2026-10-17  12:00 
+APPS         <DIR>     2026-10-19  13:27  Apps
+NEWDESK  INF       410 2026-10-17  12:00 
+        5 files                 439 bytes
+                         66 387 968 bytes free
+
+== C:/SUB
+mdir: File "::/SUB" not found
+== C:/SUB/FOLD
+mdir: File "::/SUB/FOLD" not found
+== C:/SUB/FOLD/INNER
+mdir: File "::/SUB/FOLD/INNER" not found

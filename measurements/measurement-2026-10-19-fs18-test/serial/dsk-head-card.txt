@@ -1,0 +1,19 @@
+== C:/
+ Volume in drive : is FS18PRB    
+ Volume Serial Number is 66E3-1506
+Directory for ::/
+
+SUB          <DIR>     2026-10-19  13:28 
+NEWDESK  INF       538 2026-10-17  12:00 
+        2 files                 538 bytes
+                         66 893 824 bytes free
+
+== C:/SUB
+ Volume in drive : is FS18PRB    
+ Volume Serial Number is 66E3-1506
+Directory for ::/SUB
+
+OTHER    TXT        14 2026-10-17  12:00 
+        1 file                   14 bytes
+                         66 893 824 bytes free
+

@@ -1,0 +1,7 @@
+21b5d4d55cd5845316fda563d456bd362e1aca1d0eb47274c522508e4aa4958b  tos-api/src/bdos/fs/file.rs
+90f30c1c868e74aab09fe0a29bc3665d6c44c6edc737b1bdd9cae1cd83370af2  tos-api/src/bdos/fs/dir.rs
+1cff35a3edbbb5e58b5cc501659897e7331e69ab7da6d26266d0bbf1c1f8fd1d  tos-api/tests/fs18_frename.rs
+d05a2573e90c04023707d88f390f057fa01369aa9c266b2630596ab5aabf76eb  tos-api/tests/fs18_frename_lfn.rs
+fcae38ad6ab276c47bb9fa8e4fd6b4a51cf4d5df4d952d24ae18392a99efcf50  docs/COMPATIBILITY.md
+1829d88c677aca6ef1b61c0c347b3dc7561d3c85adfe0b7c792b3cbcb1b01875  docs/api/_discrepancies.md
+484cb0c02c911dd336749916f0bf66992ec6f935bcf165bc1a5a33155fd5873b  docs/api/gemdos/file/56-frename.md

@@ -1,0 +1,31 @@
+  0 ENTRY    'FS18PRB .   ' attr=28 cl=0 len=0
+  1 ENTRY    'G1      .   ' attr=10 cl=2 len=0
+  2 ENTRY    'G2      .   ' attr=10 cl=3 len=0
+  3 LFN      seq=42 chk=e1 "00"
+  4 LFN      seq=01 chk=e1 ".Spotlight-V1"
+  5 ENTRY    'SPOTLI~3.   ' attr=12 cl=4 len=0
+  6 ENTRY    'SUB     .   ' attr=10 cl=10 len=0
+  7 ENTRY    'I1      .   ' attr=10 cl=19 len=0
+  8 ENTRY    'H2      .   ' attr=10 cl=15 len=0
+  9 ENTRY    'TMP     .   ' attr=10 cl=13 len=0
+ 10 ENTRY    'K0      .   ' attr=10 cl=50 len=0
+ 11 ENTRY    'K1      .   ' attr=10 cl=55 len=0
+ 12 ENTRY    'AUTO    .   ' attr=10 cl=16 len=0
+ 13 ENTRY    'K2      .   ' attr=10 cl=56 len=0
+ 14 ENTRY    'L1      .   ' attr=10 cl=60 len=0
+ 15 LFN      seq=42 chk=15 "e Test.txt"
+ 16 LFN      seq=01 chk=15 "Long File Nam"
+ 17 ENTRY    'N1      .   ' attr=10 cl=83 len=0
+ 18 ENTRY    'L2      .   ' attr=10 cl=61 len=0
+ 19 ENTRY    'M1      .   ' attr=10 cl=82 len=0
+ 20 ENTRY    'SHORT1  .TXT' attr=20 cl=51 len=9
+ 21 LFN      seq=42 chk=1a "Name.txt"
+ 22 LFN      seq=01 chk=1a "Another Long "
+ 23 ENTRY    'N2      .   ' attr=10 cl=84 len=0
+ 24 DEL      'å1      .   ' attr=10 cl=87 len=0
+ 25 ENTRY    'O2      .   ' attr=10 cl=88 len=0
+ 26 DEL      'åANOTH~9.TXT' attr=22 cl=52 len=4096
+ 27 ENTRY    'NEWDESK .INF' attr=20 cl=57 len=9
+ 28 LFN-DEL  seq=e5 chk=4f "._NEWDESK.INF"
+ 29 DEL      'åNEWD~10.INF' attr=22 cl=55 len=4096
+rootscan: live=20 deleted=3 lfn-slots=7

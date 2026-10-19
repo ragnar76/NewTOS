@@ -1,0 +1,71 @@
+== C:/
+ Volume in drive : is FS18PRB    
+ Volume Serial Number is 26BB-1505
+Directory for ::/
+
+NEWSUB       <DIR>     2026-10-19  13:27 
+README   TXT        13 2026-10-17  12:00 
+LONGNAME TXT        16 2026-10-17  12:00 
+BIG2     TXT     39200 2026-10-17  12:00 
+NEWDESK  INF       538 2026-10-17  12:00 
+        5 files              39 767 bytes
+                         66 836 480 bytes free
+
+== C:/SUB
+mdir: File "::/SUB" not found
+== C:/SUB/FOLD
+mdir: File "::/SUB/FOLD" not found
+== C:/SUB/FOLD/INNER
+mdir: File "::/SUB/FOLD/INNER" not found
+== C:/NEWSUB
+ Volume in drive : is FS18PRB    
+ Volume Serial Number is 26BB-1505
+Directory for ::/NEWSUB
+
+NOTE     TXT        10 2026-10-17  12:00 
+FOLD         <DIR>     2026-10-19  13:27 
+OTHER    TXT        12 2026-10-17  12:00 
+        3 files                  22 bytes
+                         66 836 480 bytes free
+
+== C:/NEWSUB/FOLD
+ Volume in drive : is FS18PRB    
+ Volume Serial Number is 26BB-1505
+Directory for ::/NEWSUB/FOLD
+
+A        TXT        16 2026-10-17  12:00 
+B        TXT        30 2026-10-17  12:00 
+INNER        <DIR>     2026-10-19  13:27 
+        3 files                  46 bytes
+                         66 836 480 bytes free
+
+== C:/NEWSUB/FOLD/INNER
+ Volume in drive : is FS18PRB    
+ Volume Serial Number is 26BB-1505
+Directory for ::/NEWSUB/FOLD/INNER
+
+C        TXT        17 2026-10-17  12:00 
+        1 file                   17 bytes
+                         66 836 480 bytes free
+
+== mtype BIG2.TXT
+0000000    l   i   n   e       0   0   0   0   0       o   f       t   h
+0000020    e       b   i   g       f   i   l   e   ,       p   a   d   d
+0000040    i   n   g       p   a   d   d   i   n   g       p   a   d  \r
+0000060   \n   l   i   n   e       0   0   0   0   1       o   f       t
+0000100    h   e       b   i   g       f   i   l   e   ,       p   a   d
+0000120    d   i   n   g       p   a   d   d   i   n   g       p   a   d
+0000140   \r  \n   l   i   n   e       0   0   0   0   2       o   f    
+0000160    t   h   e       b   i   g       f   i   l   e   ,       p   a
+0000200    d   d   i   n   g       p   a   d   d   i   n   g       p   a
+0000220    d  \r  \n   l   i   n   e       0   0   0   0   3       o   f
+0000240        t   h   e       b   i   g       f   i   l   e   ,       p
+0000260    a   d   d   i   n   g       p   a   d   d   i   n   g       p
+0000300    a   d  \r  \n   l   i   n   e       0   0   0   0   4       o
+0000320    f       t   h   e       b   i   g       f   i   l   e   ,    
+0000340    p   a   d   d   i   n   g       p   a   d   d   i   n   g    
+0000360    p   a   d  \r  \n   l   i   n   e       0   0   0   0   5    
+0000400    o   f       t   h   e       b   i   g       f   i   l   e   ,
+0000420        p   a   d   d   i   n   g       p   a   d   d   i   n   g
+0000440        p   a   d  \r  \n   l   i   n   e       0   0   0   0   6
+0000460        o   f       t   h   e       b   i   g       f   i   l   e

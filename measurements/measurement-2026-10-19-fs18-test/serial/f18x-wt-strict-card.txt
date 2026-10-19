@@ -1,0 +1,213 @@
+== C:/
+ Volume in drive : is FS18PRB    
+ Volume Serial Number is 81E2-150E
+Directory for ::/
+
+G1           <DIR>     1980-01-01   0:00 
+G2           <DIR>     1980-01-01   0:00 
+SUB          <DIR>     2026-10-19  13:36 
+H2           <DIR>     1980-01-01   0:00 
+I1           <DIR>     1980-01-01   0:00 
+TMP          <DIR>     2026-10-19  13:36 
+K0           <DIR>     1980-01-01   0:00 
+K1           <DIR>     1980-01-01   0:00 
+AUTO         <DIR>     2026-10-19  13:36 
+K2           <DIR>     1980-01-01   0:00 
+L1           <DIR>     1980-01-01   0:00 
+N1           <DIR>     1980-01-01   0:00 
+N2           <DIR>     1980-01-01   0:00 
+SHORT1   TXT         9 2026-10-17  12:00 
+L2           <DIR>     1980-01-01   0:00 
+M1           <DIR>     1980-01-01   0:00 
+O2           <DIR>     1980-01-01   0:00 
+NEWDESK  INF         9 2026-10-17  12:00 
+       18 files                  18 bytes
+                         66 717 696 bytes free
+
+== C:/G1
+ Volume in drive : is FS18PRB    
+ Volume Serial Number is 81E2-150E
+Directory for ::/G1
+
+.            <DIR>     1980-01-01   0:00 
+..           <DIR>     1980-01-01   0:00 
+        2 files                   0 bytes
+                         66 717 696 bytes free
+
+== C:/G2
+ Volume in drive : is FS18PRB    
+ Volume Serial Number is 81E2-150E
+Directory for ::/G2
+
+.            <DIR>     1980-01-01   0:00 
+..           <DIR>     1980-01-01   0:00 
+SUB          <DIR>     1980-01-01   0:00 
+        3 files                   0 bytes
+                         66 717 696 bytes free
+
+== C:/G2/SUB
+ Volume in drive : is FS18PRB    
+ Volume Serial Number is 81E2-150E
+Directory for ::/G2/SUB
+
+.            <DIR>     1980-01-01   0:00 
+..           <DIR>     1980-01-01   0:00 
+F        TXT      3000 1980-01-01   0:00 
+        3 files               3 000 bytes
+                         66 717 696 bytes free
+
+== C:/H2
+ Volume in drive : is FS18PRB    
+ Volume Serial Number is 81E2-150E
+Directory for ::/H2
+
+.            <DIR>     1980-01-01   0:00 
+..           <DIR>     1980-01-01   0:00 
+F        TXT      3000 1980-01-01   0:00 
+        3 files               3 000 bytes
+                         66 717 696 bytes free
+
+== C:/I1
+ Volume in drive : is FS18PRB    
+ Volume Serial Number is 81E2-150E
+Directory for ::/I1
+
+.            <DIR>     1980-01-01   0:00 
+..           <DIR>     1980-01-01   0:00 
+A        TXT        10 1980-01-01   0:00 
+B        TXT        10 1980-01-01   0:00 
+        4 files                  20 bytes
+                         66 717 696 bytes free
+
+== C:/K0
+ Volume in drive : is FS18PRB    
+ Volume Serial Number is 81E2-150E
+Directory for ::/K0
+
+.            <DIR>     1980-01-01   0:00 
+..           <DIR>     1980-01-01   0:00 
+D        TXT      3000 1980-01-01   0:00 
+        3 files               3 000 bytes
+                         66 717 696 bytes free
+
+== C:/K1
+ Volume in drive : is FS18PRB    
+ Volume Serial Number is 81E2-150E
+Directory for ::/K1
+
+.            <DIR>     1980-01-01   0:00 
+..           <DIR>     1980-01-01   0:00 
+        2 files                   0 bytes
+                         66 717 696 bytes free
+
+== C:/K2
+ Volume in drive : is FS18PRB    
+ Volume Serial Number is 81E2-150E
+Directory for ::/K2
+
+.            <DIR>     1980-01-01   0:00 
+..           <DIR>     1980-01-01   0:00 
+E        TXT      3000 1980-01-01   0:00 
+        3 files               3 000 bytes
+                         66 717 696 bytes free
+
+== C:/L1
+ Volume in drive : is FS18PRB    
+ Volume Serial Number is 81E2-150E
+Directory for ::/L1
+
+.            <DIR>     1980-01-01   0:00 
+..           <DIR>     1980-01-01   0:00 
+BACK     BIN     40000 1980-01-01   0:00 
+        3 files              40 000 bytes
+                         66 717 696 bytes free
+
+== C:/L2
+ Volume in drive : is FS18PRB    
+ Volume Serial Number is 81E2-150E
+Directory for ::/L2
+
+.            <DIR>     1980-01-01   0:00 
+..           <DIR>     1980-01-01   0:00 
+        2 files                   0 bytes
+                         66 717 696 bytes free
+
+== C:/M1
+ Volume in drive : is FS18PRB    
+ Volume Serial Number is 81E2-150E
+Directory for ::/M1
+
+.            <DIR>     1980-01-01   0:00 
+..           <DIR>     1980-01-01   0:00 
+MOVED    TXT        12 2026-10-17  12:00 
+        3 files                  12 bytes
+                         66 717 696 bytes free
+
+== C:/N1
+ Volume in drive : is FS18PRB    
+ Volume Serial Number is 81E2-150E
+Directory for ::/N1
+
+.            <DIR>     1980-01-01   0:00 
+..           <DIR>     1980-01-01   0:00 
+        2 files                   0 bytes
+                         66 717 696 bytes free
+
+== C:/N2
+ Volume in drive : is FS18PRB    
+ Volume Serial Number is 81E2-150E
+Directory for ::/N2
+
+.            <DIR>     1980-01-01   0:00 
+..           <DIR>     1980-01-01   0:00 
+E        TXT      3000 2025-01-01  12:00 
+        3 files               3 000 bytes
+                         66 717 696 bytes free
+
+== C:/O1
+mdir: File "::/O1" not found
+init :: non DOS media
+Cannot initialize '::'
+== C:/O2
+ Volume in drive : is FS18PRB    
+ Volume Serial Number is 81E2-150E
+Directory for ::/O2
+
+.            <DIR>     1980-01-01   0:00 
+..           <DIR>     1980-01-01   0:00 
+T            <DIR>     1980-01-01   0:00 
+        3 files                   0 bytes
+                         66 717 696 bytes free
+
+== C:/O2/T
+ Volume in drive : is FS18PRB    
+ Volume Serial Number is 81E2-150E
+Directory for ::/O2/T
+
+.            <DIR>     1980-01-01   0:00 
+..           <DIR>     1980-01-01   0:00 
+IN           <DIR>     1980-01-01   0:00 
+A        TXT      5000 1980-01-01   0:00 
+        4 files               5 000 bytes
+                         66 717 696 bytes free
+
+== C:/O2/T/IN
+ Volume in drive : is FS18PRB    
+ Volume Serial Number is 81E2-150E
+Directory for ::/O2/T/IN
+
+.            <DIR>     1980-01-01   0:00 
+..           <DIR>     1980-01-01   0:00 
+B        TXT      7000 1980-01-01   0:00 
+        3 files               7 000 bytes
+                         66 717 696 bytes free
+
+== C:/AUTO
+ Volume in drive : is FS18PRB    
+ Volume Serial Number is 81E2-150E
+Directory for ::/AUTO
+
+F18X     NCP     56080 2026-10-17  12:00 
+        1 file               56 080 bytes
+                         66 717 696 bytes free
+
