@@ -1,0 +1,2 @@
+de8bfa92d43d8b4bb88a0fc48985f7d1f92e244801fddb20d7c138be1692451f  /Volumes/Daten/Development/PiRusTOS/sdk/libc/libc.a
+6f2f0e7bba0b5d04a16e4f1918ef524ba9b7359368acd193e3b5516fb99aacff  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/old/sdk/libc/libc.a

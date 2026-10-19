@@ -1,0 +1,20 @@
+== C:/
+ Volume in drive : is FS18PRB    
+ Volume Serial Number is 5853-08F6
+Directory for ::/
+
+DOOM         <DIR>     2026-10-20   1:12 
+NEWDESK  INF        24 2026-10-17  12:00 
+        2 files                  24 bytes
+                         61 958 144 bytes free
+
+== C:/DOOM
+ Volume in drive : is FS18PRB    
+ Volume Serial Number is 5853-08F6
+Directory for ::/DOOM
+
+DOOM     NAP    741080 2026-10-17  12:00 
+DOOM1    WAD   4196020 2026-10-17  12:00 
+        2 files           4 937 100 bytes
+                         61 958 144 bytes free
+

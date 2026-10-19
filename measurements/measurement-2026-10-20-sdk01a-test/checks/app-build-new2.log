@@ -1,0 +1,139 @@
+=== apps/build-qed.sh
+clang : Apple clang version 21.0.0 (clang-2100.3.34.2)
+ar    : /Users/ingouhlemann/.rustup/toolchains/stable-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/llvm-ar
+lld   : /Users/ingouhlemann/.rustup/toolchains/stable-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/rust-lld
+
+QED COBJS manifest: 37 files
+  overlay: memory.c (from sdk/overlays/qed/, src/ untouched)
+  overlay: set.c (from sdk/overlays/qed/, src/ untouched)
+compiled OK=37  FAILED=0  (of 37)
+
+LINK OK -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/apps/qed/build/QED.NAP (527776 bytes)
+    Class: 64-bit (0x2)
+    DataEncoding: LittleEndian (0x1)
+    FileVersion: 1
+    ABIVersion: 0
+  Type: SharedObject (0x3)
+  Machine: EM_AARCH64 (0xB7)
+  Version: 1
+  Entry: 0x1000
+
+undefined symbols in the final image (goal 0): 0
+converted /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/apps/qed/src/qed.rsc -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/apps/qed/build/qed.rsc: 32 trees, 682 objects, 118 tedinfo, 7 bitblk, 1 iconblk, 0 ciconblk, 0 cicon, 44 frstr, 0 frimg (41378 bytes, RSHDR vrsn 0) [LP64/32B-OBJECT, NRSC v13]
+resource -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/apps/qed/build/qed.rsc (41378 bytes)
+rc=0 apps/build-qed.sh
+=== apps/build-teradesk.sh
+clang: Apple clang version 21.0.0 (clang-2100.3.34.2)
+abi  : LP64 (8-byte long/pointer, ELF64 AArch64)
+libs : gemlib.a + libc.a  (no cflib -- TeraDesk bundles xdialog)
+
+  overlay: rsc_load.c (from sdk/overlays/teradesk/, vendored tree untouched)
+  overlay: window.h (from sdk/overlays/teradesk/, vendored tree untouched)
+  overlay: library/xdialog/library.h (from sdk/overlays/teradesk/, vendored tree untouched)
+  overlay: library/utility/nf_ops.c (from sdk/overlays/teradesk/, vendored tree untouched)
+  overlay: environm.c (from sdk/overlays/teradesk/, vendored tree untouched)
+  overlay: main.c (from sdk/overlays/teradesk/, vendored tree untouched)
+  overlay: icon.c (from sdk/overlays/teradesk/, vendored tree untouched)
+shadow tree: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/apps/teradesk/build/tree  (overlays applied: 7)
+TeraDesk sources: 48 .c files
+compiled OK=48  FAILED=0  (of 48)
+
+LINK OK -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/apps/teradesk/build/DESKTOP.NAP (318144 bytes)
+    Class: 64-bit (0x2)
+    DataEncoding: LittleEndian (0x1)
+    FileVersion: 1
+    ABIVersion: 0
+  Type: SharedObject (0x3)
+  Machine: EM_AARCH64 (0xB7)
+  Version: 1
+  Entry: 0x1000
+
+undefined symbols in the final image (goal 0): 0
+converted /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/apps/teradesk/desktop.rsc -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/apps/teradesk/build/dist/desktop.rsc: 26 trees, 601 objects, 104 tedinfo, 0 bitblk, 0 iconblk, 0 ciconblk, 0 cicon, 190 frstr, 0 frimg (39278 bytes, RSHDR vrsn 0) [LP64/32B-OBJECT, NRSC v13]
+converted /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/apps/teradesk/icons.rsc -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/apps/teradesk/build/dist/icons.rsc: 1 trees, 39 objects, 0 tedinfo, 0 bitblk, 38 iconblk, 0 frstr, 0 frimg (13284 bytes) [native-RSHDR/LP64 for xrsrc_load]
+warning: label buffer at 16682 has no NUL in 12 bytes; terminated
+converted /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/apps/teradesk/cicons.rsc -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/apps/teradesk/build/dist/cicons.rsc: 1 trees, 39 objects, 0 tedinfo, 0 bitblk, 0 iconblk, 38 ciconblk, 38 cicon, 0 frstr, 0 frimg (63650 bytes, RSHDR vrsn 4) [LP64/32B-OBJECT, NRSC v13]
+dist -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/apps/teradesk/build/dist (DESKTOP.NAP, desktop.rsc + cicons.rsc NRSC/LP64, icons.rsc native-RSHDR)
+rc=0 apps/build-teradesk.sh
+=== zview/build-zview.sh
+clang : Apple clang version 21.0.0 (clang-2100.3.34.2)
+
+  overlay: zview/av_prot.c
+  overlay: zview/custom_font.c
+  overlay: zview/main.c
+  overlay: zview/plugins.c
+  overlay: zview/plugins/degas/degasldg.c
+  overlay: zview/plugins/eureka/rawldg.c
+  overlay: zview/plugins/godpaint/godldg.c
+  overlay: zview/plugins/img/imgldg.c
+  overlay: zview/plugins/img/xp32.c
+  overlay: zview/plugins/jpg/jpgdsp.c
+  overlay: zview/plugins/jpg/jpgldg.c
+  overlay: zview/plugins/neochrome/neoldg.c
+  overlay: zview/winimg.c
+shadow tree: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/zview/build/tree (overlays: 13)
+  skip (PDF module): zview/pdf_load.c
+  skip (PDF module): zview/winpdf.c
+zView: compiled 53 files (Makefile OBJ minus pdf_load.o winpdf.o, plus ztask/gmem.c)
+LINK OK -> ZVIEW.NAP (504768 bytes, SharedObject (0x3), undefined symbols: 0)
+  _stksize at 0x62718: 65536 -> 524288
+LINK OK -> BMP.NLD (55736 bytes, SharedObject (0x3), undefined symbols: 0)
+  allocator: libshare only (calloc.o chdir.o libshare.o malloc.o realloc.o sbrk.o ); none of libc.a's mintlib__malloc.o mintlib__calloc.o mintlib__realloc.o mintlib__posix_memalign.o unix__sbrk.o
+LINK OK -> DEGAS.NLD (55592 bytes, SharedObject (0x3), undefined symbols: 0)
+  allocator: libshare only (calloc.o chdir.o libshare.o malloc.o realloc.o sbrk.o ); none of libc.a's mintlib__malloc.o mintlib__calloc.o mintlib__realloc.o mintlib__posix_memalign.o unix__sbrk.o
+LINK OK -> EUREKA.NLD (55744 bytes, SharedObject (0x3), undefined symbols: 0)
+  allocator: libshare only (calloc.o chdir.o libshare.o malloc.o realloc.o sbrk.o ); none of libc.a's mintlib__malloc.o mintlib__calloc.o mintlib__realloc.o mintlib__posix_memalign.o unix__sbrk.o
+LINK OK -> GODPAINT.NLD (54232 bytes, SharedObject (0x3), undefined symbols: 0)
+  allocator: libshare only (calloc.o chdir.o libshare.o malloc.o realloc.o sbrk.o ); none of libc.a's mintlib__malloc.o mintlib__calloc.o mintlib__realloc.o mintlib__posix_memalign.o unix__sbrk.o
+LINK OK -> IMG.NLD (59368 bytes, SharedObject (0x3), undefined symbols: 0)
+  allocator: libshare only (calloc.o chdir.o libshare.o malloc.o realloc.o sbrk.o ); none of libc.a's mintlib__malloc.o mintlib__calloc.o mintlib__realloc.o mintlib__posix_memalign.o unix__sbrk.o
+LINK OK -> NEO.NLD (54360 bytes, SharedObject (0x3), undefined symbols: 0)
+  allocator: libshare only (calloc.o chdir.o libshare.o malloc.o realloc.o sbrk.o ); none of libc.a's mintlib__malloc.o mintlib__calloc.o mintlib__realloc.o mintlib__posix_memalign.o unix__sbrk.o
+LINK OK -> TGA.NLD (55008 bytes, SharedObject (0x3), undefined symbols: 0)
+  allocator: libshare only (calloc.o chdir.o libshare.o malloc.o realloc.o sbrk.o ); none of libc.a's mintlib__malloc.o mintlib__calloc.o mintlib__realloc.o mintlib__posix_memalign.o unix__sbrk.o
+LINK OK -> GIF.NLD (69656 bytes, SharedObject (0x3), undefined symbols: 0)
+  allocator: libshare only (calloc.o chdir.o libshare.o malloc.o realloc.o sbrk.o ); none of libc.a's mintlib__malloc.o mintlib__calloc.o mintlib__realloc.o mintlib__posix_memalign.o unix__sbrk.o
+LINK OK -> PNG.NLD (399200 bytes, SharedObject (0x3), undefined symbols: 0)
+  allocator: libshare only (calloc.o chdir.o libshare.o malloc.o realloc.o sbrk.o ); none of libc.a's mintlib__malloc.o mintlib__calloc.o mintlib__realloc.o mintlib__posix_memalign.o unix__sbrk.o
+LINK OK -> JPG.NLD (698544 bytes, SharedObject (0x3), undefined symbols: 0)
+  allocator: libshare only (calloc.o chdir.o libshare.o malloc.o realloc.o sbrk.o ); none of libc.a's mintlib__malloc.o mintlib__calloc.o mintlib__realloc.o mintlib__posix_memalign.o unix__sbrk.o
+codecs: 10 built (tiff not built: libtiff + liblzma are not in the SDK)
+converted /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/zview/build/tree/zview/zview.rsc -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/zview/build/dist/ZVIEW/ZVIEW.RSC: 15 trees, 246 objects, 41 tedinfo, 2 bitblk, 0 iconblk, 9 ciconblk, 15 cicon, 44 frstr, 0 frimg (21606 bytes, RSHDR vrsn 4) [LP64/32B-OBJECT, NRSC v13]
+samples -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/zview/build/samples/IMAGES (15 files)
+warnings: 11 files (list: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/zview/build/warnings.txt)
+dist -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/zview/build/dist/ZVIEW
+    ZVIEW/CODECS/BMP.NLD
+    ZVIEW/CODECS/DEGAS.NLD
+    ZVIEW/CODECS/EUREKA.NLD
+    ZVIEW/CODECS/GIF.NLD
+    ZVIEW/CODECS/GODPAINT.NLD
+    ZVIEW/CODECS/IMG.NLD
+    ZVIEW/CODECS/JPG.NLD
+    ZVIEW/CODECS/NEO.NLD
+    ZVIEW/CODECS/PNG.NLD
+    ZVIEW/CODECS/TGA.NLD
+    ZVIEW/ICONS/FILE.GOD
+    ZVIEW/ICONS/FOLDER.GOD
+    ZVIEW/ICONS/IMAGE.GOD
+    ZVIEW/ICONS/PDF.GOD
+    ZVIEW/ICONS/PRG.GOD
+    ZVIEW/ICONS/SMALL.GOD
+    ZVIEW/ZVIEW.NAP
+    ZVIEW/ZVIEW.RSC
+rc=0 zview/build-zview.sh
+=== apps/build-doom.sh
+doomgeneric : /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/Applications/doomgeneric @ dcb7a8dbc7a16ce3dda29382ac9aae9d77d21284 (clean)
+clang : Apple clang version 21.0.0 (clang-2100.3.34.2)
+lld   : /Users/ingouhlemann/.rustup/toolchains/stable-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/rust-lld
+
+doomgeneric manifest: 80 upstream files + doomgeneric_gem.c (replaces doomgeneric_xlib.c)
+kbdvec hook: -mgeneral-regs-only, objdump: 0 FP/SIMD register uses
+compiled OK=82  FAILED=0  (upstream files with compiler warnings: 1, see /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/apps/doom/build/obj/*.err)
+
+LINK OK -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/apps/doom/build/DOOM.NAP (741128 bytes, undefined symbols: 0)
+   text	   data	    bss	    dec	    hex	filename
+ 535097	  87920	 314720	 937737	  e4f09	/private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/apps/doom/build/DOOM.NAP
+_end = 0x00000000000e5f10  -> malloc arena ~ 3112 KiB
+DOOM_ARGS  = "-mb","6"
+DOOM_STATS = 0
+rc=0 apps/build-doom.sh

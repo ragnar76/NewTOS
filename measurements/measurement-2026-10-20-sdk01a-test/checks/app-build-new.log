@@ -1,0 +1,234 @@
+=== apps/build-qed.sh
+libc.a out of date [libc/overlay] -- running build-libc.sh…
+  compiled OK=627  skipped=5  (of 632)
+  skipped (did not compile for AArch64/LP64):
+      gmp/support.c
+      mintlib/crtinit.c
+      mintlib/linea.c
+      mintlib/syscall.c
+      tz/dumpstate.c
+  failures match libc/expected-failures.txt: 5 today, 5 recorded, 0 new
+  archived -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/libc/libc.a (1281860 bytes)
+  (full log: libc/build/build-libc.log)
+gemlib.a out of date [libc/overlay] -- running build-gemlib.sh…
+  compiled OK=578  skipped=0  (of 578)
+  failures match gemlib/expected-failures.txt: 0 today, 0 recorded, 0 new
+  archived -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/gemlib/gemlib.a (743386 bytes)
+  (full log: gemlib/build/build-gemlib.log)
+cflib.a out of date [cflib/overlay] -- running build-cflib.sh…
+  compiled OK=129  skipped=0  (of 129)
+  failures match cflib/expected-failures.txt: 0 today, 0 recorded, 0 new
+  archived -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/cflib/cflib.a (259288 bytes)
+  (full log: cflib/build/build-cflib.log)
+libm.a out of date [include] -- running build-libm.sh…
+  compiled OK=175  skipped=0  (of 175)
+  failures match libm/expected-failures.txt: 0 today, 0 recorded, 0 new
+  archived -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/libm/libm.a (334982 bytes)
+  defined symbols: 279  dangling references: 16 (build/dangling.txt)
+  (full log: libm/build/build-libm.log)
+clang : Apple clang version 21.0.0 (clang-2100.3.34.2)
+ar    : /Users/ingouhlemann/.rustup/toolchains/stable-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/llvm-ar
+lld   : /Users/ingouhlemann/.rustup/toolchains/stable-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/rust-lld
+
+QED COBJS manifest: 37 files
+  overlay: memory.c (from sdk/overlays/qed/, src/ untouched)
+  overlay: set.c (from sdk/overlays/qed/, src/ untouched)
+compiled OK=37  FAILED=0  (of 37)
+
+LINK OK -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/apps/qed/build/QED.NAP (527776 bytes)
+    Class: 64-bit (0x2)
+    DataEncoding: LittleEndian (0x1)
+    FileVersion: 1
+    ABIVersion: 0
+  Type: SharedObject (0x3)
+  Machine: EM_AARCH64 (0xB7)
+  Version: 1
+  Entry: 0x1000
+
+undefined symbols in the final image (goal 0): 0
+converted /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/apps/qed/src/qed.rsc -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/apps/qed/build/qed.rsc: 32 trees, 682 objects, 118 tedinfo, 7 bitblk, 1 iconblk, 0 ciconblk, 0 cicon, 44 frstr, 0 frimg (41378 bytes, RSHDR vrsn 0) [LP64/32B-OBJECT, NRSC v13]
+resource -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/apps/qed/build/qed.rsc (41378 bytes)
+rc=0 apps/build-qed.sh
+=== apps/build-teradesk.sh
+clang: Apple clang version 21.0.0 (clang-2100.3.34.2)
+abi  : LP64 (8-byte long/pointer, ELF64 AArch64)
+libs : gemlib.a + libc.a  (no cflib -- TeraDesk bundles xdialog)
+
+  overlay: rsc_load.c (from sdk/overlays/teradesk/, vendored tree untouched)
+  overlay: window.h (from sdk/overlays/teradesk/, vendored tree untouched)
+  overlay: library/xdialog/library.h (from sdk/overlays/teradesk/, vendored tree untouched)
+  overlay: library/utility/nf_ops.c (from sdk/overlays/teradesk/, vendored tree untouched)
+  overlay: environm.c (from sdk/overlays/teradesk/, vendored tree untouched)
+  overlay: main.c (from sdk/overlays/teradesk/, vendored tree untouched)
+  overlay: icon.c (from sdk/overlays/teradesk/, vendored tree untouched)
+shadow tree: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/apps/teradesk/build/tree  (overlays applied: 7)
+TeraDesk sources: 48 .c files
+compiled OK=48  FAILED=0  (of 48)
+
+LINK OK -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/apps/teradesk/build/DESKTOP.NAP (318144 bytes)
+    Class: 64-bit (0x2)
+    DataEncoding: LittleEndian (0x1)
+    FileVersion: 1
+    ABIVersion: 0
+  Type: SharedObject (0x3)
+  Machine: EM_AARCH64 (0xB7)
+  Version: 1
+  Entry: 0x1000
+
+undefined symbols in the final image (goal 0): 0
+converted /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/apps/teradesk/desktop.rsc -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/apps/teradesk/build/dist/desktop.rsc: 26 trees, 601 objects, 104 tedinfo, 0 bitblk, 0 iconblk, 0 ciconblk, 0 cicon, 190 frstr, 0 frimg (39278 bytes, RSHDR vrsn 0) [LP64/32B-OBJECT, NRSC v13]
+converted /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/apps/teradesk/icons.rsc -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/apps/teradesk/build/dist/icons.rsc: 1 trees, 39 objects, 0 tedinfo, 0 bitblk, 38 iconblk, 0 frstr, 0 frimg (13284 bytes) [native-RSHDR/LP64 for xrsrc_load]
+warning: label buffer at 16682 has no NUL in 12 bytes; terminated
+converted /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/apps/teradesk/cicons.rsc -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/apps/teradesk/build/dist/cicons.rsc: 1 trees, 39 objects, 0 tedinfo, 0 bitblk, 0 iconblk, 38 ciconblk, 38 cicon, 0 frstr, 0 frimg (63650 bytes, RSHDR vrsn 4) [LP64/32B-OBJECT, NRSC v13]
+dist -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/apps/teradesk/build/dist (DESKTOP.NAP, desktop.rsc + cicons.rsc NRSC/LP64, icons.rsc native-RSHDR)
+rc=0 apps/build-teradesk.sh
+=== zview/build-zview.sh
+libldg.a out of date [include] -- running build-ldg.sh…
+  compiled OK=4  FAILED=0  (files with warnings: 0)
+  archived -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/ldg/libldg.a (10228 bytes)
+  exported symbols: _ldg_adr_regctx _ldg_nb_regctx ldg_Calloc ldg_close ldg_cookie ldg_cpush ldg_error ldg_find ldg_Free ldg_getpath ldg_init ldg_libpath ldg_load ldg_Malloc ldg_open ldg_Realloc ldg_unload ldg_version set_error 
+  (full log: ldg/build/build-ldg.log)
+libshare.a out of date [libshare/libshare-sources.sha256] -- running build-libshare.sh…
+  compiled OK=7  FAILED=0  (files with warnings: 0)
+  (full log: libshare/build/build-libshare.log)
+libz.a out of date [zlib/build-zlib.sh] -- running build-zlib.sh…
+  compiled OK=15  FAILED=0  (files with warnings: 0)
+  (full log: zlib/build/build-zlib.log)
+libpng.a out of date [include] -- running build-libpng.sh…
+  compiled OK=18  FAILED=0  (files with warnings: 0)
+  (full log: libpng/build/build-libpng.log)
+libjpeg.a out of date [include] -- running build-libjpeg.sh…
+  compiled OK=46  FAILED=0  (files with warnings: 0)
+  (full log: libjpeg/build/build-libjpeg.log)
+libexif.a out of date [include] -- running build-libexif.sh…
+  compiled OK=25  FAILED=0  (files with warnings: 1)
+  (full log: libexif/build/build-libexif.log)
+libgif.a out of date [vendor-lib.sh] -- running build-giflib.sh…
+  compiled OK=8  FAILED=0  (files with warnings: 0)
+  (full log: giflib/build/build-giflib.log)
+clang : Apple clang version 21.0.0 (clang-2100.3.34.2)
+
+  overlay: zview/av_prot.c
+  overlay: zview/custom_font.c
+  overlay: zview/main.c
+  overlay: zview/plugins.c
+  overlay: zview/plugins/degas/degasldg.c
+  overlay: zview/plugins/eureka/rawldg.c
+  overlay: zview/plugins/godpaint/godldg.c
+  overlay: zview/plugins/img/imgldg.c
+  overlay: zview/plugins/img/xp32.c
+  overlay: zview/plugins/jpg/jpgdsp.c
+  overlay: zview/plugins/jpg/jpgldg.c
+  overlay: zview/plugins/neochrome/neoldg.c
+  overlay: zview/winimg.c
+shadow tree: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/zview/build/tree (overlays: 13)
+  skip (PDF module): zview/pdf_load.c
+  skip (PDF module): zview/winpdf.c
+zView: compiled 53 files (Makefile OBJ minus pdf_load.o winpdf.o, plus ztask/gmem.c)
+LINK OK -> ZVIEW.NAP (504768 bytes, SharedObject (0x3), undefined symbols: 0)
+  _stksize at 0x62718: 65536 -> 524288
+LINK OK -> BMP.NLD (55736 bytes, SharedObject (0x3), undefined symbols: 0)
+  allocator: libshare only (calloc.o chdir.o libshare.o malloc.o realloc.o sbrk.o ); none of libc.a's mintlib__malloc.o mintlib__calloc.o mintlib__realloc.o mintlib__posix_memalign.o unix__sbrk.o
+LINK OK -> DEGAS.NLD (55592 bytes, SharedObject (0x3), undefined symbols: 0)
+  allocator: libshare only (calloc.o chdir.o libshare.o malloc.o realloc.o sbrk.o ); none of libc.a's mintlib__malloc.o mintlib__calloc.o mintlib__realloc.o mintlib__posix_memalign.o unix__sbrk.o
+LINK OK -> EUREKA.NLD (55744 bytes, SharedObject (0x3), undefined symbols: 0)
+  allocator: libshare only (calloc.o chdir.o libshare.o malloc.o realloc.o sbrk.o ); none of libc.a's mintlib__malloc.o mintlib__calloc.o mintlib__realloc.o mintlib__posix_memalign.o unix__sbrk.o
+LINK OK -> GODPAINT.NLD (54232 bytes, SharedObject (0x3), undefined symbols: 0)
+  allocator: libshare only (calloc.o chdir.o libshare.o malloc.o realloc.o sbrk.o ); none of libc.a's mintlib__malloc.o mintlib__calloc.o mintlib__realloc.o mintlib__posix_memalign.o unix__sbrk.o
+LINK OK -> IMG.NLD (59368 bytes, SharedObject (0x3), undefined symbols: 0)
+  allocator: libshare only (calloc.o chdir.o libshare.o malloc.o realloc.o sbrk.o ); none of libc.a's mintlib__malloc.o mintlib__calloc.o mintlib__realloc.o mintlib__posix_memalign.o unix__sbrk.o
+LINK OK -> NEO.NLD (54360 bytes, SharedObject (0x3), undefined symbols: 0)
+  allocator: libshare only (calloc.o chdir.o libshare.o malloc.o realloc.o sbrk.o ); none of libc.a's mintlib__malloc.o mintlib__calloc.o mintlib__realloc.o mintlib__posix_memalign.o unix__sbrk.o
+LINK OK -> TGA.NLD (55008 bytes, SharedObject (0x3), undefined symbols: 0)
+  allocator: libshare only (calloc.o chdir.o libshare.o malloc.o realloc.o sbrk.o ); none of libc.a's mintlib__malloc.o mintlib__calloc.o mintlib__realloc.o mintlib__posix_memalign.o unix__sbrk.o
+LINK OK -> GIF.NLD (69656 bytes, SharedObject (0x3), undefined symbols: 0)
+  allocator: libshare only (calloc.o chdir.o libshare.o malloc.o realloc.o sbrk.o ); none of libc.a's mintlib__malloc.o mintlib__calloc.o mintlib__realloc.o mintlib__posix_memalign.o unix__sbrk.o
+LINK OK -> PNG.NLD (399200 bytes, SharedObject (0x3), undefined symbols: 0)
+  allocator: libshare only (calloc.o chdir.o libshare.o malloc.o realloc.o sbrk.o ); none of libc.a's mintlib__malloc.o mintlib__calloc.o mintlib__realloc.o mintlib__posix_memalign.o unix__sbrk.o
+LINK OK -> JPG.NLD (698544 bytes, SharedObject (0x3), undefined symbols: 0)
+  allocator: libshare only (calloc.o chdir.o libshare.o malloc.o realloc.o sbrk.o ); none of libc.a's mintlib__malloc.o mintlib__calloc.o mintlib__realloc.o mintlib__posix_memalign.o unix__sbrk.o
+codecs: 10 built (tiff not built: libtiff + liblzma are not in the SDK)
+converted /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/zview/build/tree/zview/zview.rsc -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/zview/build/dist/ZVIEW/ZVIEW.RSC: 15 trees, 246 objects, 41 tedinfo, 2 bitblk, 0 iconblk, 9 ciconblk, 15 cicon, 44 frstr, 0 frimg (21606 bytes, RSHDR vrsn 4) [LP64/32B-OBJECT, NRSC v13]
+samples -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/zview/build/samples/IMAGES (15 files)
+warnings: 11 files (list: /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/zview/build/warnings.txt)
+dist -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/zview/build/dist/ZVIEW
+    ZVIEW/CODECS/BMP.NLD
+    ZVIEW/CODECS/DEGAS.NLD
+    ZVIEW/CODECS/EUREKA.NLD
+    ZVIEW/CODECS/GIF.NLD
+    ZVIEW/CODECS/GODPAINT.NLD
+    ZVIEW/CODECS/IMG.NLD
+    ZVIEW/CODECS/JPG.NLD
+    ZVIEW/CODECS/NEO.NLD
+    ZVIEW/CODECS/PNG.NLD
+    ZVIEW/CODECS/TGA.NLD
+    ZVIEW/ICONS/FILE.GOD
+    ZVIEW/ICONS/FOLDER.GOD
+    ZVIEW/ICONS/IMAGE.GOD
+    ZVIEW/ICONS/PDF.GOD
+    ZVIEW/ICONS/PRG.GOD
+    ZVIEW/ICONS/SMALL.GOD
+    ZVIEW/ZVIEW.NAP
+    ZVIEW/ZVIEW.RSC
+rc=0 zview/build-zview.sh
+=== apps/build-doom.sh
+error: doomgeneric source missing (/private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/Applications/doomgeneric/doomgeneric)
+rc=1 apps/build-doom.sh
+=== apps/build-coremark.sh
+CoreMark tree : /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/apps/coremark
+port dir      : /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/overlays/coremark/newtos
+checking the files the run rules freeze against coremark-sources.md5…
+  ok       core_list_join.c  761e73db06e1e9fbc7c322784f5def4c
+  ok       core_main.c  4a9e6dadce1ac3866381021fbe843fc9
+  ok       core_matrix.c  5fa21a0f7c3964167c9691db531ca652
+  ok       core_state.c  fb49e7605c125306575a83f14f5798ac
+  ok       core_util.c  45540ba2145adea1ec7ea2c72a1fbbcb
+  ok       coremark.h  8ca974c013b380dc7f0d6d1afb76eb2d
+
+clang : Apple clang version 21.0.0 (clang-2100.3.34.2)
+lld   : /Users/ingouhlemann/.rustup/toolchains/stable-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/rust-lld
+
+── perf (PERFORMANCE_RUN=1) ───────────────────────────────────────────
+LINK OK -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/apps/coremark/build/CORE.NCP (116976 bytes, undefined symbols: 0)
+    Class: 64-bit (0x2)
+  Type: SharedObject (0x3)
+  Machine: EM_AARCH64 (0xB7)
+  Entry: 0x1000
+
+── val (VALIDATION_RUN=1) ───────────────────────────────────────────
+LINK OK -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/apps/coremark/build/COREVAL.NCP (116976 bytes, undefined symbols: 0)
+    Class: 64-bit (0x2)
+  Type: SharedObject (0x3)
+  Machine: EM_AARCH64 (0xB7)
+  Entry: 0x1000
+
+reported compiler version : (compiled in from __clang_version__)
+reported compiler flags   : -target aarch64-unknown-none-elf -O2 -fomit-frame-pointer -ffreestanding -fPIE -fno-builtin
+ITERATIONS                : 0 (CoreMark auto-scales the run to 10-100 s)
+
+Install with tools/make-sd-image.sh (installs C:\COREMARK\{CORE,COREVAL}.NCP).
+rc=0 apps/build-coremark.sh
+=== apps/apitest/build-apitest.sh
+building APITEST.NCP via sdk/libc/build-libc.sh
+  src = /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/apps/apitest/apitest.c
+  out = /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/apps/apitest/APITEST.NCP
+
+clang : Apple clang version 21.0.0 (clang-2100.3.34.2)
+ar    : /Users/ingouhlemann/.rustup/toolchains/stable-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/llvm-ar
+lld   : /Users/ingouhlemann/.rustup/toolchains/stable-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/rust-lld
+
+compiled OK=627  skipped=5  (of 632)
+skipped (did not compile for AArch64/LP64):
+    gmp/support.c
+    mintlib/crtinit.c
+    mintlib/linea.c
+    mintlib/syscall.c
+    tz/dumpstate.c
+failures match libc/expected-failures.txt: 5 today, 5 recorded, 0 new
+archived -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/libc/libc.a (1281860 bytes)
+
+LINK OK -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/t/new/sdk/apps/apitest/APITEST.NCP (124968 bytes)
+  Type: SharedObject (0x3)
+  Machine: EM_AARCH64 (0xB7)
+  Entry: 0x1000
+rc=0 apps/apitest/build-apitest.sh

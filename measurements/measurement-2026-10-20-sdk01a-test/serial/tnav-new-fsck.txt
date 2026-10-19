@@ -1,0 +1,6 @@
+** /dev/rdisk4s1
+** Phase 1 - Preparing FAT
+** Phase 2 - Checking Directories
+** Phase 3 - Checking for Orphan Clusters
+Warning: 27 files, 64270 KiB free (32135 clusters)
+fsck rc=0

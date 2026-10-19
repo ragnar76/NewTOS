@@ -1,0 +1,37 @@
+== C:/
+ Volume in drive : is FS18PRB    
+ Volume Serial Number is C574-08F5
+Directory for ::/
+
+CLIPBRD      <DIR>     1980-01-01   0:00 
+README   TXT        13 2026-10-17  12:00 
+LONGNAME TXT        16 2026-10-17  12:00 
+BIG      TXT     39200 2026-10-17  12:00 
+SUB          <DIR>     2026-10-20   1:11 
+FOLD         <DIR>     2026-10-20   1:11 
+APPS         <DIR>     2026-10-20   1:11  Apps
+NEWDESK  INF       410 2026-10-17  12:00 
+        8 files              39 639 bytes
+                         65 812 480 bytes free
+
+== C:/SUB
+ Volume in drive : is FS18PRB    
+ Volume Serial Number is C574-08F5
+Directory for ::/SUB
+
+NOTE     TXT        10 2026-10-17  12:00 
+OTHER    TXT        12 2026-10-17  12:00 
+        2 files                  22 bytes
+                         65 812 480 bytes free
+
+== C:/FOLD
+ Volume in drive : is FS18PRB    
+ Volume Serial Number is C574-08F5
+Directory for ::/FOLD
+
+A        TXT        16 2026-10-17  12:00 
+B        TXT        30 2026-10-17  12:00 
+INNER        <DIR>     2026-10-20   1:11 
+        3 files                  46 bytes
+                         65 812 480 bytes free
+

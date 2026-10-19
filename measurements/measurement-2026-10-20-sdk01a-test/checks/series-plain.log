@@ -1,0 +1,38 @@
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+run api-new: 336 lines; end: 1; EXC/PANIC: 0
+  api-new: TOTAL      109   0     5     
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+run core-new: 79 lines; end: 1; EXC/PANIC: 0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+run coreval-new: 78 lines; end: 1; EXC/PANIC: 0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+run doom-new: 99 lines; end: 0; EXC/PANIC: 0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+run zv-new-JPG: 80 lines; end: 0; EXC/PANIC: 0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+run zv-new-PNG: 80 lines; end: 0; EXC/PANIC: 0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+run zv-new-GIF: 80 lines; end: 0; EXC/PANIC: 0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+run zv-new-BMP: 80 lines; end: 0; EXC/PANIC: 0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+run zv-new-PI1: 80 lines; end: 0; EXC/PANIC: 0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+run api-old: 336 lines; end: 1; EXC/PANIC: 0
+  api-old: TOTAL      109   0     5     
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+run core-old: 79 lines; end: 1; EXC/PANIC: 0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+run coreval-old: 78 lines; end: 1; EXC/PANIC: 0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+run doom-old: 99 lines; end: 0; EXC/PANIC: 0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+run zv-old-JPG: 80 lines; end: 0; EXC/PANIC: 0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+run zv-old-PNG: 80 lines; end: 0; EXC/PANIC: 0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+run zv-old-GIF: 80 lines; end: 0; EXC/PANIC: 0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+run zv-old-BMP: 80 lines; end: 0; EXC/PANIC: 0
+hdiutil: WARNING: 'hdiutil attach -nomount ...' is deprecated. Please use 'diskutil image attach --noMount ...' instead.
+run zv-old-PI1: 80 lines; end: 0; EXC/PANIC: 0

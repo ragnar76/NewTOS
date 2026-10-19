@@ -1,0 +1,19 @@
+== C:/
+ Volume in drive : is FS18PRB    
+ Volume Serial Number is 6800-08F5
+Directory for ::/
+
+AUTO         <DIR>     2026-10-20   1:11 
+NEWDESK  INF         9 2026-10-17  12:00 
+        2 files                   9 bytes
+                         66 777 088 bytes free
+
+== C:/AUTO
+ Volume in drive : is FS18PRB    
+ Volume Serial Number is 6800-08F5
+Directory for ::/AUTO
+
+CORE     NCP    116976 2026-10-17  12:00 
+        1 file              116 976 bytes
+                         66 777 088 bytes free
+

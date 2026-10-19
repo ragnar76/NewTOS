@@ -1,0 +1,26 @@
+measurement-2026-10-20-sdk01a-test -- Tester: independent regression test of the UNCOMMITTED SDK01 package A working tree (sdk/ + docs/sdk/,
+kernel unchanged) over HEAD 062f3381. Question: do applications that were only REBUILT with the new libc (developer evidence) also RUN the same?
+Method: the same apps built with the NEW libc and with the OLD libc (HEAD sdk), run on the same fresh release rpi4 kernel (git archive HEAD,
+no kernel-side working-tree change) in QEMU raspi4b (-append serial=on [memprot=..]), one QEMU at a time, per-run APFS clones (cp -c) of one base
+card per content, fsck_msdos -n + mtools listing of every clone before deletion, private 64 MiB FAT16 images, no SD card, no Pi, nothing committed,
+no product/SDK file edited. Scratch (.../scratchpad/t) holds clones, kernels, cards; cards/trees deleted at the end, sha256 in checks/.
+
+1 HOST   checks/sdk-host-tests.txt: sdk/run-host-tests.sh 22 passed 0 failed 0 skipped.
+         checks/build-libc.txt: MINTLIB_REFRESH=1 sdk/libc/build-libc.sh: compiled OK=627, skipped=5, 5 expected failures, 0 new, libc.a
+         de8bfa92... (1281404 B), libtest links. Old (HEAD) libc: 9 expected failures (checks/build-libc-old-HEAD.txt), libc.a 6f2f0e7b... (1303208 B).
+2 APP BUILDS new + old (method/make-variants.sh, build-apps*.sh; checks/app-build-*.log, app-binaries.sha256): QED, TeraDesk, zView + 10 codecs, Doom,
+         CoreMark CORE+COREVAL, APITEST, ZVLAUNCH: all rc=0, every link "undefined symbols: 0", binaries differ old/new (sizes differ).
+         (First attempt of the old variant failed rc=1 only because tools/ and Applications/ were missing in the scratch clone; fixed, not a product issue.)
+3 RUNS old vs new, plain kernel (series-plain.sh, checks/series-plain.log), memprot default:
+   APITEST 109/0/5 new and old (+ strict, off for new: 109/0/5); status tokens identical; CoreMark CORE "Correct operation validated" new 5144.99 /
+   old 5123.43 iter/s; COREVAL validated both; Doom 45 s: demo runs, serial "VERIFIED via EdDI+scale+vro_cpyfm", frames differ (demo timing) both
+   show plausible game frames (doom-{new,old}-t30/t45); zView via ZVLAUNCH JPG/PNG/GIF/BMP/Degas(PI1): screendumps t40/t75 pixel-IDENTICAL old vs new,
+   visually checked (colour-bar image in a zView window; PI1 full 640x480 view). 0 EXC/PANIC, fsck rc=0 on all clones.
+   injector kernels (tools/inject-arm.py scratch trees, kernel otherwise = HEAD): qre (QED: Ctrl+N, "abc", Ctrl+S, qs.prg, Return, "d", Ctrl+S save over,
+   Ctrl+W, Ctrl+O, qs.prg, Return = reopen) new/old: card file C:\APPS\QED\QS.PRG = "abcd" both, reopened window shows "abcd", dumps identical except
+   q1/q6 (typing-phase timing + cursor blink, "ab" vs "abc" at capture time); tnav (TeraDesk: open C:, dclick SUB, close box=up, dclick FOLD, dclick INNER,
+   up, F1 -> QED starts, Ctrl+Q QED -> back, Ctrl+Q -> Quit/Shutdown box, Quit -> NEWDESK desktop) new/old: all 10 dumps pixel-IDENTICAL, fsck rc=0.
+4 DEVELOPER PROBE SDKP (run-sp.sh, new libc): on / strict / off: SP RESULT fails=0x00000000, 23 ok, 0 FAIL, desktop up, fsck rc=0, 0 EXC/PANIC.
+Kernels (checks/kernels-probes-cards.sha256): plain 82d1e015, qsv 7bf26b30 (qre.script), tnav 8cac052a (final; the 436271a9 in build-kernels-inj.txt is a superseded first tnav script); SOURCE_DATE_EPOCH=1792368000.
+NOT RUN: real Pi 4, qemu-virt, gets() with real stdin, wordexp/sem_open/getgrent at run time, zView TGA/IMG/NEO/EUREKA/GODPAINT codecs, Doom with input,
+TeraDesk launch of a console program, QED backup/Frename path (qed.cfg), COREVAL on strict/off, old-libc runs in strict/off.

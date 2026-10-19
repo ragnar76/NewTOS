@@ -1,0 +1,52 @@
+# new
+632fd63ac17d4a4168dae0966c6302af59ec881d2655936e97dac5abdefc5fc7  apps/qed/build/QED.NAP
+a2043545c7d76fccea1211759d09fa16eb23c7f4eda83f1be77a39d81590c5d4  apps/teradesk/build/dist/DESKTOP.NAP
+5da68ec493194a06331682a2cf2e212b85ad250ad8c1c3f7f6fb9dace6b08fdb  zview/build/dist/ZVIEW/ZVIEW.NAP
+35404a1c2f0a4a929e5dea17ff571c85eba0d919599bf320aec1fea20cba549a  zview/build/dist/ZVIEW/CODECS/BMP.NLD
+544224eaedb74657148da9f1f7336cf9b4c85ad402c0de2aee20fa70e3de6504  zview/build/dist/ZVIEW/CODECS/DEGAS.NLD
+2daf7028a8e0d10f5427008cd58b21077f3df94fe29af1e896554e563119fa44  zview/build/dist/ZVIEW/CODECS/EUREKA.NLD
+d31e9e70276133e76b3033803bb5a9937204436a4827236a1cf62d78bbda6d60  zview/build/dist/ZVIEW/CODECS/GIF.NLD
+5393e21d089b7b8a69d850d4f55069b21c677a0963fdfdc9056b658008612b1f  zview/build/dist/ZVIEW/CODECS/GODPAINT.NLD
+3e745b5d18baba45b0b9ea6f261be80e84ab4a3b4f53d80fc63d36b42b11b197  zview/build/dist/ZVIEW/CODECS/IMG.NLD
+96e2a3a864ffdf1e35323ff1b98b06d7301fb66ee2d32bef762176dd1848f2e5  zview/build/dist/ZVIEW/CODECS/JPG.NLD
+93f4e3b65cbeddc5722c18587ff7082b87bb406df8855bdd36313308d480c0b9  zview/build/dist/ZVIEW/CODECS/NEO.NLD
+9c938800e31fc1d998a4cd8a492304217ae4506676c4bcfd25b1b5b15a60de92  zview/build/dist/ZVIEW/CODECS/PNG.NLD
+7c5c9c3341a8921455e883efccd673e088bbfe7bc5b413b73015e7803da556da  zview/build/dist/ZVIEW/CODECS/TGA.NLD
+718b0da02a592972969756c5132df99191b89d2b191ccbc995e87e1b892d86ae  apps/doom/build/DOOM.NAP
+239b89ca382e3a57214d46425f513554f3bf0b541e60ef01acfb1dc5e681a7d7  apps/coremark/build/CORE.NCP
+7f05e6cc81a0532a2aea43353b8404fb0a7a900e58e5b68f8927e8dbdba5a505  apps/coremark/build/COREVAL.NCP
+640def672b15dd4c4ece8883bc278282b7e5c2e5c4879acb8fcd8ca6441b0186  apps/apitest/APITEST.NCP
+-rwxr-xr-x@ 1 ingouhlemann  wheel  124968 20 Okt. 01:02 apps/apitest/APITEST.NCP
+-rwxr-xr-x@ 1 ingouhlemann  wheel  741128 20 Okt. 01:04 apps/doom/build/DOOM.NAP
+zview/build/dist:
+ZVIEW
+
+zview/build/samples:
+expected
+IMAGES
+# old
+78505e05562b77a131ac045bf17a4ca03b48662a7f5cafb42da552465b669d5a  apps/qed/build/QED.NAP
+917654a18657d168238983cdab74bd7d7116c64a165878c01dcec2858353251d  apps/teradesk/build/dist/DESKTOP.NAP
+a061dbba5a5425bb4f7f0f0c44d331aff74056e3bc4fa4c5841918a578046248  zview/build/dist/ZVIEW/ZVIEW.NAP
+5debce2fe907f591d0c6fd985ee3aef5a69f23d5219f2142cbf5a5738824c564  zview/build/dist/ZVIEW/CODECS/BMP.NLD
+3a47af317635496eb1de99edf7eea6ebacde40ddde101195e41e029ba1282299  zview/build/dist/ZVIEW/CODECS/DEGAS.NLD
+25ec14a1982b039c2c385e36c07de3f2df942d6b31a05a457576ae6093cff8b2  zview/build/dist/ZVIEW/CODECS/EUREKA.NLD
+233ddfd190b228793e75ffb39a24a9d3c7bd67087659c78d8b4747005ee231be  zview/build/dist/ZVIEW/CODECS/GIF.NLD
+9ae606b508bdb3f5574309cbb8776f71254cee45e19ab478aec88e97bfbb584d  zview/build/dist/ZVIEW/CODECS/GODPAINT.NLD
+aa59b521473994088b96527bc72c7f42be7c89dd786baaa8a48c551e9fc47d2a  zview/build/dist/ZVIEW/CODECS/IMG.NLD
+29db737d0ff312734adb07e126b56e5a36dadec0fc626870a7068c52958baa19  zview/build/dist/ZVIEW/CODECS/JPG.NLD
+c19891b922ff4c914439c3dcadad794b780e7cbe40a71777e805131e151cd77f  zview/build/dist/ZVIEW/CODECS/NEO.NLD
+61416376a901e575a824a60a879ce358e3b9492ee0867fec679dcbaed3999c50  zview/build/dist/ZVIEW/CODECS/PNG.NLD
+85787d7e1d09ef04776629c6d546ef8c033546640b4924b82afd0053cb04011b  zview/build/dist/ZVIEW/CODECS/TGA.NLD
+22936d9fe9c6b361b9eb9ebbe0c15e781a903fb8c4e6982d940fd93ad1176f0c  apps/doom/build/DOOM.NAP
+5b6ece89fb0141773eef262977731e36f7b9fb395848007c631f29be2d44e4d0  apps/coremark/build/CORE.NCP
+dccf25c7c7ecdf207d6e6437e4cfe4a6a98303114cd6f3664e3b427edbe6c2f6  apps/coremark/build/COREVAL.NCP
+cc61f56d087730e047dd087194a6290a13585d8368e3c1acab996bca70489d1e  apps/apitest/APITEST.NCP
+-rwxr-xr-x@ 1 ingouhlemann  wheel  124912 20 Okt. 01:01 apps/apitest/APITEST.NCP
+-rwxr-xr-x@ 1 ingouhlemann  wheel  741080 20 Okt. 01:04 apps/doom/build/DOOM.NAP
+zview/build/dist:
+ZVIEW
+
+zview/build/samples:
+expected
+IMAGES

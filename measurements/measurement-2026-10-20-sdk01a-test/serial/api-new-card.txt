@@ -1,0 +1,13 @@
+== C:/
+ Volume in drive : is A113API    
+ Volume Serial Number is 49C0-08F5
+Directory for ::/
+
+APITEST  LOG     11846 1980-01-01   0:00 
+APITEST  NCP    124968 2026-10-20   1:11 
+PTERMCH  NCP      6328 2026-10-20   1:11 
+DTACHILD NCP      6104 2026-10-20   1:11 
+NEWDESK  INF        23 2026-10-20   1:11 
+        5 files             149 269 bytes
+                         66 744 320 bytes free
+

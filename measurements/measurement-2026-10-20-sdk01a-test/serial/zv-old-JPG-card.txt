@@ -1,0 +1,12 @@
+== C:/
+ Volume in drive : is FS18PRB    
+ Volume Serial Number is C761-08F5
+Directory for ::/
+
+ZVIEW        <DIR>     2026-10-20   1:11 
+ZVLAUNCH NAP     49776 2026-10-17  12:00 
+ZVARG    TXT        24 2026-10-17  12:00 
+NEWDESK  INF        23 2026-10-17  12:00 
+        4 files              49 823 bytes
+                         64 655 360 bytes free
+
