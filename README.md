@@ -18,11 +18,25 @@ source into [`docs/api/`](docs/api/) and implemented against that, then
 checked against a real Atari TT and against Hatari (TT and Falcon profiles),
 down to the pixel.
 
-> **Status:** active development. NewTOS runs a full GEM desktop on real
-> hardware, runs ported applications and games, and is stable enough to be
-> shown in public (Atari meeting, October 2026, tag `ofam-2026`). It is not
-> finished: one CPU core, no multitasking, no 68000 emulation yet. The
-> detailed, dated state is in [`docs/STATUS.md`](docs/STATUS.md).
+> **Status:** alpha — **version 0.6** (October 2026) is out for testers.
+> NewTOS runs a full GEM desktop on a real Raspberry Pi 4, runs ported
+> applications and games, and was first shown in public at the OFAM Atari
+> meeting in October 2026. It is not finished: one CPU core, one program at a
+> time (plus desk accessories), no 68000 emulation yet. The dated state is in
+> [`docs/STATUS.md`](docs/STATUS.md).
+
+## Try it / report a bug
+
+1. Download the latest release ZIP from the
+   [Releases](../../releases) page and read its `LIESMICH.TXT`.
+2. The SD card needs an **MBR** partition table and a first partition with
+   **FAT16, at most 2 GB** (FAT32 and exFAT are not supported yet). Further
+   FAT16 partitions (primary or logical) become drives `D:` … `P:`.
+3. Copy the contents of the ZIP's `KARTE` folder onto that partition and boot.
+
+Found something that behaves differently from a real Atari, a crash, or a
+hang? **[Open an issue](../../issues/new/choose)** — the bug form asks for
+what we need. A photo of the crash report helps a lot.
 
 ## What runs
 
@@ -100,7 +114,7 @@ QEMU with the desktop, the ported applications and test programs.
 
 On a real Pi 4: put `kernel8.img`, the Raspberry Pi firmware (`start4.elf`,
 `fixup4.dat`, `bcm2711-rpi-4-b.dtb`) and [`boot/rpi4/config.txt`](boot/rpi4/config.txt)
-on the FAT boot partition. Kernel options go into `cmdline.txt`
+on the FAT16 boot partition (MBR, at most 2 GB). Kernel options go into `cmdline.txt`
 (for example `serial=on` for the UART log, `memprot=`, `bcache=`, `cpuclk=`);
 the System Info accessory shows and edits them in plain words.
 
@@ -115,7 +129,8 @@ onto the card.
 ## Repository layout
 
 ```
-kernel/        bare-metal kernel: boot, MMU, exceptions, drivers, desktop (desk/)
+kernel/        bare-metal kernel: boot, MMU, exceptions, drivers, scheduler
+programs/      EL0 programs embedded in the kernel image: NEWDESK (EmuDESK rebuild)
 tos-api/       the TOS API: gemdos, bios, xbios, vdi, aes, trap dispatcher
 tos-types/     shared on-wire types (DTA, BPB, MD, error codes)
 sdk/           app toolchain: libc, gemlib, cflib, codecs, overlays, apps
@@ -126,9 +141,13 @@ boot/rpi4/     boot configuration for the Pi 4
 docs/          architecture, requirements, compatibility contract, the
                extracted TOS API spec (api/), SDK docs (sdk/), STATUS
 phases/        phase-by-phase implementation guidelines
-TASK/          tickets
+TASK/          tickets (internal work log; bug reports go to GitHub issues)
 measurements/  evidence runs: serial logs, screendumps, reference diffs
 ```
+
+Commit hashes quoted in `TASK/`, `docs/` and `measurements/` before
+2026-10-19 refer to the history before a one-time rewrite; translate them with
+`tools/oldhash.sh <hash>` ([`docs/commit-map.txt`](docs/commit-map.txt)).
 
 Start reading at [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and
 [`docs/COMPATIBILITY.md`](docs/COMPATIBILITY.md) — the latter is the contract

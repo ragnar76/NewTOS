@@ -1,0 +1,69 @@
+name: Fehler melden / Bug report
+description: Etwas funktioniert nicht oder verhaelt sich anders als auf einem echten Atari.
+title: "[Bug] "
+labels: ["bug", "neu"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Danke fuers Testen! Je genauer die Schritte, desto schneller finden wir den Fehler.
+        Bei einem Absturzbericht (Text mit "pc=" und Registern): bitte ein Foto anhaengen.
+  - type: input
+    id: version
+    attributes:
+      label: NewTOS-Version
+      description: Steht im Startbildschirm und unter "Desk > Desktop info".
+      placeholder: "0.6"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Was hast du gemacht?
+      description: Schritt fuer Schritt, so dass es jemand nachmachen kann.
+      placeholder: |
+        1. QED gestartet
+        2. Datei C:\TEST.TXT geoeffnet
+        3. ...
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Was ist passiert?
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Was hast du erwartet?
+      description: Wie verhaelt es sich auf einem echten Atari (TOS 4 / EmuTOS), falls bekannt?
+  - type: dropdown
+    id: repro
+    attributes:
+      label: Passiert es wieder?
+      options:
+        - immer
+        - manchmal
+        - nur einmal gesehen
+    validations:
+      required: true
+  - type: dropdown
+    id: after
+    attributes:
+      label: Lief das System danach weiter?
+      options:
+        - ja
+        - nach Tastendruck (Absturzbericht)
+        - nur nach Neustart / Strom aus
+  - type: textarea
+    id: setup
+    attributes:
+      label: Dein Aufbau
+      description: Pi-4-RAM, Monitor/Aufloesung, Tastatur und Maus, SD-Karte, weitere USB-Geraete.
+      placeholder: "Pi 4, 4 GB; Dell 24\" 1920x1080 HDMI; Cherry-Tastatur DE; Logitech-Maus; SanDisk 16 GB, FAT16 2 GB"
+  - type: textarea
+    id: extra
+    attributes:
+      label: Fotos, Logs, Sonstiges
+      description: Bilder hier hineinziehen. Wer eine serielle Konsole hat, gern den Log.

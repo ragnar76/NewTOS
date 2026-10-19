@@ -64,3 +64,6 @@ measurements/*/*.elf
 # running NewTOS, not NewTOS — same reasoning as the ball demo: this repo is
 # the operating system.
 /hardware/
+
+# Local Claude Code permissions (per machine)
+.claude/settings.local.json
