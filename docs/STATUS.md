@@ -65,7 +65,7 @@ Driftprobe 0 seit U10: der Kernel linkt den Desktop nicht mehr.
 **Offen (Stand 2026-10-17):**
 
 - P1: keins. **DESK43** ist bis U10 erledigt und auf der Pi abgenommen (Tester PASS `d0e5afa5`, ADR-026); offen nur die Pi-Gegenprobe des EmuCON-Rueckfalls (braucht Kern mit defektem NEWDESK).
-- P2: keins. FS18 erledigt 2026-10-19 (QEMU). PROC03 erledigt 2026-10-19 (QEMU; Pi fuer B5 und PROC04 Punkt 5 offen).
+- P2: **GH1** (GitHub #1: Popup im SYSACC-Dialog, Fenster zeichnet sich darueber). FS18 erledigt 2026-10-19 (QEMU). PROC03 erledigt 2026-10-19 (QEMU; Pi fuer B5 und PROC04 Punkt 5 offen).
 - P3 / Erweiterungen: ARCH03 Stufe 2b, **SND01/SND02** (Ton), SDL01, RTC01,
   REF03, T15, DESK49, DESK51–DESK55, FS12 (26 Laufwerke), LIBC-IOCTL, LIBC-BUF, DESK61, DESK63 (Verknuepfung auf Verknuepfung), DESK65 (sofort speichern, Erweiterung), DESK66 (Hintergrund an die AES melden), DESK67 (Reste aus DESK48), A115 (Bereitliste wie EmuTOS `rlr`), A116 (`appl_write` auf volle fremde Queue blockiert in EmuTOS), RST02 (Warmstart EmuTOS-treu), INPUT02 (Ctrl+Alt+Del bei haengendem Programm), FS15 (`CON:`/`AUX:`/`PRN:` bei `Fopen`), CON03 (Kernel-Konsole ist nicht EmuCON: 21 gegen 11 Befehle, u. a. `more`), ARCH04 (CPU-Features zur Laufzeit), REF04 (GIC-Quellen beschaffen), FS16 (`Fwrite` leert den Cache nach jedem Aufruf), FS17 (kleinere Datei-Abweichungen aus PROC04 Punkt 5), MEM08, MEM10, MEM06 (Idee),
   IO01 (Idee: AUX/MIDI/PRN-Treiber).
