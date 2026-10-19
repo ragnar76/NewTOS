@@ -449,16 +449,16 @@ from accdesk at `PE_LOAD` time and are never used afterwards.
 | D-4 | AES PD `p_cmdlin` | in EmuTOS it is the `shel_write` tail buffer (`ad_stail` = AES PD+0x80, `gemstart.S:54-57`, `gemshlib.c:170,191`) | write the stored tail into the stand-in's `p_cmdlin` on every `shel_write(doex=1)` — representable, only chain-readers see it |
 | D-5 | How `Pterm` resumes `p_parent` (§6.2.3) and what happens for an altered/invalid `p_parent` | EmuTOS: undefined/crash | a defined safe outcome (the process dies like a crash?) — a new decision, not contract |
 | D-6 | Owner tag of kernel-context allocations (AES code, EmuCON) | EmuTOS owner = `run` = AES PD / accdesk PD / EmuCON PD at that time | an owner value for each stand-in; interacts with D-2(b) |
-| D-7 | `*os_run` for an accessory (§6.2.1) | design | update the per-process cell on every switch into an accessory |
-| D-8 | `Mfree`/`Mshrink` owner rule (E15, FreeMiNT) versus EmuTOS (none) | **conflict**: an accessory that allocates under accdesk (init) and frees later under another `run`, or frees what the front program owns, gets `EIMBA` under E15 but succeeds on EmuTOS | relax/replace E15 (the user's "everything EmuTOS" decision of 2026-10-18 covers PROC03 scope; E15 was decided 2026-10-04) — **needs an explicit answer** |
-| D-9 | Which §1.3 rows to reproduce for accessories beyond `Malloc` ownership (cwd, DTA, std handles, file owner, `p_flags` pool choice, `Pterm`, `Pexec` parent) | "as EmuTOS" says all; none is guarded, several are footguns | reproduce all (consistent with the decision) or list explicit exceptions |
+| D-7 | `*os_run` for an accessory (§6.2.1) | design | update the per-process cell on every switch into an accessory — **built, §6.6** |
+| D-8 | `Mfree`/`Mshrink` owner rule (E15, FreeMiNT) versus EmuTOS (none) | **conflict**: an accessory that allocates under accdesk (init) and frees later under another `run`, or frees what the front program owns, gets `EIMBA` under E15 but succeeds on EmuTOS | relax/replace E15 (the user's "everything EmuTOS" decision of 2026-10-18 covers PROC03 scope; E15 was decided 2026-10-04) — **decided 2026-10-18 (B5 option 2): E15 stays; memory stays the accessory's, §6.6** |
+| D-9 | Which §1.3 rows to reproduce for accessories beyond `Malloc` ownership (cwd, DTA, std handles, file owner, `p_flags` pool choice, `Pterm`, `Pexec` parent) | "as EmuTOS" says all; none is guarded, several are footguns | reproduce all (consistent with the decision) or list explicit exceptions — **decided 2026-10-18 (B5 option 2): only `*os_run` and the `Pexec` child's `p_parent` follow `run`, every other row stays with the accessory, §6.6** |
 | D-10 | Leak of `dirtbl` use counts for accessory PDs (§4.5) | EmuTOS accident | not reproduced (invisible except exhaustion) |
 
 ### 6.4 Developer decisions D-1…D-5 (TASK/PROC03 stage 1 + B4, 2026-10-18)
 
 Built as described in [`_parent-and-environment.md`](./_parent-and-environment.md)
-§4.4. D-6…D-10 are **not** decided here (B5 — the user still has to decide the
-D-8 conflict); memory ownership is unchanged.
+§4.4. D-6…D-10 are **not** decided here (B5 — the user still had to decide the
+D-8 conflict; decided 2026-10-18, §6.6); memory ownership is unchanged.
 
 **D-1 — `p_tbase` of the AES, accdesk and EmuCON PDs: 0 (deviation by
 absence).** The source defines the field's *meaning* — the entry of the code
@@ -523,7 +523,8 @@ program gets, and it is exactly the observable result of EmuTOS when the
 field is not changed — the safe outcome §5 asks for. The ancestor case is
 reproduced because it is the only changed value with a defined EmuTOS meaning
 (a suspended PD's saved context). Accessory `Pexec` children are unchanged by
-this stage (their `p_parent` is still the accessory's PD — B5).
+this stage (their `p_parent` is still the accessory's PD — B5; since §6.6 it is
+`run`, the recorded-parent fallback and the return to the accessory unchanged).
 
 ### 6.5 PROC04 point 2 as built (2026-10-18)
 
@@ -555,15 +556,59 @@ launcher ran before every AUTO program (DESK28) is gone; `sh_chdef` →
 it; `dos_sdrv(bootdev)` on a restart (`drive::set_boot_drive`) writes the AES
 PD, which the next accdesk inherits.
 
-**Accessories (B5 not decided):** NewTOS's `run` while an accessory executes is
-still the accessory's own PD, so its `Dgetdrv`/`Dsetpath`/relative paths act on
-the accessory PD (copied from accdesk at load), not on the PD in front as §1.3
-says for EmuTOS. That follows the B5 decision, not this step.
+**Accessories (B5 decided 2026-10-18, §6.6):** the PD the current-drive and
+directory calls of an accessory use is the accessory's own (copied from accdesk
+at load), not the PD in front as §1.3 says for EmuTOS — part of the named
+deviation of option 2 (`docs/COMPATIBILITY.md`).
 
 Unchanged deviations, not part of this step: `BLKDEVNUM`/`NUMCURDIR` are 16 in
 NewTOS (`tos-types::NUMCURDIR`, `drive.rs`), 26 in EmuTOS — `Dsetdrv(16..25)` is
 ignored instead of stored; stored paths are limited to 63 bytes (`Dsetpath`
 answers `EPTHNF` beyond), EmuTOS's `Dgetpath` budget is 111.
+
+### 6.6 B5 as built — option 2 (user decision 2026-10-18)
+
+User decision (`TASK/PROC03.md`, "Anwenderentscheidung B5"): while a desk
+accessory executes, what a program can read **as** `run` follows EmuTOS —
+`*os_run` and the `p_parent` of a process the accessory `Pexec`s; memory
+ownership, protection, the current drive and directory, the DTA, the standard
+handles and the open files stay with the accessory itself (named deviation,
+`docs/COMPATIBILITY.md` "Sanctioned deviations"; ADR-027). E15 is untouched.
+That answers D-7 (built), D-8 (E15 stays) and D-9 (only the two rows below).
+D-6 (owner of kernel-context allocations) and D-10 are not affected.
+
+**`run` as an accessory sees it** — `tos-api/src/bdos/process.rs`
+`emutos_run`. EmuTOS's `run` is a stack (`proc_go` pushes, `bdos/proc.c:575`;
+`xterm` pops, `:609`) that accessories never touch (§1.2). NewTOS's `RUN` is
+the process with the CPU, an accessory included, so the value is derived: the
+live process with the highest start number (`Process::start_seq`, set where
+`p_parent` is written at the start — `pexec::write_parent`, i.e. for every
+`Pexec` 0/4/6 child and every kernel launch — and cleared when its `Pterm`
+begins, before anyone else runs). No started process alive → the stand-in
+`standin::kernel_run()` (accdesk between programs, EmuCON while EmuCON runs).
+For processes ending in the reverse order of their starts, which a
+synchronous `Pexec` gives, this is EmuTOS's `run`; if a program ends while a
+child an accessory started still lives, NewTOS names the child and then the
+stand-in, never the freed PD (EmuTOS: `run = child->p_parent` = the dead
+program).
+
+| EmuTOS (`run` unchanged while an accessory executes) | NewTOS |
+|---|---|
+| `*os_run` is `run` (`bios/startup.S:110-111`, one global word) | the accessory's page-0 cell (`loader::OS_RUN_CELL_VA`) is written with `emutos_run()` in `process::set_current` whenever the accessory becomes the running slot — a scheduler switch, a kernel-park return, the `Pterm` return from its child. `run` changes only by `Pexec`/`Pterm`, each of which ends in `set_current` again, so the cell is current whenever the accessory runs. A program's cell still names itself (unchanged) [C] |
+| `Pexec` from an accessory: `p_parent = run` (`bdos/proc.c:541`) | `pexec::write_parent` → `process::run_for_caller`: an accessory caller gives `emutos_run()`; `launch_parent` records that value [C] |
+| the child's `Pterm` resumes the accessory, whose trap saved its context into `run`'s PD (`bdos/rwa.S:188-206`) | the child's `parent_slot` is the accessory and its frame is the accessory's `Pexec` frame (`handle_pexec`, unchanged); the live `p_parent` equals `launch_parent`, so `pterm::return_target` takes the normal path; `RUN` is the accessory again [C] |
+| a changed `p_parent` in that child (EmuTOS: undefined, §2.2) | D-5 unchanged, and every value ends at the accessory: its PD is the one ancestor slot on the child's launch chain (honoured: the accessory resumes), anything else is not a resume point (the recorded parent, the accessory, resumes) |
+| rights the child inherits | the accessory's (`memprot::on_launch` with the real caller) — E5/strict unchanged |
+| every other §1.3 row (`Malloc` owner and pool, files, `Fdelete` owner, handles, DTA, drive/directory, the child's environment/handles/directories, an accessory's own `Pterm`) | the accessory's — named deviation |
+
+Measured: `measurements/measurement-2026-10-19-proc03-b5/` (QEMU raspi4b,
+memprot on/strict/off): an accessory reads the accdesk stand-in during its
+initialisation, the `#Z` program's PD while that program waits in
+`evnt_mesag`, NEWDESK's PD (memprot=off: `p_parent` = accdesk) once only the
+desktop runs; each of its `Pexec` children reads `p_parent` = that value and
+returns `0x42` to the accessory; a block it took while the `#Z` program was in
+front survives that program's `Pterm` and `Mfree` answers 0. Host test
+`tos-api/tests/proc03_b5_accessory_run.rs`.
 
 ## Related
 

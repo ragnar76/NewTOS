@@ -345,18 +345,17 @@ tracked as `TASK/A76.md` (measured `Mfree(0x427000) -> -40` on TeraDesk's
 `free_icons` → `xrsrc_free`), not a deliberate choice. See § "AES resource
 block" above for the full EmuTOS derivation and the target NewTOS contract.
 
-> **OPEN CONFLICT (2026-10-18, TASK/PROC03 spec).** The user decided on
-> 2026-10-18 that `run`, `*os_run` and `Malloc` ownership of accessories are
-> "as EmuTOS" (`TASK/PROC03.md`). In EmuTOS neither `Mfree` nor `Mshrink` has
-> an owner check (`bdos/umem.c:135-159,170-229`; the whole EmuTOS side is in
+> **RESOLVED (2026-10-18, TASK/PROC03 B5 option 2).** The conflict between
+> the "as EmuTOS" reading of B5 — in EmuTOS neither `Mfree` nor `Mshrink`
+> checks an owner (`bdos/umem.c:135-159,170-229`;
 > [`../process/_run-ownership-curdir.md`](../process/_run-ownership-curdir.md)
-> §3.4), and accessories rely on it by construction: memory they allocate
-> during init is tagged for the accdesk PD, memory they allocate later for
-> whatever `run` is, and they free it under a different `run`. The E15 rule
-> below (non-owner → `EIMBA`) turns those frees into errors. **E15 and the
-> 2026-10-18 decision cannot both hold for accessory-originated calls; the
-> Developer needs an explicit answer (D-8).** Nothing below is changed by this
-> note.
+> §3.4) and an accessory's blocks are tagged for whatever `run` is — and E15
+> was decided by the user: only `*os_run` and the `p_parent` of an accessory's
+> children follow `run`; memory an accessory allocates stays the accessory's
+> and E15 (below) is unchanged (`_run-ownership-curdir.md` §6.6, named
+> deviation in `docs/COMPATIBILITY.md`). An accessory's `Malloc` block
+> therefore survives the `Pterm` of the program that was in front, and the
+> accessory frees it with `E_OK`.
 
 ### NewTOS: several owners, and only an owner frees (ARCH03 stage 2d, plan E15)
 

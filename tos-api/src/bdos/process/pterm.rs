@@ -379,6 +379,9 @@ unsafe fn terminate_inner(reserve: bool, follow_parent: bool) -> Result<PtermRes
     // The slot's other atomics stay populated until the handler calls
     // `release_slot` — it still needs `parent_frame` for the frame
     // copy.
+    // No longer `run` for an accessory either ([`super::emutos_run`]): EmuTOS
+    // pops `run` before `ixterm` and before anyone else runs.
+    slot.start_seq.store(0, Ordering::Release);
     let parent_slot = slot.parent_slot.load(Ordering::Acquire);
     if parent_slot == super::NO_PARENT {
         set_current(ptr::null_mut::<BasePage>());

@@ -274,7 +274,8 @@ emulator (Phase 10+).
   a program the kernel starts the `initial_basepage` / AES-PD stand-in today,
   TASK/PPARENT — `0` before it; the target after TASK/PROC03 is the accdesk
   stand-in for desktop/`#Z` programs, [`_parent-and-environment.md`](../gemdos/process/_parent-and-environment.md) §4.2), the OSHEADER's `os_run` points at a
-  page-0 cell (`0x5B8`) holding it, and the entry gets it in `x0`. All
+  page-0 cell (`0x5B8`) holding it (a desk accessory's cell holds EmuTOS's
+  `run` instead, TASK/PROC03 B5, `_run-ownership-curdir.md` §6.6), and the entry gets it in `x0`. All
   address fields (`p_lowtpa`, `p_hitpa`, `p_tbase`, `p_dbase`, `p_bbase`,
   `p_xdta`, `p_env`) are addresses every process can read. Until stage 1 the
   basepage sat at VA 0 of every process (`p_lowtpa = 0`).

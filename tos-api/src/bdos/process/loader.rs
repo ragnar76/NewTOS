@@ -1195,7 +1195,9 @@ fn populate_sysvars(tpa: &mut [u8], pd: u64) {
     // startup.S:110-111, `_boot-init.md` §4). The cell is page 0's
     // [`OS_RUN_CELL_VA`] and holds this process's PD pointer: page 0 is the
     // process's own, and while it runs the current process is itself (plan
-    // Frage 12, ARCH03 stage 1 — the basepage is no longer at VA 0).
+    // Frage 12, ARCH03 stage 1 — the basepage is no longer at VA 0). A desk
+    // accessory's cell is rewritten to EmuTOS's `run` whenever it gets the CPU
+    // (`super::set_current`, TASK/PROC03 B5).
     wr_long(tpa, oh + 0x28, OS_RUN_CELL_VA as u32);
     tpa[OS_RUN_CELL_VA as usize..OS_RUN_CELL_VA as usize + 8].copy_from_slice(&pd.to_le_bytes());
     // os_dummy (+0x2C): OS signature. EmuTOS 'ETOS'; NewTOS 'NTOS'

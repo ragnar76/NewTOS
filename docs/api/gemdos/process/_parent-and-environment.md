@@ -317,11 +317,23 @@ takes the same `launch()` path as the `#Z` program (`set_kernel_parent` →
 accdesk); it was not probed (embedded binary).
 
 Not changed in this stage (B5, `_run-ownership-curdir.md` §6.3 D-6…D-9, user
-decision pending): `RUN`/`*os_run` are still `null`/the per-process cell in
+decision pending then): `RUN`/`*os_run` are still `null`/the per-process cell in
 kernel context and during an accessory, memory owner tags of kernel-context
 allocations are the kernel sentinel, an accessory's `Pexec` child gets the
 accessory's PD as `p_parent` (EmuTOS: `run`, §1.1). The accessory environment
 is now the accdesk copy (same bytes as before).
+
+**B5, option 2 (user decision 2026-10-18; as built,
+[`_run-ownership-curdir.md`](./_run-ownership-curdir.md) §6.6):** a process a
+desk accessory `Pexec`s gets `p_parent` = EmuTOS's `run` — the program in
+front (or its running `Pexec` child), NEWDESK when only the desktop runs, the
+accdesk stand-in between programs — and its `Pterm` resumes the accessory;
+the accessory's `*os_run` names the same PD. Its environment, handles,
+directories and rights are still copied from the accessory (named deviation,
+`docs/COMPATIBILITY.md`). Chain read from such a child while a `#Z` program X
+is in front: X → accdesk → AES → `initial_basepage` → 0 (§1.1 row "`Pexec`
+child called from an accessory"). `RUN` in kernel context and the owner tags
+of kernel-context allocations are unchanged.
 
 ## Edge cases
 
@@ -336,8 +348,8 @@ is now the accdesk copy (same bytes as before).
    GEMDOS process for an accessory; `run` is the PD in front (the desktop's,
    EmuCON's, a program's, or accdesk's between programs), **not "the AES PD"**
    as this file said; the child's `p_parent` is that PD
-   (`bdos/proc.c:541`, `_run-ownership-curdir.md` §2.2). NewTOS today writes the
-   accessory's own PD (`TASK/PROC03.md` §1); the target is `run`.
+   (`bdos/proc.c:541`, `_run-ownership-curdir.md` §2.2). NewTOS writes `run`
+   too since TASK/PROC03 B5 (§4.4; until then the accessory's own PD).
 5. mintlib's accessory test (`startup/crt0.S:46-62`): `a0->p_parent == 0`;
    `sdk/libc/newtos-arch/heap_init.c` and `sdk/crt0.S` use that test.
 

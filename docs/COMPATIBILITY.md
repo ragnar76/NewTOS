@@ -683,7 +683,8 @@ screen), `Malloc` returns `m_start`, `Pexec(PE_LOAD)` returns a real PD
 pointer, `p_parent`/`p_env` are readable by anybody, and — with memory
 protection off — no process is protected from another (stage 3b below). **Observable differences:**
 (1) page 0 `[0, 0x1000)` is per process — the system variables, the OSHEADER
-and its `os_run` cell (`0x5B8`, holding the process's own PD), the cookie-jar
+and its `os_run` cell (`0x5B8`, holding the process's own PD — a desk
+accessory's holds EmuTOS's `run`, TASK/PROC03 B5 below), the cookie-jar
 mirror, the trampolines, the `Keytbl` area and the KEYS02 table — so a pointer
 *into page 0* means something different in another process (on EmuTOS the
 area is global but supervisor-only); (2) `p_tbase` is `p_lowtpa + 0x1000`,
@@ -719,8 +720,9 @@ from EmuCON the EmuCON stand-in, an accessory's 0 (never `proc_go`ed,
 every process gets an environment (`alloc_env`, `bdos/proc.c:413-432`; the
 AES's is `default_env` `"PATH=\0X:\\\0"`, `bios/bios.c:626-636`), and
 `shel_envrn` searches the AES-PD stand-in's. **Observable differences:** the
-stand-ins are read-only to programs, never the running process (`*os_run`
-during the desktop is unchanged), the AES, accdesk and EmuCON PDs have
+stand-ins are read-only to programs, never the running process (a program's
+`*os_run` names itself; only a desk accessory reads a stand-in there — the
+accdesk PD between programs, TASK/PROC03 B5 below), the AES, accdesk and EmuCON PDs have
 `p_hitpa = p_lowtpa + 0x100` and `p_tbase = 0` (no TPA, no code in the user
 address space; decisions D-1/D-2 in
 `docs/api/gemdos/process/_run-ownership-curdir.md` §6.4). `Pterm` returns
@@ -896,6 +898,54 @@ itself: an OFD the owner check does not see (a handle shared through
 written back before the chain is freed, so no cluster is left allocated. Spec
 `docs/api/gemdos/file/41-fdelete.md` edge case 3 and "PROC04 point 5"; tests
 `tos-api/tests/proc04_fdelete_open.rs`.
+
+**A desk accessory's GEMDOS calls act on the accessory; only `*os_run` and
+the `p_parent` of its children follow `run`** — user decision, 2026-10-18
+(TASK/PROC03 B5, option 2, "Anwenderentscheidung B5"; kernel memory follows
+FreeMiNT, `docs/MEMORY.md` ADR-027). EmuTOS never starts an accessory as a
+GEMDOS process — it is `PE_LOAD`ed and entered by a plain `jmp` from an AES
+context (`references/emutos/aes/gemasm.S:83-110`) — so every GEMDOS call it
+makes executes with `run` unchanged: the innermost started process, i.e. the
+program in front, that program's running `Pexec` child, or the accdesk PD
+between programs (`docs/api/gemdos/process/_run-ownership-curdir.md` §1.2,
+§1.3). Everything GEMDOS keeps in the PD is then `run`'s: the `Malloc` owner
+(`bdos/iumem.c:134`, `m_own = run`) and pool choice (`bdos/umem.c:120`), the
+owner of files it opens (`bdos/fsopnclo.c:348`, `bdos/fshand.c:107`; closed
+at `run`'s `Pterm`, `bdos/proc.c:121-124`) and the `Fdelete` owner test
+(`bdos/fsopnclo.c:665`), the standard handles (`bdos/console.c:161-535`), the
+DTA (`bdos/fsmain.c:396,405`), the current drive and directory
+(`bdos/fsmain.c:420-441`, `bdos/fsdir.c:1124-1145`), what a child inherits
+(environment, handles, directories, `bdos/proc.c:391-409,419-420`), and an
+accessory's own `Pterm` ends `run` (`bdos/proc.c:604-617`). NewTOS builds the
+two parts that only *name* `run`: `*os_run` read by an accessory is EmuTOS's
+`run` (its page-0 cell is rewritten every time it gets the CPU,
+`tos-api/src/bdos/process.rs` `set_current`/`emutos_run`; the accdesk
+stand-in between programs, the EmuCON stand-in while EmuCON runs), and a
+process it `Pexec`s gets `p_parent = run` (`bdos/proc.c:541`) while that
+child's `Pterm` still resumes the accessory. Everything else stays with the
+accessory itself: memory ownership and pool choice (its own `p_flags`),
+protection (its rights, and those its children inherit, E5), the current
+drive and directory, the DTA, the standard handles, file ownership, the
+environment, handles and directories its children copy, and its own `Pterm`
+ends the accessory. E15 (only an owner frees) is unchanged. **Observable
+differences:** (1) memory an accessory allocates while program P is in front
+is the accessory's and survives P's `Pterm` (EmuTOS: freed with P — the
+pitfall `wait_for_accs(AP_MESAG)` and `ap_exit`'s `AP_ACCLOSE` wait mitigate,
+`aes/geminit.c:569-598`, `aes/gemaplib.c:249-262`); an accessory's `Mfree` of
+a block P owns answers `EIMBA` (E15; EmuTOS: freed); (2) an accessory's
+`Dsetdrv`/`Dsetpath`/`Fsetdta`/`Fforce`/`Fopen`/`Fcreate` change the
+accessory's state, not P's, and a file it opens is closed only by its own end;
+(3) its children inherit the accessory's environment, handles, directories
+and rights, so with memory protection on such a child cannot read the PD its
+`p_parent` names unless that PD's block is readable to it (P's TPA mode;
+see the memory-protection entry above); (4) an accessory's
+`Pterm` ends the accessory, never P; (5) if P ends while a child the
+accessory started still lives, `*os_run` names that child and then the
+stand-in, never P's freed PD (EmuTOS: `run` names the dead P after the
+child's end). Spec `docs/api/gemdos/process/_run-ownership-curdir.md` §6.6,
+`_parent-and-environment.md` §4.4; test
+`tos-api/tests/proc03_b5_accessory_run.rs`; QEMU probe
+`measurements/measurement-2026-10-19-proc03-b5/`.
 
 ## EmuTOS is the reference, not the template
 

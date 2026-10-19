@@ -1,0 +1,81 @@
+measurement-2026-10-19-proc03-b5 -- TASK/PROC03 B5, option 2 (user decision 2026-10-18, "Anwenderentscheidung B5"): while a desk
+accessory executes, *os_run and the p_parent of a process it Pexecs follow EmuTOS's `run` (program in front / its running child /
+NEWDESK / accdesk stand-in between programs); the child's Pterm still resumes the accessory; memory ownership, protection, drive/dir,
+DTA, std handles, files stay the accessory's (named deviation docs/COMPATIBILITY.md). Developer self-evidence; the Tester's verdict
+is separate.
+
+Date 2026-10-19, branch main, HEAD cfa8a8be + this change (uncommitted). Host macOS, QEMU -M raspi4b, -append "serial=on
+[memprot=strict|off]", one QEMU at a time, per-run APFS clones (cp -c) of one base card per content, deleted after each run.
+No SD card, Pi or TT touched; tools/make-sd-image.sh not used. Scratch = session scratchpad .../scratchpad/b5 (method/env.sh).
+Spec: docs/api/gemdos/process/_run-ownership-curdir.md §1.2/§1.3, §6.3 D-7/D-8/D-9, §6.6 (as built, new);
+_parent-and-environment.md §1.1, §4.4. EmuTOS pin 1a7484ab (bdos/proc.c:541,575,609; aes/gemasm.S:83-110; bios/startup.S:110-111).
+
+CHANGE (code)
+  tos-api/src/bdos/process.rs   Process::start_seq + note_started (proc_go's `run = p`), emutos_run() (live process started last,
+                                else standin::kernel_run()), run_for_caller() (accessory caller -> emutos_run), is_accessory(),
+                                set_current() rewrites an accessory's page-0 os_run cell with emutos_run() on every entry.
+  tos-api/src/bdos/process/pexec.rs   write_parent: p_parent/launch_parent = run_for_caller(caller); note_started(child).
+                                      memprot::on_launch still with the real caller (rights stay the accessory's).
+  tos-api/src/bdos/process/pterm.rs   terminate_inner clears start_seq before RUN goes back to the parent.
+  comments: kernel/src/arch/aarch64/exceptions.rs (handle_pexec), loader.rs (populate_sysvars), standin.rs (module doc).
+  test: tos-api/tests/proc03_b5_accessory_run.rs (6 cases, new).
+
+METHOD
+  method/b5probe.c, build-b5.sh, card.sh   B5Z.NAP (#Z: sends its PD to the accessory by appl_write 0x7B50, waits for the reply
+                           0x7B51; also the Pexec kid, role 'K' = "p_parent == expected run"), B5ACC.NAC (accessory: init phase,
+                           Z phase on the message, desk phase on a 1.5 s timer after Z), B5ACCD.NAC (= B5ACC + B5_DEREF: dereferences
+                           the desk-phase run PD; only on the memprot=off card). Expectations in the source header.
+  method/build-kernels.sh, checks.sh, mkcard.sh, runts-mode.sh, regress/, emucon.script  copied from
+                           measurement-2026-10-18-proc03-s1/method (env.sh: HEADREV=cfa8a8be, scratch b5).
+  method/s1/               PROC03 stage-1 probe, copied unchanged from measurement-2026-10-18-proc03-s1/method (build path fixed for
+                           the subdirectory), run on the inj kernel.
+  method/a113/             A113 idprobe, copied from measurement-2026-10-17-a113-fix/method (serial/sdk paths fixed).
+  method/desk-acc.sh       NEWDESK + SYSACC.NAC (measurement-2026-10-13-libc-tty-acceptance/bin), m113 desk.inf, head vs wt.
+  method/reg.sh            the regression sequence; method/virt-smoke.sh qemu-virt boot (copied from a113-fix).
+
+RED  (serial/red-head-{on,strict,off}.log; kernel8-head-plain 9c72fd56..., = HEAD)
+  host: checks/red-host-b5.txt -- 1 passed / 5 failed (os_run cell not written, kid p_parent = accessory).
+  probe, identical in all three modes: ACC RESULT fails=5, Z RESULT fails=1:
+    init: *os_run = own PD 0x01970000 (FAIL "!= own PD"); Z: *os_run = own PD (FAIL), kid p_parent = accessory PD (FAIL, rc 0x43),
+    *os_run after kid (FAIL); desk: never anything but the own PD -> "run became the desktop within 20 timer events" FAIL.
+
+GREEN (serial/green-wt-{on,strict,off}.log; kernel8-wt-plain 789e1e15...)
+  host: checks/green-host-b5.txt -- 6/6.
+  probe: ACC RESULT fails=0 and Z RESULT fails=0 in on, strict and off; 0 FAIL lines, 0 EXC/PANIC.
+    init: *os_run = 0x001c1300 = accdesk stand-in (boot line "[proc] stand-in PDs ... accdesk 0x001c1300"), its shape D-1/D-2,
+          accdesk -> AES -> initial -> 0; kid p_parent 0x001c1300, rc 0x42 back to the accessory; *os_run unchanged after.
+    Z:    *os_run = Z's PD 0x01a22000 while Z waits in evnt_mesag; Fgetdta = own p_dta (deviation); Malloc ok; kid p_parent
+          0x01a22000, rc 0x42; *os_run = Z after the kid.
+    desk: *os_run = 0x01a3e000 = NEWDESK (launched in slot 1 entry 0x1a3f000 after Z); kid p_parent = it, rc 0x42; the Z-phase
+          block intact after Z's Pterm, Mfree = 0 (still the accessory's); memprot=off (B5ACCD): run PD p_lowtpa == PD, p_parent
+          == accdesk 0x001c1300.
+
+STATIC CHECKS (checks/wt-*.txt, final code)              baseline (brief)   this tree
+  host tests (cargo xtask test) pass/fail/ignored         1474/0/1           1480/0/1 (+6: proc03_b5_accessory_run.rs)
+  release warnings tos-api / kernel, rpi4 and qemu-virt   64/94              64/94 both, 0 errors
+  clippy tos-api / kernel, rpi4 and qemu-virt             76/125             76/125 both (no hit in the touched files)
+  desk drift probe                                         0                  0
+  SDK host tests                                           20/0/0             20/0/0
+
+REGRESSION (serial/, wt = kernel8-wt-*, head = kernel8-head-*)
+  APITEST (#Z)               109/0/5 in on, strict, off (rg-wt-*-api.log).
+  S2ALL (on/off), S2ALLS     S2ALL: PASS, VFORK: PASS in every mode; strict S2ALLS: its 2 intended crashes (4 [crash] lines),
+  (strict, s2s kernel)       answered by the injector, as in measurement-2026-10-18-proc03-s1.
+  VFORKT alone               VFORK: PASS, all modes.
+  PROC03 stage-1 probe       AUTO 0, Z 0, Z2 0, EMU 0 fails in all modes; ACC fails=1 = the one intended change: its kid's
+  (s1-wt-*.log, inj kernel)  "p_parent == caller PD" now reads 0x001c2300 = accdesk (the accessory runs between programs), was the
+                             accessory's PD; that s1 check encoded the pre-B5 behaviour ("caller = accessory today, B5 open").
+  A113 idprobe               probe lines identical to measurement-2026-10-17-a113-fix/serial/idprobe-green.log (timestamps cut),
+  (idprobe-wt.log)           same probe binaries (probes-wt.sha256 = a113 probes-green.sha256), 0 EXC/PANIC.
+  NEWDESK + SYSACC           screendumps t25/t40 byte-identical head vs wt in on/strict/off (a3bd102e...); serial identical with
+  (rg-*-dacc.log)            addresses masked (the kernel image is 4 KiB longer, the stand-in page moved 0x1c0000 -> 0x1c1000).
+  TeraDesk -> F1 -> QED      QED menu bar at t25/t40; screendumps byte-identical head vs wt in all modes (5d8e72ff..., the same
+  (rg-*-tdqed.log)           hash as measurement-2026-10-18-proc03-s1); serial identical except injector tick stamps (+-3 ticks).
+  qemu-virt boot             serial/virt-smoke-serial.log: desktop up, 0 EXC/PANIC (kernel-virt-wt 8c30cac9...).
+
+BINARIES (not kept): checks/kernels.sha256, checks/programs.sha256, checks/screendumps.sha256.
+
+NOT RUN: real Pi 4, memprot=verify, an accessory opened from the menu by a click (the probe's phases are message/timer driven),
+an accessory running while the in-kernel EmuCON is in front (code path emutos_run -> EmuCON stand-in; not tested), the case
+"program ends while an accessory's child still lives" (host reasoning only, spec §6.6).
+Scratch (.../scratchpad/b5, 4.9 GB: scratch trees, cards, kernels, screendumps) deleted at the end; sha256 in checks/.

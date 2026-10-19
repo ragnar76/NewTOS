@@ -302,6 +302,22 @@ pub struct Process {
     /// [`pexec::set_kernel_parent`]: pexec::set_kernel_parent
     pub launch_parent: AtomicU32,
 
+    /// Start order of this process — the value of a kernel-wide counter at
+    /// the moment it was started through [`pexec::set_parent`] /
+    /// [`pexec::set_kernel_parent`] (EmuTOS `proc_go`, which ends with `run =
+    /// p`, `bdos/proc.c:575`). `0` for a process that was never started that
+    /// way (a desk accessory — never `proc_go`ed — or a selftest launch) and
+    /// again from the moment its `Pterm` begins (`run = run->p_parent`,
+    /// `:609`, before `ixterm`).
+    ///
+    /// [`emutos_run`] is the live process with the largest value: EmuTOS's
+    /// `run` as an accessory sees it (TASK/PROC03 B5,
+    /// `_run-ownership-curdir.md` §1.2/§1.3).
+    ///
+    /// [`pexec::set_parent`]: pexec::set_parent
+    /// [`pexec::set_kernel_parent`]: pexec::set_kernel_parent
+    pub start_seq: AtomicU64,
+
     /// The parent's cooperative run-set membership ([`Self::runnable`]) at the
     /// instant it launched **this** child, so the child's `Pterm` can put it
     /// back exactly as it found it.
@@ -797,6 +813,7 @@ impl Process {
             sp_el0: AtomicU64::new(0),
             parent_slot: AtomicU32::new(NO_PARENT),
             launch_parent: AtomicU32::new(0),
+            start_seq: AtomicU64::new(0),
             parent_runnable: AtomicBool::new(false),
             parent_frame: ParentFrame::zeroed(),
             parent_l0_pa: AtomicU64::new(0),
@@ -898,9 +915,111 @@ pub fn current_kva() -> *mut BasePage {
 /// address, [`pd_of`]; `null` = no process). Atomic so the
 /// SVC handler that reads [`current`] sees a consistent value at every
 /// moment.
+///
+/// Every way a process gets the CPU ends here (a launch, a `Pexec`, a
+/// `Pterm` return, a scheduler switch, the return from a kernel park). When
+/// `bp` is a **desk accessory**, its `os_run` cell is set to [`emutos_run`]
+/// first (TASK/PROC03 B5, D-7): in EmuTOS an accessory is entered by a plain
+/// `jmp` from an AES context and `run` stays whatever it was
+/// (`aes/gemasm.S:83-110`, `_run-ownership-curdir.md` §1.2-§1.3), so
+/// `*os_run` — one global word there (`bios/startup.S:110-111`) — names the
+/// program in front, or the accdesk PD between programs. NewTOS's cell is
+/// per process (page 0, [`loader::OS_RUN_CELL_VA`]); `run` can only change
+/// by a `Pexec` or `Pterm`, each of which ends here again, so refreshing the
+/// cell on entry keeps it right for as long as the accessory runs. Only the
+/// cell follows `run`: [`RUN`] — and with it memory ownership, protection,
+/// the current directory, the DTA, the handles and the files — stays the
+/// accessory (user decision 2026-10-18, `docs/COMPATIBILITY.md`).
 #[inline]
 pub fn set_current(bp: *mut BasePage) {
+    if let Some(slot) = slot_for(bp) {
+        if is_accessory(slot) {
+            write_os_run_cell(slot, emutos_run());
+        }
+    }
     RUN.store(bp, Ordering::Release);
+}
+
+/// Is `slot` a loaded desk accessory (`crate::aes::acc`, the list
+/// `kernel/src/accs.rs` `load_one_acc` registers into)?
+#[inline]
+pub fn is_accessory(slot: usize) -> bool {
+    crate::aes::acc::is_process(slot)
+}
+
+/// Kernel-wide start counter behind [`Process::start_seq`].
+static START_SEQ: AtomicU64 = AtomicU64::new(0);
+
+/// Record that `slot` has been started (EmuTOS `proc_go`, `run = p`,
+/// `bdos/proc.c:575`): it is the innermost started process from now on
+/// ([`emutos_run`]). Called by `pexec::write_parent`, i.e. for every process
+/// that gets a `p_parent` at its start.
+pub(crate) fn note_started(slot: usize) {
+    if let Some(p) = PROCESS_TABLE.get(slot) {
+        let n = START_SEQ.fetch_add(1, Ordering::AcqRel) + 1;
+        p.start_seq.store(n, Ordering::Release);
+    }
+}
+
+/// EmuTOS's `run` as the GEMDOS of an executing desk accessory sees it
+/// (TASK/PROC03 B5, `_run-ownership-curdir.md` §1.2/§1.3): the PD of the
+/// **innermost started process** — the program in front, or its running
+/// `Pexec` child, or the child an accessory started — or, with no started
+/// process alive, the stand-in [`standin::kernel_run`] (the accdesk PD
+/// between programs, the EmuCON PD while EmuCON runs).
+///
+/// EmuTOS's `run` is a stack: `proc_go` pushes (`run = p`, `bdos/proc.c:575`)
+/// and `xterm` pops (`run = run->p_parent`, `:609`); accessories never touch
+/// it. NewTOS keeps no such variable — its [`RUN`] is the process that has
+/// the CPU, an accessory included — and derives the value instead: the live
+/// process started last ([`Process::start_seq`]). For processes ending in
+/// the reverse order of their starts, which a synchronous `Pexec` gives, the
+/// two are the same. When a program ends while a child an accessory started
+/// still lives (EmuTOS: `run` names the child's `p_parent`, the dead
+/// program, after the child's end), this names the live child and then the
+/// stand-in — never a freed PD.
+pub fn emutos_run() -> *mut BasePage {
+    let mut best: Option<(u64, usize)> = None;
+    for (i, p) in PROCESS_TABLE.iter().enumerate() {
+        let seq = p.start_seq.load(Ordering::Acquire);
+        if seq == 0 || p.read_state() == State::Free || p.basepage_kva.load(Ordering::Acquire).is_null() {
+            continue;
+        }
+        if best.is_none_or(|(b, _)| seq > b) {
+            best = Some((seq, i));
+        }
+    }
+    match best {
+        Some((_, i)) => pd_of(i),
+        None => standin::kernel_run(),
+    }
+}
+
+/// `run` for the `p_parent` of a process `caller` starts (EmuTOS `proc_go`,
+/// `p->p_parent = run`, `bdos/proc.c:541`): the caller's PD for a program;
+/// [`emutos_run`] for a desk accessory, whose calls execute with `run`
+/// unchanged (`_run-ownership-curdir.md` §1.3, TASK/PROC03 B5); the stand-in
+/// [`standin::kernel_run`] for a kernel caller (`null`).
+pub fn run_for_caller(caller: *mut BasePage) -> *mut BasePage {
+    if caller.is_null() {
+        return standin::kernel_run();
+    }
+    match slot_for(caller) {
+        Some(slot) if is_accessory(slot) => emutos_run(),
+        _ => caller,
+    }
+}
+
+/// Write `pd` into `slot`'s `os_run` cell (page 0, 8 bytes, upper half 0 —
+/// the form the loader writes, so a 4- and an 8-byte read both yield it).
+fn write_os_run_cell(slot: usize, pd: *mut BasePage) {
+    if let Some(p0) = mmu::page0_kva(slot) {
+        let off = loader::OS_RUN_CELL_VA as usize;
+        // SAFETY: `p0` is the slot's 4-KiB page 0 (kernel alias); the cell
+        // lies inside it (`loader`'s compile-time bound). Single CPU, trap /
+        // boot context, as every `set_current` caller.
+        unsafe { (p0.add(off) as *mut u64).write_unaligned(pd as u64 & 0xFFFF_FFFF) };
+    }
 }
 
 /// The second identity the running process owns memory under: the PD of the
@@ -1156,6 +1275,7 @@ pub fn free_slot(idx: usize) {
     p.sp_el0.store(0, Ordering::Release);
     p.parent_slot.store(NO_PARENT, Ordering::Release);
     p.launch_parent.store(0, Ordering::Release);
+    p.start_seq.store(0, Ordering::Release);
     p.parent_runnable.store(false, Ordering::Release);
     p.parent_frame.clear();
     p.parent_l0_pa.store(0, Ordering::Release);

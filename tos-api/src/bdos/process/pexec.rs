@@ -465,11 +465,16 @@ fn resolve_handle(handle: u64) -> Option<usize> {
 
 /// Record the launch linkage of `child` (EmuTOS `proc_go`,
 /// `bdos/proc.c:541` — `p->p_parent = run`): the child's `p_parent`
-/// becomes the caller's PD pointer, or, when the caller is no process (an
-/// EL1 caller such as the in-kernel EmuCON), the stand-in PD that is
-/// EmuTOS's `run` there — the EmuCON PD while EmuCON runs ([`write_parent`],
+/// becomes the caller's PD pointer; for a **desk accessory** caller
+/// EmuTOS's `run` instead — the program in front, or the accdesk PD between
+/// programs ([`super::run_for_caller`], TASK/PROC03 B5,
+/// `_run-ownership-curdir.md` §1.3); when the caller is no process (an EL1
+/// caller such as the in-kernel EmuCON), the stand-in PD that is EmuTOS's
+/// `run` there — the EmuCON PD while EmuCON runs ([`write_parent`],
 /// TASK/PPARENT, TASK/PROC03). The rights the child inherits follow the
-/// **real** caller: none from a kernel caller.
+/// **real** caller — the accessory itself; none from a kernel caller — as
+/// does its `Pterm` return (`parent_slot`, set by the caller of this
+/// function).
 ///
 /// # Safety
 ///
@@ -504,8 +509,11 @@ pub unsafe fn set_kernel_parent(child: usize) {
 }
 
 /// `p->p_parent = run` (EmuTOS `proc_go`, `bdos/proc.c:541`) with NewTOS's
-/// `run`: `parent_pd`, or — `null`, no process is running — the stand-in PD
-/// [`super::standin::kernel_run`] (still `0` before the stand-ins exist).
+/// `run` ([`super::run_for_caller`]): `parent_pd`; [`super::emutos_run`]
+/// when `parent_pd` is a desk accessory (TASK/PROC03 B5); or — `null`, no
+/// process is running — the stand-in PD [`super::standin::kernel_run`]
+/// (still `0` before the stand-ins exist). Then `run = p` (`:575`): the
+/// child is the innermost started process ([`super::note_started`]).
 ///
 /// # Safety
 ///
@@ -515,7 +523,7 @@ unsafe fn write_parent(child: usize, parent_pd: *mut BasePage) {
     if kva.is_null() {
         return;
     }
-    let run = if parent_pd.is_null() { super::standin::kernel_run() } else { parent_pd };
+    let run = super::run_for_caller(parent_pd);
     let value = run as u64 as tos_types::Long;
     // SAFETY: `kva` is the kernel alias of the child's live basepage;
     // `p_parent` is a plain 32-bit LONG (user addresses are below 4 GiB).
@@ -523,6 +531,8 @@ unsafe fn write_parent(child: usize, parent_pd: *mut BasePage) {
     // What `Pterm` compares the live field with (TASK/PROC03 B4,
     // `pterm::return_target`).
     PROCESS_TABLE[child].launch_parent.store(value as u32, Ordering::Release);
+    // `run = p` (`bdos/proc.c:575`): the innermost started process now.
+    super::note_started(child);
 }
 
 /// Release every slot holding a program that `owner` loaded with `PE_LOAD`

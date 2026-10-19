@@ -34,9 +34,11 @@
 //! (the accdesk and EmuCON PDs are rebuilt at every start, the AES PD's
 //! `p_cmdlin` is `ad_stail`, D-4, and the current drive and directories of
 //! whichever stand-in is the kernel's `run`, TASK/PROC04 point 2); programs
-//! cannot. They are **never** the running process: `RUN`, `os_run`, memory
-//! owner tags, `parent_slot` and the `Pterm` return path of a process do not
-//! see them (owner tags and `os_run` are TASK/PROC03 B5, not built).
+//! cannot. They are **never** the running process: `RUN`, memory owner tags,
+//! `parent_slot` and the `Pterm` return path of a process do not see them.
+//! A desk accessory's `os_run` cell and the `p_parent` of a process an
+//! accessory starts do: EmuTOS's `run` there is the accdesk PD between
+//! programs (TASK/PROC03 B5, `super::emutos_run`).
 //!
 //! They **are** `run` for the current drive and directory while kernel code
 //! is on the stack (`_run-ownership-curdir.md` §4.4, spec finding §6.2.4:
