@@ -1,35 +1,34 @@
-# NET01 — GENET-Ethernet (BCM2711) als Treiber im Kernel
+# NET01 — Netzwerk fuer NewTOS (Ziel Version 1.2): STinG/STiK-kompatibel
 
-Status: **OFFEN** · Prioritaet: **P3** · Typ: Hardwaretreiber (Track B)
+Status: **OFFEN — Vorrecherche** · Prioritaet: **P2 (Ziel 1.2, Pflicht)** · Typ: Erweiterung — Anwender 2026-10-20
 
-Abhaengigkeiten: —
+Anwender: Netzwerk ist fuer **1.2 absolut Pflicht**; WLAN waere lieber, aber fuer
+den Anfang sehr anspruchsvoll → zuerst kabelgebunden.
 
-## Sachverhalt
+## Richtung
 
-Fuer einen Netzstack braucht es zuerst eine Netzkarte. Die Pi 4 hat
-Broadcom GENET v5 (`bcm2711-genet`) fest auf dem SoC: MMIO, MDIO-PHY,
-DMA-Deskriptorringe, **kein** Firmware-Blob — im BCM2711-Datenblatt
-beschrieben und in `references/circle` implementiert. WLAN (CYW43455 ueber
-SDIO) braucht dagegen Firmware-Upload, `brcmfmac`-Protokoll und Supplicant
-— eigener, viel groesserer Brocken (NET06, spaeter).
+- Schnittstelle nach oben: **STinG/STiK** (Cookie `STiK`, Funktionstabelle) —
+  damit laufen vorhandene TOS-Netzprogramme nach Neuuebersetzung ohne MiNT
+  (Teli, Chatter, Fiffi, iFusion, Emailer/IConnect …).
+- Spaeter (2.0, FreeMiNT-Richtung): MiNT-Sockets; die STiK-Schnittstelle bleibt
+  ueber eine Bruecke wie FreeMiNTs GlueSTiK erhalten — keine Doppelarbeit.
 
-Es fehlen auch die Vorleistungen: Interrupt-Registrierung und
-DMA-faehiger/kohaerenter Speicher gibt es im Kernel noch nicht.
+## Quellen (docs.dev-docs.org, Kategorie Source Code)
 
-## Arbeit
+STinG v1.20 Quelltext (2019), STiK 2 Quelltext, STiK 'C' devkit v1.11,
+STiK 68K devkit, Draconis Socket-Library, EtherNE-Treiber (Beispiel fuer einen
+STinG-Treiber).
 
-1. Track B: GENET aus dem BCM2711-Datenblatt (`references/datasheets/`) und
-   Circle (`references/circle`, `lib/bcm54213.cpp` o. ae.) — Register,
-   Ringaufbau, MDIO, Link-Status. Linux nur als Querverweis.
-2. Vorleistung: IRQ-Registrierung (`kernel/src/arch/aarch64/`) und
-   kohaerenter DMA-Puffer (nicht-cachebar oder mit Cache-Pflege) — eigener
-   kleiner Abschnitt im Ticket-Abschluss.
-3. Treiber `kernel/src/drivers/bcm2711/genet.rs`: init, MAC-Adresse (Mailbox
-   `0x00010003`), Senden/Empfangen ueber Ringe, Link-Erkennung.
-4. Abnahme: auf echter Pi 4 Rahmen senden/empfangen (ARP-Anfrage sichtbar,
-   Gegenstelle antwortet — mit `tcpdump` am Switch belegt); QEMU `raspi4b`
-   emuliert GENET **nicht** → dort kein Test, ausdruecklich vermerken.
+## Vorrecherche (Researcher, kein Bau)
 
-## Arbeitsregel
+1. Lizenz von STinG und STiK (darf eine portierte Fassung verteilt werden?).
+2. Aufbau: Anteil C / 68000-Assembler, Modulstruktur (Kern, STX-Module,
+   Treiberschnittstelle nach unten), was davon NewTOS-seitig im Kern vs. als
+   Programm laufen soll.
+3. Hardware Track B: Ethernet der Pi 4 (GENET + BCM54213PE-PHY) — im
+   BCM2711-Datenblatt beschrieben? Sonst nur Circle/Linux als Querreferenz
+   (wie beim PM-Watchdog). Alternative USB-Ethernet-Adapter (USB ist vorhanden).
+4. WLAN (CYW43455 ueber SDIO, Firmware-Blob, WPA) — Aufwand grob einordnen, fuer spaeter.
+5. QEMU: welche Netzwerkgeraete bildet raspi4b nach (fuer Tests ohne Pi)?
 
-[Gemeinsame Regeln](README.md) gelten. Hardwareaktionen nur durch Lead/Anwender.
+[Gemeinsame Regeln](README.md) gelten.
