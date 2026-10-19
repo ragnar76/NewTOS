@@ -172,8 +172,7 @@ these sources is redistributed here (see
 by the SDK are pinned as upstream archives; versions and licences are listed
 in [`docs/sdk/09-port-material.md`](docs/sdk/09-port-material.md).
 
-NewTOS was built by Ingo Uhlemann with Claude Code (Anthropic). Project
-site: [newtosworld.de](https://newtosworld.de).
+NewTOS was built by Ingo Uhlemann with Claude Code (Anthropic).
 
 ## License
 

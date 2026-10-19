@@ -133,9 +133,9 @@ die laufen in dieser Version noch NICHT.
 6. Rueckmeldung
 ---------------
 
-Einfach ausprobieren (Anregungen in TESTANLEITUNG.TXT) und FEEDBACK.TXT ausfuellen
-(Antwort an die Mailingliste). Jede Rueckmeldung hilft — auch
-"alles lief".
+Einfach ausprobieren (Anregungen in TESTANLEITUNG.TXT) und FEEDBACK.TXT
+ausfuellen: als Antwort an die Mailingliste oder als Issue auf GitHub.
+Jede Rueckmeldung hilft, auch "alles lief".
 
 
 7. Lizenz und Quellen
@@ -143,10 +143,11 @@ Einfach ausprobieren (Anregungen in TESTANLEITUNG.TXT) und FEEDBACK.TXT ausfuell
 
 NewTOS steht unter der GNU GPL v2 oder spaeter. Die enthaltenen Programme
 stehen unter ihren eigenen Lizenzen (TeraDesk, QED, zView, Doom: GPL).
-Die vollstaendigen Quelltexte genau dieser Version (NewTOS, SDK und die
-Anpassungen der Programme) gibt es auf Anfrage ueber die Mailingliste. Die Raspberry-Pi-Firmware (start4.elf,
-fixup4.dat, .dtb) stammt von der Raspberry Pi Foundation und steht unter
-deren Lizenz (LICENCE.broadcom, liegt dem ZIP bei). DOOM1.WAD ist die frei weitergebbare
-Shareware-Episode von id Software.
+Die vollstaendigen Quelltexte (NewTOS, SDK und die Anpassungen der
+Programme) liegen auf https://github.com/tuxie01/NewTOS, Tag v0.6.
+Die Raspberry-Pi-Firmware (start4.elf, fixup4.dat, .dtb) stammt von der
+Raspberry Pi Foundation und steht unter deren Lizenz (LICENCE.broadcom,
+liegt dem ZIP bei). DOOM1.WAD ist die frei weitergebbare Shareware-
+Episode von id Software.
 
-Projektseite: https://newtosworld.de
+Projekt und Fehlermeldungen: https://github.com/tuxie01/NewTOS
