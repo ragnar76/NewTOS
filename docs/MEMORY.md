@@ -1109,8 +1109,9 @@ User decision 2026-10-06 (LDG design `docs/analysis/ldg-after-arch03-2026-10-06.
 4. The `N_P` pattern ("middle letter = role") does not fit `.NLD` (`N` + `LD`
    for LDG); the name follows the m68k suffix instead, as `.NAC` follows
    `.ACC`. Clients that search for modules by suffix (zView's `plugins.c`
-   compares the last three characters with `"ldg"`) get a toolchain overlay
-   for `.NLD`; the application source stays pristine (ADR-019 overlay rule).
+   compares the last three characters with `"ldg"`) get a per-program patch
+   file for `.NLD`; the upstream source stays unchanged (ADR-019 overlay rule,
+   reworded 2026-10-20: overlays are app patches, not toolchain fixes).
 
 ### Routing
 
@@ -1226,6 +1227,16 @@ never in the app. The one exception: genuine **m68k assembly** (inline `asm`/
 *every* toolchain avenue is exhausted do we even discuss an app-source change.
 This keeps QED an honest test that the toolchain builds real Atari software
 unmodified.
+
+> **Amended 2026-10-20 (user, SDK01; `docs/analysis/sdk-inventory-2026-10-20.md`).**
+> The rule above did not survive the LP64 pivot (ADR-020 superseded): QED,
+> TeraDesk and zView carry per-program patch files for LP64 widths (e.g. QED's
+> rewritten `memory.c`), not only m68k asm. Those are **app patches**, not
+> toolchain fixes, and the docs must say so. Rule as it stands: the upstream
+> sources are kept unchanged as archives; an issue every LP64 port would hit is
+> fixed once in the SDK (libc overlays, newtos-arch, headers, crt0); what one
+> program needs is a patch file in `sdk/overlays/<program>/` with a header
+> comment giving the reason.
 
 ### Verified
 

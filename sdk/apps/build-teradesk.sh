@@ -159,7 +159,7 @@ echo "compiled OK=$ok  FAILED=$fail  (of $n)"
 
 if [ "$fail" -ne 0 ]; then
     echo
-    echo "FAILED files (m68k asm -> overlay retarget; non-asm -> TOOLCHAIN gap, not a TeraDesk edit):"
+    echo "FAILED files (general LP64 issue -> fix once in the SDK; TeraDesk-specific -> patch file in sdk/overlays/teradesk/):"
     while IFS= read -r f; do
         o="$OBJ/$(echo "$f" | tr '/' '_' | sed 's,\.c$,.o,')"
         echo "  === $f ==="

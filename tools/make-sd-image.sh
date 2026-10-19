@@ -411,7 +411,7 @@ else
   echo "note: sdk/ldg/build/{EX_LIB.NLD,LDGTEST.NCP} not built; LDG proof skipped"
 fi
 
-# zView (TASK/ZVIEW-M4) — the z-tools image viewer, LDG version, built UNMODIFIED
+# zView (TASK/ZVIEW-M4) — the z-tools image viewer, LDG version, built from unchanged upstream sources plus per-program patch files (sdk/zview/overlay/)
 # apart from its toolchain overlays (sdk/zview/build-zview.sh,
 # docs/sdk/13-zview.md), WITHOUT the PDF module. C:\ZVIEW\ holds ZVIEW.NAP,
 # ZVIEW.RSC, ICONS\*.GOD (the browser icons, read through the GodPaint codec)
@@ -475,7 +475,7 @@ else
   echo "note: sdk/apps/coremark/build/{CORE,COREVAL}.NCP not built; C:\\COREMARK skipped (run sdk/apps/build-coremark.sh)"
 fi
 
-# QED (Atari GEM editor) — the first ported GEM application, compiled UNMODIFIED
+# QED (Atari GEM editor) — the first ported GEM application, compiled from unchanged upstream sources plus patch files
 # for NewTOS/AArch64 as **native LP64** (the app-ABI pivot: apps match the
 # kernel's native 64-bit ABI, so the app<->kernel width mismatch vanishes). Its
 # two 32-bit-assuming files (the private pool allocator memory.c and the bit-set
@@ -546,8 +546,9 @@ else
 fi
 
 # TeraDesk 4.08 (GEM desktop replacement) — the second ported GEM application,
-# compiled UNMODIFIED (two overlays: nf_ops.c NatFeats-not-present retarget,
-# window.h WDFLAGS 2-byte fix) as native LP64. Its dist/ is staged by
+# compiled from unchanged upstream sources plus seven patch files
+# (sdk/overlays/teradesk/, e.g. nf_ops.c NatFeats-not-present retarget,
+# window.h WDFLAGS 2-byte fix, main.c reboot widths) as native LP64. Its dist/ is staged by
 # sdk/apps/build-teradesk.sh: DESKTOP.NAP (the GEM program), desktop.rsc
 # (NRSC/LP64 for the kernel rsrc_load), icons.rsc (native-RSHDR for TeraDesk's
 # OWN xrsrc_load parser — NOT kernel-loadable), and cicons.rsc (the colour

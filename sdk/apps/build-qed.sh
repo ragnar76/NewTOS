@@ -147,7 +147,7 @@ done < "$COBJS_LIST"
 echo "compiled OK=$ok  FAILED=$fail  (of $n_cobjs)"
 if [ "$fail" -ne 0 ]; then
     echo
-    echo "QED files that FAILED to compile (each is a TOOLCHAIN gap to fix, NOT a QED edit):"
+    echo "QED files that FAILED to compile (general LP64 issue -> fix once in the SDK; QED-specific -> patch file in sdk/overlays/qed/):"
     while IFS= read -r f; do
         echo "  === $f ==="
         sed 's/^/      /' "$OBJ/${f%.c}.err" 2>/dev/null | head -20

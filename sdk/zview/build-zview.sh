@@ -29,7 +29,8 @@
 # licence: zview-sources.sha256), extracted pristine to
 # sdk/zview/z-tools-04805b7/ on first use or when the tarball is newer.
 #
-# ZVIEW AND THE CODECS STAY UNMODIFIED. The build compiles from a SHADOW
+# THE UPSTREAM ZVIEW AND CODEC SOURCES STAY UNMODIFIED (per-program patch
+# files live in overlay/). The build compiles from a SHADOW
 # TREE (build/tree = symlinks to the pristine files, the overlays from
 # sdk/zview/overlay/ symlinked over them -- the build-teradesk.sh model), so
 # a .c overlay replaces the pristine file for every translation unit. Each
