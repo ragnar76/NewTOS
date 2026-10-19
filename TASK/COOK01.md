@@ -1,6 +1,6 @@
 # COOK01 — `_MCH` = 0x00050000 ist die ARAnyM-Kennung
 
-Status: **OFFEN — klaeren** · Prioritaet: **P3** · Typ: Konformitaet — Hinweis von aussen (2026-10-19)
+Status: **ZURUECKGESTELLT** (Anwender 2026-10-20: aktuell vermutlich ohne Wirkung; Varianten 0xFFFFFFFF / Familie+Kennung / 0xFFFF+Kennung, Empfehlung 0xFFFFFFFF) · Prioritaet: **P3** · Typ: Konformitaet — Hinweis von aussen (2026-10-19)
 
 ## Befund
 
