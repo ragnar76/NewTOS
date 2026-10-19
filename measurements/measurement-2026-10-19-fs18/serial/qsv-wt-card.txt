@@ -1,0 +1,30 @@
+== C:/
+ Volume in drive : is FS18PRB    
+ Volume Serial Number is 6A05-14FC
+Directory for ::/
+
+CLIPBRD      <DIR>     1980-01-01   0:00 
+APPS         <DIR>     2026-10-19  13:18  Apps
+NEWDESK  INF       401 2026-10-17  12:00 
+        3 files                 401 bytes
+                         66 318 336 bytes free
+
+== C:/APPS/QED
+ Volume in drive : is FS18PRB    
+ Volume Serial Number is 6A05-14FC
+Directory for ::/APPS/QED
+
+QED      NAP    527208 2026-10-17  12:00 
+QS       PRG         4 1980-01-01   0:00 
+qed      rsc     41378 2026-10-17  12:00 
+        3 files             568 590 bytes
+                         66 318 336 bytes free
+
+== mtype APPS/QED/QS.PRG
+0000000    a   b   c   d                                                
+0000004
+== mtype APPS/QED/QS.BAK
+0000000    m   t   y   p   e   :       F   i   l   e       "   :   :   A
+0000020    P   P   S   /   Q   E   D   /   Q   S   .   B   A   K   "    
+0000040    n   o   t       f   o   u   n   d  \n                        
+0000052

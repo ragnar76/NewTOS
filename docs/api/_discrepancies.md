@@ -584,6 +584,15 @@ program relying on the buggy behaviour would already be corrupting directories
 on real TOS. Documented in `56-frename.md`; the `..`-update and `EINTRN` facts
 are corrected to match the source.
 
+**Superseded 2026-10-19 (TASK/FS18):** the `EACCDN` refusal was never built.
+Re-reading `xrename` showed the same-directory rename is *not* corrupting —
+it overwrites the name in place and the OFD stays valid (`fsdir.c:1076-1083`);
+only the cross-directory move leaves the OFD on the erased slot. NewTOS now
+renames in place like EmuTOS and, for a file moved across directories while
+open, points its OFDs at the new entry instead of refusing — `Frename`'s
+result stays EmuTOS's. Sanctioned deviation in `docs/COMPATIBILITY.md`;
+spec `56-frename.md` edge case 9.
+
 ---
 
 ## D-024: DTA public time/date/size are native (m68k big-endian) in the buffer

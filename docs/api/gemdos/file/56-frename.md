@@ -63,13 +63,21 @@ time/date, start cluster, and length.
 It then resolves the target directory `p2` (locking the source DND during the
 call so it is not scavenged) — failure → `EPTHNF`. Illegal characters in the new
 name → `EACCDN`. A different drive → `ENSAME`. If source and target are in the
-same directory (same start cluster) it simply overwrites the FCB name in place.
-If they differ, it prevents cycles (`is_subdir`, e.g. `a\b -> a\b\c` → `EACCDN`),
-`ixcreat`s a new entry in the target directory carrying the old
-time/date/cluster/length, erases the old entry (`0xE5`), and — for a folder move
-— updates the moved folder's `..` entry to point at the new parent and fixes the
-folder's attribute byte in the new parent (failures here → `EINTRN`). The FAT
-cluster chain is **not** copied; only the directory entry moves.
+same directory (same start cluster) it simply overwrites the eleven name bytes
+of the existing FCB in place (`fsdir.c:1076-1083`): slot, attribute, time/date,
+cluster and length are untouched, so the directory order is kept and an OFD
+open on the file still names the live entry. If they differ, it prevents cycles
+(`is_subdir`, e.g. `a\b -> a\b\c` → `EACCDN`), `ixcreat(p2,att)`s a new entry in
+the target directory — **any** failure of that call is answered `EPTHNF`
+(`fsdir.c:1014-1018`) — erases the old entry (`0xE5`), copies the old
+time/date/cluster/length into the new handle's DFD with `O_DIRTY`, and closes
+it: for a file through `xclose` → `ixclose(fd,0)`, which writes them to the new
+entry **and ORs `FA_ARCHIVE` into its attribute** (`fsopnclo.c:530-549`); for a
+folder through `ixclose(fd2,CL_DIR|CL_FULL)` (length written as 0, no archive
+bit) after updating the moved folder's `..` entry to the new parent and setting
+the folder's attribute byte in the new parent to `att` (failures here →
+`EINTRN`). The FAT cluster chain is **not** copied; only the directory entry
+moves.
 
 ---
 
@@ -119,9 +127,14 @@ cluster chain is **not** copied; only the directory entry moves.
 
 ### Side effects on global state
 
-- Same-directory: overwrites the FCB name in place (`bdos/fsdir.c:1077-1082`).
-- Cross-directory: creates a new directory entry, erases the old, updates a
-  moved folder's `..` and parent attribute byte (`bdos/fsdir.c:1005-1073`).
+- Same-directory: overwrites the eleven FCB name bytes in place
+  (`bdos/fsdir.c:1077-1082`); nothing else in the entry changes.
+- Cross-directory: creates a new directory entry (`ixcreat`: name, `att`,
+  `f_fill` zeroed, `fsopnclo.c:187-196`) carrying the old time/date, start
+  cluster and length; a moved **file** gains `FA_ARCHIVE` (`ixclose`,
+  `fsopnclo.c:541-545`), a moved folder keeps `att`; erases the old entry,
+  updates a moved folder's `..` and parent attribute byte
+  (`bdos/fsdir.c:1005-1073`).
 - For a folder rename, frees any stale DND for the old name
   (`bdos/fsdir.c:1089-1098`).
 
@@ -143,9 +156,15 @@ cluster chain is **not** copied; only the directory entry moves.
 | Illegal characters in the new name | `bdos/fsdir.c:985-986` | `EACCDN` (-36) |
 | Cross-device (different drive) | `bdos/fsdir.c:989-990` | `ENSAME` (-48) |
 | Cyclical move, **one level only** (`is_subdir`, e.g. `a\b → a\b\c`) | `bdos/fsdir.c:1002-1003` | `EACCDN` (-36) |
-| `ixcreat` of the new entry failed | `bdos/fsdir.c:1017-1018` | `EPTHNF` (-34) |
+| `ixcreat` of the new entry failed (cross-dir only): no name (`"C:\"`), a name starting with `.` (`fsopnclo.c:117-118`), no room — a full root cannot grow (`:172-176`) or a sub-directory cannot grow — or no free handle | `bdos/fsdir.c:1017-1018` | `EPTHNF` (-34) |
 | Can't erase old entry (cross-dir) | `bdos/fsdir.c:1023-1027` | `EACCDN` (-36) |
 | Can't update folder `..` / parent attribute (cross-dir folder) | `bdos/fsdir.c:1053-1064` | `EINTRN` (-65) |
+
+**Check order** (`fsdir.c:912-990`) — the first failing check answers:
+target exists → source directory → source entry → read-only source → target
+directory → illegal characters in the new name → other drive → (cross-dir)
+cycle → `ixcreat`. So `Frename("C:\NODIR\X","C:\EXISTS")` is `EACCDN`, and
+`Frename("C:\NOFILE","C:\NODIR\Y")` is `EFILNF`.
 
 **Error paths not in Compendium:** the `EINTRN` cases for a cross-directory
 folder move, and the "target already exists → `EACCDN`" precheck.
@@ -170,6 +189,13 @@ historical `Frename` corruption class this batch was asked to scrutinise).
 - **RO source:** renaming an `FA_RO` file returns `EACCDN` (-36).
 - **Cross-device:** `Frename(0, "A:\\F", "B:\\F")` returns `ENSAME` (-48).
 - **Missing source:** `Frename(0, "C:\\NONE", "C:\\X")` returns `EFILNF` (-33).
+- **In place:** files `A`, `B` in one folder, `Frename(A, C)` → the folder lists
+  `C`, `B` (same slot); a file renamed while open, then written and closed,
+  has the written length and data.
+- **Cross-dir empty name:** `Frename(0, "C:\\F\\X.TXT", "C:\\")` returns
+  `EPTHNF` (-34) and creates nothing (TASK/FS14).
+- **Archive bit:** a file with attribute `0x02` moved to another folder has
+  `0x22`; renamed within its folder it keeps `0x02`.
 
 ---
 
@@ -223,10 +249,37 @@ historical `Frename` corruption class this batch was asked to scrutinise).
    mid-operation (`bdos/fsdir.c:971-973,1012-1016`).
 
 9. **Open source files are not checked.** `xrename` does not verify that the
-   source is closed; renaming an open file leaves the OFD pointing at the erased
-   old entry, which can corrupt the directory on a later `Fclose`. Programs must
-   close before renaming. (NewTOS intends to *fix* this — see NewTOS notes and
-   the discrepancy log.)
+   source is closed. In the **same** directory this is harmless: the entry
+   keeps its slot, and the OFD's `ixclose` writes the length/cluster/time into
+   the renamed entry (`fsopnclo.c:530-549`). **Across** directories the OFD
+   keeps pointing at the erased old entry (`o_dirfil`/`o_dirbyt`); a later
+   dirty `Fclose` writes the start cluster and length into the erased slot,
+   while the moved entry keeps those of the move — data written after the move
+   is lost and its clusters leak. (Correction 2026-10-19, TASK/FS18: an
+   earlier draft called the same-directory case corrupting too.) NewTOS
+   deviation: see NewTOS notes and `docs/COMPATIBILITY.md`.
+
+10. **Check order.** The target-exists test comes before everything else, the
+    source before the target directory (see "Check order" above).
+
+11. **"Target exists" sees what `ixsfirst(p2, FA_SUBDIR)` sees.** `ixsfirst`
+    ORs `FA_ARCHIVE|FA_RO` into the mask (`fsdir.c:459-460`), and `match`
+    accepts an entry with attribute 0 or one sharing a bit with the mask
+    (`fsdir.c:1841-1847`): a target whose attribute is only
+    `FA_HIDDEN`/`FA_SYSTEM` (e.g. `0x02`) is **not** found, and the rename
+    proceeds — in the same directory it writes a second entry of that name,
+    across directories `ixcreat` deletes the hidden file first
+    (`fsopnclo.c:148-165`). Wildcards in `p2` match like `Fsfirst`. NewTOS:
+    not reproduced (any entry of that exact name is "existing" → `EACCDN`);
+    open, not part of FS18.
+
+12. **Over-long names.** `builds` truncates each part of the new name to 8.3
+    (`fsdir.c:737-795`). NewTOS' `fcb_name` refuses them with `EPTHNF`, as in
+    every other path call; open, not part of FS18.
+
+13. **A same-directory rename to an empty name** writes eleven blanks as the
+    name (`builds("")`); only the cross-directory case fails (`ixcreat`).
+    NewTOS matches both (TASK/FS06, FS14).
 
 ---
 
@@ -270,9 +323,24 @@ historical `Frename` corruption class this batch was asked to scrutinise).
 
 ## NewTOS implementation notes
 
-(Empty during Phase 00.)
+`tos-api/src/bdos/fs/file.rs` `frename` (TASK/FS18 + FS14, 2026-10-19): the
+EmuTOS check order; same-directory = the eleven name bytes overwritten in
+place; cross-directory = `ixcreat`-style entry (name, `att` | `FA_ARCHIVE` for
+files, zeroed `0x0C..0x15`, old time/date/cluster, length 0 for a folder), every
+`ixcreat` failure `EPTHNF`, old entry erased, `..` fixed. Tests
+`tos-api/tests/fs18_frename.rs`.
 
-PHASE-05: same algorithm. The **open-file rename corruption** (edge case 9) is
-**not** to be preserved — NewTOS will check the OFD chain and refuse (`EACCDN`)
-a rename of a file with an open OFD. That is a deliberate divergence from TOS
-bug-compat; it is logged in `docs/api/_discrepancies.md`.
+Additions over EmuTOS:
+- The cycle guard walks the whole ancestor chain (D-070), not one level.
+- The old name's VFAT long-name slots are erased with it — on the in-place
+  rename too, where they no longer match the new name (TASK/FS01 rule;
+  invisible to TOS, keeps `fsck_msdos` clean). Test
+  `tos-api/tests/fs18_frename_lfn.rs`.
+- **Open file moved across directories:** its OFDs are pointed at the new
+  entry (`move_ofds`), so the close of a handle written after the move lands
+  in the moved entry. EmuTOS loses that data (edge case 9). Sanctioned
+  deviation, `docs/COMPATIBILITY.md` (FS18). This replaces the Phase-00 plan
+  to refuse such a rename with `EACCDN` (D-023), which would have changed
+  `Frename`'s result for every program renaming an open file.
+- No handle is consumed by the cross-directory move (EmuTOS' `ixcreat` opens
+  one, so a full handle table makes it fail `EPTHNF`); not reproduced.

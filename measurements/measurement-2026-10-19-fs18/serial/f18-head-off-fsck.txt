@@ -1,0 +1,10 @@
+** /dev/rdisk13s1
+** Phase 1 - Preparing FAT
+** Phase 2 - Checking Directories
+** Phase 3 - Checking for Orphan Clusters
+Warning: Found orphan cluster(s)
+Fix?
+: no
+Warning: Found 6 orphaned clusters
+Warning: 22 files, 65244 KiB free (32622 clusters)
+fsck rc=206

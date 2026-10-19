@@ -424,7 +424,24 @@ pub fn erase_slot_with_lfn(vol: &Volume, start: u32, slot: u32) -> bool {
         return false;
     }
 
-    // Then its long-name chain, ordinal 1 upwards, walking backwards.
+    // Then its long-name chain.
+    erase_lfn_chain(vol, start, slot, sum);
+    true
+}
+
+/// Erase the long-name chain in front of directory slot `slot` whose slots
+/// carry the short-name checksum `sum` — the chain of the 8.3 name the slot
+/// held when `sum` was computed. Walks backwards from `slot - 1`, ordinal 1
+/// upwards, with the same well-formedness rules as [`erase_slot_with_lfn`]
+/// (live `FA_LFN` slot, matching checksum, expected ordinal, stop at
+/// `LFN_LAST`); a chain that does not match is left alone. The slot itself
+/// is not touched.
+///
+/// Used on its own by the same-directory `Frename`, which overwrites the 8.3
+/// name in place (EmuTOS `xrename`, `bdos/fsdir.c:1076-1083`): the old chain
+/// no longer matches the new name and would otherwise be left as an orphan
+/// (TASK/FS18, the FS01 rule).
+pub fn erase_lfn_chain(vol: &Volume, start: u32, slot: u32, sum: u8) {
     let mut ord = 1u8;
     let mut k = slot;
     let mut l = [0u8; ENTRY];
@@ -449,7 +466,6 @@ pub fn erase_slot_with_lfn(vol: &Volume, start: u32, slot: u32) -> bool {
         }
         ord += 1;
     }
-    true
 }
 
 /// Build a 32-byte FCB directory entry (name, attribute, time/date,

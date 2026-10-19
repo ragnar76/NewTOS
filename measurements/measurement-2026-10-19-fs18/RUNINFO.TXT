@@ -1,0 +1,55 @@
+measurement-2026-10-19-fs18 -- Developer: TASK/FS18 (Frename of an open file -> length 0, lost clusters) + TASK/FS14 (Frename across
+directories onto an empty name -> EmuTOS EPTHNF), red first, then the fix, then green + regression. Base HEAD 178a4581 (main).
+Files under change (UNCOMMITTED, sha256 in checks/wt-files.sha256): tos-api/src/bdos/fs/file.rs (frename, move_ofds, FA_ARCHIVE),
+tos-api/src/bdos/fs/dir.rs (erase_lfn_chain split out of erase_slot_with_lfn), new tests tos-api/tests/fs18_frename.rs (12) and
+fs18_frename_lfn.rs (1), docs/api/gemdos/file/56-frename.md, docs/COMPATIBILITY.md (sanctioned deviation FS18), docs/api/_discrepancies.md
+(D-023 superseded note). Nothing committed/stashed/checked out; docs/STATUS.md untouched.
+Host macOS; QEMU -M raspi4b -append serial=on [memprot=strict|off], one QEMU at a time, per-run APFS clones (cp -c) of one base card per
+content, fsck_msdos -n + mtools listing of every clone before deletion; private 64 MiB FAT16 images (labels FS18PRB / FS18API), no SD card,
+no Pi. Scratch = session scratchpad .../scratchpad/fs18 (method/env.sh), deleted at the end.
+Kernels (checks/kernels.sha256): release rpi4 from `git archive 178a4581` (side head) and the same + the working-tree tos-api files (side wt),
+SOURCE_DATE_EPOCH=1792368000 (method/build-kernels.sh); injector variants drn/trn/qsv via tools/inject-arm.py in scratch trees only.
+head plain = 02c3cda3... (identical to the ticket-review kernel of e8d245bd: only docs changed since), wt plain = 82d1e015...
+
+SOURCE (spec first)
+  EmuTOS references/emutos/bdos/fsdir.c:895-1101 xrename read completely, with fsopnclo.c ixcreat (99-213), xclose/ixclose (426-581),
+  fsdir.c ixsfirst (452-492), scan/match (1525-1600, 1802-1847). Spec corrections in 56-frename.md: check order; same-directory = only the
+  11 name bytes in place; cross-directory = ixcreat (f_fill zeroed) + O_DIRTY close -> a moved FILE gains FA_ARCHIVE, a folder keeps att
+  (length 0); every ixcreat failure -> EPTHNF (empty name, leading '.', full root, no handle); edge case 9 corrected (the same-directory
+  open rename is NOT corrupting in EmuTOS; the cross-directory one loses data); new edge cases 10-13 (order, ixsfirst attribute mask,
+  over-long names, same-dir empty name); NewTOS notes rewritten (D-023's EACCDN plan superseded).
+
+1 RED (before the fix)
+  hosttests/red-fs18.txt: `cargo test -p tos-api --test fs18_frename --test fs18_frename_lfn -- --test-threads=1` on the unchanged
+    product code: fs18_frename 2 passed / 10 failed, fs18_frename_lfn 0/1. Failures as predicted: open file renamed same dir -> read back
+    empty (length 0); order B,C instead of C,B; cross-dir open -> empty; FS14 "" -> 0 and ".Y" -> 0 instead of -34; full root -> -36
+    instead of -34; moved file attr 0x02 instead of 0x22; error order (-34 instead of -36 / -33); LFN chain left as orphan.
+  QEMU probe method/fs18.c -> C:\AUTO\F18.NCP (method/build-probe.sh, card.sh, run-probe.sh), kernel head, modes on/strict/off:
+    serial/f18-head-{on,strict,off}.log: "F18 RESULT fails=0x0000000c" each (12 FAIL lines, the same 12 in all modes), 0 EXC/PANIC;
+    fsck_msdos -n: "Found 6 orphaned clusters", rc=206 in all three (serial/f18-head-*-fsck.txt). Root listing showed a blank entry "<>".
+
+2 GREEN (after the fix)
+  hosttests/green-fs18.txt: 12/12 and 1/1 (also 5 repeated default-threaded runs of fs18_frename: 12/12 each).
+  QEMU probe, kernel wt plain, on/strict/off: serial/f18-wt-{on,strict,off}.log "F18 RESULT fails=0x00000000", 0 FAIL, 0 EXC/PANIC, desktop up;
+    fsck rc=0 in all three; card listing (serial/f18-wt-on-card.txt): R18A\KEEP.TXT 3000 bytes, R18C\E.TXT 3000 bytes, R18O order C.TXT, B.TXT,
+    R14\X.TXT still there, no blank entry in C:\.
+
+3 REGRESSION (wt)
+  method/checks.sh wt -> checks/wt-*: cargo xtask test 1493/0/1 (= 1480 + 13 new); release builds rpi4 and qemu-virt rc=0, warnings
+    kernel 94 / tos-api 64 on both (baseline 94/64); clippy kernel 125 / tos-api 76 on both boards (baseline), 0 hits in file.rs/dir.rs;
+    desk-drift-probe TOTAL 0; SDK host tests 20 passed 0 failed 0 skipped.
+  APITEST (method/regress/api-build.sh + api-card.sh, #Z card): serial/rg-wt-{on,strict,off}-api.log TOTAL 109 0 5 each, 0 EXC/PANIC,
+    fsck rc=0 each. (APITEST has no Frename case.)
+  Interactive (method/inter/, gen.py specs -> injector scripts, marker-keyed dumps in screendumps/, fsck + listing in serial/):
+    drn  NEWDESK: Ctrl-drag MOVE of C:\LONGNAME.TXT into C:\SUB\ (cross-directory Frename) + File/Show info (Ctrl+I) rename of
+         C:\README.TXT -> RENAMED.TXT (same-directory Frename). Card: SUB\LONGNAME.TXT and RENAMED.TXT with their contents, RENAMED.TXT
+         in README.TXT's old position in C:\ (in place); fsck rc=0, 0 EXC/PANIC. Dumps drn-wt-r2-info (FILE INFORMATION dialog) ... r4.
+    trn  TeraDesk: Show info (Ctrl+I) on C:\DELME.TXT, name -> RENAMED.TXT (showinfo.c frename -> x_rename -> Frename). Card: RENAMED.TXT
+         first in C:\ (DELME's slot), content intact; window shows RENAMED.TXT (trn-wt-t6-after); fsck rc=0, 0 EXC/PANIC.
+    qsv  QED: new text, save as C:\APPS\QED\QS.PRG, type, save over: QS.PRG = "abcd", fsck rc=0, 0 EXC/PANIC. NO QS.BAK: QED's default
+         save path (save_datei = Fcreate over the file) calls Frename only in back_up()/restore_back_up() when the text's local option
+         `backup` is set; a new text keeps the "*" options (backup FALSE, options.c:916-917) even when saved as .PRG. So QED's Frename
+         path was NOT exercised here.
+
+NOT RUN: real Pi 4; S2ALL/S2ALLS/VFORK and TeraDesk->F1->QED series (not in the brief); head side of the interactive runs; QED with
+  backup on; a folder moved while a file inside it is open; qemu-virt boot (built only).

@@ -899,6 +899,31 @@ written back before the chain is freed, so no cluster is left allocated. Spec
 `docs/api/gemdos/file/41-fdelete.md` edge case 3 and "PROC04 point 5"; tests
 `tos-api/tests/proc04_fdelete_open.rs`.
 
+**A file moved to another directory while open stays reachable through its
+handles** — TASK/FS18, 2026-10-19, from the user-approved FS18 assignment ("a
+cross-directory move keeps any open OFD consistent with where the entry now
+is"), confirmed by the user 2026-10-19 (same line as `Fdelete` variant (b):
+visible behaviour as EmuTOS, without the data loss). `Frename` itself is EmuTOS' `xrename`
+(`references/emutos/bdos/fsdir.c:895-1101`): in the **same** directory it only
+overwrites the name in place (`:1076-1083`), so an open file's OFD still names
+the live entry and nothing differs. **Across** directories EmuTOS makes a new
+entry (`ixcreat`, `:1014`), erases the old one (`:1021-1027`) and leaves every
+OFD open on the file pointing at the erased slot (`o_dirfil`/`o_dirbyt`): the
+`ixclose` of a handle written after the move stores its start cluster and length
+in the erased slot (`references/emutos/bdos/fsopnclo.c:530-549`), while the
+moved entry keeps the length (and, for a file that was empty, the start
+cluster 0) it had at the move — the data written afterwards is lost and its
+clusters leak. NewTOS points such OFDs at the new entry
+(`tos-api/src/bdos/fs/file.rs`, `move_ofds`). **Observable difference**, only
+for a file moved across directories while open and then written, or its
+`Fdatime` set, through such a handle: the moved entry gets the length, start
+cluster and time/date the handle leaves (EmuTOS: those of the move, the rest
+lost). `Frename`'s results, and everything for a closed file or a
+same-directory rename, are unchanged. Spec
+`docs/api/gemdos/file/56-frename.md` edge case 9 and "NewTOS implementation
+notes"; tests `tos-api/tests/fs18_frename.rs`
+(`cross_dir_rename_of_open_file_follows_the_entry`).
+
 **A desk accessory's GEMDOS calls act on the accessory; only `*os_run` and
 the `p_parent` of its children follow `run`** — user decision, 2026-10-18
 (TASK/PROC03 B5, option 2, "Anwenderentscheidung B5"; kernel memory follows

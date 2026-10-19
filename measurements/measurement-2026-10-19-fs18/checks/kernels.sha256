@@ -1,0 +1,7 @@
+6025fe58adec3f2a65a981f4b93321d6dec7e265f53300e45bc51b4735209fa7  bin/kernel-virt-wt.img
+02c3cda3cf470caa7414edb50516d4c56dc1f507a211bcfe8af1fa9509ba97eb  bin/kernel8-head-plain.img
+ecdd6523c7ec4848911955f6c2d0d6fd6cf30b9d759fed9f65f693c49dd5b7c0  bin/kernel8-wt-drn.img
+82d1e0154f36294551b98789f94bb78f21b9963f28ebfadbe2c9bba48349715f  bin/kernel8-wt-plain.img
+0caffe8ef0c11120e29661418349588b5606d0a0a18d4270381b413f26680cac  bin/kernel8-wt-qsv.img
+45bd5e50e1775cfd196b671cd97fe2ec02fa01dea16d633f120756c54753508f  bin/kernel8-wt-trn.img
+5d0ca9681bfb296c9db74a89eb03a9ff722009fd5333d13b91c27e87639e04f8  bin/kernel8-wt.img

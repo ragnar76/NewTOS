@@ -1,0 +1,208 @@
+319 |         tree[idx].ob_state |= SELECTED;
+2846 |         top += gl_hbox();
+122 | pub fn form_alert(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+214 | pub(crate) struct Aespb {
+525 | pub fn form_do(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+214 | pub(crate) struct Aespb {
+824 | pub fn form_error(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+214 | pub(crate) struct Aespb {
+962 | pub fn form_center(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+214 | pub(crate) struct Aespb {
+1017 | pub fn form_dial(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 214 | pub(crate) struct Aespb {
+1083 | pub fn form_button(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 214 | pub(crate) struct Aespb {
+1106 | pub fn form_keybd(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 214 | pub(crate) struct Aespb {
+511 | pub fn fsel_input(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+214 | pub(crate) struct Aespb {
+518 | pub fn fsel_exinput(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+214 | pub(crate) struct Aespb {
+322 | pub fn menu_bar(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+214 | pub(crate) struct Aespb {
+1036 | pub fn menu_icheck(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 214 | pub(crate) struct Aespb {
+1045 | pub fn menu_ienable(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 214 | pub(crate) struct Aespb {
+1057 | pub fn menu_tnormal(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 214 | pub(crate) struct Aespb {
+1067 | pub fn menu_text(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 214 | pub(crate) struct Aespb {
+1625 | pub fn menu_register(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 214 | pub(crate) struct Aespb {
+1802 | pub fn menu_popup(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 214 | pub(crate) struct Aespb {
+2132 | pub fn menu_settings(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 214 | pub(crate) struct Aespb {
+2413 | pub fn menu_attach(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 214 | pub(crate) struct Aespb {
+2462 | pub fn menu_istart(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 214 | pub(crate) struct Aespb {
+1121 | pub fn objc_draw(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 214 | pub(crate) struct Aespb {
+1323 | pub fn objc_offset(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 214 | pub(crate) struct Aespb {
+1347 | pub fn objc_add(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 214 | pub(crate) struct Aespb {
+1359 | pub fn objc_delete(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 214 | pub(crate) struct Aespb {
+1373 | pub fn objc_order(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 214 | pub(crate) struct Aespb {
+1518 | pub fn objc_change(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 214 | pub(crate) struct Aespb {
+1590 | pub fn objc_sysvar(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 214 | pub(crate) struct Aespb {
+1788 | pub fn objc_edit(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 214 | pub(crate) struct Aespb {
+2226 | pub fn objc_find(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 214 | pub(crate) struct Aespb {
+2192 | pub fn rsrc_load(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 214 | pub(crate) struct Aespb {
+2522 | pub fn rsrc_free(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 214 | pub(crate) struct Aespb {
+2844 | pub fn rsrc_gaddr(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 214 | pub(crate) struct Aespb {
+2875 | pub fn rsrc_saddr(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 214 | pub(crate) struct Aespb {
+2918 | pub fn rsrc_obfix(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 214 | pub(crate) struct Aespb {
+218 | pub fn scrp_read(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+214 | pub(crate) struct Aespb {
+229 | pub fn scrp_write(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+214 | pub(crate) struct Aespb {
+262 | pub fn scrp_clear(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+214 | pub(crate) struct Aespb {
+358 | pub fn shel_read(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+214 | pub(crate) struct Aespb {
+483 | pub fn shel_write(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+214 | pub(crate) struct Aespb {
+975 | pub fn shel_get(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+214 | pub(crate) struct Aespb {
+992 | pub fn shel_put(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+214 | pub(crate) struct Aespb {
+1040 | pub fn shel_find(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 214 | pub(crate) struct Aespb {
+1152 | pub fn shel_envrn(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 214 | pub(crate) struct Aespb {
+1223 | pub fn shel_rdef(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 214 | pub(crate) struct Aespb {
+1242 | pub fn shel_wdef(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 214 | pub(crate) struct Aespb {
+3315 | pub fn wind_create(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 214 | pub(crate) struct Aespb {
+3383 | pub fn wind_open(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 214 | pub(crate) struct Aespb {
+3508 | pub fn wind_close(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 214 | pub(crate) struct Aespb {
+3680 | pub fn wind_delete(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 214 | pub(crate) struct Aespb {
+3693 | pub fn wind_get(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 214 | pub(crate) struct Aespb {
+3920 | pub fn wind_set(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 214 | pub(crate) struct Aespb {
+4137 | pub fn wind_find(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 214 | pub(crate) struct Aespb {
+4151 | pub fn wind_update(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 214 | pub(crate) struct Aespb {
+4277 | pub fn wind_calc(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 214 | pub(crate) struct Aespb {
+4294 | pub fn wind_new(pb: &Aespb) {
+note: but type `Aespb` is only usable at visibility `pub(crate)`
+ 214 | pub(crate) struct Aespb {
+772 | pub fn vsc_form(pb: &Vdipb, backend: &dyn RasterBackend) {
+note: but type `Vdipb` is only usable at visibility `pub(crate)`
+ 97 | pub(crate) struct Vdipb {
+815 | pub fn v_show_c(pb: &Vdipb, backend: &dyn RasterBackend) {
+note: but type `Vdipb` is only usable at visibility `pub(crate)`
+ 97 | pub(crate) struct Vdipb {
+898 | pub fn vq_mouse(pb: &Vdipb) {
+note: but type `Vdipb` is only usable at visibility `pub(crate)`
+ 97 | pub(crate) struct Vdipb {
+937 | pub fn vex_butv(pb: &Vdipb) {
+note: but type `Vdipb` is only usable at visibility `pub(crate)`
+ 97 | pub(crate) struct Vdipb {
+941 | pub fn vex_motv(pb: &Vdipb) {
+note: but type `Vdipb` is only usable at visibility `pub(crate)`
+ 97 | pub(crate) struct Vdipb {
+945 | pub fn vex_curv(pb: &Vdipb) {
+note: but type `Vdipb` is only usable at visibility `pub(crate)`
+ 97 | pub(crate) struct Vdipb {
+967 | pub fn vex_wheelv(pb: &Vdipb) {
+note: but type `Vdipb` is only usable at visibility `pub(crate)`
+ 97 | pub(crate) struct Vdipb {
+992 | pub fn vex_timv(pb: &Vdipb) {
+note: but type `Vdipb` is only usable at visibility `pub(crate)`
+ 97 | pub(crate) struct Vdipb {
+    Finished `test` profile [optimized + debuginfo] target(s) in 0.00s
+     Running tests/fs18_frename.rs (target/debug/deps/fs18_frename-fc8fdf9b1a5f97c9)
+running 12 tests
+test cross_dir_folder_move_keeps_folder_attribute ... ok
+test cross_dir_rename_into_full_root_is_epthnf ... ok
+test cross_dir_rename_of_open_file_follows_the_entry ... ok
+test cross_dir_rename_sets_archive_and_keeps_stamp ... ok
+test cross_dir_rename_to_dot_name_is_epthnf ... ok
+test cross_dir_rename_to_empty_name_is_epthnf ... ok
+test same_dir_rename_keeps_attribute_and_stamp ... ok
+test same_dir_rename_keeps_directory_order ... ok
+test same_dir_rename_of_open_file_keeps_its_data ... ok
+test same_dir_rename_of_open_file_then_extend ... ok
+test source_is_checked_before_the_target_directory ... ok
+test target_exists_is_checked_before_the_source ... ok
+test result: ok. 12 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+     Running tests/fs18_frename_lfn.rs (target/debug/deps/fs18_frename_lfn-8bbca607655f075a)
+running 1 test
+test rename_erases_the_old_long_name_chain ... ok
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s

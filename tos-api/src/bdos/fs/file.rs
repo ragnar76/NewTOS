@@ -33,6 +33,8 @@ const NUMSTD: u16 = 6;
 const OPEN_FILES: usize = 75;
 /// `FA_RO` read-only attribute bit.
 const FA_RO: u8 = 0x01;
+/// `FA_ARCHIVE` attribute bit (EmuTOS `include/bdosdefs.h:41`).
+const FA_ARCHIVE: u8 = 0x20;
 
 /// Open File Descriptor — reduced EmuTOS `OFD`.
 #[derive(Clone, Copy)]
@@ -40,8 +42,8 @@ struct Ofd {
     /// Volume, start cluster, length, `O_DIRTY` and the position fields
     /// `o_bytnum`/`o_curcl`/`o_currec`/`o_curbyt` (FS08, [`fsio`]).
     s: Stream,
-    /// Drive the file lives on (recorded for future open-file tracking).
-    #[allow(dead_code)]
+    /// Drive the file lives on (matched by [`move_ofds`] when `Frename`
+    /// moves the entry).
     drive: u16,
     /// First cluster of the directory holding this file's FCB
     /// (0 = root), and the raw slot within it (for size/cluster
@@ -885,8 +887,33 @@ pub fn fattrib(args: &TrapArgs) -> Long {
     mode as Long
 }
 
-/// `Frename` (0x56) — rename/move a file. `x0` = `n` (unused historical
-/// word), `x1` = source path, `x2` = destination path.
+/// `Frename` (0x56) — rename/move a file or folder. `x0` = `n` (unused
+/// historical word), `x1` = source path, `x2` = destination path.
+///
+/// EmuTOS `xrename` (`bdos/fsdir.c:895-1101`, spec
+/// `docs/api/gemdos/file/56-frename.md`):
+///
+/// * the checks run in its order — target exists (`EACCDN`), source
+///   directory (`EPTHNF`), source entry (`EFILNF`), read-only source
+///   (`EACCDN`), target directory (`EPTHNF`), illegal characters in the new
+///   name (`EACCDN`), other drive (`ENSAME`);
+/// * **same directory**: only the eleven name bytes of the existing entry are
+///   overwritten, in place (`fsdir.c:1076-1083`) — slot, attribute,
+///   time/date, cluster and length stay, so the directory order is kept and
+///   an open file's OFD still names the live entry (TASK/FS18);
+/// * **across directories**: the new entry is made like `ixcreat(p2,att)`
+///   does it (`fsdir.c:1014`, `fsopnclo.c:99-213`) and every failure of that
+///   step is `EPTHNF` (`fsdir.c:1017-1018`, TASK/FS14); it carries the old
+///   time/date, cluster and length, and a *file* gains `FA_ARCHIVE` from the
+///   `xclose` of the new handle (`ixclose` with `O_DIRTY`,
+///   `fsopnclo.c:541-545`); the old entry is erased, a moved folder's `..`
+///   is pointed at the new parent.
+///
+/// NewTOS additions: a moved folder's cycle check walks the whole ancestor
+/// chain (D-070); the old name's VFAT long-name slots are erased with it
+/// (TASK/FS01 rule); and an OFD open on a file moved across directories
+/// follows the entry (`docs/COMPATIBILITY.md`, FS18) where EmuTOS leaves it
+/// on the erased slot.
 pub fn frename(args: &TrapArgs) -> Long {
     // Path argument(s) in the caller's space (ARCH03 3a, `fs::path_arg`).
     let mut src_buf: super::PathBuf = [0; super::PATH_ARG_MAX];
@@ -902,39 +929,30 @@ pub fn frename(args: &TrapArgs) -> Long {
         Err(_) => return crate::uaccess::FAULTED,
     };
 
-    // Both the source and target directory portions resolve to `EPTHNF` on
-    // failure, an unmountable drive included (EmuTOS `xrename`: `findit(p1)`
-    // and `findit(p2)` NULL → `EPTHNF`, `fsdir.c:916,975`).
+    // The destination directory, with the *raw* final component kept so the
+    // illegal-character check sees the user's new name. Resolved once here;
+    // a failure is only reported after the source checks below.
+    let target = path::resolve_parent(dst);
+
+    // 1. The target must not exist — EmuTOS asks this first, before it even
+    //    looks at the source (`ixsfirst(p2,FA_SUBDIR,NULL)`, `fsdir.c:912-913`).
+    //    A target whose directory does not resolve does not exist.
+    if let Ok((vol2, parent2, dcomp)) = &target {
+        if let Some(n2) = dir::fcb_name(dcomp) {
+            if dir::find_in_dir(vol2, *parent2, &n2).is_some() {
+                return EACCDN;
+            }
+        }
+    }
+
+    // 2. The source: its directory (`findit(p1)` NULL → `EPTHNF`, an
+    //    unmountable drive included, `fsdir.c:915-917`), the entry itself
+    //    (files and folders, not labels: `FA_NORM|FA_SUBDIR`, `:936-938`),
+    //    and no read-only source (`:943-944`).
     let (vol1, parent1, name1) = match path::findit(src) {
         Ok(x) => x,
         Err(e) => return path::drive_notfound(e, EPTHNF),
     };
-    // Resolve the destination directory but keep the *raw* final component
-    // so the illegal-character check sees the user's new name.
-    let (_vol2, parent2, dcomp) = match path::resolve_parent(dst) {
-        Ok(x) => x,
-        Err(e) => return path::drive_notfound(e, EPTHNF),
-    };
-    // F7: the *new* name may not contain illegal characters (EmuTOS
-    // `xrename` `contains_illegal_characters(s2)` → `EACCDN`, `fsdir.c:985`).
-    // Checked before the cross-device / target-exists checks, matching the
-    // source order.
-    if path::contains_illegal_characters(dcomp) {
-        return EACCDN;
-    }
-    let name2 = match dir::fcb_name(dcomp) {
-        Some(n) => n,
-        None => return EPTHNF,
-    };
-    // Cross-device renames are not supported.
-    if path::split_drive(src).0 != path::split_drive(dst).0 {
-        return ENSAME;
-    }
-    // Destination must not already exist.
-    if dir::find_in_dir(&vol1, parent2, &name2).is_some() {
-        return EACCDN;
-    }
-    // Source must exist and not be read-only.
     let entry = match dir::find_in_dir(&vol1, parent1, &name1) {
         Some(e) => e,
         None => return EFILNF,
@@ -942,56 +960,117 @@ pub fn frename(args: &TrapArgs) -> Long {
     if entry.attrib & FA_RO != 0 {
         return EACCDN;
     }
-    // Cycle guard (before any mutation): a cross-directory move of a *folder*
-    // into itself or one of its own descendants would splice the directory
-    // tree into a loop — `fix_dotdot` below would then chain the folder's
-    // `..` back into its subtree, orphaning the clusters between (the
-    // fsck-reproduced corruption). EmuTOS' `is_subdir` only catches the
-    // single immediate level (`fsdir.c:1002`, gap D-070); NewTOS walks the
-    // full `..` ancestor chain of the target parent, so one-, two- and
-    // deeper-level self-nesting are all refused with `EACCDN`. A legitimate
-    // cross-directory move (target parent not under the source) is unaffected.
-    if entry.attrib & dir::FA_SUBDIR != 0
-        && parent1 != parent2
-        && is_self_or_descendant(&vol1, entry.cluster, parent2)
-    {
+
+    // 3. The target directory (`findit(p2)` NULL → `EPTHNF`, `fsdir.c:975-976`),
+    //    the new name's characters (`:985-986`), the drive (`:989-990`).
+    let (_vol2, parent2, dcomp) = match target {
+        Ok(x) => x,
+        Err(e) => return path::drive_notfound(e, EPTHNF),
+    };
+    if path::contains_illegal_characters(dcomp) {
         return EACCDN;
     }
+    let src_drive = path::split_drive(src).0;
+    if src_drive != path::split_drive(dst).0 {
+        return ENSAME;
+    }
+    // EmuTOS `builds` would truncate an over-long component to 8.3; NewTOS'
+    // `fcb_name` refuses it, as in every other path call.
+    let name2 = match dir::fcb_name(dcomp) {
+        Some(n) => n,
+        None => return EPTHNF,
+    };
     let src_slot = match dir::slot_of(&vol1, parent1, &name1) {
         Some(s) => s,
         None => return EFILNF,
     };
-    // Copy the FCB into a free slot of the destination directory with the
-    // new name, then erase the source entry.
-    let mut fcb = [0u8; 32];
-    if !dir::read_slot(&vol1, parent1, src_slot, &mut fcb) {
-        return EACCDN;
-    }
-    fcb[0..11].copy_from_slice(&name2);
-    // F5: grow a full non-root destination directory (the root stays fixed).
-    let dst_slot = match dir::find_free_slot_grow(&vol1, parent2) {
-        Some(s) => s,
-        None => return EACCDN, // destination directory full
-    };
-    if !dir::write_slot(&vol1, parent2, dst_slot, &fcb) {
-        return EACCDN;
-    }
-    let mut old = [0u8; 32];
-    if dir::read_slot(&vol1, parent1, src_slot, &mut old) {
-        old[0] = 0xE5;
-        dir::write_slot(&vol1, parent1, src_slot, &old);
-    }
-    // Moving a *folder* into a *different* directory leaves its `..` entry
-    // pointing at the old parent. Rewrite it to the new parent's start
-    // cluster (0 when the new parent is the root, per FAT convention).
-    // File renames and same-directory folder renames need no such fix-up.
-    if entry.attrib & dir::FA_SUBDIR != 0 && parent1 != parent2 && !fix_dotdot(&vol1, entry.cluster, parent2) {
-        return EINTRN;
+
+    if parent1 == parent2 {
+        // Same directory: overwrite the name in place (`fsdir.c:1076-1083`).
+        // Its long-name chain belonged to the old name; erase it so no orphan
+        // is left behind (FS01 rule, invisible to TOS).
+        let mut fcb = [0u8; 32];
+        if !dir::read_slot(&vol1, parent1, src_slot, &mut fcb) {
+            return EACCDN;
+        }
+        let mut old11 = [0u8; 11];
+        old11.copy_from_slice(&fcb[0..11]);
+        fcb[0..11].copy_from_slice(&name2);
+        if !dir::write_slot(&vol1, parent1, src_slot, &fcb) {
+            return EACCDN;
+        }
+        dir::erase_lfn_chain(&vol1, parent1, src_slot, dir::lfn_checksum(&old11));
+    } else {
+        // Cycle guard (before any mutation): a cross-directory move of a
+        // *folder* into itself or one of its own descendants would splice the
+        // directory tree into a loop — `fix_dotdot` below would then chain the
+        // folder's `..` back into its subtree, orphaning the clusters between.
+        // EmuTOS' `is_subdir` only catches the single immediate level
+        // (`fsdir.c:1002`, gap D-070); NewTOS walks the full `..` ancestor
+        // chain of the target parent.
+        if entry.attrib & dir::FA_SUBDIR != 0 && is_self_or_descendant(&vol1, entry.cluster, parent2) {
+            return EACCDN;
+        }
+        // `ixcreat(p2,att)`; `xrename` answers *every* failure of it with
+        // `EPTHNF` (`fsdir.c:1014-1018`): no name or one that starts with a
+        // dot (`fsopnclo.c:117-118`), and no room — a full root cannot grow
+        // (`fsopnclo.c:172-183`, F5).
+        if dcomp.is_empty() || dcomp.starts_with('.') {
+            return EPTHNF;
+        }
+        let dst_slot = match dir::find_free_slot_grow(&vol1, parent2) {
+            Some(s) => s,
+            None => return EPTHNF,
+        };
+        // The entry as `ixcreat` builds it (name, `att`, zeroed `f_fill`) with
+        // the old time/date/cluster/length the `xclose` of the new handle
+        // writes back (`fsdir.c:1029-1035`, `ixclose` `fsopnclo.c:530-549`):
+        // a file gains `FA_ARCHIVE` there, a folder is closed `CL_DIR` (length
+        // 0, attribute rewritten to `att`, `fsdir.c:1059-1068`).
+        let is_dir = entry.attrib & dir::FA_SUBDIR != 0;
+        let (attr, size) = if is_dir {
+            (entry.attrib, 0)
+        } else {
+            (entry.attrib | FA_ARCHIVE, entry.size)
+        };
+        let fcb = dir::build_fcb(&name2, attr, entry.cluster, size, entry.time, entry.date);
+        if !dir::write_slot(&vol1, parent2, dst_slot, &fcb) {
+            return EACCDN;
+        }
+        // Erase the old entry (`fsdir.c:1021-1027`) with its long-name slots.
+        if !dir::erase_slot_with_lfn(&vol1, parent1, src_slot) {
+            return EACCDN;
+        }
+        // An OFD open on the moved file follows it (FS18 deviation).
+        move_ofds(src_drive, (parent1, src_slot), (parent2, dst_slot));
+        // A moved folder's `..` names the new parent (`fsdir.c:1043-1058`).
+        if is_dir && !fix_dotdot(&vol1, entry.cluster, parent2) {
+            return EINTRN;
+        }
     }
     if let Err(code) = super::cache::flush() {
         return code;
     }
     E_OK
+}
+
+/// Point every live OFD on drive `drive` whose directory entry is at
+/// `from` = (directory start cluster, slot) at `to` instead — the entry was
+/// moved there by a cross-directory `Frename`.
+///
+/// NewTOS deviation (TASK/FS18, `docs/COMPATIBILITY.md` "Sanctioned
+/// deviations"): EmuTOS `xrename` leaves the OFD's `o_dirfil`/`o_dirbyt` on
+/// the erased old slot (`fsdir.c:1014-1027`), so the `ixclose` of a file
+/// written after the move stores its start cluster and length there — the
+/// moved entry keeps the old length and the new clusters are lost. Here the
+/// close writes into the entry that now names the file.
+fn move_ofds(drive: u16, from: (u32, u32), to: (u32, u32)) {
+    for o in ofds().iter_mut().flatten() {
+        if o.deleted.is_none() && o.drive == drive && (o.dir_start, o.dir_slot) == from {
+            o.dir_start = to.0;
+            o.dir_slot = to.1;
+        }
+    }
 }
 
 /// FAT short name of the `..` directory entry (`".."` + nine spaces).

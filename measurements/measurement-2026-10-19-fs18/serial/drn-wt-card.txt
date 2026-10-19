@@ -1,0 +1,30 @@
+== C:/
+ Volume in drive : is FS18PRB    
+ Volume Serial Number is 3D7B-14FC
+Directory for ::/
+
+SUB          <DIR>     2026-10-19  13:18 
+FOLD         <DIR>     2026-10-19  13:18 
+RENAMED  TXT        13 2026-10-17  12:00 
+BIG      TXT     39200 2026-10-17  12:00 
+NEWDESK  INF       538 2026-10-17  12:00 
+        5 files              39 751 bytes
+                         66 836 480 bytes free
+
+== C:/SUB
+ Volume in drive : is FS18PRB    
+ Volume Serial Number is 3D7B-14FC
+Directory for ::/SUB
+
+NOTE     TXT        10 2026-10-17  12:00 
+LONGNAME TXT        16 2026-10-17  12:00 
+OTHER    TXT        12 2026-10-17  12:00 
+        3 files                  38 bytes
+                         66 836 480 bytes free
+
+== mtype RENAMED.TXT
+0000000    r   e   a   d   m   e       t   e   x   t  \r  \n            
+0000015
+== mtype SUB/LONGNAME.TXT
+0000000    l   o   n   g       n   a   m   e       f   i   l   e  \r  \n
+0000020
