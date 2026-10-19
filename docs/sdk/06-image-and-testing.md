@@ -10,7 +10,18 @@ tools/make-sd-image.sh [image-path] [size-MiB]
 (`tools/make-sd-image.sh:17-26`). It creates an MBR with one FAT16 (type
 `0x06`) partition, attaches it as `/Volumes/NEWTOS`, populates it, unmounts,
 and verifies the MBR (`:36-44`, `:294-310`). macOS only (`hdiutil`,
-`diskutil`, `dot_clean`).
+`diskutil`, `dot_clean`; header comment `tools/make-sd-image.sh:13`). **There
+is no Linux (or Windows) way to build the image yet** — it is a known gap
+(TASK/SDK01 package G, planned); until then a Linux user has to build a FAT16
+image by other means. Nor is there a documented way to put only your own
+program onto a ready-made release image without building the kernel
+yourself: this page assumes a repository checkout and `cargo xtask run`.
+
+**This table and the line numbers in it date from 2026-09 and are
+incomplete.** The script has since gained more install blocks (for example
+`C:\Apps\PRESENT\`, the zView block `C:\ZVIEW\` at
+`tools/make-sd-image.sh:414`, the MXPROBE/FPPEXEC/LDGTEST test programs) and `cicons.rsc` for TeraDesk; read the script itself
+for the current list.
 
 What it installs, and from where (nothing is built here except the
 freestanding examples):
@@ -32,10 +43,12 @@ Missing inputs are skipped with a `note:` line, not an error.
 
 **`\AUTO\` is empty on the default image** (since 2026-09-30): only
 `\AUTO\READ.ME` is there, saying what the folder is for. The `HELLO.NCP` copy
-that used to auto-run at boot was dropped. Six environment switches copy a
-program into `\AUTO\` on request: `SD_SCRFLIP_AUTO=1`, `SD_SYSINFO_AUTO=1`,
+that used to auto-run at boot was dropped. Nine environment switches copy a
+program into `\AUTO\` on request (`grep -o 'SD_[A-Z0-9_]*_AUTO'
+tools/make-sd-image.sh`, 2026-10-20): `SD_SCRFLIP_AUTO=1`, `SD_SYSINFO_AUTO=1`,
 `SD_CLOCKTEST_AUTO=1`, `SD_SETJMPTST_AUTO=1`, `SD_MATHTST_AUTO=1`,
-`SD_COREMARK_AUTO=1`. Every one of them names a program that ends by itself —
+`SD_COREMARK_AUTO=1`, `SD_FPPEXEC_AUTO=1`, `SD_MXPROBE_AUTO=1`,
+`SD_LDGTEST_AUTO=1`. Every one of them names a program that ends by itself —
 a program that waits for a key would stop the boot from there.
 
 **Adding your own program.** The project rule is that the script is the

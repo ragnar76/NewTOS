@@ -13,20 +13,22 @@
 # TeraDesk renders correctly, AES/VDI is sound; if it breaks like QED did, the
 # bug is in the kernel svc path, not in any one app.
 #
-# OVERLAY mechanism (same spirit as build-qed.sh, extended to HEADERS): a file
-# under sdk/overlays/teradesk/ with the same RELATIVE path (e.g.
+# PATCH mechanism (same as build-qed.sh, extended to HEADERS): a file under
+# sdk/overlays/teradesk/ with the same RELATIVE path (e.g.
 # library/utility/nf_ops.c, window.h) replaces the vendored file at compile
-# time, leaving TeraDesk's tree 100% pristine (upstream drop-in). Because
-# quoted #include "..." always searches the including file's own directory
-# first, header overlays cannot work via -I; instead the build compiles from a
-# SHADOW TREE (build/tree/ = symlinks to the vendored files, overlay symlinks
-# layered on top), so .c and .h overlays apply uniformly and consistently
-# across all translation units. Overlays are for (a) the one allowed app edit
-# -- m68k inline asm retargeted to AArch64 (lives in library/utility/nf_ops.c,
-# library/utility/cookie.c, resource.c, file.c) -- and (b) AArch64/LP64 ABI
-# corrections of m68k size/alignment assumptions (window.h WDFLAGS). If a
-# NON-asm .c fails to compile, it is a TOOLCHAIN gap (gemlib/libc/overlay
-# header), NOT a TeraDesk edit -- STOP and report it.
+# time; TeraDesk's upstream tree (embedded git checkout, freemint/teradesk) is
+# never edited. Because quoted #include "..." always searches the including
+# file's own directory first, header patches cannot work via -I; instead the
+# build compiles from a SHADOW TREE (build/tree/ = symlinks to the vendored
+# files, patch symlinks layered on top), so .c and .h patches apply uniformly
+# and consistently across all translation units. The seven patch files today
+# (each file's header says why): library/utility/nf_ops.c (m68k asm: NatFeats
+# probe -> "absent"); environm.c, window.h, library/xdialog/library.h, icon.c,
+# rsc_load.c, main.c (LP64: 32-bit TOS fields/words, struct size and
+# alignment). Rule: a problem every LP64 port would meet (library, header,
+# flag) is fixed ONCE in the SDK (gemlib/libc overlays, newtos-arch, crt0);
+# what only TeraDesk needs is a patch file here, with a header saying why.
+# Do not edit the vendored tree.
 #
 # TeraDesk's own build (Makefile + support/config.am) uses, for a cross build:
 #   OPTS   = -Os -fomit-frame-pointer

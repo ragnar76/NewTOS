@@ -1,10 +1,21 @@
 # 03 — First programs: `.NCP` without libc, `.NCP` with mintlib, and a `.NAP`
 
-All three programs below were **built and run** while writing this page
-(host: the toolchain from [02-prerequisites.md](02-prerequisites.md); kernel:
-the `kernel8.img` present in the workspace root at revision `49b2c2c`, SHA-256
-`a107a340…`, QEMU 11.0.2 `-M raspi4b`). Sizes, hashes and log lines are
-quoted from that run. The example sources are in `docs/sdk/examples/`.
+All three programs below were **built and run** when this page was first
+written (2026-09-17; kernel `kernel8.img` at revision `49b2c2c`, SHA-256
+`a107a340…`, QEMU 11.0.2 `-M raspi4b`); the QEMU log lines, the screendump and
+the SHA-256 hashes at the end are from that run and are **not** refreshed.
+The three **build** recipes were re-run on 2026-10-20 at revision `a900ff0b`
+(host: the toolchain from [02-prerequisites.md](02-prerequisites.md)); the file
+sizes and `readobj` output quoted below are from that re-run. Sizes move
+whenever a library is rebuilt — treat them as orders of magnitude, not as
+reference values. The example sources are in `docs/sdk/examples/`.
+
+Everything on this page assumes a checkout of this repository on a macOS
+host. A way to do it without the repository (an installed sysroot, a compiler
+wrapper such as a `newtos-cc`) **does not exist yet**; it is planned. The
+only way to build a program today is to run the commands below (or copy one of
+the `sdk/apps/build-*.sh` scripts). Linux is not described and has not been
+tried.
 
 Throughout, `$SDK` is the absolute path of `sdk/`, `$RES` is
 `$(clang -print-resource-dir)/include`, `$BIN` is the Rust sysroot's
@@ -39,25 +50,29 @@ lld   : rust-lld -flavor gnu
 + clang -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 -fno-stack-protector -fPIE -fno-builtin -Wall -Wextra -I…/sdk/include -c sdk/examples/hello.c -o app.o
 + rust-lld -flavor gnu -T …/sdk/newtos.ld -pie --no-dynamic-linker -z text -z max-page-size=0x1000 --build-id=none crt0.o app.o -o …/HELLO2.NCP
 
-wrote …/HELLO2.NCP (5064 bytes)
+wrote …/HELLO2.NCP (5968 bytes)
 ```
 
 What came out (`llvm-readobj --file-headers --program-headers`):
 
 ```
-Class: 64-bit (0x2)   DataEncoding: LittleEndian   Type: Executable (0x2)
+Class: 64-bit (0x2)   DataEncoding: LittleEndian   Type: SharedObject (0x3)
 Machine: EM_AARCH64 (0xB7)   Entry: 0x1000   ProgramHeaderEntrySize: 56
-PT_LOAD  VirtualAddress: 0x1000  FileSize: 96  MemSize: 96  Flags: 0x5 (R-X)
+PT_LOAD  FileSize: 304  MemSize: 304  Flags: 0x5 (R-X)
+PT_LOAD  FileSize: 208  MemSize: 208  Flags: 0x6 (RW-)      (.dynamic)
+PT_DYNAMIC, PT_NOTE (24 bytes, the PRGFLAGS note)
 ```
 
-That is the shape `tos-api/src/bdos/process/elf.rs:15-41` and
-`loader.rs` (`validate_segment`) accept: a `PT_LOAD` at `0x1000` (the linker
-script puts `.text.boot`, i.e. `_start`, first: `sdk/newtos.ld`). Since
-TASK/T05 the script emits **two** segments — `text` (R-X: `.text` +
-`.rodata`) and `data` (RW-: `.data` with `.bss` as its memsz-only tail) — so
-the loader can fill all six basepage segment fields; this data-less program
-has no `data` segment at all (lld drops the empty one), a libc-linked one
-always has (crt0's `argv` lives in `.data`). The loader still maps every TPA
+`Type: SharedObject (0x3)` is `ET_DYN`: since ARCH03 stage 0d every program is
+a position-independent executable (see "Which crt0" below), not `ET_EXEC`. That
+is the shape `tos-api/src/bdos/process/elf.rs` and `loader.rs`
+(`validate_segment`) accept: `PT_LOAD`s from `0x1000` (the linker script puts
+`.text.boot`, i.e. `_start`, first: `sdk/newtos.ld`). The script emits **two**
+segments — `text` (R-X: `.text` + dynamic metadata + `.rodata`) and `data`
+(RW-: `.dynamic`, `.got`, `.data` with `.bss` as its memsz-only tail) — so the
+loader can fill all six basepage segment fields; in this program the `data`
+segment holds only `.dynamic`, a libc-linked one also has crt0's `argv`
+in `.data`. The loader still maps every TPA
 page RWX; the flags feed the basepage only.
 
 What `crt0.S` does before `main` (`sdk/crt0.S`): read `p_hitpa` from the
@@ -111,7 +126,7 @@ $ clang -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 -fPIE -fno
 $ "$BIN/rust-lld" -flavor gnu -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 --build-id=none \
         crt0.o hello.o "$SDK/libc/libc.a" -o HELLOLIB.NCP
 $ ls -l HELLOLIB.NCP ; llvm-nm -u HELLOLIB.NCP | grep -c .
-84376 bytes ; 0 undefined symbols
+101264 bytes ; 0 undefined symbols
 ```
 
 Note the **libc crt0** (`sdk/libc/crt0.S`, not `sdk/crt0.S`): it first
@@ -264,10 +279,10 @@ $ clang -target aarch64-unknown-none-elf -ffreestanding -nostdlib -Os -fomit-fra
 $ "$BIN/rust-lld" -flavor gnu -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 --build-id=none \
         crt0.o minigem.o --start-group "$SDK/gemlib/gemlib.a" "$SDK/libc/libc.a" --end-group -o MINIGEM.NAP
 $ ls -l MINIGEM.NAP ; llvm-readobj --file-headers MINIGEM.NAP | grep -E 'Class|Type|Machine|Entry'
-14224 bytes
-Class: 64-bit   Type: Executable   Machine: EM_AARCH64   Entry: 0x1000
+56280 bytes
+Class: 64-bit   Type: SharedObject   Machine: EM_AARCH64   Entry: 0x1000
 $ llvm-nm -u MINIGEM.NAP | grep -c .          → 0
-$ llvm-objdump -d MINIGEM.NAP | grep -cE 'svc\s+#0x2'   → 2   (<aes> at 0x13e4, <vdi> at 0x1a50)
+$ llvm-objdump -d MINIGEM.NAP | grep -cE 'svc\s+#0x2'   → 2   (<aes> at 0x1400, <vdi> at 0x1a70)
 ```
 
 `-D__NEWTOS__` selects the `svc #2` primitives in the gemlib overlay headers
@@ -293,7 +308,7 @@ window titled `MINIGEM` with a close box at (32,50)–(352,210) showing the text
 `evnt_multi` — QEMU `raspi4b` has no input device, so it cannot be closed
 there; on a real Pi 4 a key press or the close box ends it.
 
-Artifacts of this run (SHA-256): `HELLO2.NCP` `c829c420…`,
+Artifacts of the 2026-09-17 run (SHA-256; later library rebuilds changed the binaries): `HELLO2.NCP` `c829c420…`,
 `HELLOLIB.NCP` `266e6704…`, `MINIGEM.NAP` `aee28971…`.
 
 ## Which crt0, which linker script, which archives

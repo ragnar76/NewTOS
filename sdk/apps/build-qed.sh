@@ -5,16 +5,17 @@
 # mintlib (libc.a) + gemlib (gemlib.a) + cflib (cflib.a).
 #
 # QED is the acceptance test for ADR-019 ("port real Atari C libraries, don't
-# reimplement"): its 37 src/*.c compile 100% UNMODIFIED. Every compile error or
-# undefined symbol is a TOOLCHAIN gap, fixed in the libraries -- NEVER in QED.
-# QED has ZERO assembly, so the one allowed app edit (m68k asm retarget) does not
-# apply here.
+# reimplement"). QED's upstream tree (embedded git checkout, freemint/qed) is
+# never edited. Of its 37 src/*.c, 35 compile as upstream; 2 are compiled from
+# per-program PATCH files (below) -- both LP64 corrections, no m68k asm (QED has
+# none). A problem every LP64 port would meet (compile error, undefined symbol
+# in a library) is fixed ONCE in the SDK (libc/gemlib/cflib overlays, headers,
+# newtos-arch, crt0); what only QED needs is a patch file in sdk/overlays/qed/.
 #
-# OVERLAY mechanism (same spirit as the m68k-asm retarget exception): a file
-# under sdk/overlays/qed/ replaces the same-named src/*.c at compile time,
-# leaving QED's src/ 100% pristine (upstream drop-in). The overlay lives OUTSIDE
-# the vendored QED tree (which is an embedded git repo) so it is tracked by the
-# NewTOS repo. Two overlays exist today (each file's header says why):
+# PATCH mechanism: a file under sdk/overlays/qed/ replaces the same-named
+# src/*.c at compile time; QED's src/ itself is left as upstream. The patch
+# files live OUTSIDE the vendored QED tree (an embedded git repo, untracked) so
+# the NewTOS repo tracks them. Two exist today (each file's header says why):
 #   memory.c -- an LP64-correct rewrite of QED's private pool sub-allocator
 #               (upstream hardcodes sizeof(pointer)==4). The col_*/textring/
 #               REALLOC region is byte-identical to src/memory.c; only

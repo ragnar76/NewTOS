@@ -7,8 +7,29 @@ command that was actually run while writing them (the command and its output
 are quoted). Where something could not be verified it is marked
 **unverified**.
 
-Repository revision the documentation was written against:
-`49b2c2ce29458119ee064eb993efe1efff66bd0e` (branch `desk-rebuild`, 2026-09-17).
+Repository revision the documentation was written against: the chapters were
+written one after the other between 2026-09-17 (first version, revision
+`49b2c2ce29458119ee064eb993efe1efff66bd0e`, branch `desk-rebuild`) and
+2026-10-20; the audit and correction pass of 2026-10-20 (TASK/SDK01 package B)
+checked them against `main` at `a900ff0b`. A chapter's own header gives the
+date of its measurements; numbers such as file sizes and compile counts move
+with every library rebuild.
+
+**What this SDK is today, and what is missing.** It is a set of build scripts
+that work from a checkout of this repository on **macOS**. There is **no**
+step-by-step quick start from nothing (installing the tools, obtaining the
+application sources), **no** compiler wrapper (a `newtos-cc` that bundles
+target flags, include order, `crt0`, linker script and archives — today you
+copy the three commands of chapter 03 or a `build-*.sh`), **no** install
+outside the repository (headers live in the extracted build trees), and
+**no** description of Linux or Windows hosts (the SD-image tool is
+macOS-only). All four are planned (TASK/SDK01 packages C, D, G); none of them
+exists yet.
+
+`path:line` citations into scripts and sources were exact on the day each
+chapter was written; the scripts have changed since and the citations were
+**not** all re-checked on 2026-10-20 (only the ones in the statements corrected
+by that pass). If a line number does not match, search by the quoted text.
 
 ## Pages
 
@@ -17,7 +38,7 @@ Repository revision the documentation was written against:
 | [01-overview.md](01-overview.md) | What the toolchain is, what it produces (`.NCP` / `.NAP` / `.NTP`), what it cannot do |
 | [02-prerequisites.md](02-prerequisites.md) | Which compiler, linker and host tools the scripts use, and where they look for them |
 | [03-first-programs.md](03-first-programs.md) | Hello World (`.NCP`), a mintlib-linked program, and a minimal GEM application (`.NAP`) — built and run for this document |
-| [04-porting-anatomy.md](04-porting-anatomy.md) | The overlay rule ("the app source stays pristine"), how libc/gemlib/cflib are built, how QED, TeraDesk and CoreMark are built, resource files |
+| [04-porting-anatomy.md](04-porting-anatomy.md) | Where a fix belongs (general: once in the SDK; one program: a per-program patch file), the list of patches that exist and why, how libc/gemlib/cflib are built, how QED, TeraDesk and CoreMark are built, resource files |
 | [05-abi-pitfalls.md](05-abi-pitfalls.md) | The trap ABI, and every LP64 / address-space / semantic trap that has bitten a port so far — with symptom and countermeasure |
 | [06-image-and-testing.md](06-image-and-testing.md) | Getting a binary onto the SD image, `AUTO`, `NEWDESK.INF` `#Z`, running in QEMU and on a real Pi 4, screendumps, serial log |
 | [07-mintlib-limits.md](07-mintlib-limits.md) | What the ported mintlib does not provide, derived from `sdk/libc/expected-failures.txt` and the test programs; `setjmp` and the libm (OpenLibm) since T07 |
@@ -58,11 +79,19 @@ tools/make-sd-image.sh /tmp/sd.img 64
 cargo xtask run --board rpi4 --sd /tmp/sd.img       # add --window to see the screen
 ```
 
-The one rule that governs every port: **the application source is not
-edited**. Every change lives in `sdk/overlays/<app>/` (or in the library
-overlays `sdk/{libc,gemlib,cflib,libm,ldg,libshare,libjpeg,libexif,windom}/overlay/`) and is layered over the
-pristine tree at build time. The only exception is genuine m68k assembly, which must be
-retargeted. See [04-porting-anatomy.md](04-porting-anatomy.md).
+The rule that governs every port: **upstream sources are kept unchanged**
+(as archives, or as untracked checkouts under `sdk/apps/`) and nothing is
+edited inside them. A problem that every 64-bit (LP64) port would meet is
+fixed **once in the SDK** — the libc overlays `sdk/libc/overlay/`, the
+AArch64 files `sdk/libc/newtos-arch/`, headers, `crt0`, and the library
+overlays `sdk/{gemlib,cflib,ldg,libshare,libjpeg,libexif,windom}/overlay/` (OpenLibm needs none: `sdk/libm/include/` holds header adapters, `build-libm.sh` supports an `overlay/` directory that does not exist).
+What **only one program** needs is a **per-program patch file** in
+`sdk/overlays/<program>/` (zView: `sdk/zview/overlay/`), layered over the
+upstream tree at build time and carrying a header that says why. Such patches
+exist for QED (2: LP64), TeraDesk (7: 1 m68k asm, 6 LP64) and zView (13: m68k
+asm, endianness, LP64, the `.NLD` suffix, PDF left out); CoreMark's
+`sdk/overlays/coremark/` is its own port layer, not a patch. The full list
+with reasons is in [04-porting-anatomy.md](04-porting-anatomy.md#the-rule-upstream-stays-unchanged-fixes-go-where-they-belong).
 
 ## Where the scripts and sources live
 
@@ -73,14 +102,15 @@ sdk/
 ├── newtos.ld             linker script for every native program
 ├── include/newtos.h      clean-room trap helpers (Cconws/Cconin/Pterm/...)
 ├── lib-stale.sh          library dependency chain + staleness test
-├── libc/                 mintlib-0.60.1 port (tarball + overlay/ + newtos-arch/)
+├── libc/                 mintlib-0.60.1 port (tarball + overlay/ + newtos-arch/, 15 files there)
 ├── gemlib/               gemlib-0.44.0 port (tarball + overlay/)
-├── cflib/                cflib-21 port (tarball + overlay/)
-├── libm/                 OpenLibm 0.8.8 port (tarball + overlay/ + include/ math.h adapters), T07
+├── cflib/                cflib port (tarball pinned at commit ce57817 + overlay/)
+├── libm/                 OpenLibm 0.8.8 port (tarball + include/ math.h adapters, no overlay/), T07
 ├── ldg/                  LDG r133 devel library port (tarball + overlay/), .NLD demo + client, LDG-M1
 ├── zlib/ libpng/ libjpeg/ giflib/ libexif/   codec libraries for zView (release tarball + config overlay), LDG-M2
 ├── vendor-lib.sh         shared build steps of those five
-├── overlays/{qed,teradesk,coremark}/   per-application overlays
+├── libshare/ windom/ zview/   libshare 0.1.1, WinDom 1.21.3 (zip + patch + overlay/), zView (z-tools tarball + overlay/, per-program patches)
+├── overlays/{qed,teradesk,coremark}/   per-program patch files (zView's are in zview/overlay/)
 ├── apps/                 build scripts + vendored app trees (untracked)
 └── examples/             example programs (examples/libtest/: the codec-library test, LDG-M2)
 tools/make-sd-image.sh    builds the FAT16 SD image, installs the binaries

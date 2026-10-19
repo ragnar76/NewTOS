@@ -1,33 +1,79 @@
 # 04 — Anatomy of a port: overlays, the library chain, QED, TeraDesk, CoreMark
 
-## The rule: the application source stays pristine
+## The rule: upstream stays unchanged, fixes go where they belong
 
-> "**The ported app is sacrosanct.** QED (and zView) source is **not
-> modified** — every build failure is fixed in the toolchain
-> (libc/gemlib/cflib/flags/headers), never in the app. The one exception:
-> genuine **m68k assembly** (inline `asm`/`.S`) in the app must be retargeted
-> to aarch64 (the arch boundary). Only after *every* toolchain avenue is
-> exhausted do we even discuss an app-source change."
-> — ADR-019, `docs/MEMORY.md:1152-1158`
+(Line citations of the form `:NNN` into `build-qed.sh` and
+`build-teradesk.sh` on this page were written before the header comments of
+both scripts were rewritten on 2026-10-20 (TASK/SDK01 B) and the scripts have
+changed since; they can be off by a few lines, search by the text instead.)
 
-Mechanically this is enforced by three facts:
+(Corrected 2026-10-20, TASK/SDK01 package B. Earlier versions of this page
+said "the app source stays pristine; every failure is a toolchain gap; the only
+exception is m68k asm". That was not true of the tree: of the nine overlay
+files of QED and TeraDesk, one retargets m68k asm and eight are LP64
+corrections, one of which — QED's `memory.c` — is a complete rewrite of the
+memory manager. See the table below.)
 
-1. `sdk/apps/*/` (the vendored application trees) is **untracked**
-   (`sdk/.gitignore:29-33`); QED and TeraDesk are embedded git checkouts. A
-   change there is invisible to this repository and lost on a clean.
-2. Everything of ours lives **outside** those trees, in
-   `sdk/overlays/<app>/`, tracked normally (`sdk/.gitignore:31-32`,
-   `sdk/apps/build-qed.sh:13-22`).
-3. `build-qed.sh` refuses to link when any QED file fails to compile: *"each
-   is a TOOLCHAIN gap to fix, NOT a QED edit"* (`:130-139`).
-   `build-teradesk.sh` says the same, adding the one sanctioned exception:
-   *"m68k asm -> overlay retarget; non-asm -> TOOLCHAIN gap, not a TeraDesk
-   edit"* (`:150-161`). CoreMark goes further and MD5-checks the frozen files
-   before compiling anything (`build-coremark.sh:73-104`,
-   `sdk/apps/coremark-sources.md5`).
+What is true, and what the build enforces:
 
-An overlay is therefore not "a patch to the app": it is a file that **replaces
-a same-named file at build time**, leaving the tree untouched. Two mechanisms
+1. **Upstream sources are kept unchanged, as archives or as untracked
+   checkouts.** The libraries are vendored as tarballs/zip
+   (`sdk/{libc,gemlib,cflib,…}/*.tar.xz`, `sdk/windom/windom-1.21.3.zip`);
+   the application trees `sdk/apps/*/` are **untracked**
+   (`sdk/.gitignore:29-33`) and QED and TeraDesk are embedded git checkouts
+   (`git remote -v`: `freemint/qed` @ `f12055f`, `freemint/teradesk` @
+   `b5532b8`). Nothing is edited inside them: `git status` in those trees shows
+   only `build/` (checked 2026-10-20, `docs/analysis/sdk-inventory-2026-10-20.md`
+   §2).
+2. **A problem that every program would meet is fixed once, in the SDK** —
+   in the libc overlays (`sdk/libc/overlay/`), the AArch64 files
+   (`sdk/libc/newtos-arch/`), the headers, `crt0.S`, or the gemlib/cflib
+   overlays. Examples: the trap retarget (`osbind.h`), fixed 32-bit TOS
+   structures (`basepage.h`, `ostruct.h`), `uintptr_t`/`SIZE_MAX` on LP64, the
+   gemlib `AESGLOBAL` accessors. Look here first: if a compile error or an
+   undefined symbol would hit any LP64 port, the SDK is where it belongs.
+3. **What only one program needs is a per-program patch file** in
+   `sdk/overlays/<program>/` (tracked, outside the untracked source tree). It
+   is a patch in every sense — it differs from upstream, it is applied at build
+   time, and it must be re-checked when the upstream pin moves — and the
+   header of each file says why it exists. zView's patches live in
+   `sdk/zview/overlay/` (13 files) and the library overlays next to their
+   library, not under `sdk/overlays/`.
+4. **A build stops on the first failing file** (`build-qed.sh`,
+   `build-teradesk.sh` print the failure and refuse to link), and CoreMark
+   goes further and MD5-checks the frozen benchmark files before compiling
+   anything (`sdk/apps/build-coremark.sh`, `sdk/apps/coremark-sources.md5`).
+
+The per-program patches that exist today (all files tracked; reasons taken from
+the file headers and the inventory of 2026-10-20, section 2):
+
+| Program | File | Reason | Class |
+|---------|------|--------|-------|
+| TeraDesk | `library/utility/nf_ops.c` | NatFeats probe executes m68k opcodes `0x7300`/`0x7301`; replaced by "NatFeats absent". Now that libc has `newtos-arch/nf_ops.c` this overlay could become a build exclusion — not done yet | m68k asm |
+| TeraDesk | `environm.c` | `_BasPag->p_env` is a 32-bit field in our `basepage.h`; int-to-pointer cast is an error under clang | LP64 |
+| TeraDesk | `window.h` | `WDFLAGS` bit-fields re-based on `unsigned short` (struct size 2 vs 4 bytes) | LP64 |
+| TeraDesk | `library/xdialog/library.h`, `icon.c`, `rsc_load.c` | own `AES_GLOBAL` struct removed; `AESGLOBAL` resource words written/read through gemlib's `_AESrscfile_set`/`_AESrscmem_set` as 4-byte TOS fields (A60) | LP64 |
+| TeraDesk | `main.c` | low-memory words (`$4F2`, `$420`, `$43A`, `$426`, `$42A`) as 32-bit, reset-vector read at OSHEADER+0x10 (RST01, X04) | LP64 |
+| QED | `memory.c` | upstream sub-allocator assumes `sizeof(pointer)==4` in three places; `MALLOC`/`FREE` re-backed by libc | LP64 (rewrite) |
+| QED | `set.c` | `SET` addressed as 32-bit big-endian words; one flat byte numbering instead | LP64 + little-endian |
+| CoreMark | `newtos/core_portme.{c,h}` | CoreMark's own port layer — not a patch, this is where a port is meant to go | port layer |
+| zView | `sdk/zview/overlay/zview/…` (13 files) | m68k asm retarget (`plugins/img/xp32.c`, `plugins/jpg/jpgdsp.c`); big-endian file formats/bitmaps (`degasldg.c`, `neoldg.c`, `godldg.c`, `rawldg.c`, `imgldg.c`, `custom_font.c`, `av_prot.c`); LP64 (`jpgldg.c`); `.NLD` module suffix (`plugins.c`, ADR-018); PDF left out (`main.c`, `winimg.c`) | mixed, see [13](13-zview.md) |
+
+Counting: of the 9 QED/TeraDesk files, 1 is m68k asm and 8 are LP64
+corrections; none is NewTOS-specific behaviour. The only overlay that is
+NewTOS-specific rather than ABI-driven is the `.NLD` suffix in zView's
+`plugins.c`.
+
+**Rule for a port, in this order:** (1) is the problem general (would the next
+program hit it too)? fix it in the SDK. (2) Is it specific to this program's
+assumptions about word size, byte order or m68k code? write a per-program
+patch file with a header that says *why* and what it changes against
+upstream. (3) Never edit inside the upstream tree. Recurring patterns (raw
+cookie-jar reads, `p_env` casts, `long` sysvar reads, pointers in AES
+messages) are candidates for a shared SDK header — none exists yet.
+
+An overlay file **replaces a same-named file at build time**, leaving the
+upstream tree untouched. Three mechanisms
 exist:
 
 | Mechanism | Script | What can be overlaid | How |
@@ -47,7 +93,7 @@ extracted tree away and start from the tarball again (`build-libc.sh:66-70`,
 
 | Kind | Example | What it does |
 |------|---------|--------------|
-| **m68k assembly retarget** (the one allowed app edit) | `sdk/overlays/teradesk/library/utility/nf_ops.c` | upstream executes the invalid opcodes `0x7300`/`0x7301` to probe ARAnyM/Hatari NatFeats; the overlay returns the API's documented "not available" results (`nf_init() == NULL`, `nf_get_id() == 0`, `-1/ENOSYS`) with the same public symbols (`:1-24`) |
+| **m68k assembly retarget** | `sdk/overlays/teradesk/library/utility/nf_ops.c` | upstream executes the invalid opcodes `0x7300`/`0x7301` to probe ARAnyM/Hatari NatFeats; the overlay returns the API's documented "not available" results (`nf_init() == NULL`, `nf_get_id() == 0`, `-1/ENOSYS`) with the same public symbols (`:1-24`) |
 | **LP64 struct size / alignment** | `sdk/overlays/teradesk/window.h` | `WDFLAGS` bitfields re-based on `unsigned short`, because the config loader reads the field through an `_UWORD *` and upstream's `unsigned int` bitfield is 2 bytes on m68k but 4 on AArch64 (`:23-34`, `:128-133`) |
 | **LP64 pointer-size assumption in an allocator** | `sdk/overlays/qed/memory.c` | QED's pool allocator hard-codes `sizeof(pointer)==4` in three places and faulted at `FAR=0xffffffff00000008`; the overlay keeps every observable routine verbatim and re-backs only `MALLOC`/`FREE` with libc `malloc`/`free` (`:8-56`) |
 | **LP64 word width + little-endian** | `sdk/overlays/qed/set.c` | `typedef unsigned long SET[32]` is addressed both byte-wise and as hard-coded 32-bit big-endian words; on LP64/LE the two disagree (`setmin` answered 25 instead of 1), so the overlay uses one flat byte numbering (`:7-50`) |
@@ -85,13 +131,19 @@ mintlib's own `mintlib/isatty.c` is built again), `getcookie.c` (`Getcookie` ove
 address space), `softfloat.c` (`__extenddftf2`, the one compiler-rt builtin
 `strtold` needs), and since T07 `setjmp.S` (the AArch64 `sigsetjmp`/`setjmp`/
 `siglongjmp`/`longjmp`, replacing the m68k `mintlib/setjmp.S`; `jmp_buf` is
-`long[22]` via the overlay `include/setjmp.h`).
+`long[22]` via the overlay `include/setjmp.h`). This paragraph lists the
+shims as of T07; `sdk/libc/newtos-arch/` holds 15 files today. Added since:
+`cmdargs.c` (`parseargs()`, PORT01/PORT09), `vfork.S`, `setstack.S`
+(`_setstack`, PROC01) and, since TASK/SDK01 A, `nf_ops.c` (NatFeats "absent",
+replacing the `EXCLUDE`d `mintlib/nf_ops.c`); `do_fstat.c` also provides
+`__sys_fstat`. `DIRS` also contains `pwdgrp` since SDK01 A
+(`build-libc.sh:158-167`).
 
 **Failure accounting (T02).** Each script prints the list of files that did
 not compile and compares it with `expected-failures.txt`; an unrecorded
 failure **stops the build before the archive is written**, and a recorded file
 that started compiling is announced (`sdk/lib-stale.sh:229-283`,
-`build-libc.sh:171-181`). libc records eleven failures with reasons
+`build-libc.sh:171-181`). libc records five failures with reasons (2026-10-20: `mintlib/linea.c`, `mintlib/crtinit.c`, `mintlib/syscall.c`, `gmp/support.c`, `tz/dumpstate.c`)
 (`sdk/libc/expected-failures.txt`); gemlib's and cflib's lists are empty, so
 any failure there stops the build (`sdk/gemlib/expected-failures.txt:3-5`).
 
@@ -170,15 +222,17 @@ writes (verified byte-identical to the previously hand-made file, TASK/T06).
    `:87-94`). Include order: shadow tree root, its `xdialog` and `utility`
    dirs, gemlib top, mintlib, clang (`:97-98`).
 3. Shadow tree: `build/tree/` = symlinks to every vendored `.c`/`.h`, then the
-   overlays layered on top — `environm.c`, `library/utility/nf_ops.c`,
-   `window.h`, and since A60 (2026-09-19) `icon.c`, `rsc_load.c` and
-   `library/xdialog/library.h`, which make TeraDesk write and read the
-   `AESGLOBAL` resource words as the 4-byte TOS fields at bytes 10/14 through
-   gemlib's `_AESrscfile_set`/`_AESrscmem_set` (`:104-125`).
+   overlays layered on top — seven files (`ls -R sdk/overlays/teradesk`):
+   `environm.c`, `library/utility/nf_ops.c`, `window.h`; since A60
+   (2026-09-19) `icon.c`, `rsc_load.c` and `library/xdialog/library.h`, which
+   make TeraDesk write and read the `AESGLOBAL` resource words as the 4-byte
+   TOS fields at bytes 10/14 through gemlib's `_AESrscfile_set`/
+   `_AESrscmem_set`; and since RST01/X04 (2026-10-17) `main.c` (32-bit
+   low-memory words and the reset-vector read, see the table above).
 4. File list: every `.c` under the tree except `library/utility/malloc.c`
    (libc provides `malloc`) (`:127-134`).
-5. Compile all from the shadow tree; any failure stops the build with the
-   asm-vs-toolchain rule quoted above (`:136-161`).
+5. Compile all from the shadow tree; any failure stops the build and prints
+   the file (`build-teradesk.sh`, the compile loop).
 6. Link `crt0.o` + all objects + `--start-group gemlib.a libm.a libc.a
    --end-group` → `build/DESKTOP.NAP` (`:164-187`).
 7. **Dist staging** (`:189-205`): `build/dist/` receives `DESKTOP.NAP`,
@@ -241,14 +295,16 @@ to `QED.NAP` in `C:\Apps\QED\` (`:209-211`, `:259-266`).
 
 1. Vendor the source under `sdk/apps/<app>/` (untracked; record provenance
    the way `coremark-sources.md5` does).
-2. Create `sdk/overlays/<app>/` (tracked). Start empty.
+2. Create `sdk/overlays/<app>/` (tracked) when the first per-program patch is needed.
 3. Copy `sdk/apps/build-qed.sh` (cflib app) or `build-teradesk.sh` (own
    dialog lib, header overlays needed) to `sdk/apps/build-<app>.sh`; keep
    `lib_ensure`, the flag set, the "any failure stops" rule.
-4. Build. For every compile error decide: m68k asm → overlay retarget;
-   anything else → find the toolchain gap (library overlay, shim, flag) and
-   fix it there. Every undefined symbol at link time is a library gap
-   (`build/why.txt` shows the pull chain, `build-qed.sh:173`).
+4. Build. For every compile error decide: does every LP64 port meet this
+   (library overlay, shim, header, flag → fix it once in the SDK), or is it
+   this program's own assumption (m68k asm, 32-bit `long`, big-endian
+   tricks → a per-program patch file in `sdk/overlays/<app>/` with a header
+   that says why)? Every undefined symbol at link time is first a library
+   question (`build/why.txt` shows the pull chain, `build-qed.sh:173`).
 5. Convert the `.RSC` with `tools/mkrsc.py convert`.
 6. Add the install lines to `tools/make-sd-image.sh` (`C:\Apps\<APP>\`, the
    `.rsc` beside the `.NAP`; never `\AUTO\` for a `.NAP`).

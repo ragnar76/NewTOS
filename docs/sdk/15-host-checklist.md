@@ -14,8 +14,19 @@ Detail on why each tool is needed: [02-prerequisites.md](02-prerequisites.md).
 ## A. Repository and files that are NOT in git
 
 `git clone https://github.com/tuxie01/NewTOS.git` gives everything tracked
-(branch `main`, tag `v0.5`). The items below are gitignored and must be
-**copied from the Mac mini**; without them the listed builds fail.
+(branch `main`, tags `v0.5`, `v0.6`). The items below are gitignored; without them the
+listed builds fail. **There is no clone recipe yet** — today they have to be
+copied from the Mac mini. The upstream origin of four of them is known (the
+embedded git checkouts report it: `git remote -v` / `git rev-parse --short
+HEAD`, checked 2026-10-20): QED `github.com/freemint/qed` @ `f12055f`,
+TeraDesk `github.com/freemint/teradesk` @ `b5532b8`, CoreMark
+`github.com/czietz/coremark` @ `b546802`, doomgeneric
+`github.com/ozkl/doomgeneric` @ `dcb7a8d`. A quick-start chapter that turns
+this into a clone-and-build recipe, usable by someone without access to the
+Mac mini, is planned (TASK/SDK01 package C) and does not exist yet.
+Everything the other SDK libraries need (mintlib, gemlib, cflib, OpenLibm,
+LDG, libshare, WinDom, z-tools, the five codec libraries) **is** tracked as
+tarballs/zip in the repository.
 
 | # | Path (repo-relative) | Needed for | Size | Check |
 |---|---|---|---|---|
@@ -26,7 +37,7 @@ Detail on why each tool is needed: [02-prerequisites.md](02-prerequisites.md).
 | A5 | `sdk/apps/highwire/` | not built yet; copy to keep the source | 4.5 MB | `test -d sdk/apps/highwire` |
 | A6 | `Applications/doomgeneric/` | Doom (`build-doom.sh`, `build-doom-m68k.sh`) | part of 55 MB | `test -d Applications/doomgeneric/doomgeneric` |
 | A7 | `Applications/doom-wad/` | `DOOM1.WAD` for the card | | `ls Applications/doom-wad` |
-| A8 | `Applications/ldg-src/` | LDG builds | | `test -d Applications/ldg-src` |
+| A8 | `Applications/ldg-src/` | provenance of the tracked LDG tarball only (`sdk/ldg/build-ldg.sh:10-12`); no build reads it | | `test -d Applications/ldg-src` |
 | A9 | rest of `Applications/` (cflib-git, ldg-2, mintlib-src, pml-2.03, qed, thing-neo-codeSVN-r62, windom-1.21.3, z-tools) | reference sources, not built directly | 55 MB total | `ls Applications` |
 | A10 | `references/` (emutos, freemint, circle, datasheets, arm-arm, gabi, libshare, rpi4-boot, sd-spec) | the specification sources (CLAUDE.md rule 1/6); no build reads them | 247 MB | `ls references` |
 | A11 | Pi firmware for a card: `start4.elf`, `fixup4.dat`, `bcm2711-rpi-4-b.dtb` | writing a real card | small | e.g. `ls sd-card-backup-20261008-ofam/BOOT/` |
@@ -60,7 +71,7 @@ Simplest: copy the whole repo folder from the Mac mini (rsync without
 ```sh
 cargo xtask test                                   # host tests: 1268 passed / 0 failed / 1 ignored
 cargo xtask build --board rpi4 --release           # kernel8.img; then move it out of the repo root
-sdk/run-host-tests.sh                              # 19 / 0 / 0
+sdk/run-host-tests.sh                              # 22 passed / 0 failed / 0 skipped (2026-10-20)
 sdk/apps/present/build-present.sh                  # PRESENT.NAP
 sdk/apps/build-doom.sh                             # DOOM.NAP (needs A6)
 sdk/apps/build-qed.sh                              # QED (needs A2)

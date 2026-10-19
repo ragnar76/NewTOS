@@ -1,15 +1,20 @@
 # NewTOS native C SDK
 
 Builds native AArch64 programs for NewTOS with **clang + rust-lld**
-(`aarch64-unknown-none-elf`) on top of three ported Atari C libraries —
-mintlib-0.60.1, gemlib-0.44.0, cflib-21 — following ADR-019 ("port real
-Atari C libraries, don't reimplement", `docs/MEMORY.md`). The output is an
+(`aarch64-unknown-none-elf`) on top of ported Atari C libraries — the core
+three are mintlib-0.60.1, gemlib-0.44.0 and cflib (pinned commit `ce57817`);
+OpenLibm, LDG, libshare, WinDom and five codec libraries come on top —
+following ADR-019 ("port real Atari C libraries, don't reimplement",
+`docs/MEMORY.md`). It works from a checkout of this repository on macOS; an
+installable sysroot, a compiler wrapper, a from-scratch quick start and a
+Linux description do not exist yet (planned, TASK/SDK01). The output is an
 ELF64 executable named `.NCP` (console), `.NAP` (GEM application) or `.NTP`
 (takes parameters) per ADR-018; the kernel loader parses the ELF directly.
 
 **The developer documentation lives in [`docs/sdk/`](../docs/sdk/README.md).**
 It covers prerequisites, a built-and-run Hello World / mintlib / GEM example,
-the overlay mechanism that keeps ported application sources pristine, the
+where a fix belongs (once in the SDK, or as a per-program patch file in
+`sdk/overlays/<program>/`; upstream sources are never edited), the
 build scripts for QED, TeraDesk and CoreMark, the LP64/ABI pitfalls that have
 bitten ports, and how a binary gets onto the SD image and into QEMU or a real
 Pi 4. This file is only a map of the directory.
@@ -24,10 +29,12 @@ Pi 4. This file is only a map of the directory.
 | `include/newtos.h` | clean-room inline-asm trap helpers + `Cconws`/`Cconin`/`Pterm`/`Pterm0` |
 | `examples/*.c` | freestanding proof programs (`hello`, `big`, `physbase`, `scrflip`, `dtachild`, `ptermch`, `ctrlcpar`) installed by `tools/make-sd-image.sh` |
 | `lib-stale.sh` | the library dependency chain (`libc → gemlib → cflib`), staleness test and failure bookkeeping shared by every script |
-| `libc/` | mintlib port: pristine tarball, `overlay/` (trap macros, fixed-width TOS structs, LP64/endian fixes), `newtos-arch/` (AArch64 shims), libc-aware `crt0.S`, `build-libc.sh`, `expected-failures.txt`, `tests/` |
+| `libc/` | mintlib port: unchanged upstream tarball, `overlay/` (trap macros, fixed-width TOS structs, LP64/endian fixes), `newtos-arch/` (AArch64 shims and TOS-call replacements, 15 files), libc-aware `crt0.S`, `build-libc.sh`, `expected-failures.txt`, `tests/` |
 | `gemlib/` | gemlib port: tarball, `overlay/` (`svc #2` primitives, LP64 header corrections), `build-gemlib.sh`, `tests/`; plus `build-gemlib-m68k.sh` for the real-Atari build of the same library |
 | `cflib/` | cflib port: tarball, `overlay/`, `build-cflib.sh`, `tests/` |
-| `overlays/{qed,teradesk,coremark}/` | per-application overlays — the only place application-level changes live |
+| `libm/`, `ldg/`, `libshare/`, `windom/`, `zlib/`, `libpng/`, `libjpeg/`, `giflib/`, `libexif/` | further ported libraries (OpenLibm; LDG; libshare; WinDom; the five codec libraries), each with its pinned archive, build script and, where needed, `overlay/` |
+| `zview/` | zView port: z-tools tarball, `overlay/` (13 per-program patch files), `build-zview.sh` |
+| `overlays/{qed,teradesk,coremark}/` | per-program patch files: QED 2 (LP64), TeraDesk 7 (1 m68k asm, 6 LP64); CoreMark's is its own port layer, not a patch. zView's patches are in `zview/overlay/`, library patches in each library's `overlay/`. Reasons: [`docs/sdk/04-porting-anatomy.md`](../docs/sdk/04-porting-anatomy.md) |
 | `apps/` | `build-qed.sh`, `build-teradesk.sh`, `build-coremark.sh`, the tracked diagnostics `apitest/`, `gemtest/`, `chaintest/`, and the **untracked** vendored application trees |
 
 ## Quick start

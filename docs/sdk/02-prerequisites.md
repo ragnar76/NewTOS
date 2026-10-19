@@ -97,15 +97,26 @@ by taking the sysroot copy directly.
   `/tmp/HELLO2.NCP` (`:27`); `make-sd-image.sh` defaults to `/tmp/sd.img`,
   which is also what `cargo xtask run --sd` looks for when no path is given
   (`tools/xtask/src/main.rs:414-421`).
+* **Linux is not described and has not been tried.** The library build
+  scripts may well run there (they use the Rust sysroot's `rust-lld`, `tar`,
+  `make`, an `md5`/`md5sum` switch and `shasum`), but nobody has run them on
+  Linux, and the image tool is macOS-only (see above). A Linux path (and a
+  step-by-step install guide for any host: `xcode-select --install`, `rustup`
+  inside the checkout, …) is planned (TASK/SDK01 packages C and G); it does
+  not exist yet.
 * **No network.** "A clone builds with no external network"
   (`sdk/.gitignore:6-7`): the three library tarballs are in the tree. The
   application trees under `sdk/apps/*/` are **not** tracked
   (`sdk/.gitignore:29-33`); QED and TeraDesk are embedded git checkouts,
   CoreMark is re-obtained per `sdk/apps/coremark-sources.md5:5-8`
   (`git clone https://github.com/czietz/coremark.git … checkout b546802`).
-  Where the QED and TeraDesk checkouts come from is **unverified** here —
-  no provenance file exists for them (the embedded repos' `HEAD` was
-  `f12055f` for QED and `b5532b8` for TeraDesk on this host).
+  Where they come from is readable from the embedded checkouts
+  (`git remote -v`, `git rev-parse --short HEAD`, run 2026-10-20): QED
+  `https://github.com/freemint/qed.git` @ `f12055f`, TeraDesk
+  `https://github.com/freemint/teradesk.git` @ `b5532b8`. **No provenance
+  file in the repository records this**, and there is no clone-and-check-out
+  recipe yet; one is planned (TASK/SDK01 package C). Until then the trees
+  have to be copied from the machine that has them.
 * **`set -uo pipefail` without `-e`** in every library/app script: a failing
   step is handled explicitly (`|| exit 1`), not by the shell.
 * **Paths with spaces are not handled** in `build-coremark.sh`'s

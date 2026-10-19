@@ -8,7 +8,7 @@ Stand 2026-10-07, TASK/ZVIEW-M4. Design input:
 zView 1.0.1 (Zorro, Miro Kropacek; GPL, codecs LGPL 2.1) is the z-tools image
 viewer in its **LDG version**: a WinDom program that loads its image codecs at
 run time as LDG modules. On NewTOS it is `ZVIEW.NAP` plus ten codec modules
-`CODECS\*.NLD`, built from the unmodified sources with toolchain overlays —
+`CODECS\*.NLD`, built from the upstream sources (kept unchanged as an archive) plus 13 per-program patch files, §3 —
 **without the PDF module**.
 
 > **K1 was fixed in the kernel by `78aa445` (2026-10-07): the AES now opens its physical workstation and `graf_handle` returns it; the product `ZVIEW.NAP` shows pictures. The text below is the original diagnosis, kept as history.**

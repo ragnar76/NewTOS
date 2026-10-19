@@ -1,6 +1,8 @@
 # 09 — Woher die Quellen kommen: Bestand, Fassungen, Lizenzen
 
-Stand 2026-09-25. Diese Seite haelt fest, **welches Material fuer Portierungen
+Stand: Abschnitte 1, 2 und 5 am 2026-10-20 gegen den Baum neu geschrieben
+(TASK/SDK01 B); die Abschnitte 3 und 4 sind Stand 2026-09-25 (PORT03) und
+unveraendert. Diese Seite haelt fest, **welches Material fuer Portierungen
 vorliegt, in welcher Fassung und unter welcher Lizenz** — damit die naechste
 Portierung nicht wieder mit der Suche anfaengt.
 
@@ -12,21 +14,46 @@ Sie ist eine Bestandsaufnahme, keine Anleitung. Wie portiert wird, steht in
 
 ## 1. Was bereits portiert ist und laeuft
 
+(Lizenzen: LGPL 2.1 fuer LDG, WinDom und die zView-Codecs, GPL fuer zView,
+GPLv2 fuer doomgeneric, jeweils wie in den Kapiteln 10 bis 13 und im Kopf von
+`build-doom.sh` belegt; fuer die uebrigen Eintraege hier nicht neu erhoben.)
+
+Zur Herkunft: Bibliotheken liegen als unveraenderte Upstream-Archive im
+Repository (Tarball/Zip), die App-Baeume unter `sdk/apps/` sind nicht
+versioniert (siehe [04](04-porting-anatomy.md)).
+
 | Was | Wo | Bemerkung |
 |---|---|---|
-| **mintlib** | `sdk/libc/` | libc-Unterbau. Bekannte Luecken in [07](07-mintlib-limits.md); `crt0.S` baut `argv` seit PORT01 aus `p_cmdlin` |
-| **gemlib** | `sdk/gemlib/` | AES/VDI-Bindungen |
+| **mintlib** 0.60.1 | `sdk/libc/` | libc-Unterbau. Bekannte Luecken in [07](07-mintlib-limits.md); `crt0.S` baut `argv` seit PORT01 aus `p_cmdlin`, `environ` und `ARGV=` seit PORT09 |
+| **gemlib** 0.44.0 | `sdk/gemlib/` | AES/VDI-Bindungen |
 | **cflib** | `sdk/cflib/` | auf Commit `ce57817` (2026-07-14) gepinnt, seit PORT03 — siehe §3 |
-| **QED** | `Applications/qed`, gebaut nach `sdk/apps/qed` | laeuft |
-| **TeraDesk** | `sdk/apps/teradesk` | portiert |
+| **libm** = OpenLibm 0.8.8 | `sdk/libm/` | seit T07, ohne `long double` ([07](07-mintlib-limits.md) §4, §6) |
+| **LDG** (SVN r133, `devel/`-Bibliothek) | `sdk/ldg/` | `libldg.a`, [10](10-ldg-modules.md); Quelle `Applications/ldg-src` wurde nur zum Einlagern des Tarballs benutzt |
+| **libshare** 0.1.1 | `sdk/libshare/` | Allokator jeder `.NLD`-Bibliothek, [10](10-ldg-modules.md) §6 |
+| **zlib, libpng, libjpeg, giflib, libexif** | `sdk/{zlib,libpng,libjpeg,giflib,libexif}/` | Codec-Bibliotheken, [11](11-codec-libraries.md) |
+| **WinDom 1.21.3** (+ zViews Patch) | `sdk/windom/` | `libwindom1.a`, [12](12-windom.md) |
+| **zView** (z-tools @ `04805b7`, LDG-Fassung, ohne PDF) | `sdk/zview/` | `ZVIEW.NAP` + zehn `.NLD`-Codecs, [13](13-zview.md) |
+| **QED** (`freemint/qed` @ `f12055f`) | `sdk/apps/qed` (nicht versioniert; Patches in `sdk/overlays/qed/`) | laeuft |
+| **TeraDesk** (`freemint/teradesk` @ `b5532b8`) | `sdk/apps/teradesk` (nicht versioniert; Patches in `sdk/overlays/teradesk/`) | laeuft |
+| **CoreMark** (`czietz/coremark` @ `b546802`) | `sdk/apps/coremark` (nicht versioniert; Portierungsschicht `sdk/overlays/coremark/newtos/`) | Benchmark |
+| **Doom** (`ozkl/doomgeneric` @ `dcb7a8d`) | `Applications/doomgeneric` (nicht versioniert), eigene Plattformschicht `sdk/apps/doom/` | `build-doom.sh` |
+| `PRESENT.NAP` | `sdk/apps/present/` | eigenes Programm, [14](14-present.md) |
+
+Die Herkunftsangaben QED/TeraDesk/CoreMark/Doom stammen aus `git remote -v`
+und `git rev-parse --short HEAD` der eingebetteten Checkouts (2026-10-20);
+nirgends im Repository ist festgehalten, wie man sie wieder beschafft. Ein
+Klon-Rezept steht noch aus (geplant, TASK/SDK01 Paket C).
 
 ## 2. Quellen im Baum, noch nicht portiert
 
+Alles, was nicht in §1 steht. Die Tabelle ist die Bestandsaufnahme von
+`Applications/` und `sdk/apps/`; Lizenzangaben dort, wo sie frueher erhoben
+wurden.
+
 | Was | Wo | Umfang / Lizenz |
 |---|---|---|
-| **zView** + zTask, zWeather, zcodeclib | `Applications/z-tools/` | Bildbetrachter; Kandidat fuer die Vorfuehrung ([PORT02](../../TASK/PORT02.md)) |
-| **windom 1.21.3** | `Applications/windom-1.21.3` | **199 C-Dateien in `src/`, null Assembler**, LGPL 2.1. Bindet `gem.h`, `osbind.h`/`tos.h`, `mint/cookie.h`, `mint/sysvars.h`, `osheader.h` ein — also genau die Bibliotheken, die wir haben |
-| **LDG 2.35** | `Applications/ldg-2` | **SDK-Fassung, nicht der Laderquelltext**: die 7 C-Dateien sind Demos, die Umsetzung kommt als m68k-`libldg.a` und `ldg.prg`. Brauchbar ist `include/ldg.h` plus eine Handbuchseite je Funktion. LGPL seit 2.32, Projektseite `ldg.sourceforge.net` |
+| **zTask, zWeather, zcodeclib** (der Rest von z-tools) | `Applications/z-tools/` | nicht gebaut; zView selbst ist portiert (§1) |
+| **LDG 2.35** (SDK-Fassung) | `Applications/ldg-2` | **nicht** der Laderquelltext: die 7 C-Dateien sind Demos, die Umsetzung kommt als m68k-`libldg.a` und `ldg.prg`. Fuer die Portierung wird der SVN-Stand r133 benutzt (§1). LGPL seit 2.32 |
 | **cflib (Herkunft des Pins)** | `Applications/cflib-git` | `github.com/freemint/cflib`; aus `ce57817` (2026-07-14) ist `sdk/cflib/cflib-21-ce57817.tar.xz` gepackt. Der Klon ist **keine** Bauabhaengigkeit — siehe §3 |
 | **Thing** | `Applications/thing-neo-codeSVN-r62` | alternativer Desktop, unbewertet |
 | **HighWire** | `sdk/apps/highwire` | Browser — braucht Netzwerk (NET01-NET06, ungebaut) |
@@ -115,10 +142,23 @@ eigener Liste moeglicherweise in `ldg-2`).
 
 ## 5. Die Regel, die ueber allem steht
 
-**Die portierte Anwendung bleibt unveraendert.** Korrekturen gehoeren in die
-Werkzeugkette (`sdk/`), nicht in den Quelltext der Anwendung. Die einzige
-Ausnahme ist m68k-Assembler, der auf AArch64 neu gezielt werden muss.
+(Korrigiert 2026-10-20, TASK/SDK01 B. Hier stand: „Die portierte Anwendung
+bleibt unveraendert. Korrekturen gehoeren in die Werkzeugkette, die einzige
+Ausnahme ist m68k-Assembler.“ Das stimmte nicht mit dem Baum ueberein: von
+den neun Patch-Dateien fuer QED und TeraDesk ist eine m68k-Assembler, acht
+sind LP64-Korrekturen, darunter eine Neufassung des QED-Speichermanagers.)
 
-PORT03 ist das Musterbeispiel: der Fehler sass in einer Bibliothek, die
-Versuchung war, ihn in QED zu umgehen — richtig war, die Bibliothek auf den
-Stand zu bringen, auf dem sie ihn selbst behoben hat.
+**Upstream-Quellen bleiben unveraendert** — als Archiv oder als unversionierter
+Checkout; im Baum der Anwendung wird nichts editiert. Was **jedes** Programm
+trifft (eine Bibliothek, ein Header, `crt0`, ein Compiler-Schalter, die
+LP64-Breite eines TOS-Feldes in libc/gemlib), wird **einmal im SDK** behoben.
+Was **nur ein Programm** braucht (m68k-Assembler, Annahmen ueber `long`,
+Strukturgroesse oder Byte-Reihenfolge im Anwendungscode), steht als
+**Patch-Datei** in `sdk/overlays/<programm>/` (zView: `sdk/zview/overlay/`),
+mit einem Kopfkommentar, der sagt, warum und was sich gegenueber Upstream
+aendert. Die Liste der vorhandenen Patches mit ihren Gruenden steht in
+[04](04-porting-anatomy.md#the-rule-upstream-stays-unchanged-fixes-go-where-they-belong).
+
+PORT03 bleibt das Musterbeispiel fuer die erste Haelfte: der Fehler sass in
+einer Bibliothek, die Versuchung war, ihn in QED zu umgehen — richtig war,
+die Bibliothek auf den Stand zu bringen, auf dem sie ihn selbst behoben hat.

@@ -4,11 +4,12 @@ Tick each line; every line points at the section that explains it.
 
 ## Before touching anything
 
-- [ ] The app is C (plus at most inline m68k asm) and needs only mintlib /
-      gemlib / cflib / libm — not sockets, threads, `long double` math or the
-      handful of libm members that need compiler-rt (`powf`, `remainder`,
-      `fdim`, `scalbln`, `nexttowardf`, `casin`/`casinh`/`cacosh`/`catanh`);
-      `setjmp`/`longjmp` and the C99 double/float libm are available since T07
+- [ ] The app is C (plus at most inline m68k asm, which has to be rewritten)
+      and needs only mintlib / gemlib / cflib / libm — not sockets, threads,
+      `long double` math or the handful of libm members that need compiler-rt
+      (`powf`, `remainder`, `fdim`, `scalbln`, `nexttowardf`,
+      `casin`/`casinh`/`cacosh`/`catanh`); `setjmp`/`longjmp` and the C99
+      double/float libm are available since T07
       → [07 §3–4](07-mintlib-limits.md#3-mintlib-assembly-that-is-never-assembled)
 - [ ] Toolchain present: `clang`, the pinned Rust nightly with
       `llvm-tools-preview` (`rust-lld`, `llvm-ar`, …), `make`, `python3`
@@ -22,7 +23,8 @@ Tick each line; every line points at the section that explains it.
 
 - [ ] Source vendored under `sdk/apps/<app>/` (untracked), provenance recorded
       like `sdk/apps/coremark-sources.md5` → [04 §skeleton](04-porting-anatomy.md#adding-a-new-port-the-skeleton)
-- [ ] `sdk/overlays/<app>/` created (tracked, empty at first)
+- [ ] `sdk/overlays/<app>/` created when the first per-program patch is needed
+      (tracked; the patch files of one program live there)
 - [ ] `sdk/apps/build-<app>.sh` copied from `build-qed.sh` (cflib app) or
       `build-teradesk.sh` (header overlays / own dialog lib); keeps
       `lib_ensure`, the shared flag set, `-D__NEWTOS__`, `--start-group`
@@ -32,9 +34,12 @@ Tick each line; every line points at the section that explains it.
 
 ## Getting it to compile and link — the rule
 
-- [ ] Every compile error is classified: **m68k asm** → overlay retarget;
-      **anything else** → toolchain gap, fixed in a library overlay / shim /
-      flag, never in the app → [04 §rule](04-porting-anatomy.md#the-rule-the-application-source-stays-pristine)
+- [ ] Every compile error is classified: **would every LP64 port meet it?**
+      (a library, header, shim, `crt0` or flag problem) → fix it **once in the
+      SDK**; **only this program's own assumption** (m68k asm, 32-bit `long`,
+      struct size, big-endian tricks) → a per-program patch file in
+      `sdk/overlays/<app>/` whose header says why. Never edit inside the
+      upstream tree → [04 §rule](04-porting-anatomy.md#the-rule-upstream-stays-unchanged-fixes-go-where-they-belong)
 - [ ] Every undefined symbol traced with `build/why.txt`; classified against
       the dangling-reference list → [07 §6](07-mintlib-limits.md#6-references-libca-leaves-unresolved-measured)
 - [ ] `undefined symbols in the final image (goal 0): 0`
@@ -53,9 +58,10 @@ Tick each line; every line points at the section that explains it.
       privilege; shutdown/reset paths become live → [05 B4](05-abi-pitfalls.md#b4-super-supexec-supertouser)
 - [ ] Directory probes via `Fattrib` expect the TOS4/FreeMiNT answer
       → [05 B5](05-abi-pitfalls.md#b5-fattrib-on-directories--tos-4--freemint-semantics)
-- [ ] `argv` works (PORT01); `environ`/`getenv` and the `ARGV=` extension do
-      not — an app that takes arguments only through the environment must read
-      `p_cmdlin` or `shel_read`
+- [ ] `argv` works (PORT01); `environ`/`getenv` and the `ARGV=` extension work
+      too (PORT09, see [01](01-overview.md), [07 §5](07-mintlib-limits.md));
+      an app that reads its command tail itself can still use `p_cmdlin` or
+      `shel_read`
       → [05 B6](05-abi-pitfalls.md#b6-argcargv-the-command-tail-and-the-environment)
 - [ ] `uintptr_t`/`intptr_t` are pointer-wide since TASK/PORT10; `SIZE_MAX`,
       `PTRDIFF_MIN/MAX` and `SSIZE_MAX` are the 64-bit values since TASK/SDK01 A
@@ -70,7 +76,9 @@ Tick each line; every line points at the section that explains it.
 - [ ] Every AES/VDI call that passes a `long` or a pointer through `int_in`
       goes through a binding that splits it arithmetically, not by casting
       `&arg` to `short *` → [05 B16](05-abi-pitfalls.md#b16-gemlib-bindings-that-split-a-long-with-a-pointer-cast)
-- [ ] No `long double` arithmetic; no libm calls → [05 B12](05-abi-pitfalls.md#b12-long-double-is-128-bit-and-there-is-no-compiler-rt), [07 §4](07-mintlib-limits.md#4-mintlib-directories-not-compiled-at-all)
+- [ ] No `long double` arithmetic (binary128 has no compiler-rt here); libm
+      (OpenLibm, since T07) is there for `double`/`float`, minus the members
+      that need compiler-rt, see the first item → [05 B12](05-abi-pitfalls.md#b12-long-double-is-128-bit-and-there-is-no-compiler-rt), [07 §4](07-mintlib-limits.md#4-mintlib-directories-not-compiled-at-all)
 - [ ] libc `malloc` grows through GEMDOS `Malloc` (mintlib's `_stksize`
       model, ARCH03 E9); a program that needs its own heap sets `_stksize`
       → [05 A3/B15](05-abi-pitfalls.md#b15-a-libc-malloc-that-suddenly-fails)
@@ -92,8 +100,8 @@ Tick each line; every line points at the section that explains it.
 
 ## Before handing over
 
-- [ ] Every overlay file carries a header saying **why** it exists and what it
-      changes against upstream (the pattern of `sdk/overlays/*`)
+- [ ] Every per-program patch file carries a header saying **why** it exists
+      and what it changes against upstream (the pattern of `sdk/overlays/*`)
 - [ ] **A moved library pin rebases every full-file overlay onto it.** An
       overlay that is a whole copy of an upstream file silently reverts
       everything upstream fixed in that file since the old pin. PORT03:
