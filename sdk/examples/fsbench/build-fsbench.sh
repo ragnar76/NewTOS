@@ -27,7 +27,8 @@ lib_ensure libc || exit 1
 MINT="$SDK/libc/mintlib/include"
 CLANG="${CLANG:-clang}"
 RES="$($CLANG -print-resource-dir)/include"
-BIN="$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin"
+. "$SDK/toolchain.sh"   # rustc asked from inside sdk/, whatever the cwd (SDK01 I)
+BIN="$(newtos_rust_bindir)"
 LLD="${LLD:-$BIN/rust-lld}"
 
 CFLAGS=(-target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2

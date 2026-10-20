@@ -1,0 +1,7 @@
+# sha256 of sdk/build.sh's output (sdk/examples/hello.c), written outside sdk/ by build-all.sh / the reruns
+94d2c9114225cffb62c38da20b8ddf85a966af998226b1ed256852ac7e3d2930  $S/out/after-HELLO2.NCP
+94d2c9114225cffb62c38da20b8ddf85a966af998226b1ed256852ac7e3d2930  $S/out/before-HELLO2.NCP
+94d2c9114225cffb62c38da20b8ddf85a966af998226b1ed256852ac7e3d2930  $S/out/outside-before-HELLO2.NCP
+94d2c9114225cffb62c38da20b8ddf85a966af998226b1ed256852ac7e3d2930  $S/out/rerun-inside-HELLO2.NCP
+94d2c9114225cffb62c38da20b8ddf85a966af998226b1ed256852ac7e3d2930  $S/out/rerun-notc-HELLO2.NCP
+94d2c9114225cffb62c38da20b8ddf85a966af998226b1ed256852ac7e3d2930  $S/out/rerun-stable-HELLO2.NCP

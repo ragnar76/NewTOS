@@ -1,0 +1,9 @@
+before: lines naming toolchains/stable-*: 0  naming toolchains/nightly-2026-04-15-*: 22
+outside-before: lines naming toolchains/stable-*: 22  naming toolchains/nightly-2026-04-15-*: 0
+outside-after: lines naming toolchains/stable-*: 0  naming toolchains/nightly-2026-04-15-*: 22
+after: lines naming toolchains/stable-*: 0  naming toolchains/nightly-2026-04-15-*: 22
+
+outside-before, per log (the scripts' own 'ar :' / 'lld :' report lines):
+  14 ar    : /Users/ingouhlemann/.rustup/toolchains/stable-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/llvm-ar
+   8 lld   : /Users/ingouhlemann/.rustup/toolchains/stable-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/rust-lld
+   1 lld   : rust-lld -flavor gnu

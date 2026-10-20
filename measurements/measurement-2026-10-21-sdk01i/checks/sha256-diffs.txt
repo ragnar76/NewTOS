@@ -1,0 +1,53 @@
+# diff sha256-before.txt sha256-after.txt
+16,20c16,20
+< abb8527f2b354a34c38dbb8a8cc86c388a213888f4b80037c790c918e1ff517f  sdk/examples/libtest/build/host/libexif.a
+< c091ebfe5dc8ce727a072c4be677bc342fec4c66bf246cce52a840d6bc14defe  sdk/examples/libtest/build/host/libgif.a
+< 113553564c48a5ec53f727454739e322404dcd7ec51a105c2149ffb35627a976  sdk/examples/libtest/build/host/libjpeg.a
+< 9b414e29249e9e1da40a101e1e3ff9fdcc456a79be4caf0da44d5507505f7d46  sdk/examples/libtest/build/host/libpng.a
+< 235db000e1f60a3b11796a97906e9445fafdd61e1cf199d677e38d545a481e96  sdk/examples/libtest/build/host/libz.a
+---
+> 217c17d6fa6e1cbd2ebe731a2cbfef91bc3cf18dfa6fca2319600158eac35e42  sdk/examples/libtest/build/host/libexif.a
+> b7ef8d8b206cd6a477cd18e42e0581bae6073f6397ae4bf59d1f0c91c840d9c1  sdk/examples/libtest/build/host/libgif.a
+> 7eac9018375bc458016bc296b814cad90264761e9c4bb2b47d6fa149afd5ae42  sdk/examples/libtest/build/host/libjpeg.a
+> 18687e0c5a745d7b5afd83b513db823aab397da2838d79ab255f1c43280b634d  sdk/examples/libtest/build/host/libpng.a
+> 3b5dc9220b528a05c076c0f7ca22bd9585db407f49e9bf2df5ed6b89e693f365  sdk/examples/libtest/build/host/libz.a
+22c22
+< 85512d8bc6e5accfab9c848a24c07111c5e9c2577c84d810bf91b0ff27554003  sdk/gemlib/gemlib-m68k.a
+---
+> a33c093c61d4454047ae8cefeb3b3a9cfbd72dd38110d0226d4c234ba293ae3c  sdk/gemlib/gemlib-m68k.a
+
+# diff sha256-before.txt sha256-outside-after.txt
+16,20c16,20
+< abb8527f2b354a34c38dbb8a8cc86c388a213888f4b80037c790c918e1ff517f  sdk/examples/libtest/build/host/libexif.a
+< c091ebfe5dc8ce727a072c4be677bc342fec4c66bf246cce52a840d6bc14defe  sdk/examples/libtest/build/host/libgif.a
+< 113553564c48a5ec53f727454739e322404dcd7ec51a105c2149ffb35627a976  sdk/examples/libtest/build/host/libjpeg.a
+< 9b414e29249e9e1da40a101e1e3ff9fdcc456a79be4caf0da44d5507505f7d46  sdk/examples/libtest/build/host/libpng.a
+< 235db000e1f60a3b11796a97906e9445fafdd61e1cf199d677e38d545a481e96  sdk/examples/libtest/build/host/libz.a
+---
+> a631fb3811b980413dd8c67b553202614928d517fa45723f2e258d02f37a6564  sdk/examples/libtest/build/host/libexif.a
+> 1efb7ef2486f5de004258979efdeb0159a479073964f589585297515eceb5dbb  sdk/examples/libtest/build/host/libgif.a
+> a062871a4ccb19b8f58e4fe86cf41cf88a6c174d656ad69fb0e0ef4efe5e8ad6  sdk/examples/libtest/build/host/libjpeg.a
+> 3433816f706e01eeec65575c478a63577446d9670bb7fd507d66d1a7948848c1  sdk/examples/libtest/build/host/libpng.a
+> f1a53d00915419a29861ce985c82a6e88f34694ae39ef4e8333b1d91d99ffe83  sdk/examples/libtest/build/host/libz.a
+22c22
+< 85512d8bc6e5accfab9c848a24c07111c5e9c2577c84d810bf91b0ff27554003  sdk/gemlib/gemlib-m68k.a
+---
+> f59a2dd58c8c25f6481d9e3b41ed678cc45eb7266940427ae8728f2ee75abaf3  sdk/gemlib/gemlib-m68k.a
+
+# diff sha256-before.txt sha256-outside-before.txt
+16,20c16,20
+< abb8527f2b354a34c38dbb8a8cc86c388a213888f4b80037c790c918e1ff517f  sdk/examples/libtest/build/host/libexif.a
+< c091ebfe5dc8ce727a072c4be677bc342fec4c66bf246cce52a840d6bc14defe  sdk/examples/libtest/build/host/libgif.a
+< 113553564c48a5ec53f727454739e322404dcd7ec51a105c2149ffb35627a976  sdk/examples/libtest/build/host/libjpeg.a
+< 9b414e29249e9e1da40a101e1e3ff9fdcc456a79be4caf0da44d5507505f7d46  sdk/examples/libtest/build/host/libpng.a
+< 235db000e1f60a3b11796a97906e9445fafdd61e1cf199d677e38d545a481e96  sdk/examples/libtest/build/host/libz.a
+---
+> 6c49dc4140817a118df7b3b5920017fa1f6917d8ba6e0c4d0f9361e47ad99109  sdk/examples/libtest/build/host/libexif.a
+> 71f11763674d6fcbbd08d06521835fba3b8876b89d63bbd81f97e6fb0f64ba9e  sdk/examples/libtest/build/host/libgif.a
+> 6351ed70481edddc2df79172244c93dff83add34aeac39ca313d314da42e05a9  sdk/examples/libtest/build/host/libjpeg.a
+> 76a39741ed4b9a67bd3115b92444bcdedbc8867e84fdadab01f9b0034a99adf5  sdk/examples/libtest/build/host/libpng.a
+> c7134f37a78a7a343d98121f11755ef0fac002d8a8bedc7bdfd14463a3fb34d0  sdk/examples/libtest/build/host/libz.a
+22c22
+< 85512d8bc6e5accfab9c848a24c07111c5e9c2577c84d810bf91b0ff27554003  sdk/gemlib/gemlib-m68k.a
+---
+> b20c78100ab4cc9c96cecd7e9dcbb8abbac0038ecec5ab5eb148901913e74f48  sdk/gemlib/gemlib-m68k.a

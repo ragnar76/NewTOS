@@ -1,0 +1,87 @@
+measurement-2026-10-21-sdk01i -- Developer: TASK/SDK01 package I ("Befund aus Paket C"): the SDK build scripts resolve
+the Rust sysroot (rust-lld, llvm-ar, llvm-nm, llvm-readobj, llvm-objdump, llvm-size) from the SDK's own path instead of
+the caller's cwd. Base: main aea469a1 (56dcd6a4 landed during the run, docs/task only) + the UNCOMMITTED package-I tree
+(sdk/ + docs/sdk/ only; no kernel/tos-api/tos-types change; no vendored upstream file touched). macOS host, no QEMU, no
+card, no Pi, nothing committed. Paths in checks/ are rewritten: $WS = repository root, $S = the session scratchpad.
+Binaries are NOT in this directory (sha256 only); copies of the baseline artifacts lived in $S/before-bin.
+
+QUESTION  Do all SDK build scripts work when started by absolute path from outside the checkout, and do they still produce
+          byte-identical outputs from inside it?
+
+CHANGE (method/sdk01i-change.diff)
+  sdk/toolchain.sh (new)  newtos_rust_sysroot / newtos_rust_bindir: rustc asked in a subshell that cd's into sdk/ (located
+                          from the helper's own BASH_SOURCE), as sdk/bin/newtos-cc already did. Failure path unchanged:
+                          rustc's exit status, and the bin path is still printed, so the old "missing LLVM tool:
+                          /lib/rustlib//bin/llvm-ar" check message stays as it was.
+  17 scripts              `SYSROOT=$(rustc --print sysroot …)` + `BIN=…$(rustc -vV …)…` -> `. "$SDK/toolchain.sh"` +
+                          `BIN="$(newtos_rust_bindir)"` (SYSROOT was used nowhere else): build-libc, build-gemlib,
+                          build-cflib, build-libm, build-ldg, build-ldg-client, build-ldg-demo, build-qed, build-teradesk,
+                          build-coremark, build-doom, build-chaintest, build-gemtest, build-present, build-zview,
+                          build-libtest, libc/tests/libc-link.sh.
+  sdk/examples/fsbench/build-fsbench.sh  same (its one-line BIN lookup).
+  sdk/vendor-lib.sh       vl_toolchain(): bin from newtos_rust_bindir (covers zlib, libpng, libjpeg, giflib, libexif,
+                          libshare, windom and zView's vl_* use).
+  sdk/build.sh            find_lld(): sysroot via newtos_rust_sysroot, AND the sysroot candidate now comes before a
+                          `rust-lld` on PATH (see FINDING 2). ld.lld on PATH stays first.
+  docs/sdk/00-quickstart.md  "run every SDK script inside the checkout" replaced; troubleshooting item 2 (the rustup /
+                          missing-LLVM-tool message) removed, items 3-5 renumbered 2-4 (no numbered references exist).
+  docs/sdk/README.md      tree: sdk/toolchain.sh line.
+  docs/sdk/15-host-checklist.md  not changed: its "inside the repo" notes (B4-B6) are about running rustc/rustup by
+                          hand, which still depends on the cwd.
+
+METHOD
+  method/build-all.sh <label> <cwd>  runs 28 build scripts + newtos-cc-host.sh + run-host-tests.sh by ABSOLUTE path with
+      the given cwd (libraries first; each library builder called directly rebuilds its archive). TMPDIR and sdk/build.sh's
+      output are redirected to $S. build-present.sh is committed 100644 and is run via `bash <abs path>` (see OUT OF SCOPE).
+  method/hash-outputs.sh <stamp>  sha256 of every *.a/.NCP/.NAP/.NLD/.NAC/.NTP/.PRG/.TOS under sdk/ newer than <stamp>.
+  method/ar-members.sh   member-level comparison of two archives (names, order, bytes; prints header dates).
+  Runs, in this order:
+    before          OLD scripts, cwd = $WS                         -> checks/summary-before.txt, sha256-before.txt
+    outside-before  OLD scripts, cwd = $S/outside (no toml; rustup default = stable 1.95.0)
+                                                                   -> summary-outside-before.txt, sha256-outside-before.txt
+    (notc probe)    OLD build-zlib.sh, cwd = $S/notc (toml naming an uninstalled custom toolchain = "rustup finds none")
+    outside-after   NEW scripts, cwd = $S/notc                     -> summary-outside-after.txt, sha256-outside-after.txt
+    after           NEW scripts, cwd = $WS                         -> summary-after.txt, sha256-after.txt
+    rerun           NEW build.sh + newtos-cc-host.sh after the find_lld reorder, cwd = $S/notc, $S/outside, $WS
+
+RESULT
+  1 THE DEFECT, BOTH FORMS, REPRODUCED WITH THE OLD SCRIPTS
+    - no toolchain (checks/no-toolchain-dir.txt): "error: custom toolchain 'newtos-notinstalled' … is not installed" then
+      "error: missing LLVM tool: /lib/rustlib//bin/llvm-ar", rc=1 -- the ticket's message exactly.
+    - wrong toolchain (checks/toolchain-paths.txt): on this host stable carries the LLVM tools, so outside-before
+      SUCCEEDED silently with stable 1.95.0's tools: 22 report lines name toolchains/stable-* (14 ar, 8 lld) in 16 logs,
+      0 the pinned nightly. Its AArch64 outputs happened to be byte-identical to the nightly's (sha256-diffs.txt, third
+      block: only the 6 timestamp archives of 3 differ) -- luck, not a guarantee.
+  2 NEW SCRIPTS FROM OUTSIDE (checks/summary-outside-after.txt, cwd = the no-toolchain dir): all 28 build scripts rc=0,
+    run-host-tests 23/0/0, every tool line names nightly-2026-04-15 (toolchain-paths.txt: 22 nightly, 0 stable).
+    FINDING 2: in that first outside-after run sdk/build.sh failed (rc=101, "Failed to find tool: lld … not installed")
+    and so did newtos-cc-host.sh's -bare check, which runs sdk/build.sh: find_lld() preferred `rust-lld` on PATH, which
+    here is the rustup proxy ~/.cargo/bin/rust-lld -- it resolves the toolchain by the cwd, i.e. the same defect one level
+    down. Fixed by trying the pinned sysroot's rust-lld before PATH's. Rerun (no-toolchain-dir.txt, last block): build.sh
+    rc=0 and newtos-cc-host "all checks passed" in $S/notc, $S/outside and $WS; lld = the nightly's rust-lld in all three;
+    HELLO2.NCP 94d2c911 in every run, old and new (sha256-hello2.txt, = SDK01 D's figure).
+  3 BYTE IDENTITY INSIDE (checks/sha256-diffs.txt): 64 artifacts per run. before vs after: 58 identical -- among them
+    libc.a de8bfa92, gemlib.a 67fb8b86, cflib.a 0a93a064, libm.a 5de4bdaa, QED.NAP cacb51f0, DESKTOP.NAP 5b90db4f,
+    CORE.NCP 02090308 / COREVAL.NCP dbad7c2f, ZVIEW.NAP 216bd555 + 10 codecs, DOOM.NAP 9fb5664f, APITEST.NCP b25a734b,
+    all codec/ldg/libshare/windom archives and the ldg/chaintest/gemtest/present/fsbench/libtest programs. before vs
+    outside-after: the same 58 identical.
+    The 6 that differ, differ between EVERY pair of runs, old scripts included (before vs outside-before too), and are
+    built by tools this change does not touch: sdk/examples/libtest/build/host/lib{exif,gif,jpeg,png,z}.a (host `ar`,
+    make-ref.sh via run-host-tests.sh) and sdk/gemlib/gemlib-m68k.a (m68k-atari-mint-ar). checks/ar-members-before-vs-
+    after.txt: same member list and order, 0 members with different bytes in all six; only the ar member header dates
+    differ (e.g. 23:52 vs 23:59). Build path was $WS in both runs, so no __FILE__ difference arises.
+  4 HOST TESTS (checks/host-tests.txt): before 23/0/0, after 23/0/0, outside-after 23/0/0 (libc-link PASS, not skipped).
+
+RISKS / NOTES
+  - sdk/toolchain.sh is not in lib-stale.sh's watch lists (vendor-lib.sh is, because it carries VL_CFLAGS); the helper
+    only locates tools and carries no flags. Editing it does not mark libraries stale.
+  - build.sh's "lld :" report line now shows the full sysroot path instead of "rust-lld -flavor gnu" when no ld.lld is on
+    PATH; inside the checkout both are the same binary (HELLO2.NCP identical).
+  - An explicit RUSTUP_TOOLCHAIN in the environment still overrides rust-toolchain.toml (rustup's rule, unchanged).
+  - If the pinned nightly is not installed at all, the scripts still end with "missing LLVM tool: /lib/rustlib//bin/…"
+    after rustup's own message; step 1.3 of the quickstart (rustup toolchain install) covers it.
+
+OUT OF SCOPE (untouched)
+  - sdk/apps/present/build-present.sh is mode 100644: exec'd by path it fails with "Permission denied" (rc=126, first
+    `before` run); docs/sdk/15-host-checklist.md section C calls it that way.
+  - Host `ar` and m68k ar archives are not reproducible byte-for-byte (member mtimes).

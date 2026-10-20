@@ -1,0 +1,22 @@
+# cwd = $S/notc, which holds rust-toolchain.toml channel="newtos-notinstalled" (= rustup finds no toolchain there)
+## OLD sdk/zlib/build-zlib.sh (rc=1)
+error: custom toolchain 'newtos-notinstalled' specified in override file '$S/notc/rust-toolchain.toml' is not installed
+error: missing LLVM tool: /lib/rustlib//bin/llvm-ar
+
+## NEW sdk/zlib/build-zlib.sh (rc=0)
+clang : Apple clang version 21.0.0 (clang-2100.3.34.2)
+ar    : /Users/ingouhlemann/.rustup/toolchains/nightly-2026-04-15-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/llvm-ar
+archived -> $WS/sdk/zlib/libz.a (119702 bytes)
+
+## build.sh / newtos-cc-host.sh rerun after the find_lld reorder
+[notc] lld   : /Users/ingouhlemann/.rustup/toolchains/nightly-2026-04-15-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/rust-lld -flavor gnu   newtos-cc-host: newtos-cc-host: all checks passed
+[stable] lld   : /Users/ingouhlemann/.rustup/toolchains/nightly-2026-04-15-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/rust-lld -flavor gnu   newtos-cc-host: newtos-cc-host: all checks passed
+[inside] lld   : /Users/ingouhlemann/.rustup/toolchains/nightly-2026-04-15-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/rust-lld -flavor gnu   newtos-cc-host: newtos-cc-host: all checks passed
+
+## first outside-after run (before the reorder): build.sh rc=101, newtos-cc-host rc=1
+clang : Apple clang version 21.0.0 (clang-2100.3.34.2)
+lld   : rust-lld -flavor gnu
+Failed to find tool: lld
+error from command -- stderr:
+
+error: custom toolchain 'newtos-notinstalled' specified in override file '$S/notc/rust-toolchain.toml' is not installed

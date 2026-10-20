@@ -39,8 +39,8 @@ done
 
 CLANG="${CLANG:-clang}"
 RES="$($CLANG -print-resource-dir)/include"
-SYSROOT="$(rustc --print sysroot 2>/dev/null)"
-BIN="$SYSROOT/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin"
+. "$SDK/toolchain.sh"   # rustc asked from inside sdk/, whatever the cwd (SDK01 I)
+BIN="$(newtos_rust_bindir)"
 LLD="${LLD:-$BIN/rust-lld}"
 NM="$BIN/llvm-nm"
 READOBJ="$BIN/llvm-readobj"

@@ -43,14 +43,20 @@ CLANG="${CLANG:-clang}"
 command -v "$CLANG" >/dev/null 2>&1 || { echo "error: clang not found" >&2; exit 1; }
 
 # --- locate an LLVM ELF linker (rust-lld ships with the Rust toolchain) ---
+# The pinned toolchain's sysroot is asked from inside sdk/ (sdk/toolchain.sh,
+# SDK01 I) and comes BEFORE a `rust-lld` on PATH: that one is normally the
+# rustup proxy (~/.cargo/bin), which picks the toolchain by the caller's cwd --
+# outside the checkout the default one, or none. Inside the checkout both name
+# the same binary.
+. "$SDK_DIR/toolchain.sh"
 find_lld() {
     if command -v ld.lld >/dev/null 2>&1; then echo "ld.lld"; return; fi
-    if command -v rust-lld >/dev/null 2>&1; then echo "rust-lld -flavor gnu"; return; fi
-    local sysroot; sysroot="$(rustc --print sysroot 2>/dev/null || true)"
+    local sysroot; sysroot="$(newtos_rust_sysroot || true)"
     if [ -n "$sysroot" ]; then
         local cand; cand="$(find "$sysroot"/lib/rustlib -name rust-lld 2>/dev/null | head -1)"
         [ -n "$cand" ] && { echo "$cand -flavor gnu"; return; }
     fi
+    if command -v rust-lld >/dev/null 2>&1; then echo "rust-lld -flavor gnu"; return; fi
     [ -x "$HOME/.cargo/bin/rust-lld" ] && { echo "$HOME/.cargo/bin/rust-lld -flavor gnu"; return; }
     return 1
 }

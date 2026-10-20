@@ -116,6 +116,7 @@ sdk/
 ├── newtos.ld             linker script for every native program
 ├── include/newtos.h      clean-room trap helpers (Cconws/Cconin/Pterm/...)
 ├── lib-stale.sh          library dependency chain + staleness test
+├── toolchain.sh          finds the pinned Rust toolchain's rust-lld/llvm-* from sdk/, whatever the cwd
 ├── libc/                 mintlib-0.60.1 port (tarball + overlay/ + newtos-arch/, 15 files there)
 ├── gemlib/               gemlib-0.44.0 port (tarball + overlay/)
 ├── cflib/                cflib port (tarball pinned at commit ce57817 + overlay/)

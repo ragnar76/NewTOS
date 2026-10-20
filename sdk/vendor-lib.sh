@@ -38,6 +38,7 @@
 #                                 archive, list defined + dangling symbols
 
 VL_SDK="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"       # .../sdk
+. "$VL_SDK/toolchain.sh"
 
 # The SDK's freestanding set, identical to sdk/ldg/build-ldg.sh and the app
 # builds (build-qed.sh): AArch64 ELF, no host headers, -fPIE because every
@@ -50,9 +51,8 @@ vl_toolchain() {
   CLANG="${CLANG:-clang}"
   command -v "$CLANG" >/dev/null 2>&1 || { echo "error: clang not found" >&2; return 1; }
   RES="$($CLANG -print-resource-dir)/include"
-  local sysroot bin
-  sysroot="$(rustc --print sysroot 2>/dev/null)"
-  bin="$sysroot/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin"
+  local bin
+  bin="$(newtos_rust_bindir)"    # sdk/toolchain.sh: independent of the cwd (SDK01 I)
   AR="${AR:-$bin/llvm-ar}"
   NM="$bin/llvm-nm"
   [ -x "$AR" ] || { echo "error: missing LLVM tool: $AR" >&2; return 1; }

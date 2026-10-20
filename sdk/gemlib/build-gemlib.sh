@@ -98,8 +98,8 @@ fi
 CLANG="${CLANG:-clang}"
 command -v "$CLANG" >/dev/null 2>&1 || { echo "error: clang not found" >&2; exit 1; }
 RES="$($CLANG -print-resource-dir)/include"
-SYSROOT="$(rustc --print sysroot 2>/dev/null)"
-BIN="$SYSROOT/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin"
+. "$SDK/toolchain.sh"   # rustc asked from inside sdk/, whatever the cwd (SDK01 I)
+BIN="$(newtos_rust_bindir)"
 AR="${AR:-$BIN/llvm-ar}"
 LLD="${LLD:-$BIN/rust-lld}"
 READOBJ="$BIN/llvm-readobj"

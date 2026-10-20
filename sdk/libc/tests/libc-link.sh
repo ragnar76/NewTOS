@@ -26,8 +26,8 @@ LIBA="${LIBC_A:-$LIBC/libc.a}"
   echo "libc-link: skipped -- libc.a or mintlib tree missing; run build-libc.sh"
   exit 77
 }
-SYSROOT="$(rustc --print sysroot 2>/dev/null)"
-BIN="$SYSROOT/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin"
+. "$SDK/toolchain.sh"   # rustc asked from inside sdk/, whatever the cwd (SDK01 I)
+BIN="$(newtos_rust_bindir)"
 LLD="$BIN/rust-lld"; NM="$BIN/llvm-nm"
 [ -x "$LLD" ] && [ -x "$NM" ] || { echo "libc-link: skipped -- rust-lld/llvm-nm missing"; exit 77; }
 W="$(mktemp -d)"; trap 'rm -rf "$W"' EXIT

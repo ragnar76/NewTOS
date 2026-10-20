@@ -77,11 +77,11 @@ Measured: the shallow clone took about 1 minute (774 MB working tree), the
 toolchain download 2 min 12 s. Without `--depth 1` the clone carries the full
 history.
 
-**Run every SDK script from inside this checkout** (any directory in it).
-`rustup` chooses the toolchain by the current directory; started from
-elsewhere, a build script finds no or the wrong `rustc` — see
-[troubleshooting](#6-troubleshooting). (`sdk/bin/newtos-cc` itself does not
-have this problem; it asks `rustc` from inside the SDK directory.)
+The SDK scripts can be started from any directory, by absolute or relative
+path. `rustup` chooses the toolchain by the current directory, so every
+script (and `sdk/bin/newtos-cc`) asks `rustc` for the pinned nightly's
+`rust-lld`/`llvm-*` tools from inside the SDK directory (`sdk/toolchain.sh`),
+not from wherever it was started.
 
 Everything the SDK libraries are built from is **in the repository** as the
 unchanged upstream archives: mintlib, gemlib, cflib, OpenLibm, LDG,
@@ -399,15 +399,7 @@ failed for that library; run the script the message names. After you change
 anything under `sdk/`, rebuild the library yourself — `newtos-cc` does not
 notice an out-of-date archive ([16](16-newtos-cc.md)).
 
-**2. `error: rustup could not choose a version of rustc to run …` followed by
-`error: missing LLVM tool: /lib/rustlib//bin/llvm-ar`.**
-A build script was started from outside the checkout, where
-`rust-toolchain.toml` does not apply (with a default toolchain set, it picks
-that one instead, which has no `llvm-ar`/`rust-lld`). `cd` into the checkout
-and run it again; if the nightly is not installed, `rustup toolchain install`
-there.
-
-**3. `rust-lld: error: undefined symbol: …`.**
+**2. `rust-lld: error: undefined symbol: …`.**
 Either a library option is missing (`-lm` for `<math.h>` functions, `-lcflib`,
 …), or the function is one of those the ported libraries do not provide:
 the list is [07 §11](07-mintlib-limits.md#11-functions-that-do-not-link-measured-per-symbol-tasksdk01-a)
@@ -417,11 +409,11 @@ the list is [07 §11](07-mintlib-limits.md#11-functions-that-do-not-link-measure
 ([05 B12](05-abi-pitfalls.md#b12-long-double-is-128-bit-and-there-is-no-compiler-rt));
 `socket`, `gethostbyname` mean networking, which does not exist.
 
-**4. `fatal error: 'math.h' file not found`** (or another library's header).
+**3. `fatal error: 'math.h' file not found`** (or another library's header).
 `newtos-cc` adds a library's include path only with its `-l` option —
 pass `-lm` (also when compiling with `-c`).
 
-**5. `error: incompatible pointer to integer conversion … [-Wint-conversion]`,
+**4. `error: incompatible pointer to integer conversion … [-Wint-conversion]`,
 or a program that builds but crashes or shows garbage.**
 A 32-bit assumption: a pointer stored in an `int`, a `long` in a structure
 that TOS defines with 32-bit fields, a pointer split into two 16-bit words.

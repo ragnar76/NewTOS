@@ -1,0 +1,434 @@
+diff --git a/docs/sdk/00-quickstart.md b/docs/sdk/00-quickstart.md
+index 2e41eb58..0b47d7ff 100644
+--- a/docs/sdk/00-quickstart.md
++++ b/docs/sdk/00-quickstart.md
+@@ -77,11 +77,11 @@ Measured: the shallow clone took about 1 minute (774 MB working tree), the
+ toolchain download 2 min 12 s. Without `--depth 1` the clone carries the full
+ history.
+ 
+-**Run every SDK script from inside this checkout** (any directory in it).
+-`rustup` chooses the toolchain by the current directory; started from
+-elsewhere, a build script finds no or the wrong `rustc` — see
+-[troubleshooting](#6-troubleshooting). (`sdk/bin/newtos-cc` itself does not
+-have this problem; it asks `rustc` from inside the SDK directory.)
++The SDK scripts can be started from any directory, by absolute or relative
++path. `rustup` chooses the toolchain by the current directory, so every
++script (and `sdk/bin/newtos-cc`) asks `rustc` for the pinned nightly's
++`rust-lld`/`llvm-*` tools from inside the SDK directory (`sdk/toolchain.sh`),
++not from wherever it was started.
+ 
+ Everything the SDK libraries are built from is **in the repository** as the
+ unchanged upstream archives: mintlib, gemlib, cflib, OpenLibm, LDG,
+@@ -399,15 +399,7 @@ failed for that library; run the script the message names. After you change
+ anything under `sdk/`, rebuild the library yourself — `newtos-cc` does not
+ notice an out-of-date archive ([16](16-newtos-cc.md)).
+ 
+-**2. `error: rustup could not choose a version of rustc to run …` followed by
+-`error: missing LLVM tool: /lib/rustlib//bin/llvm-ar`.**
+-A build script was started from outside the checkout, where
+-`rust-toolchain.toml` does not apply (with a default toolchain set, it picks
+-that one instead, which has no `llvm-ar`/`rust-lld`). `cd` into the checkout
+-and run it again; if the nightly is not installed, `rustup toolchain install`
+-there.
+-
+-**3. `rust-lld: error: undefined symbol: …`.**
++**2. `rust-lld: error: undefined symbol: …`.**
+ Either a library option is missing (`-lm` for `<math.h>` functions, `-lcflib`,
+ …), or the function is one of those the ported libraries do not provide:
+ the list is [07 §11](07-mintlib-limits.md#11-functions-that-do-not-link-measured-per-symbol-tasksdk01-a)
+@@ -417,11 +409,11 @@ the list is [07 §11](07-mintlib-limits.md#11-functions-that-do-not-link-measure
+ ([05 B12](05-abi-pitfalls.md#b12-long-double-is-128-bit-and-there-is-no-compiler-rt));
+ `socket`, `gethostbyname` mean networking, which does not exist.
+ 
+-**4. `fatal error: 'math.h' file not found`** (or another library's header).
++**3. `fatal error: 'math.h' file not found`** (or another library's header).
+ `newtos-cc` adds a library's include path only with its `-l` option —
+ pass `-lm` (also when compiling with `-c`).
+ 
+-**5. `error: incompatible pointer to integer conversion … [-Wint-conversion]`,
++**4. `error: incompatible pointer to integer conversion … [-Wint-conversion]`,
+ or a program that builds but crashes or shows garbage.**
+ A 32-bit assumption: a pointer stored in an `int`, a `long` in a structure
+ that TOS defines with 32-bit fields, a pointer split into two 16-bit words.
+diff --git a/docs/sdk/README.md b/docs/sdk/README.md
+index f1a5e9ae..086feee9 100644
+--- a/docs/sdk/README.md
++++ b/docs/sdk/README.md
+@@ -116,6 +116,7 @@ sdk/
+ ├── newtos.ld             linker script for every native program
+ ├── include/newtos.h      clean-room trap helpers (Cconws/Cconin/Pterm/...)
+ ├── lib-stale.sh          library dependency chain + staleness test
++├── toolchain.sh          finds the pinned Rust toolchain's rust-lld/llvm-* from sdk/, whatever the cwd
+ ├── libc/                 mintlib-0.60.1 port (tarball + overlay/ + newtos-arch/, 15 files there)
+ ├── gemlib/               gemlib-0.44.0 port (tarball + overlay/)
+ ├── cflib/                cflib port (tarball pinned at commit ce57817 + overlay/)
+diff --git a/sdk/apps/build-coremark.sh b/sdk/apps/build-coremark.sh
+index a32bff99..6d2326f0 100755
+--- a/sdk/apps/build-coremark.sh
++++ b/sdk/apps/build-coremark.sh
+@@ -115,8 +115,8 @@ MINT="$LIBC/mintlib/include"
+ CLANG="${CLANG:-clang}"
+ command -v "$CLANG" >/dev/null 2>&1 || { echo "error: clang not found" >&2; exit 1; }
+ RES="$($CLANG -print-resource-dir)/include"
+-SYSROOT="$(rustc --print sysroot 2>/dev/null)"
+-BIN="$SYSROOT/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin"
++. "$SDK/toolchain.sh"   # rustc asked from inside sdk/, whatever the cwd (SDK01 I)
++BIN="$(newtos_rust_bindir)"
+ LLD="${LLD:-$BIN/rust-lld}"
+ READOBJ="$BIN/llvm-readobj"
+ NM="$BIN/llvm-nm"
+diff --git a/sdk/apps/build-doom.sh b/sdk/apps/build-doom.sh
+index 9e2f1d00..2a0e35d9 100755
+--- a/sdk/apps/build-doom.sh
++++ b/sdk/apps/build-doom.sh
+@@ -116,8 +116,8 @@ MINT="$LIBC/mintlib/include"
+ CLANG="${CLANG:-clang}"
+ command -v "$CLANG" >/dev/null 2>&1 || { echo "error: clang not found" >&2; exit 1; }
+ RES="$($CLANG -print-resource-dir)/include"
+-SYSROOT="$(rustc --print sysroot 2>/dev/null)"
+-BIN="$SYSROOT/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin"
++. "$SDK/toolchain.sh"   # rustc asked from inside sdk/, whatever the cwd (SDK01 I)
++BIN="$(newtos_rust_bindir)"
+ LLD="${LLD:-$BIN/rust-lld}"
+ NM="$BIN/llvm-nm"
+ SIZE="$BIN/llvm-size"
+diff --git a/sdk/apps/build-qed.sh b/sdk/apps/build-qed.sh
+index 43b222bf..b4468d45 100755
+--- a/sdk/apps/build-qed.sh
++++ b/sdk/apps/build-qed.sh
+@@ -85,8 +85,8 @@ MINT="$LIBC/mintlib/include"
+ CLANG="${CLANG:-clang}"
+ command -v "$CLANG" >/dev/null 2>&1 || { echo "error: clang not found" >&2; exit 1; }
+ RES="$($CLANG -print-resource-dir)/include"
+-SYSROOT="$(rustc --print sysroot 2>/dev/null)"
+-BIN="$SYSROOT/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin"
++. "$SDK/toolchain.sh"   # rustc asked from inside sdk/, whatever the cwd (SDK01 I)
++BIN="$(newtos_rust_bindir)"
+ AR="${AR:-$BIN/llvm-ar}"
+ LLD="${LLD:-$BIN/rust-lld}"
+ READOBJ="$BIN/llvm-readobj"
+diff --git a/sdk/apps/build-teradesk.sh b/sdk/apps/build-teradesk.sh
+index c94017e8..5cd5a317 100755
+--- a/sdk/apps/build-teradesk.sh
++++ b/sdk/apps/build-teradesk.sh
+@@ -79,8 +79,8 @@ MINT="$LIBC/mintlib/include"
+ CLANG="${CLANG:-clang}"
+ command -v "$CLANG" >/dev/null 2>&1 || { echo "error: clang not found" >&2; exit 1; }
+ RES="$($CLANG -print-resource-dir)/include"
+-SYSROOT="$(rustc --print sysroot 2>/dev/null)"
+-BIN="$SYSROOT/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin"
++. "$SDK/toolchain.sh"   # rustc asked from inside sdk/, whatever the cwd (SDK01 I)
++BIN="$(newtos_rust_bindir)"
+ AR="${AR:-$BIN/llvm-ar}"
+ LLD="${LLD:-$BIN/rust-lld}"
+ READOBJ="$BIN/llvm-readobj"
+diff --git a/sdk/apps/chaintest/build-chaintest.sh b/sdk/apps/chaintest/build-chaintest.sh
+index 4fa18558..c2111dce 100755
+--- a/sdk/apps/chaintest/build-chaintest.sh
++++ b/sdk/apps/chaintest/build-chaintest.sh
+@@ -50,8 +50,8 @@ MINT="$LIBC/mintlib/include"
+ CLANG="${CLANG:-clang}"
+ command -v "$CLANG" >/dev/null 2>&1 || { echo "error: clang not found" >&2; exit 1; }
+ RES="$($CLANG -print-resource-dir)/include"
+-SYSROOT="$(rustc --print sysroot 2>/dev/null)"
+-BIN="$SYSROOT/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin"
++. "$SDK/toolchain.sh"   # rustc asked from inside sdk/, whatever the cwd (SDK01 I)
++BIN="$(newtos_rust_bindir)"
+ AR="${AR:-$BIN/llvm-ar}"
+ LLD="${LLD:-$BIN/rust-lld}"
+ READOBJ="$BIN/llvm-readobj"
+diff --git a/sdk/apps/gemtest/build-gemtest.sh b/sdk/apps/gemtest/build-gemtest.sh
+index bf263434..f72e7a36 100755
+--- a/sdk/apps/gemtest/build-gemtest.sh
++++ b/sdk/apps/gemtest/build-gemtest.sh
+@@ -50,8 +50,8 @@ MINT="$LIBC/mintlib/include"
+ CLANG="${CLANG:-clang}"
+ command -v "$CLANG" >/dev/null 2>&1 || { echo "error: clang not found" >&2; exit 1; }
+ RES="$($CLANG -print-resource-dir)/include"
+-SYSROOT="$(rustc --print sysroot 2>/dev/null)"
+-BIN="$SYSROOT/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin"
++. "$SDK/toolchain.sh"   # rustc asked from inside sdk/, whatever the cwd (SDK01 I)
++BIN="$(newtos_rust_bindir)"
+ AR="${AR:-$BIN/llvm-ar}"
+ LLD="${LLD:-$BIN/rust-lld}"
+ READOBJ="$BIN/llvm-readobj"
+diff --git a/sdk/apps/present/build-present.sh b/sdk/apps/present/build-present.sh
+index 71d15f55..37af653f 100644
+--- a/sdk/apps/present/build-present.sh
++++ b/sdk/apps/present/build-present.sh
+@@ -36,8 +36,8 @@ done
+ CLANG="${CLANG:-clang}"
+ command -v "$CLANG" >/dev/null 2>&1 || { echo "error: clang not found" >&2; exit 1; }
+ RES="$($CLANG -print-resource-dir)/include"
+-SYSROOT="$(rustc --print sysroot 2>/dev/null)"
+-BIN="$SYSROOT/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin"
++. "$SDK/toolchain.sh"   # rustc asked from inside sdk/, whatever the cwd (SDK01 I)
++BIN="$(newtos_rust_bindir)"
+ LLD="${LLD:-$BIN/rust-lld}"
+ NM="$BIN/llvm-nm"
+ READOBJ="$BIN/llvm-readobj"
+diff --git a/sdk/build.sh b/sdk/build.sh
+index afad7c49..82c0e164 100755
+--- a/sdk/build.sh
++++ b/sdk/build.sh
+@@ -43,14 +43,20 @@ CLANG="${CLANG:-clang}"
+ command -v "$CLANG" >/dev/null 2>&1 || { echo "error: clang not found" >&2; exit 1; }
+ 
+ # --- locate an LLVM ELF linker (rust-lld ships with the Rust toolchain) ---
++# The pinned toolchain's sysroot is asked from inside sdk/ (sdk/toolchain.sh,
++# SDK01 I) and comes BEFORE a `rust-lld` on PATH: that one is normally the
++# rustup proxy (~/.cargo/bin), which picks the toolchain by the caller's cwd --
++# outside the checkout the default one, or none. Inside the checkout both name
++# the same binary.
++. "$SDK_DIR/toolchain.sh"
+ find_lld() {
+     if command -v ld.lld >/dev/null 2>&1; then echo "ld.lld"; return; fi
+-    if command -v rust-lld >/dev/null 2>&1; then echo "rust-lld -flavor gnu"; return; fi
+-    local sysroot; sysroot="$(rustc --print sysroot 2>/dev/null || true)"
++    local sysroot; sysroot="$(newtos_rust_sysroot || true)"
+     if [ -n "$sysroot" ]; then
+         local cand; cand="$(find "$sysroot"/lib/rustlib -name rust-lld 2>/dev/null | head -1)"
+         [ -n "$cand" ] && { echo "$cand -flavor gnu"; return; }
+     fi
++    if command -v rust-lld >/dev/null 2>&1; then echo "rust-lld -flavor gnu"; return; fi
+     [ -x "$HOME/.cargo/bin/rust-lld" ] && { echo "$HOME/.cargo/bin/rust-lld -flavor gnu"; return; }
+     return 1
+ }
+diff --git a/sdk/cflib/build-cflib.sh b/sdk/cflib/build-cflib.sh
+index 9d2eff81..3f3ff37f 100755
+--- a/sdk/cflib/build-cflib.sh
++++ b/sdk/cflib/build-cflib.sh
+@@ -129,8 +129,8 @@ fi
+ CLANG="${CLANG:-clang}"
+ command -v "$CLANG" >/dev/null 2>&1 || { echo "error: clang not found" >&2; exit 1; }
+ RES="$($CLANG -print-resource-dir)/include"
+-SYSROOT="$(rustc --print sysroot 2>/dev/null)"
+-BIN="$SYSROOT/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin"
++. "$SDK/toolchain.sh"   # rustc asked from inside sdk/, whatever the cwd (SDK01 I)
++BIN="$(newtos_rust_bindir)"
+ AR="${AR:-$BIN/llvm-ar}"
+ LLD="${LLD:-$BIN/rust-lld}"
+ READOBJ="$BIN/llvm-readobj"
+diff --git a/sdk/examples/fsbench/build-fsbench.sh b/sdk/examples/fsbench/build-fsbench.sh
+index 782443d8..a14db43b 100755
+--- a/sdk/examples/fsbench/build-fsbench.sh
++++ b/sdk/examples/fsbench/build-fsbench.sh
+@@ -27,7 +27,8 @@ lib_ensure libc || exit 1
+ MINT="$SDK/libc/mintlib/include"
+ CLANG="${CLANG:-clang}"
+ RES="$($CLANG -print-resource-dir)/include"
+-BIN="$(rustc --print sysroot)/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin"
++. "$SDK/toolchain.sh"   # rustc asked from inside sdk/, whatever the cwd (SDK01 I)
++BIN="$(newtos_rust_bindir)"
+ LLD="${LLD:-$BIN/rust-lld}"
+ 
+ CFLAGS=(-target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2
+diff --git a/sdk/examples/libtest/build-libtest.sh b/sdk/examples/libtest/build-libtest.sh
+index 3f5872f5..cb7b0fff 100755
+--- a/sdk/examples/libtest/build-libtest.sh
++++ b/sdk/examples/libtest/build-libtest.sh
+@@ -39,8 +39,8 @@ done
+ 
+ CLANG="${CLANG:-clang}"
+ RES="$($CLANG -print-resource-dir)/include"
+-SYSROOT="$(rustc --print sysroot 2>/dev/null)"
+-BIN="$SYSROOT/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin"
++. "$SDK/toolchain.sh"   # rustc asked from inside sdk/, whatever the cwd (SDK01 I)
++BIN="$(newtos_rust_bindir)"
+ LLD="${LLD:-$BIN/rust-lld}"
+ NM="$BIN/llvm-nm"
+ READOBJ="$BIN/llvm-readobj"
+diff --git a/sdk/gemlib/build-gemlib.sh b/sdk/gemlib/build-gemlib.sh
+index f4e353a9..e2e95b3e 100755
+--- a/sdk/gemlib/build-gemlib.sh
++++ b/sdk/gemlib/build-gemlib.sh
+@@ -98,8 +98,8 @@ fi
+ CLANG="${CLANG:-clang}"
+ command -v "$CLANG" >/dev/null 2>&1 || { echo "error: clang not found" >&2; exit 1; }
+ RES="$($CLANG -print-resource-dir)/include"
+-SYSROOT="$(rustc --print sysroot 2>/dev/null)"
+-BIN="$SYSROOT/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin"
++. "$SDK/toolchain.sh"   # rustc asked from inside sdk/, whatever the cwd (SDK01 I)
++BIN="$(newtos_rust_bindir)"
+ AR="${AR:-$BIN/llvm-ar}"
+ LLD="${LLD:-$BIN/rust-lld}"
+ READOBJ="$BIN/llvm-readobj"
+diff --git a/sdk/ldg/build-ldg-client.sh b/sdk/ldg/build-ldg-client.sh
+index 78a90395..cf8012c1 100755
+--- a/sdk/ldg/build-ldg-client.sh
++++ b/sdk/ldg/build-ldg-client.sh
+@@ -82,8 +82,8 @@ done
+ CLANG="${CLANG:-clang}"
+ command -v "$CLANG" >/dev/null 2>&1 || { echo "error: clang not found" >&2; exit 1; }
+ RES="$($CLANG -print-resource-dir)/include"
+-SYSROOT="$(rustc --print sysroot 2>/dev/null)"
+-BIN="$SYSROOT/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin"
++. "$SDK/toolchain.sh"   # rustc asked from inside sdk/, whatever the cwd (SDK01 I)
++BIN="$(newtos_rust_bindir)"
+ LLD="${LLD:-$BIN/rust-lld}"
+ NM="$BIN/llvm-nm"
+ READOBJ="$BIN/llvm-readobj"
+diff --git a/sdk/ldg/build-ldg-demo.sh b/sdk/ldg/build-ldg-demo.sh
+index 8beb197c..b3dcae99 100755
+--- a/sdk/ldg/build-ldg-demo.sh
++++ b/sdk/ldg/build-ldg-demo.sh
+@@ -65,8 +65,8 @@ done
+ CLANG="${CLANG:-clang}"
+ command -v "$CLANG" >/dev/null 2>&1 || { echo "error: clang not found" >&2; exit 1; }
+ RES="$($CLANG -print-resource-dir)/include"
+-SYSROOT="$(rustc --print sysroot 2>/dev/null)"
+-BIN="$SYSROOT/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin"
++. "$SDK/toolchain.sh"   # rustc asked from inside sdk/, whatever the cwd (SDK01 I)
++BIN="$(newtos_rust_bindir)"
+ LLD="${LLD:-$BIN/rust-lld}"
+ NM="$BIN/llvm-nm"
+ READOBJ="$BIN/llvm-readobj"
+diff --git a/sdk/ldg/build-ldg.sh b/sdk/ldg/build-ldg.sh
+index 64080c42..79c8154a 100755
+--- a/sdk/ldg/build-ldg.sh
++++ b/sdk/ldg/build-ldg.sh
+@@ -85,8 +85,8 @@ fi
+ CLANG="${CLANG:-clang}"
+ command -v "$CLANG" >/dev/null 2>&1 || { echo "error: clang not found" >&2; exit 1; }
+ RES="$($CLANG -print-resource-dir)/include"
+-SYSROOT="$(rustc --print sysroot 2>/dev/null)"
+-BIN="$SYSROOT/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin"
++. "$SDK/toolchain.sh"   # rustc asked from inside sdk/, whatever the cwd (SDK01 I)
++BIN="$(newtos_rust_bindir)"
+ AR="${AR:-$BIN/llvm-ar}"
+ NM="$BIN/llvm-nm"
+ [ -x "$AR" ] || { echo "error: missing LLVM tool: $AR" >&2; exit 1; }
+diff --git a/sdk/libc/build-libc.sh b/sdk/libc/build-libc.sh
+index 6b4e38ff..e510585d 100755
+--- a/sdk/libc/build-libc.sh
++++ b/sdk/libc/build-libc.sh
+@@ -137,8 +137,8 @@ fi
+ CLANG="${CLANG:-clang}"
+ command -v "$CLANG" >/dev/null 2>&1 || { echo "error: clang not found" >&2; exit 1; }
+ RES="$($CLANG -print-resource-dir)/include"
+-SYSROOT="$(rustc --print sysroot 2>/dev/null)"
+-BIN="$SYSROOT/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin"
++. "$SDK/toolchain.sh"   # rustc asked from inside sdk/, whatever the cwd (SDK01 I)
++BIN="$(newtos_rust_bindir)"
+ AR="${AR:-$BIN/llvm-ar}"
+ LLD="${LLD:-$BIN/rust-lld}"
+ READOBJ="$BIN/llvm-readobj"
+diff --git a/sdk/libc/tests/libc-link.sh b/sdk/libc/tests/libc-link.sh
+index c9e75abd..d5924705 100755
+--- a/sdk/libc/tests/libc-link.sh
++++ b/sdk/libc/tests/libc-link.sh
+@@ -26,8 +26,8 @@ LIBA="${LIBC_A:-$LIBC/libc.a}"
+   echo "libc-link: skipped -- libc.a or mintlib tree missing; run build-libc.sh"
+   exit 77
+ }
+-SYSROOT="$(rustc --print sysroot 2>/dev/null)"
+-BIN="$SYSROOT/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin"
++. "$SDK/toolchain.sh"   # rustc asked from inside sdk/, whatever the cwd (SDK01 I)
++BIN="$(newtos_rust_bindir)"
+ LLD="$BIN/rust-lld"; NM="$BIN/llvm-nm"
+ [ -x "$LLD" ] && [ -x "$NM" ] || { echo "libc-link: skipped -- rust-lld/llvm-nm missing"; exit 77; }
+ W="$(mktemp -d)"; trap 'rm -rf "$W"' EXIT
+diff --git a/sdk/libm/build-libm.sh b/sdk/libm/build-libm.sh
+index 95c687b8..0dd7d505 100755
+--- a/sdk/libm/build-libm.sh
++++ b/sdk/libm/build-libm.sh
+@@ -107,8 +107,8 @@ CLANG="${CLANG:-clang}"
+ command -v "$CLANG" >/dev/null 2>&1 || { echo "error: clang not found" >&2; exit 1; }
+ command -v make >/dev/null 2>&1 || { echo "error: make not found (needed to expand OpenLibm's Make.files)" >&2; exit 1; }
+ RES="$($CLANG -print-resource-dir)/include"
+-SYSROOT="$(rustc --print sysroot 2>/dev/null)"
+-BIN="$SYSROOT/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin"
++. "$SDK/toolchain.sh"   # rustc asked from inside sdk/, whatever the cwd (SDK01 I)
++BIN="$(newtos_rust_bindir)"
+ AR="${AR:-$BIN/llvm-ar}"
+ LLD="${LLD:-$BIN/rust-lld}"
+ READOBJ="$BIN/llvm-readobj"
+diff --git a/sdk/vendor-lib.sh b/sdk/vendor-lib.sh
+index 5215a21e..eef25e44 100644
+--- a/sdk/vendor-lib.sh
++++ b/sdk/vendor-lib.sh
+@@ -38,6 +38,7 @@
+ #                                 archive, list defined + dangling symbols
+ 
+ VL_SDK="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"       # .../sdk
++. "$VL_SDK/toolchain.sh"
+ 
+ # The SDK's freestanding set, identical to sdk/ldg/build-ldg.sh and the app
+ # builds (build-qed.sh): AArch64 ELF, no host headers, -fPIE because every
+@@ -50,9 +51,8 @@ vl_toolchain() {
+   CLANG="${CLANG:-clang}"
+   command -v "$CLANG" >/dev/null 2>&1 || { echo "error: clang not found" >&2; return 1; }
+   RES="$($CLANG -print-resource-dir)/include"
+-  local sysroot bin
+-  sysroot="$(rustc --print sysroot 2>/dev/null)"
+-  bin="$sysroot/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin"
++  local bin
++  bin="$(newtos_rust_bindir)"    # sdk/toolchain.sh: independent of the cwd (SDK01 I)
+   AR="${AR:-$bin/llvm-ar}"
+   NM="$bin/llvm-nm"
+   [ -x "$AR" ] || { echo "error: missing LLVM tool: $AR" >&2; return 1; }
+diff --git a/sdk/zview/build-zview.sh b/sdk/zview/build-zview.sh
+index a6b1ac00..d236cba3 100755
+--- a/sdk/zview/build-zview.sh
++++ b/sdk/zview/build-zview.sh
+@@ -127,8 +127,8 @@ vl_extract "$ZD/z-tools-$VER.tar.xz" "$SUMS" "$TOP" "z-tools-$VER" "${ZVIEW_REFR
+ CLANG="${CLANG:-clang}"
+ command -v "$CLANG" >/dev/null 2>&1 || { echo "error: clang not found" >&2; exit 1; }
+ RES="$($CLANG -print-resource-dir)/include"
+-SYSROOT="$(rustc --print sysroot 2>/dev/null)"
+-BIN="$SYSROOT/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin"
++. "$SDK/toolchain.sh"   # rustc asked from inside sdk/, whatever the cwd (SDK01 I)
++BIN="$(newtos_rust_bindir)"
+ LLD="${LLD:-$BIN/rust-lld}"
+ NM="$BIN/llvm-nm"
+ READOBJ="$BIN/llvm-readobj"
+diff --git a/sdk/toolchain.sh b/sdk/toolchain.sh
+new file mode 100644
+index 00000000..78b6300a
+--- /dev/null
++++ b/sdk/toolchain.sh
+@@ -0,0 +1,44 @@
++# toolchain.sh -- locate the Rust toolchain's sysroot (rust-lld, llvm-ar,
++# llvm-nm, llvm-readobj, llvm-objdump, llvm-size) for the SDK build scripts,
++# independent of the directory they are started from (TASK/SDK01 package I).
++#
++# WHY THIS FILE EXISTS
++#
++# rustup chooses the toolchain by the CURRENT directory: rust-toolchain.toml
++# at the repository root pins the nightly that carries llvm-tools-preview.
++# Every build script used to ask `rustc --print sysroot` wherever the caller
++# happened to stand. Started from outside the checkout, rustup picked no
++# toolchain (empty sysroot) or the user's default one (no LLVM tools), and the
++# build stopped with "missing LLVM tool: /lib/rustlib//bin/llvm-ar".
++# sdk/bin/newtos-cc already asked rustc from inside the SDK directory; the
++# scripts now do the same, through this one file instead of ~20 copies.
++#
++# Sourced by bash scripts (`. "$SDK/toolchain.sh"`); it locates the SDK from
++# its OWN path, so it needs nothing from the caller. It sets NEWTOS_TC_SDK
++# (the sdk/ directory) and defines two functions; nothing else is touched:
++#
++#   newtos_rust_sysroot   print the pinned toolchain's sysroot
++#   newtos_rust_bindir    print <sysroot>/lib/rustlib/<host>/bin, where
++#                         rust-lld and the llvm-* tools live
++#
++# Both run rustc in a subshell that cd's into sdk/, so the caller's working
++# directory is untouched. Their exit status is rustc's (non-zero when rustup
++# finds no toolchain), as it was when the scripts called rustc inline.
++# clang is NOT resolved here: it comes from PATH or $CLANG, which does not
++# depend on the working directory.
++
++NEWTOS_TC_SDK="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"      # .../sdk
++
++newtos_rust_sysroot() {
++  (cd "$NEWTOS_TC_SDK" && rustc --print sysroot 2>/dev/null)
++}
++
++newtos_rust_bindir() {
++  local sysroot host rc=0
++  sysroot="$(newtos_rust_sysroot)" || rc=$?
++  host="$(cd "$NEWTOS_TC_SDK" && rustc -vV | sed -n 's/host: //p')" || rc=$?
++  # Printed even when rustc failed, so the callers' "missing LLVM tool: …"
++  # check reports the same path as before (/lib/rustlib//bin/llvm-ar).
++  printf '%s\n' "$sysroot/lib/rustlib/$host/bin"
++  return $rc
++}

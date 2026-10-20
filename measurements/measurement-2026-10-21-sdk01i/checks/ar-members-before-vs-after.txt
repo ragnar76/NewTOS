@@ -1,0 +1,30 @@
+== sdk/examples/libtest/build/host/libexif.a (host ar, sdk/examples/libtest/make-ref.sh via run-host-tests.sh)
+member list+order: identical (25 members)
+members with different bytes: 0
+first member header, old: rw-r--r--     501/20         4384 Oct 20 23:52 2026 __.SYMDEF SORTED
+first member header, new: rw-r--r--     501/20         4384 Oct 20 23:59 2026 __.SYMDEF SORTED
+== sdk/examples/libtest/build/host/libgif.a (host ar, sdk/examples/libtest/make-ref.sh via run-host-tests.sh)
+member list+order: identical (8 members)
+members with different bytes: 0
+first member header, old: rw-r--r--     501/20         1616 Oct 20 23:52 2026 __.SYMDEF SORTED
+first member header, new: rw-r--r--     501/20         1616 Oct 20 23:59 2026 __.SYMDEF SORTED
+== sdk/examples/libtest/build/host/libjpeg.a (host ar, sdk/examples/libtest/make-ref.sh via run-host-tests.sh)
+member list+order: identical (46 members)
+members with different bytes: 0
+first member header, old: rw-r--r--     501/20         4560 Oct 20 23:52 2026 __.SYMDEF SORTED
+first member header, new: rw-r--r--     501/20         4560 Oct 20 23:59 2026 __.SYMDEF SORTED
+== sdk/examples/libtest/build/host/libpng.a (host ar, sdk/examples/libtest/make-ref.sh via run-host-tests.sh)
+member list+order: identical (18 members)
+members with different bytes: 0
+first member header, old: rw-r--r--     501/20        11304 Oct 20 23:52 2026 __.SYMDEF SORTED
+first member header, new: rw-r--r--     501/20        11304 Oct 20 23:59 2026 __.SYMDEF SORTED
+== sdk/examples/libtest/build/host/libz.a (host ar, sdk/examples/libtest/make-ref.sh via run-host-tests.sh)
+member list+order: identical (15 members)
+members with different bytes: 0
+first member header, old: rw-r--r--     501/20         2392 Oct 20 23:51 2026 __.SYMDEF SORTED
+first member header, new: rw-r--r--     501/20         2392 Oct 20 23:59 2026 __.SYMDEF SORTED
+== sdk/gemlib/gemlib-m68k.a (m68k-atari-mint-ar, build-gemlib-m68k.sh)
+member list+order: identical (578 members)
+members with different bytes: 0
+first member header, old: rw-r--r-- 501/20     74 Oct 20 23:51 2026 _gc_aes.o
+first member header, new: rw-r--r-- 501/20     74 Oct 20 23:59 2026 _gc_aes.o

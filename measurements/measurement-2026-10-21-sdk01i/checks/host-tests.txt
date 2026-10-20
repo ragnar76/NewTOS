@@ -1,0 +1,3 @@
+before: host tests: 23 passed, 0 failed, 0 skipped
+after: host tests: 23 passed, 0 failed, 0 skipped
+outside-after: host tests: 23 passed, 0 failed, 0 skipped

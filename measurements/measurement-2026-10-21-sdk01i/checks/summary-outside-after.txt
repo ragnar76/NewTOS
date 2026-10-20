@@ -1,0 +1,30 @@
+  0 sdk/libc/build-libc.sh
+  0 sdk/gemlib/build-gemlib.sh
+  0 sdk/cflib/build-cflib.sh
+  0 sdk/libm/build-libm.sh
+  0 sdk/ldg/build-ldg.sh
+  0 sdk/zlib/build-zlib.sh
+  0 sdk/libpng/build-libpng.sh
+  0 sdk/libjpeg/build-libjpeg.sh
+  0 sdk/giflib/build-giflib.sh
+  0 sdk/libexif/build-libexif.sh
+  0 sdk/libshare/build-libshare.sh
+  0 sdk/windom/build-windom.sh
+  0 sdk/ldg/build-ldg-demo.sh
+  0 sdk/ldg/build-ldg-client.sh
+  0 sdk/apps/build-qed.sh
+  0 sdk/apps/build-teradesk.sh
+  0 sdk/apps/build-coremark.sh
+  0 sdk/apps/build-doom.sh
+  0 sdk/apps/apitest/build-apitest.sh
+  0 sdk/apps/chaintest/build-chaintest.sh
+  0 sdk/apps/gemtest/build-gemtest.sh
+  0 sdk/apps/present/build-present.sh   (via bash: not executable)
+  0 sdk/zview/build-zview.sh
+  0 sdk/examples/fsbench/build-fsbench.sh
+  0 sdk/examples/libtest/build-libtest.sh
+101 sdk/build.sh
+  0 sdk/gemlib/build-gemlib-m68k.sh
+  0 sdk/apps/build-doom-m68k.sh
+  1 sdk/templates/tests/newtos-cc-host.sh
+  0 sdk/run-host-tests.sh   (host tests: 23 passed, 0 failed, 0 skipped)
