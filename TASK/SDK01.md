@@ -11,7 +11,7 @@ Grundlage: `docs/analysis/sdk-inventory-2026-10-20.md` (`a36b3280`).
 | A | libc-Luecken: `pwdgrp/` in `DIRS` (tmpfile/mkstemp/glob/getlogin …), `__sys_fstat` (ttyname/ctermid), `SIZE_MAX`/`PTRDIFF_MAX`/`SSIZE_MAX` fuer LP64, `ucontext.c`-Testprogramm und Generator-Objekte aus `libc.a`, `.stabs`-Dateien (gets/getwd/siggetmask), `newtos-arch/nf_ops.c` — dazu `tmpfile()` auf NewTOS in QEMU pruefen | S–M | **erledigt** 2026-10-20 (64 → 12 nicht linkende Funktionen; Tester PASS mit allen Apps) |
 | B | Doku ehrlich machen: Patch-Aussage („App-Quellen unberuehrt“) in `docs/sdk/README.md`, Kap. 04, 08, 09 §5, `sdk/README.md`, Kopf von `build-qed.sh`/`build-teradesk.sh`; ~12 veraltete Fakten (08, 09, Zahlen in 01/04/07, TeraDesk-`main.c`-Overlay fehlt) | S–M | **erledigt** 2026-10-20 (`57a71b80`, Rest in Skripten/ADR-019 nachgezogen) |
 | C | Schnellstart Mac **und** Linux von null: Installation, Bezugsquellen der App-Quellen (freemint/qed `f12055f`, freemint/teradesk `b5532b8`), eigenes Programm ohne Kernelbau auf ein Release-Abbild, Liste nicht linkender Funktionen | M | offen |
-| D | Compiler-Wrapper `newtos-cc` bzw. `newtos.mk` + Vorlagenprojekt | M | offen |
+| D | Compiler-Wrapper `newtos-cc` bzw. `newtos.mk` + Vorlagenprojekt | M | **erledigt** 2026-10-20 (byte-identisch zu den Build-Skripten; Linux ungetestet) |
 | E | libm: compiler-rt-Builtins fuer 128-Bit-Gleitkomma und komplexe Multiplikation (`powf`, `remainder` …) | M | offen |
 | F | `stat`/`fstat`-Zeitstempel aus der DTA wie Upstream-mintlib | M | offen |
 | G | Linux-Weg fuer das SD-Abbild (`make-sd-image.sh` nur macOS) | M | offen |
