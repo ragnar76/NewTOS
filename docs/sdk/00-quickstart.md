@@ -95,12 +95,17 @@ repository; step 5 says where they come from.
 ## 2. Build the SDK libraries (once)
 
 ```sh
-sdk/cflib/build-cflib.sh        # builds libc.a (mintlib), gemlib.a, then cflib.a
-sdk/libm/build-libm.sh          # libm.a (OpenLibm)
+sdk/cflib/build-cflib.sh                 # builds libc.a (mintlib), gemlib.a, then cflib.a
+sdk/libm/build-libm.sh                   # libm.a (OpenLibm)
+sdk/compiler-rt/build-compiler-rt.sh     # libclang_rt.builtins.a (compiler runtime)
 ```
 
 `build-cflib.sh` builds the chain below it first (`sdk/lib-stale.sh`), so
-these two commands give you the four core libraries. Measured: 62 s and 9 s.
+these three commands give you the four core libraries and the compiler
+runtime (LLVM compiler-rt's builtins: 128-bit `long double` and complex
+arithmetic, which `newtos-cc` links into every program — it stops with
+`libclang_rt.builtins.a is not built` until this has run). Measured: 62 s,
+9 s and 7 s.
 Building them one by one is equivalent: `sdk/libc/build-libc.sh` (33 s),
 `sdk/gemlib/build-gemlib.sh` (22 s), `sdk/cflib/build-cflib.sh` (6 s),
 `sdk/libm/build-libm.sh` (9 s). Each script ends with a summary and a test
@@ -121,17 +126,20 @@ you need them ([16 §1](16-newtos-cc.md#libraries) has the table).
 sdk/run-host-tests.sh
 ```
 
-Expected (measured, 34 s; it builds the codec libraries for its own test on
-the way):
+Expected (measured in a fresh clone before TASK/SDK01 E: 20 passed, 34 s; it
+builds the codec libraries for its own test on the way. SDK01 E added
+`rt-host`, about 20 s, which passes once step 2 is done — the fresh-clone run
+was not repeated):
 
 ```
-host tests: 20 passed, 0 failed, 3 skipped
+host tests: 21 passed, 0 failed, 3 skipped
 ```
 
 The three skips are tests whose inputs you do not have yet and are fine:
 `aesglobal_fields` (needs the TeraDesk source, step 5), `custom-font-host`
 (needs a zView build), `libshare-host` (needs `sdk/libshare/build-libshare.sh`).
-On a non-AArch64 host (a Linux PC) `setjmp-host` skips as well.
+On a non-AArch64 host (a Linux PC) `setjmp-host` and `rt-host` (it runs the
+AArch64 code of the compiler runtime natively) skip as well.
 
 ---
 
@@ -404,9 +412,11 @@ Either a library option is missing (`-lm` for `<math.h>` functions, `-lcflib`,
 …), or the function is one of those the ported libraries do not provide:
 the list is [07 §11](07-mintlib-limits.md#11-functions-that-do-not-link-measured-per-symbol-tasksdk01-a)
 (libc) and [07 §4/§6](07-mintlib-limits.md) (libm). Symbols such as
-`__extendsftf2`, `__addtf3`, `__lttf2` (here: from `powf`) mean 128-bit
-`long double` arithmetic, for which there is no runtime
-([05 B12](05-abi-pitfalls.md#b12-long-double-is-128-bit-and-there-is-no-compiler-rt));
+`__extendsftf2`, `__addtf3`, `__lttf2`, `__muldc3` mean 128-bit `long
+double` or complex arithmetic: `newtos-cc` links their runtime
+(`sdk/compiler-rt/libclang_rt.builtins.a`) by itself — if you see them,
+the archive is missing a step-2 build, or your own link line leaves it out
+([05 B12](05-abi-pitfalls.md#b12-long-double-is-128-bit-and-the-compiler-runtime-is-compiler-rt));
 `socket`, `gethostbyname` mean networking, which does not exist.
 
 **3. `fatal error: 'math.h' file not found`** (or another library's header).

@@ -24,6 +24,12 @@ keep doubling up to 16 MiB. TASK/SDK01 A (2026-10-20) updated §1, §2, §4,
 `wordexp`, `getlogin` link), `__sys_fstat` (`ttyname`, `ctermid`),
 `gets`/`getwd`/`siggetmask` from overlays, `newtos-arch/nf_ops.c`, no test
 program's `main` in `libc.a`; 627 compiled, 5 failed, 14 excluded.
+TASK/SDK01 E (2026-10-21) updated §4, §6 and §11: the SDK has a compiler
+runtime now — LLVM compiler-rt's builtins, `sdk/compiler-rt/
+libclang_rt.builtins.a`, linked by `newtos-cc` — so the binary128 and
+complex-arithmetic helpers resolve: in `libm.a` 21 → 3 functions that do not
+link (`scalbln`/`scalblnf`/`scalblnl`, which need `scalbnl`), in `libc.a`
+12 → 7; `qecvt` & Co. link but print wrong digits (§11).
 
 ## 1. mintlib files that do not compile (recorded, not repaired)
 
@@ -166,15 +172,34 @@ the C99 `double` and `float` functions, the complex functions, `tgamma`, and
 the `<fenv.h>` functions over FPCR/FPSR (`aarch64/fenv.c`). Pure C — OpenLibm
 has no AArch64 assembly beyond that. What is **not** in it: the `long double`
 (`…l`) functions and `ld128/` — AAPCS64 `long double` is binary128, every
-operation on it is a soft-float libcall, and the SDK links no compiler-rt
-([05 B12](05-abi-pitfalls.md#b12-long-double-is-128-bit-and-there-is-no-compiler-rt));
+operation on it is a soft-float libcall, and until TASK/SDK01 E the SDK linked
+no compiler runtime
+([05 B12](05-abi-pitfalls.md#b12-long-double-is-128-bit-and-the-compiler-runtime-is-compiler-rt));
 OpenLibm's Darwin/aarch64 configuration makes the same cut, so no source
-needed an overlay. Five `double`/`float` members carry `long double` on a
-NaN/inf path or share their object with an `l` variant and are therefore
-unlinkable — `powf`, `remainder`, `remainderf`, `fdim`/`fdimf`, `scalbln`/
-`scalblnf`, `nexttowardf` — and four complex ones need the compiler-rt
-complex multiply (`casin`, `casinh`, `cacosh`, `catanh` and the `f` forms);
-§6 lists the references. Everything else is usable: `sqrt`, `sin`, `cos`,
+needed an overlay. Building them is still a separate item (TASK/T07
+"Arbeit" 2); since SDK01 E it is no longer blocked by a missing runtime.
+The `double`/`float` members that carry `long double` on a NaN/inf path
+(`powf`, `remainder`, `remainderf`, `fdim`/`fdimf`, `nexttowardf`) and the
+complex ones that need the compiler-rt complex multiply (`casin`, `cacos`,
+`casinh`, `cacosh`, `catanh` and the `f` forms, `cpowf`) **link since
+SDK01 E** through `sdk/compiler-rt/libclang_rt.builtins.a`; `fdiml` too (it
+shares `s_fdim`). Only `scalbln`/`scalblnf` still do not: they share their
+object with `scalblnl`, which calls `scalbnl` — an `l` function, not a
+builtin. §6 lists the references.
+
+**Upstream accuracy of the complex inverse functions** (measured for SDK01
+E, `measurements/measurement-2026-10-21-sdk01e/checks/olm-accuracy.txt`):
+OpenLibm 0.8.8's `casin`, `cacos`, `casinh`, `cacosh` and their `f` forms are
+the old Cephes algorithms, not FreeBSD's `catrig.c`. Against the macOS
+system libm on 50 000 arguments up to |z| ≈ 10⁶: relative errors up to
+2·10⁻⁵ for the double forms; the `f` forms return NaN/∞ for about a fifth
+of those arguments (|z| beyond ~2¹²) where the result is finite; `cacosh`,
+`cacoshf`, `casinhf`, `catanhf` differ in the sign of the imaginary part for
+many arguments; `catanh` is within 8·ε·|w| except for 18 arguments. The SDK's
+AArch64 build gives bit-for-bit the values of OpenLibm built for the host
+from the same sources (`sdk/compiler-rt/tests/rt-host.sh`), so this is
+upstream behaviour, not the port. A program that needs accurate complex
+inverse trigonometry should not rely on these. Everything else is usable: `sqrt`, `sin`, `cos`,
 `tan`, `atan2`, `exp`, `log`, `log10`, `pow`, `floor`, `ceil`, `fmod`,
 `frexp`, `ldexp`, `modf`, `fabs`, `hypot`, `cbrt`, `sqrtf`, `isnan`/`isinf`,
 … verified on NewTOS (`sdk/examples/mathtst.c` → `C:\AUTO\MATHTST.NCP`,
@@ -221,7 +246,8 @@ member that references them is pulled in — `build/why.txt` (written by every
 link, `--why-extract`) shows the chain.
 
 ```
-__divtf3 __eqtf2 __getf2 __lttf2 __multf3 __trunctfdf2      quad-float compiler-rt (long double): qecvt/qfcvt/qgcvt(_r)
+__divtf3 __eqtf2 __getf2 __lttf2 __multf3 __trunctfdf2      binary128 builtins (qecvt/qfcvt/qgcvt(_r)): resolved by
+                                                            sdk/compiler-rt/libclang_rt.builtins.a since SDK01 E
 socket gethostbyname                                        socket/ not compiled: if_link, if_*flags, gethostid
 main                                                        the program's own (mintlib/main.c calls it)
 _end                                                        provided by sdk/newtos.ld at link
@@ -250,11 +276,15 @@ __muldc3 __mulsc3                                             compiler-rt comple
 scalbnl                                                       s_scalbln (scalblnl shares the object with scalbln/scalblnf)
 ```
 
-Consequence: `powf`, `remainder`, `remainderf`, `fdim`, `fdimf`, `scalbln`,
-`scalblnf`, `nexttowardf`, `casin`, `casinh`, `cacosh`, `catanh` (+`f`) fail
-to link until the binary128 helpers / complex helpers exist — the separate
-item TASK/T07 names ("Soft-Float-Helfer sind ein eigener Punkt"). The
-`mathtst.NCP` link pulls 28 libm members and none of these.
+Consequence until SDK01 E: `powf`, `remainder`, `remainderf`, `fdim`,
+`fdimf`, `scalbln`, `scalblnf`, `nexttowardf`, `casin`, `casinh`, `cacosh`,
+`catanh` (+`f`) failed to link — the separate item TASK/T07 named
+("Soft-Float-Helfer sind ein eigener Punkt"). Since SDK01 E the 12 builtins
+above resolve from `sdk/compiler-rt/libclang_rt.builtins.a` (LLVM
+compiler-rt 21.1.8, `newtos-cc` links it after the libraries); `libm.a`
+itself is unchanged and still lists them in `dangling.txt` (it does not
+contain them). Left: `scalbnl` (an `l` function, §4) — `scalbln`, `scalblnf`,
+`scalblnl`. The `mathtst.NCP` link pulls 28 libm members and none of these.
 
 ## 7. What the test programs prove
 
@@ -537,11 +567,42 @@ Linking since SDK01 A: `tmpfile`, `mkstemp`, `mktemp`, `mkdtemp`, `tmpnam`,
 on/strict/off: the temp files were really created and removed (a `tmpfile`
 in a child is gone after its `exit`, mintlib's TOS path), `fsck` clean.
 
-Still not linking (12):
+**TASK/SDK01 E (2026-10-21)** added the compiler runtime
+(`sdk/compiler-rt/libclang_rt.builtins.a`, LLVM compiler-rt 21.1.8 builtins,
+linked last by `newtos-cc`). Same method, the probe linking `libc.a` +
+the builtins archive, and the same for every global symbol of `libm.a`
+(`libm.a` + `libc.a` + builtins), `measurements/measurement-2026-10-21-sdk01e/`:
+
+| | before SDK01 E | after |
+|---|---|---|
+| `libc.a`: symbols that do not link (of 1229) | 12 | **7** |
+| `libm.a`: symbols that do not link (of 214) | 21 | **3** |
+
+Linking since SDK01 E: `qecvt`, `qecvt_r`, `qfcvt`, `qfcvt_r`, `qgcvt`;
+`powf`, `remainder`, `remainderf`, `fdim`, `fdimf`, `fdiml`, `nexttowardf`,
+`cpowf`, `casin`, `casinf`, `cacos`, `cacosf`, `casinh`, `casinhf`,
+`cacosh`, `cacoshf`, `catanh`, `catanhf`. The libm ones ran on NewTOS (QEMU
+raspi4b, memprot on/strict/off) with the bit patterns of the reference;
+the builtins themselves were checked on the host against exact oracles
+(`sdk/compiler-rt/tests/rt-host.sh`). Accuracy of OpenLibm's complex inverse
+functions is upstream's (§4).
+
+**`qecvt` & Co. link but are wrong.** mintlib formats them through
+`snprintf("%.*Lf", …, long double)` (`misc/efgcvt_r.c` included by
+`misc/qefgcvt_r.c`); `libc.a` is built with `-D__NO_LONG_DOUBLE_MATH`
+(`build-libc.sh`), so `vfprintf` takes `%Lf` with `va_arg(ap, double)` while
+the caller passed a binary128 (source reading). Measured on NewTOS:
+`qecvt(1.0L/3, 10)` = `"-0.000000000"`, decpt −1 (correct `"3333333333"`,
+0), `qfcvt(2.5L, 3)` = `""`, `qgcvt(0.125L, 6)` = `"0"`
+(`measurements/measurement-2026-10-21-sdk01e/serial/rt-on.log`). Do not use
+them; `ecvt`/`fcvt`/`gcvt` on `double` are unaffected. Fixing it means a
+`long double` path in the libc printf engine — not part of SDK01 E.
+
+Still not linking (7 in `libc.a`, 3 in `libm.a`):
 
 | Function | Missing | Reason |
 |---|---|---|
-| `qecvt`, `qecvt_r`, `qfcvt`, `qfcvt_r`, `qgcvt` | `__divtf3`, `__eqtf2`, `__getf2`, `__lttf2`, `__multf3`, `__trunctfdf2` | 128-bit `long double` compiler-rt builtins (§6) |
+| `scalbln`, `scalblnf`, `scalblnl` (libm) | `scalbnl` | the `l` functions are not built (§4); one object holds all three |
 | `gethostid`, `__gethostid` | `gethostbyname` | `socket/` not compiled (§4) |
 | `if_link`, `if_getifflags`, `if_setifflags`, `if_getlnkflags`, `if_setlnkflags` | `socket` | same |
 

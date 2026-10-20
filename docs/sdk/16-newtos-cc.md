@@ -37,14 +37,15 @@ command):
 |------|---------|
 | compile | `clang -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 -fPIE -fno-builtin -nostdinc -D__NEWTOS__ -Wno-macro-redefined` + your flags + `-I` of the selected libraries + `-I sdk/libc/mintlib/include` + (with `-lm`) `-I sdk/libm/include -I sdk/libm/openlibm-*/include` + `-isystem <clang resource dir>/include` |
 | crt0 | `sdk/libc/crt0.S`, assembled per link; with `-prgflags`/`-prot` as `-DNEWTOS_PRGFLAGS=<value>` |
-| link | `rust-lld -flavor gnu -T sdk/newtos.ld -pie --no-dynamic-linker -z text -z max-page-size=0x1000 --build-id=none crt0.o <objects> --start-group <archives> --end-group` |
+| link | `rust-lld -flavor gnu -T sdk/newtos.ld -pie --no-dynamic-linker -z text -z max-page-size=0x1000 --build-id=none crt0.o <objects> --start-group <archives> sdk/compiler-rt/libclang_rt.builtins.a --end-group` |
 
 Your flags come after the defaults, so `-Os` replaces `-O2`; your `-I`
 directories are searched before the SDK's. The include order (libraries above
 gemlib, gemlib, mintlib, libm's adapters, clang's headers) and the archive
 order (`libshare` first, then `windom cflib ldg png z jpeg gif exif gem m`,
-`libc` last, all in one group) are those of `build-qed.sh`,
-`build-ldg-demo.sh` and `build-zview.sh`.
+`libc`, all in one group) are those of `build-qed.sh`,
+`build-ldg-demo.sh` and `build-zview.sh`; after `libc`, last, comes the
+compiler runtime (below).
 
 ### Program kind
 
@@ -69,6 +70,21 @@ Each `-l` selects the library's headers when compiling **and** its archive
 when linking — so pass the same `-l` options to both steps when you compile
 with `-c` (`newtos.mk` does). libc is always linked (except `-bare`).
 
+So is the **compiler runtime** (TASK/SDK01 E): `sdk/compiler-rt/
+libclang_rt.builtins.a`, LLVM compiler-rt 21.1.8's builtins, built by
+`sdk/compiler-rt/build-compiler-rt.sh` — the helpers clang calls for 128-bit
+`long double` arithmetic (`__addtf3`, `__lttf2`, `__extendsftf2`, …) and for
+complex `*`/`/` (`__mulsc3`, `__divdc3`, …); without them `powf`,
+`remainder`, `fdim`, `casin` & Co. did not link
+([05 B12](05-abi-pitfalls.md#b12-long-double-is-128-bit-and-the-compiler-runtime-is-compiler-rt)).
+It sits last in the group and references nothing, and the first archive that
+defines a symbol wins, so it only supplies what the libraries do not —
+`libc.a`'s own `__extenddftf2` stays the one linked. A program that needs
+none of it is byte-identical to one linked without it (measured for the two
+templates, `mathtst`, `libtest` and `-bare hello`:
+`measurements/measurement-2026-10-21-sdk01e/checks/newtos-cc-compare.txt`).
+`-bare` links no runtime, as `sdk/build.sh` does not.
+
 | Option | Archive | Pulls in | Build script if missing |
 |--------|---------|----------|-------------------------|
 | `-lgem` | `sdk/gemlib/gemlib.a` | | `sdk/gemlib/build-gemlib.sh` |
@@ -78,6 +94,7 @@ with `-c` (`newtos.mk` does). libc is always linked (except `-bare`).
 | `-lshare` | `sdk/libshare/libshare.a` | ldg | `sdk/libshare/build-libshare.sh` |
 | `-lwindom` | `sdk/windom/libwindom1.a` | gem | `sdk/windom/build-windom.sh` |
 | `-lz` `-lpng` `-ljpeg` `-lgif` `-lexif` | `sdk/{zlib,libpng,libjpeg,giflib,libexif}/lib*.a` | png: z, m; exif: m | `sdk/<lib>/build-<lib>.sh` |
+| (always) | `sdk/compiler-rt/libclang_rt.builtins.a` | | `sdk/compiler-rt/build-compiler-rt.sh` |
 
 An unknown `-lfoo` is an error; pass a foreign archive as a file
 (`mylib.a`). Header trees are found by pattern (`sdk/gemlib/gemlib-*` with

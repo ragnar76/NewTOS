@@ -1,0 +1,14 @@
+casin      0x3fdcf2214ccccd44ULL, 0x3fe0fafb8f2f147eULL
+cacos      0x3ff1e5730110f9c7ULL, 0xbfe0fafb8f2f147eULL
+casinh     0x3fe0fafb8f2f147eULL, 0x3fdcf2214ccccd44ULL
+cacosh     0x3fe0fafb8f2f147eULL, 0x3ff1e5730110f9c7ULL
+catanh     0x3fd9c041f7ed8d33ULL, 0x3fe1b6e192ebbe44ULL
+casinf     0x3ee7910aU, 0x3f07d7dcU
+cacosf     0x3f8f2b98U, 0xbf07d7dcU
+casinhf    0x3f07d7dcU, 0x3ee7910aU
+cacoshf    0x3f07d7dcU, 0x3f8f2b98U
+catanhf    0x3ece0210U, 0x3f0db70dU
+cpowf      0xb3bbbd2dU, 0x3fffffffU
+cpowf2     0x3fa6776cU, 0x401cc093U
+powf(10,3.5) 0x4545a471  powf(2,.5) 0x3fb504f3  powf(-2,3) 0xc1000000  powf(0.3,-7.25) 0x45c1129a
+remainder(1e300, 3.7) 0x3ffc408f4350ed98 remainderf(1e30f,3.7f) 0xbf309424

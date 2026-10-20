@@ -79,6 +79,13 @@
 #             chain is libc -> ldg -> libshare; it also compiles mintlib's
 #             mintlib/posix_memalign.c, which libc's watch covers. Same
 #             tarball rule as the codec libraries)
+#   libclang_rt.builtins.a  sdk/compiler-rt/overlay/,
+#             sdk/compiler-rt/build-compiler-rt.sh, the pinned
+#             compiler-rt-*.src.tar.xz + compiler-rt-sources.sha256,
+#             sdk/vendor-lib.sh -- and NOTHING of libc's: compiler-rt's
+#             builtins are compiled against clang's freestanding headers only
+#             and reference no other library (TASK/SDK01 E), so its chain is
+#             itself alone. Same tarball rule as the codec libraries
 #
 # NOT watched, deliberately:
 #   - The extracted vendor trees (sdk/libc/mintlib/, sdk/gemlib/gemlib-0.44.0/,
@@ -153,6 +160,7 @@ lib_archive() {
     libexif) printf '%s\n' "$LIB_SDK/libexif/libexif.a" ;;
     windom)  printf '%s\n' "$LIB_SDK/windom/libwindom1.a" ;;
     libshare) printf '%s\n' "$LIB_SDK/libshare/libshare.a" ;;
+    compiler-rt) printf '%s\n' "$LIB_SDK/compiler-rt/libclang_rt.builtins.a" ;;
     *) echo "lib-stale.sh: unknown library '$1'" >&2; return 1 ;;
   esac
 }
@@ -164,7 +172,7 @@ lib_builder() {
     cflib)  printf '%s\n' "$LIB_SDK/cflib/build-cflib.sh" ;;
     libm)   printf '%s\n' "$LIB_SDK/libm/build-libm.sh" ;;
     ldg)    printf '%s\n' "$LIB_SDK/ldg/build-ldg.sh" ;;
-    zlib|libpng|libjpeg|giflib|libexif|windom|libshare)
+    zlib|libpng|libjpeg|giflib|libexif|windom|libshare|compiler-rt)
             printf '%s\n' "$LIB_SDK/$1/build-$1.sh" ;;
     *) echo "lib-stale.sh: unknown library '$1'" >&2; return 1 ;;
   esac
@@ -186,6 +194,7 @@ lib_chain() {
     libexif) printf 'libc\nlibm\nlibexif\n' ;;
     windom)  printf 'libc\ngemlib\nwindom\n' ;;
     libshare) printf 'libc\nldg\nlibshare\n' ;;
+    compiler-rt) printf 'compiler-rt\n' ;;
     *) echo "lib-stale.sh: unknown library '$1'" >&2; return 1 ;;
   esac
 }
@@ -271,6 +280,15 @@ lib_inputs() {
       LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/libshare/libshare-sources.sha256"
       LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/vendor-lib.sh"
       for _t in "$LIB_SDK"/libshare/libshare-*.tgz; do
+        if [ -e "$_t" ]; then LIB_WATCH[${#LIB_WATCH[@]}]="$_t"; fi
+      done
+      ;;
+    compiler-rt)
+      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/compiler-rt/overlay"
+      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/compiler-rt/build-compiler-rt.sh"
+      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/compiler-rt/compiler-rt-sources.sha256"
+      LIB_WATCH[${#LIB_WATCH[@]}]="$LIB_SDK/vendor-lib.sh"
+      for _t in "$LIB_SDK"/compiler-rt/compiler-rt-*.src.tar.xz; do
         if [ -e "$_t" ]; then LIB_WATCH[${#LIB_WATCH[@]}]="$_t"; fi
       done
       ;;

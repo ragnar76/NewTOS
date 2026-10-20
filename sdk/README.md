@@ -39,6 +39,7 @@ Pi 4. This file is only a map of the directory.
 | `gemlib/` | gemlib port: tarball, `overlay/` (`svc #2` primitives, LP64 header corrections), `build-gemlib.sh`, `tests/`; plus `build-gemlib-m68k.sh` for the real-Atari build of the same library |
 | `cflib/` | cflib port: tarball, `overlay/`, `build-cflib.sh`, `tests/` |
 | `libm/`, `ldg/`, `libshare/`, `windom/`, `zlib/`, `libpng/`, `libjpeg/`, `giflib/`, `libexif/` | further ported libraries (OpenLibm; LDG; libshare; WinDom; the five codec libraries), each with its pinned archive, build script and, where needed, `overlay/` |
+| `compiler-rt/` | the compiler runtime (TASK/SDK01 E): LLVM compiler-rt 21.1.8's `lib/builtins` (pinned tarball + signature, `compiler-rt-sources.sha256`), `build-compiler-rt.sh` → `libclang_rt.builtins.a` (binary128 `long double` and complex-arithmetic helpers, linked last by `bin/newtos-cc`), `tests/rt-host.sh` (run by `run-host-tests.sh`) |
 | `zview/` | zView port: z-tools tarball, `overlay/` (13 per-program patch files), `build-zview.sh` |
 | `overlays/{qed,teradesk,coremark}/` | per-program patch files: QED 2 (LP64), TeraDesk 7 (1 m68k asm, 6 LP64); CoreMark's is its own port layer, not a patch. zView's patches are in `zview/overlay/`, library patches in each library's `overlay/`. Reasons: [`docs/sdk/04-porting-anatomy.md`](../docs/sdk/04-porting-anatomy.md) |
 | `apps/` | `build-qed.sh`, `build-teradesk.sh`, `build-coremark.sh`, the tracked diagnostics `apitest/`, `gemtest/`, `chaintest/`, and the **untracked** vendored application trees |
@@ -50,6 +51,7 @@ sdk/bin/newtos-cc -nap -o MYAPP.NAP main.c            # your program (libc + gem
 make -C sdk/templates/gem-hello                        # template -> HELLO.NAP
 sdk/build.sh sdk/examples/hello.c /tmp/HELLO2.NCP     # freestanding console program
 sdk/libc/build-libc.sh                                 # libc.a + build/libtest.NCP
+sdk/compiler-rt/build-compiler-rt.sh                   # libclang_rt.builtins.a (newtos-cc links it)
 sdk/gemlib/build-gemlib.sh                             # gemlib.a + build/gemtest.NCP
 sdk/cflib/build-cflib.sh                               # cflib.a + build/cftest.NCP
 sdk/apps/build-qed.sh                                  # sdk/apps/qed/build/QED.NAP

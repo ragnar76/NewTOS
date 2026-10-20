@@ -1,0 +1,74 @@
+measurement-2026-10-21-sdk01e -- Developer: TASK/SDK01 package E, compiler runtime for the SDK (docs/analysis/sdk-inventory-2026-10-20.md
+W2; docs/sdk/07-mintlib-limits.md section 11). SDK only, no kernel/tos-api change. Base HEAD f04839df, change UNCOMMITTED in the
+working tree. Developer self-evidence; the Tester's verdict is separate.
+Host macOS (Apple Silicon), Apple clang 21.0.0 + rust-lld/llvm-* of the pinned nightly (LLVM 22.1.2); QEMU -M raspi4b -append
+"serial=on [memprot=strict|off]", one QEMU at a time, per-run APFS clone (cp -c) of one base card, fsck_msdos -n of the clone, clone
+deleted; private 64 MiB FAT16 image, no SD card, no Pi. Scratch = session scratchpad .../scratchpad/sdk01e (method/env.sh); binaries
+not kept here, sha256 in checks/binaries.sha256.
+
+CHANGE
+  sdk/compiler-rt/ (new)          compiler-rt-21.1.8.src.tar.xz (+ .sig) = LLVM release 21.1.8, unchanged, from
+                                  https://github.com/llvm/llvm-project/releases/download/llvmorg-21.1.8/ (exact URL, sha256 and the
+                                  signature check in compiler-rt-sources.sha256: good signature, Douglas Yung, EdDSA
+                                  FFB3368980F3E6BB5737145A316C56D064CACBA5 from releases.llvm.org/release-keys.asc). Apache-2.0 WITH
+                                  LLVM-exception. 21.1.8 = last release with a separate compiler-rt tarball.
+                                  build-compiler-rt.sh: GENERIC_TF_SOURCES + GENERIC_SOURCES (first set()) + BF16_SOURCES read from the
+                                  tarball's lib/builtins/CMakeLists.txt, fp_mode.c replaced by aarch64/fp_mode.c (FPCR rounding mode);
+                                  excluded with reasons in the script header (emutls/enable_execute_stack/eprintf/atomic as CMake's
+                                  bare-metal build; gcc_personality_v0 (no unwinder); clear_cache (EL0 cache maintenance traps: the
+                                  kernel's SCTLR_EL1_INIT has no UCT/UCI); cpu_model, emupac.cpp, lse.S, sme-*). SDK flags + compiler-rt's
+                                  own (-std=c11 -fvisibility=hidden -DVISIBILITY_HIDDEN -fomit-frame-pointer -DCOMPILER_RT_HAS_FLOAT16).
+                                  151 files, 0 failures, 0 warnings, 170 symbols, 0 external references (checked by the script) ->
+                                  libclang_rt.builtins.a 182830 bytes, sha256 3132dbf2..., reproducible (rebuilt from a fresh extract:
+                                  same sha256). tests/rt-elf.c, rt-host.c, rt-host.sh (host test, see 2).
+  sdk/bin/newtos-cc               links libclang_rt.builtins.a last in the group, always (not with -bare); dies with "run
+                                  sdk/compiler-rt/build-compiler-rt.sh" when it is missing. sdk/mk/newtos.mk unchanged (links through
+                                  newtos-cc; its */*.a wildcard already sees the archive).
+  sdk/lib-stale.sh                library "compiler-rt" (archive, builder, chain = itself only, watch list).
+  sdk/.gitignore, sdk/README.md, sdk/run-host-tests.sh (+ rt-host), sdk/templates/tests/newtos-cc-host.sh (skip without the archive),
+  sdk/libm/include/{math,complex}.h (comments), docs/sdk/00, 05 B12 (renamed), 07 (header, 4, 6, 11), 08, 09 1, 16.
+  NOT changed: libc.a / libm.a (same sha256 before/after; libc's own __extenddftf2 (newtos-arch/softfloat.c) stays and wins, first
+  archive), build-libc.sh/build-libm.sh, any upstream source, kernel.
+
+1 LINK PROBE PER SYMBOL (method/link-probe.sh = sdk01a's method; method/probes.sh)
+  libm.a (214 global symbols, linked with libm.a + libc.a [+ builtins]):  before 21 fail, after 3   checks/probe-{before,after}-libm-*
+     left: scalbln scalblnf scalblnl -- undefined scalbnl (an `l` function; OpenLibm's ld128 set is not built), NOT a builtin.
+  libc.a (1229 global symbols, libc.a [+ builtins]):                      before 12 fail, after 7   checks/probe-{before,after}-libc-*
+     left: gethostid __gethostid if_link if_getifflags if_setifflags if_getlnkflags if_setlnkflags (socket/).
+  newtos-cc HEAD vs working tree (method/newtos-cc-compare.sh, checks/newtos-cc-compare.txt): gem-hello, console-hello, mathtst (-lm),
+  libtest, -bare hello byte-identical; a qecvt program and a powf/remainder/fdim program fail with HEAD's wrapper (undefined
+  __divtf3 ... / __addtf3 ...) and link with the new one.
+2 HOST TEST sdk/compiler-rt/tests/rt-host.sh (checks/rt-host.txt): newtos-cc -lm link (0 undefined; clang lowers long double and
+  complex */ to the builtins; map: binary128 helpers from the archive, __extenddftf2 from libc.a); rebuild parity 326/326 shipped
+  builtins+libm members byte-identical; the -ffixed-x18 rebuild (0 x18 instructions) runs natively on the host: binary128 + - * /
+  200000 random pairs each bit-exact vs host double (double rounding innocuous at 113 >= 2*53+2), exact quad patterns, FPCR rounding
+  modes, comparisons, conversions, complex mul/div vs host, powf (bit-exact vs host-built OpenLibm, <= 1 ulp vs system libm),
+  remainder(f)/fdim(f) bit-exact vs both, nexttowardf vs system libm, casin..catanh(+f)/cpowf bit-exact vs host-built OpenLibm on
+  50289 arguments: 1950316 checks, 0 failed.
+  x18 (method/x18-experiment.sh, checks/x18-experiment.txt): the shipped archives use x18 (142 instructions in the linked program);
+  macOS does not preserve x18: 3 of 10 identical runs had one wrong __divtf3 quotient (different operands each time); the -ffixed-x18
+  rebuild 0 of 10. That is why the host test runs the rebuild (and first proves the no-x18 rebuild byte-identical). The NewTOS kernel
+  saves x18 (kernel/src/arch/aarch64/exception_vectors.s:34/62); the shipped code ran on NewTOS in 4.
+  sdk/run-host-tests.sh: 24 passed, 0 failed, 0 skipped (before: 23; + rt-host)   checks/sdk-host-tests.txt
+3 APP BUILDS (method/app-builds.sh, checks/app-builds.txt, apps-{before,after}.sha256): QED, TeraDesk, CoreMark, Doom, zView (+10 .NLD)
+  rc=0, every link 0 undefined. None of their scripts uses newtos-cc, so the builtins archive is not on their link lines. 25 of 28
+  binaries byte-identical as built; QED.NAP and TeraDesk DESKTOP.NAP (x2) differed only by __DATE__ (built a day later): rebuilt with
+  SOURCE_DATE_EPOCH = 2026-10-20 12:00 UTC they are the 'before' hashes exactly (checks/apps-source-date-epoch.txt).
+4 QEMU PROBE RTP (method/rtp.c -> C:\AUTO\RTP.NCP, newtos-cc -lm against the SHIPPED archives; build-probe.sh, cards.sh, run-probe.sh):
+  binary128 from C (1/3, (2^52+1)(2^52-1)+1, fesetround UPWARD/DOWNWARD/NEAREST at EL0, compares, conversions), complex */ (double,
+  float, Annex G), powf/remainder(f)/fdim(f)/fdiml/nexttowardf/casin..catanh(+f)/cpowf with the expected bit patterns (exact values or
+  the host-built OpenLibm's, method/expected.{c,txt}): on / strict / off: RTP RESULT fails=0, 46 ok each, 0 EXC/PANIC, desktop up,
+  fsck rc=0 (serial/rt-{on,strict,off}{.log,-fsck.txt}). HEAD's newtos-cc cannot link rtp.c (17 undefined builtins).
+  The probe needs -I sdk/libm/openlibm-0.8.8/src for <fenv.h>: openlibm_fenv_aarch64.h includes "cdefs-compat.h" from src/ --
+  pre-existing SDK gap, not changed here.
+  INFO (not a pass): qecvt(1.0L/3,10) = "-0.000000000" decpt=-1, qfcvt(2.5L,3) = "", qgcvt(0.125L,6) = "0" -- they link now but are
+  WRONG: mintlib formats via snprintf("%.*Lf", long double) and libc is built with -D__NO_LONG_DOUBLE_MATH, so vfprintf reads a double
+  (cause from source reading: misc/efgcvt_r.c, stdio/vfprintf.c __ldbl_is_dbl). Documented in docs/sdk/07 section 11.
+  Kernel: release rpi4 from `git archive f04839df` (method/build-kernel.sh; no kernel-side working-tree changes), SOURCE_DATE_EPOCH
+  1792152000 -> sha256 15a0abd6..., identical to measurement-2026-10-20-sdk01a's kernel (no kernel change since 7d5a3f08).
+5 UPSTREAM ACCURACY (informational; method/olm-accuracy.{c,sh}, checks/olm-accuracy.txt): OpenLibm 0.8.8's casin/cacos/casinh/cacosh
+  (+f) are Cephes code: vs the macOS libm up to 2e-5 relative error, the f forms NaN/inf for ~20 % of arguments up to |z| ~ 1e6,
+  imaginary-sign differences in cacosh/cacoshf/casinhf/catanhf. Same values from the host build of the same source -> upstream, not the
+  port. Documented in docs/sdk/07 section 4.
+NOT RUN: real Pi 4; qemu-virt (kernel unchanged); cargo build/clippy (no Rust crate touched); a fresh-clone run of the quickstart
+  (the 21/0/3 host-test line there is expected, not re-measured); the ld128 `l` functions (not built, separate item).

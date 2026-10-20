@@ -197,6 +197,20 @@ report lp64-limits $rc "mintlib tree absent"
 [ $rc -eq 0 ] || [ $rc -eq 77 ] || sed 's/^/      /' "$WORK/libc-link.log"
 report libc-link $rc "libc.a not built"
 
+# rt-host (SDK01 E): compiler-rt's builtins (sdk/compiler-rt/
+# libclang_rt.builtins.a) -- a program using long double and complex
+# arithmetic links with newtos-cc -lm (0 undefined, binary128 helpers from the
+# builtins, __extenddftf2 still libc's); every shipped builtins/libm member
+# rebuilds byte-identical; the -ffixed-x18 rebuild runs natively on the
+# AArch64 host: binary128 + - * / against the host's double results (double
+# rounding innocuous at 113 bits), comparisons, conversions, FPCR rounding
+# modes, complex multiply/divide vs the host, and powf/remainder/fdim/
+# nexttowardf/casin.../cpowf against the system libm and a host build of the
+# same OpenLibm sources (sdk/compiler-rt/tests/rt-host.c lists the oracles).
+"$SDK/compiler-rt/tests/rt-host.sh" > "$WORK/rt-host.log" 2>&1; rc=$?
+[ $rc -eq 0 ] || [ $rc -eq 77 ] || sed 's/^/      /' "$WORK/rt-host.log"
+report rt-host $rc "$(tail -1 "$WORK/rt-host.log")"
+
 # --- app host tests --------------------------------------------------------------
 # c2p-host (PORT06, user decision 2026-10-04): DOOM's table chunky-to-planar
 # (sdk/apps/doom/doomgeneric_gem.c, compiled without its GEM half) equals the

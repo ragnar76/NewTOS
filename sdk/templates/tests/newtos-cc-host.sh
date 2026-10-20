@@ -15,7 +15,8 @@
 #      sdk/build.sh;
 #   5. an unknown library is an error, not a silent link.
 #
-# Skips when libc.a / gemlib.a are not built or no clang / make is found.
+# Skips when libc.a / gemlib.a / libclang_rt.builtins.a (TASK/SDK01 E, newtos-cc
+# links it into every non-bare program) are not built or no clang / make is found.
 
 SDK=$(cd "$(dirname "$0")/../.." && pwd)
 CC_W="$SDK/bin/newtos-cc"
@@ -28,6 +29,7 @@ command -v clang >/dev/null 2>&1 || { echo "skip: clang not found"; exit 77; }
 command -v "$MAKE" >/dev/null 2>&1 || { echo "skip: make not found"; exit 77; }
 [ -f "$SDK/libc/libc.a" ]     || { echo "skip: sdk/libc/libc.a not built"; exit 77; }
 [ -f "$SDK/gemlib/gemlib.a" ] || { echo "skip: sdk/gemlib/gemlib.a not built"; exit 77; }
+[ -f "$SDK/compiler-rt/libclang_rt.builtins.a" ] || { echo "skip: sdk/compiler-rt/libclang_rt.builtins.a not built"; exit 77; }
 
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/newtos-cc-host.XXXXXX") || exit 1
 trap 'rm -rf "$WORK"' EXIT

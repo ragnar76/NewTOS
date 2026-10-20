@@ -1,0 +1,5 @@
+# QED and TeraDesk embed __DATE__ (strings: 'Oct 21 2026' in today's build). Rebuilt with SOURCE_DATE_EPOCH=1792497600 (2026-10-20 12:00 UTC, the day of the 'before' binaries):
+cacb51f05f5b919a03a97b9ffa3691fcc421ba6e51987e18db9a5713c22f475e  apps/qed/build/QED.NAP
+5b90db4f02670dcebf45c22c863610c2c6bf11ef955ec5fdbaebc2260897af44  apps/teradesk/build/DESKTOP.NAP
+5b90db4f02670dcebf45c22c863610c2c6bf11ef955ec5fdbaebc2260897af44  apps/teradesk/build/dist/DESKTOP.NAP
+# = the 'before' hashes in apps-before.sha256 -> byte-identical apart from the build date

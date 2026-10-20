@@ -1,0 +1,165 @@
+x18 instructions in the linked shipped program: 142
+== shipped run 1
+T  binary128 /: 200000 random pairs, 0 mismatches
+C  binary128 comparisons: 200000 pairs (incl. NaN, +-0, equal), 0 mismatches
+V  conversions float/double/int64/uint64/int32 <-> binary128: 200000 rounds, 0 mismatches
+X  __muldc3/__divdc3/__mulsc3/__divsc3 + clang's lowering vs host complex * /: 100000 operand sets, 0 mismatches
+M  remainder, remainderf, fdim, fdimf bit-exact vs system libm and host OpenLibm, nexttowardf vs system libm: 200000 pairs, 0 mismatches
+M  casin cacos casinh cacosh catanh (+f), cpowf bit-exact vs host OpenLibm: 50289 arguments (incl. 289 special pairs), 0 mismatches
+rt-host: 1950316 checks, 0 failed
+== shipped run 2
+  FAIL tf -0x1.25835921185b8p-559 / -0x1.a3c82929c8fe2p-732 -> 0x1.0000d96bf03edp+171, host 0x1.65fe09ea342d6p+172
+T  binary128 /: 200000 random pairs, 1 mismatches
+C  binary128 comparisons: 200000 pairs (incl. NaN, +-0, equal), 0 mismatches
+V  conversions float/double/int64/uint64/int32 <-> binary128: 200000 rounds, 0 mismatches
+X  __muldc3/__divdc3/__mulsc3/__divsc3 + clang's lowering vs host complex * /: 100000 operand sets, 0 mismatches
+M  remainder, remainderf, fdim, fdimf bit-exact vs system libm and host OpenLibm, nexttowardf vs system libm: 200000 pairs, 0 mismatches
+M  casin cacos casinh cacosh catanh (+f), cpowf bit-exact vs host OpenLibm: 50289 arguments (incl. 289 special pairs), 0 mismatches
+rt-host: 1950316 checks, 1 failed
+== shipped run 3
+  FAIL tf -0x1.75ba3b7aaca13p+297 / 0x1.4002a01843c71p+44 -> -inf, host -0x1.2af8eeda4f51bp+253
+T  binary128 /: 200000 random pairs, 1 mismatches
+C  binary128 comparisons: 200000 pairs (incl. NaN, +-0, equal), 0 mismatches
+V  conversions float/double/int64/uint64/int32 <-> binary128: 200000 rounds, 0 mismatches
+X  __muldc3/__divdc3/__mulsc3/__divsc3 + clang's lowering vs host complex * /: 100000 operand sets, 0 mismatches
+M  remainder, remainderf, fdim, fdimf bit-exact vs system libm and host OpenLibm, nexttowardf vs system libm: 200000 pairs, 0 mismatches
+M  casin cacos casinh cacosh catanh (+f), cpowf bit-exact vs host OpenLibm: 50289 arguments (incl. 289 special pairs), 0 mismatches
+rt-host: 1950316 checks, 1 failed
+== shipped run 4
+T  binary128 /: 200000 random pairs, 0 mismatches
+C  binary128 comparisons: 200000 pairs (incl. NaN, +-0, equal), 0 mismatches
+V  conversions float/double/int64/uint64/int32 <-> binary128: 200000 rounds, 0 mismatches
+X  __muldc3/__divdc3/__mulsc3/__divsc3 + clang's lowering vs host complex * /: 100000 operand sets, 0 mismatches
+M  remainder, remainderf, fdim, fdimf bit-exact vs system libm and host OpenLibm, nexttowardf vs system libm: 200000 pairs, 0 mismatches
+M  casin cacos casinh cacosh catanh (+f), cpowf bit-exact vs host OpenLibm: 50289 arguments (incl. 289 special pairs), 0 mismatches
+rt-host: 1950316 checks, 0 failed
+== shipped run 5
+T  binary128 /: 200000 random pairs, 0 mismatches
+C  binary128 comparisons: 200000 pairs (incl. NaN, +-0, equal), 0 mismatches
+V  conversions float/double/int64/uint64/int32 <-> binary128: 200000 rounds, 0 mismatches
+X  __muldc3/__divdc3/__mulsc3/__divsc3 + clang's lowering vs host complex * /: 100000 operand sets, 0 mismatches
+M  remainder, remainderf, fdim, fdimf bit-exact vs system libm and host OpenLibm, nexttowardf vs system libm: 200000 pairs, 0 mismatches
+M  casin cacos casinh cacosh catanh (+f), cpowf bit-exact vs host OpenLibm: 50289 arguments (incl. 289 special pairs), 0 mismatches
+rt-host: 1950316 checks, 0 failed
+== shipped run 6
+T  binary128 /: 200000 random pairs, 0 mismatches
+C  binary128 comparisons: 200000 pairs (incl. NaN, +-0, equal), 0 mismatches
+V  conversions float/double/int64/uint64/int32 <-> binary128: 200000 rounds, 0 mismatches
+X  __muldc3/__divdc3/__mulsc3/__divsc3 + clang's lowering vs host complex * /: 100000 operand sets, 0 mismatches
+M  remainder, remainderf, fdim, fdimf bit-exact vs system libm and host OpenLibm, nexttowardf vs system libm: 200000 pairs, 0 mismatches
+M  casin cacos casinh cacosh catanh (+f), cpowf bit-exact vs host OpenLibm: 50289 arguments (incl. 289 special pairs), 0 mismatches
+rt-host: 1950316 checks, 0 failed
+== shipped run 7
+T  binary128 /: 200000 random pairs, 0 mismatches
+C  binary128 comparisons: 200000 pairs (incl. NaN, +-0, equal), 0 mismatches
+V  conversions float/double/int64/uint64/int32 <-> binary128: 200000 rounds, 0 mismatches
+X  __muldc3/__divdc3/__mulsc3/__divsc3 + clang's lowering vs host complex * /: 100000 operand sets, 0 mismatches
+M  remainder, remainderf, fdim, fdimf bit-exact vs system libm and host OpenLibm, nexttowardf vs system libm: 200000 pairs, 0 mismatches
+M  casin cacos casinh cacosh catanh (+f), cpowf bit-exact vs host OpenLibm: 50289 arguments (incl. 289 special pairs), 0 mismatches
+rt-host: 1950316 checks, 0 failed
+== shipped run 8
+T  binary128 /: 200000 random pairs, 0 mismatches
+C  binary128 comparisons: 200000 pairs (incl. NaN, +-0, equal), 0 mismatches
+V  conversions float/double/int64/uint64/int32 <-> binary128: 200000 rounds, 0 mismatches
+X  __muldc3/__divdc3/__mulsc3/__divsc3 + clang's lowering vs host complex * /: 100000 operand sets, 0 mismatches
+M  remainder, remainderf, fdim, fdimf bit-exact vs system libm and host OpenLibm, nexttowardf vs system libm: 200000 pairs, 0 mismatches
+M  casin cacos casinh cacosh catanh (+f), cpowf bit-exact vs host OpenLibm: 50289 arguments (incl. 289 special pairs), 0 mismatches
+rt-host: 1950316 checks, 0 failed
+== shipped run 9
+T  binary128 /: 200000 random pairs, 0 mismatches
+C  binary128 comparisons: 200000 pairs (incl. NaN, +-0, equal), 0 mismatches
+V  conversions float/double/int64/uint64/int32 <-> binary128: 200000 rounds, 0 mismatches
+X  __muldc3/__divdc3/__mulsc3/__divsc3 + clang's lowering vs host complex * /: 100000 operand sets, 0 mismatches
+M  remainder, remainderf, fdim, fdimf bit-exact vs system libm and host OpenLibm, nexttowardf vs system libm: 200000 pairs, 0 mismatches
+M  casin cacos casinh cacosh catanh (+f), cpowf bit-exact vs host OpenLibm: 50289 arguments (incl. 289 special pairs), 0 mismatches
+rt-host: 1950316 checks, 0 failed
+== shipped run 10
+  FAIL tf 0x1.72f0645ac5ecdp-485 / 0x1.8p+1 -> inf, host 0x1.ee95db23b2911p-487
+T  binary128 /: 200000 random pairs, 1 mismatches
+C  binary128 comparisons: 200000 pairs (incl. NaN, +-0, equal), 0 mismatches
+V  conversions float/double/int64/uint64/int32 <-> binary128: 200000 rounds, 0 mismatches
+X  __muldc3/__divdc3/__mulsc3/__divsc3 + clang's lowering vs host complex * /: 100000 operand sets, 0 mismatches
+M  remainder, remainderf, fdim, fdimf bit-exact vs system libm and host OpenLibm, nexttowardf vs system libm: 200000 pairs, 0 mismatches
+M  casin cacos casinh cacosh catanh (+f), cpowf bit-exact vs host OpenLibm: 50289 arguments (incl. 289 special pairs), 0 mismatches
+rt-host: 1950316 checks, 1 failed
+x18 instructions in the linked x18 program: 0
+== x18 run 1
+T  binary128 /: 200000 random pairs, 0 mismatches
+C  binary128 comparisons: 200000 pairs (incl. NaN, +-0, equal), 0 mismatches
+V  conversions float/double/int64/uint64/int32 <-> binary128: 200000 rounds, 0 mismatches
+X  __muldc3/__divdc3/__mulsc3/__divsc3 + clang's lowering vs host complex * /: 100000 operand sets, 0 mismatches
+M  remainder, remainderf, fdim, fdimf bit-exact vs system libm and host OpenLibm, nexttowardf vs system libm: 200000 pairs, 0 mismatches
+M  casin cacos casinh cacosh catanh (+f), cpowf bit-exact vs host OpenLibm: 50289 arguments (incl. 289 special pairs), 0 mismatches
+rt-host: 1950316 checks, 0 failed
+== x18 run 2
+T  binary128 /: 200000 random pairs, 0 mismatches
+C  binary128 comparisons: 200000 pairs (incl. NaN, +-0, equal), 0 mismatches
+V  conversions float/double/int64/uint64/int32 <-> binary128: 200000 rounds, 0 mismatches
+X  __muldc3/__divdc3/__mulsc3/__divsc3 + clang's lowering vs host complex * /: 100000 operand sets, 0 mismatches
+M  remainder, remainderf, fdim, fdimf bit-exact vs system libm and host OpenLibm, nexttowardf vs system libm: 200000 pairs, 0 mismatches
+M  casin cacos casinh cacosh catanh (+f), cpowf bit-exact vs host OpenLibm: 50289 arguments (incl. 289 special pairs), 0 mismatches
+rt-host: 1950316 checks, 0 failed
+== x18 run 3
+T  binary128 /: 200000 random pairs, 0 mismatches
+C  binary128 comparisons: 200000 pairs (incl. NaN, +-0, equal), 0 mismatches
+V  conversions float/double/int64/uint64/int32 <-> binary128: 200000 rounds, 0 mismatches
+X  __muldc3/__divdc3/__mulsc3/__divsc3 + clang's lowering vs host complex * /: 100000 operand sets, 0 mismatches
+M  remainder, remainderf, fdim, fdimf bit-exact vs system libm and host OpenLibm, nexttowardf vs system libm: 200000 pairs, 0 mismatches
+M  casin cacos casinh cacosh catanh (+f), cpowf bit-exact vs host OpenLibm: 50289 arguments (incl. 289 special pairs), 0 mismatches
+rt-host: 1950316 checks, 0 failed
+== x18 run 4
+T  binary128 /: 200000 random pairs, 0 mismatches
+C  binary128 comparisons: 200000 pairs (incl. NaN, +-0, equal), 0 mismatches
+V  conversions float/double/int64/uint64/int32 <-> binary128: 200000 rounds, 0 mismatches
+X  __muldc3/__divdc3/__mulsc3/__divsc3 + clang's lowering vs host complex * /: 100000 operand sets, 0 mismatches
+M  remainder, remainderf, fdim, fdimf bit-exact vs system libm and host OpenLibm, nexttowardf vs system libm: 200000 pairs, 0 mismatches
+M  casin cacos casinh cacosh catanh (+f), cpowf bit-exact vs host OpenLibm: 50289 arguments (incl. 289 special pairs), 0 mismatches
+rt-host: 1950316 checks, 0 failed
+== x18 run 5
+T  binary128 /: 200000 random pairs, 0 mismatches
+C  binary128 comparisons: 200000 pairs (incl. NaN, +-0, equal), 0 mismatches
+V  conversions float/double/int64/uint64/int32 <-> binary128: 200000 rounds, 0 mismatches
+X  __muldc3/__divdc3/__mulsc3/__divsc3 + clang's lowering vs host complex * /: 100000 operand sets, 0 mismatches
+M  remainder, remainderf, fdim, fdimf bit-exact vs system libm and host OpenLibm, nexttowardf vs system libm: 200000 pairs, 0 mismatches
+M  casin cacos casinh cacosh catanh (+f), cpowf bit-exact vs host OpenLibm: 50289 arguments (incl. 289 special pairs), 0 mismatches
+rt-host: 1950316 checks, 0 failed
+== x18 run 6
+T  binary128 /: 200000 random pairs, 0 mismatches
+C  binary128 comparisons: 200000 pairs (incl. NaN, +-0, equal), 0 mismatches
+V  conversions float/double/int64/uint64/int32 <-> binary128: 200000 rounds, 0 mismatches
+X  __muldc3/__divdc3/__mulsc3/__divsc3 + clang's lowering vs host complex * /: 100000 operand sets, 0 mismatches
+M  remainder, remainderf, fdim, fdimf bit-exact vs system libm and host OpenLibm, nexttowardf vs system libm: 200000 pairs, 0 mismatches
+M  casin cacos casinh cacosh catanh (+f), cpowf bit-exact vs host OpenLibm: 50289 arguments (incl. 289 special pairs), 0 mismatches
+rt-host: 1950316 checks, 0 failed
+== x18 run 7
+T  binary128 /: 200000 random pairs, 0 mismatches
+C  binary128 comparisons: 200000 pairs (incl. NaN, +-0, equal), 0 mismatches
+V  conversions float/double/int64/uint64/int32 <-> binary128: 200000 rounds, 0 mismatches
+X  __muldc3/__divdc3/__mulsc3/__divsc3 + clang's lowering vs host complex * /: 100000 operand sets, 0 mismatches
+M  remainder, remainderf, fdim, fdimf bit-exact vs system libm and host OpenLibm, nexttowardf vs system libm: 200000 pairs, 0 mismatches
+M  casin cacos casinh cacosh catanh (+f), cpowf bit-exact vs host OpenLibm: 50289 arguments (incl. 289 special pairs), 0 mismatches
+rt-host: 1950316 checks, 0 failed
+== x18 run 8
+T  binary128 /: 200000 random pairs, 0 mismatches
+C  binary128 comparisons: 200000 pairs (incl. NaN, +-0, equal), 0 mismatches
+V  conversions float/double/int64/uint64/int32 <-> binary128: 200000 rounds, 0 mismatches
+X  __muldc3/__divdc3/__mulsc3/__divsc3 + clang's lowering vs host complex * /: 100000 operand sets, 0 mismatches
+M  remainder, remainderf, fdim, fdimf bit-exact vs system libm and host OpenLibm, nexttowardf vs system libm: 200000 pairs, 0 mismatches
+M  casin cacos casinh cacosh catanh (+f), cpowf bit-exact vs host OpenLibm: 50289 arguments (incl. 289 special pairs), 0 mismatches
+rt-host: 1950316 checks, 0 failed
+== x18 run 9
+T  binary128 /: 200000 random pairs, 0 mismatches
+C  binary128 comparisons: 200000 pairs (incl. NaN, +-0, equal), 0 mismatches
+V  conversions float/double/int64/uint64/int32 <-> binary128: 200000 rounds, 0 mismatches
+X  __muldc3/__divdc3/__mulsc3/__divsc3 + clang's lowering vs host complex * /: 100000 operand sets, 0 mismatches
+M  remainder, remainderf, fdim, fdimf bit-exact vs system libm and host OpenLibm, nexttowardf vs system libm: 200000 pairs, 0 mismatches
+M  casin cacos casinh cacosh catanh (+f), cpowf bit-exact vs host OpenLibm: 50289 arguments (incl. 289 special pairs), 0 mismatches
+rt-host: 1950316 checks, 0 failed
+== x18 run 10
+T  binary128 /: 200000 random pairs, 0 mismatches
+C  binary128 comparisons: 200000 pairs (incl. NaN, +-0, equal), 0 mismatches
+V  conversions float/double/int64/uint64/int32 <-> binary128: 200000 rounds, 0 mismatches
+X  __muldc3/__divdc3/__mulsc3/__divsc3 + clang's lowering vs host complex * /: 100000 operand sets, 0 mismatches
+M  remainder, remainderf, fdim, fdimf bit-exact vs system libm and host OpenLibm, nexttowardf vs system libm: 200000 pairs, 0 mismatches
+M  casin cacos casinh cacosh catanh (+f), cpowf bit-exact vs host OpenLibm: 50289 arguments (incl. 289 special pairs), 0 mismatches
+rt-host: 1950316 checks, 0 failed

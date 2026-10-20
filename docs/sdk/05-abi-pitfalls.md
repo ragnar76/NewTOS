@@ -466,22 +466,34 @@ over an `int` in big-endian order land in the wrong bits — mintlib's
 write byte-addressed code; use `__builtin_bswap32`. These are legitimate
 overlay contents (they are LP64/endian corrections, not app logic changes).
 
-### B12. `long double` is 128-bit, and there is no compiler-rt
+### B12. `long double` is 128-bit, and the compiler runtime is compiler-rt
 
-**Symptom**: undefined symbols `__lttf2`, `__addtf3`, … at link time.
+**Symptom**: undefined symbols `__lttf2`, `__addtf3`, `__muldc3`, … at link
+time — with a link line that does not go through `newtos-cc`.
 
-**Cause**: AAPCS64 `long double` is IEEE binary128; clang emits soft-float
-libcalls for it; the SDK links no compiler-rt.
+**Cause**: AAPCS64 `long double` is IEEE binary128; the CPU has no quad
+arithmetic, so clang emits soft-float libcalls for every `long double`
+operation (`__addtf3`, `__multf3`, `__divtf3`, `__lttf2`, `__extendsftf2`,
+`__trunctfdf2`, …), and calls `__mulsc3`/`__muldc3`/`__divsc3`/`__divdc3`
+for C99 complex `*` and `/`. These live in the compiler runtime.
 
-**Do**: libc is built with `-D__NO_LONG_DOUBLE_MATH` so `printf`/`scanf`
-route through hardware `double` (`%Lf` is handled as double)
-(`sdk/libc/build-libc.sh:19-25`); the one builtin `strtold` still needs,
-`__extenddftf2`, is provided in `sdk/libc/newtos-arch/softfloat.c`. Avoid
-`long double` arithmetic in application code; anything else quad-precision is
-an undefined symbol. The same cut shapes the libm (T07): OpenLibm's `long
-double` functions and `ld128/` are not built, and the few `double`/`float`
-members that touch `long double` internally (`powf`, `remainder`, `fdim`,
-`scalbln`, `nexttowardf`) are unlinkable — [07 §4/§6](07-mintlib-limits.md#4-mintlib-directories-not-compiled-at-all).
+**Do**: since TASK/SDK01 E the SDK has one: LLVM compiler-rt 21.1.8's
+builtins, built by `sdk/compiler-rt/build-compiler-rt.sh` into
+`sdk/compiler-rt/libclang_rt.builtins.a`; `newtos-cc` (and so `newtos.mk`)
+links it last, always. A hand-written link line adds that archive after the
+libraries. `long double` arithmetic is then correct binary128 (soft-float, so
+slow; it honours the `fesetround()` rounding mode), but the printf/scanf side
+is not: libc is built with `-D__NO_LONG_DOUBLE_MATH`
+(`sdk/libc/build-libc.sh:19-25`), so `printf("%Lf", x)` with a real `long
+double` argument reads it as a `double` and prints garbage (measured for
+`qecvt`, [07 §11](07-mintlib-limits.md#11-functions-that-do-not-link-measured-per-symbol-tasksdk01-a));
+convert to `double` before printing. `strtold` returns `strtod()`'s value
+widened (`__extenddftf2`, still `sdk/libc/newtos-arch/softfloat.c`, which
+wins over the archive's copy because `libc.a` comes first). The libm's
+`long double` (`…l`) functions are still not built
+([07 §4/§6](07-mintlib-limits.md#4-mintlib-directories-not-compiled-at-all)),
+which leaves `scalbln`/`scalblnf` unlinkable; `powf`, `remainder`, `fdim`,
+`nexttowardf`, `cpowf` and the complex inverse functions link.
 
 ### B13. clang drops cross-translation-unit `alias` attributes
 

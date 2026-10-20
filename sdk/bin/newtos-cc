@@ -18,7 +18,9 @@
 #   link     rust-lld -flavor gnu (or ld.lld) -T sdk/newtos.ld -pie
 #                  --no-dynamic-linker -z text -z max-page-size=0x1000
 #                  --build-id=none crt0.o <objects>
-#                  --start-group <archives> --end-group
+#                  --start-group <archives> <compiler-rt builtins> --end-group
+#            (the builtins archive sdk/compiler-rt/libclang_rt.builtins.a
+#            last and always, unless -bare -- TASK/SDK01 E)
 #
 # The output ELF is the program itself; .NCP/.NTP/.NAP/.NAC/.NLD only name
 # how the desktop starts it (docs/sdk/01-overview.md).
@@ -62,7 +64,8 @@ kind (default: from the -o extension, else -ncp):
             combinable with a kind, not with -l options
 
 libraries (each selects its headers when compiling and its archive when
-linking; libc is always linked unless -bare):
+linking; libc and the compiler runtime -- compiler-rt's builtins, the
+128-bit long double and complex helpers -- are always linked unless -bare):
   -lgem      gemlib          -lcflib   cflib (+gem)    -lm      libm (OpenLibm)
   -lldg      libldg (+gem)   -lshare   libshare (+ldg) -lwindom WinDom (+gem)
   -lz -lpng (+z, m) -ljpeg -lgif -lexif (+m)            codec libraries
@@ -282,6 +285,7 @@ lib_script() {
     windom) echo sdk/windom/build-windom.sh ;; z) echo sdk/zlib/build-zlib.sh ;;
     png) echo sdk/libpng/build-libpng.sh ;; jpeg) echo sdk/libjpeg/build-libjpeg.sh ;;
     gif) echo sdk/giflib/build-giflib.sh ;; exif) echo sdk/libexif/build-libexif.sh ;;
+    rt) echo sdk/compiler-rt/build-compiler-rt.sh ;;
   esac
 }
 lib_archive() {
@@ -292,6 +296,7 @@ lib_archive() {
     windom) echo "$SDK/windom/libwindom1.a" ;; z) echo "$SDK/zlib/libz.a" ;;
     png) echo "$SDK/libpng/libpng.a" ;;    jpeg) echo "$SDK/libjpeg/libjpeg.a" ;;
     gif) echo "$SDK/giflib/libgif.a" ;;    exif) echo "$SDK/libexif/libexif.a" ;;
+    rt) echo "$SDK/compiler-rt/libclang_rt.builtins.a" ;;
   esac
 }
 wanted() { eval "[ \"\$W_$1\" = 1 ]"; }
@@ -300,6 +305,13 @@ wanted() { eval "[ \"\$W_$1\" = 1 ]"; }
 # libraries above gemlib, gemlib, mintlib, then libm's math.h adapters.
 # Archive order (build-ldg-demo.sh / build-qed.sh / libtest): libshare first so
 # its allocator wins over libc's (docs/sdk/10-ldg-modules.md section 2).
+# Last, after libc and always (unless -bare): "rt" = compiler-rt's builtins
+# (sdk/compiler-rt/libclang_rt.builtins.a, TASK/SDK01 E) -- the soft-float
+# binary128 `long double` helpers (__addtf3, __lttf2, ...) and the complex
+# multiply/divide helpers (__mulsc3, __divdc3, ...) clang emits calls to. It
+# references nothing, and the first archive that defines a symbol wins, so it
+# only supplies what no library before it defines (libc's own __extenddftf2,
+# newtos-arch/softfloat.c, stays the one linked).
 INC_ORDER="cflib windom ldg share png z jpeg gif exif gem"
 AR_ORDER="share windom cflib ldg png z jpeg gif exif gem m"
 
@@ -357,8 +369,8 @@ esac
 
 ARCHIVES=""
 if [ "$BARE" = 0 ]; then
-  for l in $AR_ORDER c; do
-    [ "$l" = c ] || wanted "$l" || continue
+  for l in $AR_ORDER c rt; do
+    case $l in c|rt) ;; *) wanted "$l" || continue ;; esac
     f=$(lib_archive "$l")
     [ -f "$f" ] || die "$(basename "$f") is not built ($f missing); run $(lib_script "$l")"
     ARCHIVES="$ARCHIVES $(quote "$f")"

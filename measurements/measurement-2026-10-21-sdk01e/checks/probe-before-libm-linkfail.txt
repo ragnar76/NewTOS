@@ -1,0 +1,21 @@
+FAIL cacos: undefined symbol: __muldc3 
+FAIL cacosf: undefined symbol: __mulsc3 
+FAIL cacosh: undefined symbol: __muldc3 
+FAIL cacoshf: undefined symbol: __mulsc3 
+FAIL casin: undefined symbol: __muldc3 
+FAIL casinf: undefined symbol: __mulsc3 
+FAIL casinh: undefined symbol: __muldc3 
+FAIL casinhf: undefined symbol: __mulsc3 
+FAIL catanh: undefined symbol: __muldc3 
+FAIL catanhf: undefined symbol: __mulsc3 
+FAIL cpowf: undefined symbol: __addtf3 undefined symbol: __extendsftf2 undefined symbol: __trunctfsf2 
+FAIL fdim: undefined symbol: __gttf2 undefined symbol: __subtf3 
+FAIL fdimf: undefined symbol: __gttf2 undefined symbol: __subtf3 
+FAIL fdiml: undefined symbol: __gttf2 undefined symbol: __subtf3 
+FAIL nexttowardf: undefined symbol: __addtf3 undefined symbol: __extendsftf2 undefined symbol: __gttf2 undefined symbol: __netf2 undefined symbol: __trunctfsf2 
+FAIL powf: undefined symbol: __addtf3 undefined symbol: __extendsftf2 undefined symbol: __trunctfsf2 
+FAIL remainder: undefined symbol: __divtf3 undefined symbol: __multf3 undefined symbol: __trunctfdf2 
+FAIL remainderf: undefined symbol: __divtf3 undefined symbol: __extendsftf2 undefined symbol: __multf3 undefined symbol: __trunctfsf2 
+FAIL scalbln: undefined symbol: scalbnl 
+FAIL scalblnf: undefined symbol: scalbnl 
+FAIL scalblnl: undefined symbol: scalbnl 

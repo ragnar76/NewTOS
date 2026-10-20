@@ -1,0 +1,7 @@
+gem-hello      byte-identical d910e864dc05ac83
+con-hello      byte-identical 8c7a908825d91379
+mathtst        byte-identical b8058f8e11dd95ff
+libtest        byte-identical a22f4917775f7529
+bare-hello     byte-identical 94d2c9114225cffb
+qecvt          head rc=1 (undefined symbol: __divtf3 undefined symbol: __eqtf2 undefined symbol: __getf2 undefined symbol: __lttf2 undefined symbol: __multf3 undefined symbol: __trunctfdf2 ) new rc=0
+powf           head rc=1 (undefined symbol: __addtf3 undefined symbol: __divtf3 undefined symbol: __extendsftf2 undefined symbol: __gttf2 undefined symbol: __multf3 undefined symbol: __subtf3 undefined symbol: __trunctfdf2 undefined symbol: __trunctfsf2 ) new rc=0

@@ -2,7 +2,7 @@
 
 Stand: Abschnitte 1, 2 und 5 am 2026-10-20 gegen den Baum neu geschrieben
 (TASK/SDK01 B); die Abschnitte 3 und 4 sind Stand 2026-09-25 (PORT03) und
-unveraendert. Diese Seite haelt fest, **welches Material fuer Portierungen
+unveraendert. §1 um compiler-rt ergaenzt am 2026-10-21 (TASK/SDK01 E). Diese Seite haelt fest, **welches Material fuer Portierungen
 vorliegt, in welcher Fassung und unter welcher Lizenz** — damit die naechste
 Portierung nicht wieder mit der Suche anfaengt.
 
@@ -28,6 +28,7 @@ versioniert (siehe [04](04-porting-anatomy.md)).
 | **gemlib** 0.44.0 | `sdk/gemlib/` | AES/VDI-Bindungen |
 | **cflib** | `sdk/cflib/` | auf Commit `ce57817` (2026-07-14) gepinnt, seit PORT03 — siehe §3 |
 | **libm** = OpenLibm 0.8.8 | `sdk/libm/` | seit T07, ohne `long double` ([07](07-mintlib-limits.md) §4, §6) |
+| **compiler-rt 21.1.8** (LLVM, nur `lib/builtins`) | `sdk/compiler-rt/` | seit TASK/SDK01 E: Laufzeit des Compilers (`libclang_rt.builtins.a`: binary128-`long double`, komplexes `*`/`/`), von `newtos-cc` immer gelinkt. Quelle: unveraenderter Release-Tarball `compiler-rt-21.1.8.src.tar.xz` von `github.com/llvm/llvm-project/releases/tag/llvmorg-21.1.8`, SHA-256 und gepruefte Signatur in `compiler-rt-sources.sha256`. **Lizenz: Apache-2.0 WITH LLVM-exception** (`LICENSE.TXT` im Tarball, SPDX-Kopf jeder Quelle); die LLVM-Ausnahme befreit Programme, in die die Bausteine eingebunden werden, von den Hinweispflichten der Apache-Lizenz (Abschnitte 4(a), 4(b), 4(d)); ihr zweiter Absatz regelt die Verbindung mit GPLv2-Software (Doom) (`LICENSE.TXT` Z. 208-222) |
 | **LDG** (SVN r133, `devel/`-Bibliothek) | `sdk/ldg/` | `libldg.a`, [10](10-ldg-modules.md); Quelle `Applications/ldg-src` wurde nur zum Einlagern des Tarballs benutzt |
 | **libshare** 0.1.1 | `sdk/libshare/` | Allokator jeder `.NLD`-Bibliothek, [10](10-ldg-modules.md) §6 |
 | **zlib, libpng, libjpeg, giflib, libexif** | `sdk/{zlib,libpng,libjpeg,giflib,libexif}/` | Codec-Bibliotheken, [11](11-codec-libraries.md) |

@@ -12,9 +12,11 @@
  * __BSD_VISIBLE. The ISO C99 set is always visible.
  *
  * long double: OpenLibm's header declares the `l` functions (OLM_LONG_DOUBLE);
- * libm.a does not contain them -- AAPCS64 long double is binary128 and the SDK
- * has no compiler-rt for it (docs/sdk/05-abi-pitfalls.md B12). Calling one is
- * an undefined symbol at link time, not a wrong result.
+ * libm.a does not contain them (docs/sdk/07-mintlib-limits.md section 4).
+ * Calling one is an undefined symbol at link time, not a wrong result.
+ * `long double` arithmetic itself (binary128, soft-float) links since
+ * TASK/SDK01 E: sdk/bin/newtos-cc links compiler-rt's builtins
+ * (docs/sdk/05-abi-pitfalls.md B12).
  */
 #ifndef _NEWTOS_MATH_H
 #define _NEWTOS_MATH_H 1
