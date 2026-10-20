@@ -266,6 +266,17 @@ report libtest-host $rc
 [ $rc -eq 0 ] || [ $rc -eq 77 ] || sed 's/^/      /' "$WORK/libshare-host.log"
 report libshare-host $rc "libshare tree / mintlib headers absent or host not LP64"
 
+# --- compiler wrapper -----------------------------------------------------------
+# newtos-cc-host (SDK01 D): sdk/bin/newtos-cc + sdk/mk/newtos.mk build both
+# templates (sdk/templates/{gem-hello,console-hello}, copied to a temporary
+# directory) into ELF64 AArch64 ET_DYN programs with the PRGFLAGS note; PROT in
+# the Makefile sets the protection nibble (0x17); `make card` copies;
+# `newtos-cc -bare` builds sdk/examples/hello.c byte-identical to sdk/build.sh;
+# an unknown -l is an error.
+"$SDK/templates/tests/newtos-cc-host.sh" > "$WORK/newtos-cc-host.log" 2>&1; rc=$?
+[ $rc -eq 0 ] || [ $rc -eq 77 ] || sed 's/^/      /' "$WORK/newtos-cc-host.log"
+report newtos-cc-host $rc "$(tail -1 "$WORK/newtos-cc-host.log")"
+
 echo
 echo "host tests: $pass passed, $fail failed, $skip skipped"
 exit $fail

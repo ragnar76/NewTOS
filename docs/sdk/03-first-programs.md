@@ -11,10 +11,12 @@ whenever a library is rebuilt — treat them as orders of magnitude, not as
 reference values. The example sources are in `docs/sdk/examples/`.
 
 Everything on this page assumes a checkout of this repository on a macOS
-host. A way to do it without the repository (an installed sysroot, a compiler
-wrapper such as a `newtos-cc`) **does not exist yet**; it is planned. The
-only way to build a program today is to run the commands below (or copy one of
-the `sdk/apps/build-*.sh` scripts). Linux is not described and has not been
+host. A way to do it without the repository (an installed sysroot) **does not
+exist yet**; it is planned. The commands below are what the build scripts run,
+spelled out; since TASK/SDK01 D the compiler wrapper `sdk/bin/newtos-cc` runs
+the same commands in one step — `newtos-cc -bare`, `newtos-cc -ncp` and
+`newtos-cc -nap` for the three steps below — see
+[16-newtos-cc.md](16-newtos-cc.md). Linux is not described and has not been
 tried.
 
 Throughout, `$SDK` is the absolute path of `sdk/`, `$RES` is

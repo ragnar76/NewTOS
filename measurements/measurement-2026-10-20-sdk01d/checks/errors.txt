@@ -1,0 +1,68 @@
+$ dash $S/fakesdk/bin/newtos-cc -nap hello.c -o $S/e/X.NAP
+newtos-cc: error: headers of 'gem' not found -- the library is not built yet; run sdk/gemlib/build-gemlib.sh
+  -> rc=1
+$ dash $S/fakesdk/bin/newtos-cc -nap build/hello.o -o $S/e/X.NAP
+newtos-cc: error: gemlib.a is not built ($S/fakesdk/gemlib/gemlib.a missing); run sdk/gemlib/build-gemlib.sh
+  -> rc=1
+$ dash $WS/sdk/bin/newtos-cc -lfoo hello.c -o $S/e/X.NCP
+newtos-cc: error: unknown library -lfoo (known: gem cflib m ldg share windom z png jpeg gif exif; pass other archives as .a files)
+  -> rc=1
+$ dash $WS/sdk/bin/newtos-cc -bare -lgem hello.c
+newtos-cc: error: -bare links no library; drop the -l options
+  -> rc=1
+$ dash $WS/sdk/bin/newtos-cc -nap -ncp hello.c
+newtos-cc: error: two program kinds given (-nap and -ncp)
+  -> rc=1
+$ dash $WS/sdk/bin/newtos-cc -prot foo hello.c
+newtos-cc: error: -prot: unknown mode 'foo' (private, global, super, readable)
+  -> rc=1
+$ CLANG=noclang dash $WS/sdk/bin/newtos-cc hello.c
+newtos-cc: error: clang not found (install LLVM clang, or set CLANG; docs/sdk/02-prerequisites.md)
+  -> rc=1
+$ dash $WS/sdk/bin/newtos-cc -nap hello.c -o $S/e/X.NCP
+newtos-cc: warning: output $S/e/X.NCP has extension .NCP but the kind is -nap (.NAP)
+  -> rc=0
+$ dash $WS/sdk/bin/newtos-cc hello.c -o $S/e/HELLOK.NAP && cmp $S/e/HELLOK.NAP HELLO.NAP && echo 'kind from -o: identical to make build'
+kind from -o: identical to make build
+  -> rc=0
+$ dash $WS/sdk/bin/newtos-cc -ncp -prot global $WS/sdk/templates/console-hello/hello.c -o $S/e/PF.NCP && (cd $WS && cargo xtask prgflags $S/e/PF.NCP 2>/dev/null | tail -1)
+$S/e/PF.NCP: PRGFLAGS 0x00000017 (PF_FASTLOAD | PF_TTRAMLOAD | PF_TTRAMMEM | other bits 0x00000010)
+  -> rc=0
+$ dash $WS/sdk/bin/newtos-cc -ncp -prgflags 0x3 -prot readable $WS/sdk/templates/console-hello/hello.c -o $S/e/PF.NCP && (cd $WS && cargo xtask prgflags $S/e/PF.NCP 2>/dev/null | tail -1)
+$S/e/PF.NCP: PRGFLAGS 0x00000033 (PF_FASTLOAD | PF_TTRAMLOAD | other bits 0x00000030)
+  -> rc=0
+$ dash $WS/sdk/bin/newtos-cc -ncp -prgflags 2 $WS/sdk/templates/console-hello/hello.c -o $S/e/PF.NCP && (cd $WS && cargo xtask prgflags $S/e/PF.NCP 2>/dev/null | tail -1)
+$S/e/PF.NCP: PRGFLAGS 0x00000002 (PF_TTRAMLOAD)
+  -> rc=0
+$ dash $WS/sdk/bin/newtos-cc -ncp -prot super $WS/sdk/templates/console-hello/hello.c -o $S/e/PF.NCP && (cd $WS && cargo xtask prgflags $S/e/PF.NCP 2>/dev/null | tail -1)
+$S/e/PF.NCP: PRGFLAGS 0x00000027 (PF_FASTLOAD | PF_TTRAMLOAD | PF_TTRAMMEM | other bits 0x00000020)
+  -> rc=0
+$ cd $S/e/outside && make -s NEWTOS_SDK=$WS/sdk && cmp HELLO.NAP $WS/sdk/templates/gem-hello/HELLO.NAP && echo 'outside the repo (rustup default: '$(rustup show active-toolchain)'): identical'
+outside the repo (rustup default: stable-aarch64-apple-darwin (default)): identical
+  -> rc=0
+$ dash $WS/sdk/bin/newtos-cc -nap -lcflib -lm -lpng $S/e/cf.c -o $S/e/CF.NAP && echo link ok
+link ok
+  -> rc=0
+$ dash $WS/sdk/bin/newtos-cc -nap -lwindom -ljpeg -lgif -lexif -lshare -c $S/e/inc.c -o $S/e/inc.o && echo compile ok
+In file included from $S/e/inc.c:3:
+In file included from $WS/sdk/libjpeg/jpeg-9f/jpeglib.h:27:
+$WS/sdk/libjpeg/jpeg-9f/jmorecfg.h:207:15: warning: duplicate 'short' declaration specifier [-Wduplicate-decl-specifier]
+  207 | typedef short INT16;
+      |               ^~~~~
+$WS/sdk/gemlib/gemlib-0.44.0/mt_gem.h:11:15: note: expanded from macro 'INT16'
+   11 | #define INT16 short  /**< 16 bits signed integer */
+      |               ^
+In file included from $S/e/inc.c:3:
+In file included from $WS/sdk/libjpeg/jpeg-9f/jpeglib.h:27:
+$WS/sdk/libjpeg/jpeg-9f/jmorecfg.h:207:1: warning: typedef requires a name [-Wmissing-declarations]
+  207 | typedef short INT16;
+      | ^~~~~~~~~~~~~~~~~~~
+2 warnings generated.
+compile ok
+  -> rc=0
+$ dash $WS/sdk/bin/newtos-cc -nac hello.c -o $S/e/ACC.NAC && echo link ok
+link ok
+  -> rc=0
+$ dash $WS/sdk/bin/newtos-cc -ntp $WS/sdk/templates/console-hello/hello.c -o $S/e/H.NTP && echo link ok
+link ok
+  -> rc=0

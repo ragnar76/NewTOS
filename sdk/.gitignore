@@ -128,3 +128,6 @@
 .Spotlight-V100
 .fseventsd
 .Trashes
+
+# Templates (TASK/SDK01 D): what `make` in a template directory produces.
+/templates/*/build/

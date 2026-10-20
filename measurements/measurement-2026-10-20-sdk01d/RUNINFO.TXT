@@ -1,0 +1,65 @@
+measurement-2026-10-20-sdk01d -- Developer: TASK/SDK01 package D, compiler wrapper sdk/bin/newtos-cc, Makefile include
+sdk/mk/newtos.mk, templates sdk/templates/{gem-hello,console-hello}, host test sdk/templates/tests/newtos-cc-host.sh,
+reference chapter docs/sdk/16-newtos-cc.md. Base: main e0692de7 + the UNCOMMITTED package-D working tree (sdk/ + docs/sdk/ only;
+no kernel/tos-api/tos-types/programs change, checked by method/build-kernels.sh). macOS host, QEMU raspi4b, no SD card, no Pi,
+nothing committed. Scratch: $S = the session scratchpad /d (kernels, card image, scratch trees); per-run APFS clones (cp -c)
+deleted after fsck. Paths in the logs are rewritten to $S / $WS (= repository root).
+
+QUESTION  Does the wrapper build what the scripts build; do the templates build with it and run on NewTOS (memprot on)?
+
+1 SAME BYTES AS THE SCRIPTS (method/compare.sh -> checks/compare.txt). Each pair built by the existing script and by
+  newtos-cc on the same sources, compared with cmp:
+    sdk/build.sh sdk/examples/hello.c         == newtos-cc -bare                                   IDENTICAL 94d2c911
+    build-gemtest.sh TESTGEM.NAP              == newtos-cc -nap -Os -fomit-frame-pointer
+                                                 -funsigned-char -D_TOS_ONLY gemtest.c             IDENTICAL 71b2579b
+    build-coremark.sh CORE.NCP / COREVAL.NCP  == newtos-cc -ncp (6 sources, flags of the script)   IDENTICAL 02090308 / dbad7c2f
+    build-ldg-demo.sh EX_LIB.NLD              == newtos-cc -nld -lm (libshare first + map check)   IDENTICAL bae74ad9
+    build-ldg-demo.sh LDGTEST.NCP             == newtos-cc -lldg -lm                               IDENTICAL 1985874a
+  One difference was found and explained on the way: CoreMark with core_portme.c given LAST linked to the same size but
+  a different layout (cmp: first difference at byte 4257); the script links its objects by glob core_*.o, so
+  core_portme.o sits between core_matrix.o and core_state.o. Same order -> identical. -D__NEWTOS__, -Wno-macro-redefined
+  and --start-group around a lone libc.a change no byte.
+
+2 TEMPLATES + make card (method/mkcard.sh -> checks/mkcard.txt): `make clean all` in both templates (newtos.mk ->
+  newtos-cc), then `make card DEST=<card root>` (HELLO.NAP) and `make card DEST=<card>/AUTO` (HELLO.NCP, AUTO created by
+  the rule) onto a fresh 64 MiB FAT16 image (private mount point), NEWDESK.INF = "#R 02" + "#Z 01 C:\HELLO.NAP@".
+  make card left no ._* file (the only one, ._NEWDESK.INF, came from mkcard's own printf and was deleted). A first
+  version of the card rule (plain cp + dot_clean -m on DEST) left ._AUTO behind and dot_clean failed on the volume root's
+  .Spotlight-V100; replaced by cp -X + deleting the ._<name> files it made. HELLO.NAP d910e864, HELLO.NCP 8c7a9088.
+
+3 QEMU raspi4b, release rpi4 kernels from `git archive e0692de7` (method/build-kernels.sh, checks/build-kernels.txt),
+  -append serial=on (serial log: "[mm] memory protection ON"), one QEMU at a time (method/run.sh, mdrive.py):
+  plain  (kernel 82d1e015 = the product kernel; same sha as measurement-2026-10-20-sdk01a-test's HEAD kernel):
+         serial/plain-serial.log: [auto] running C:\AUTO\HELLO.NCP -> "Hello from a NewTOS console program", argc = 1,
+         argv[0] = "", PATH = (not set), GEMDOS version 0x3000, "malloc and free work", [launch] returned (program
+         Pterm'd); then [shell] sh_ldapp: starting C:\HELLO.NAP. screendumps/plain-gem.png (12 s after that line): menu
+         bar "HELLO.NAP", window "GEM Hello" with close box, title bar, two text lines, arrow cursor. Looked at.
+         (A dump keyed to the console line came out after the GEM start and showed the same screen; deleted -- the
+         console evidence is the serial log.)
+  inj    (kernel df14e849 = the same tree + tools/inject-arm.py up:HELLO=method/hello.script, scratch tree only):
+         Esc at +400 ticks, Return at +1200. screendumps/inj-window.png (window), inj-alert.png (alert "Quit GEM
+         Hello?" [Quit] [Cancel], Quit = default), then serial: [launch] returned (program Pterm'd), [shell] sh_ldapp:
+         'C:\HELLO.NAP' exited with rc=0, desktop NEWDESK started, [desk] desktop up; inj-desktop.png = desktop menu
+         bar (no drive icons: the minimal NEWDESK.INF of this card has none).
+  Both: 0 [EXC]/PANIC, fsck_msdos -n rc=0 on the clone (serial/*-fsck.txt).
+
+4 HOST TESTS: sdk/run-host-tests.sh 23 passed, 0 failed, 0 skipped (checks/run-host-tests.txt; baseline before the
+  change 22/0/0, the new one is newtos-cc-host). newtos-cc-host.sh also run under dash (checks/newtos-cc-host-dash.txt).
+  The test failed once during development (PROT appended after the include was ignored, as newtos.mk then expanded the
+  flags immediately) -- the include now expands them deferred and the test inserts PROT before the include line.
+
+5 ERROR PATHS, PRGFLAGS, OUTSIDE THE REPO, SMOKE LINKS (method/errors.sh -> checks/errors.txt, all under dash): a fake
+  SDK with only libc -> "headers of 'gem' not found ... run sdk/gemlib/build-gemlib.sh" / "gemlib.a is not built ...";
+  -lfoo, -bare -lgem, two kinds, -prot foo, CLANG=noclang -> errors rc=1; kind from the -o extension; -prot global
+  -> 0x17, -prgflags 0x3 -prot readable -> 0x33, -prgflags 2 -> 0x2, -prot super -> 0x27 (cargo xtask prgflags);
+  the gem template copied outside the repository (rustup default there: stable) builds byte-identical (the wrapper asks
+  rustc from inside sdk/, so the pinned nightly's rust-lld is used); -lcflib -lm -lpng link; -lwindom -ljpeg -lgif
+  -lexif -lshare headers compile (jmorecfg.h vs gemlib's INT16 macro warns -- an upstream header clash, unchanged);
+  -nac and -ntp link.
+
+NOT RUN / UNTESTED: Linux (scripts POSIX sh + GNU make 3.81 features only, run with macOS /bin/sh and dash, nothing on a
+Linux host); ld.lld instead of rust-lld; a wrapper-built .NAC or .NTP started on NewTOS; cflib/WinDom/codec programs
+built with the wrapper run on NewTOS; memprot strict/off; real Pi 4 (mouse on the close box, window move).
+
+Binaries are not kept here; sha256 in checks/binaries.sha256 (kernels and card relative to $S, templates relative to $WS).
+MANIFEST.sha256 covers every other file of this directory.

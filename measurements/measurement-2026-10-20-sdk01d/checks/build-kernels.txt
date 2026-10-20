@@ -1,0 +1,3 @@
+82d1e0154f36294551b98789f94bb78f21b9963f28ebfadbe2c9bba48349715f  $S/bin/kernel8-plain.img
+inject-arm.py: $S/trees/inj: tag [inj], up:HELLO (4 bytes)
+df14e849909521e5b2647b4b15b4112718ac1369ed970df14ea61f8b1913fb6e  $S/bin/kernel8-inj.img

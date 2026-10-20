@@ -1,0 +1,10 @@
+  ok    gem-hello: make
+  ok    console-hello: make
+  ok    HELLO.NAP: ELF64 AArch64 ET_DYN, PRGFLAGS note 07 00 00 00
+  ok    HELLO.NCP: ELF64 AArch64 ET_DYN, PRGFLAGS note 07 00 00 00
+  ok    Makefile change recompiles
+  ok    HELLO.NCP: ELF64 AArch64 ET_DYN, PRGFLAGS note 17 00 00 00
+  ok    make card DEST=<dir with a blank>
+  ok    -bare hello.c byte-identical to sdk/build.sh
+  ok    -lnosuchlib rejected
+newtos-cc-host: all checks passed

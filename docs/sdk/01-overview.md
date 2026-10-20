@@ -9,8 +9,10 @@ in the table; further libraries (OpenLibm as `libm.a`, LDG `libldg.a`,
 libjpeg, giflib, libexif) are described in chapters
 [07](07-mintlib-limits.md), [10](10-ldg-modules.md),
 [11](11-codec-libraries.md) and [12](12-windom.md). Today the SDK works only
-from a checkout of this repository on macOS: there is no installed sysroot, no
-compiler wrapper and no Linux description yet (all planned, TASK/SDK01).
+from a checkout of this repository on macOS: there is no installed sysroot and
+no Linux description yet (planned, TASK/SDK01). The compiler wrapper
+`sdk/bin/newtos-cc` and the Makefile include `sdk/mk/newtos.mk` exist since
+TASK/SDK01 D ([16](16-newtos-cc.md)).
 
 | Component | Source | Port surface |
 |-----------|--------|--------------|

@@ -1,0 +1,25 @@
+== 1 sdk/build.sh (freestanding) vs newtos-cc -bare: sdk/examples/hello.c
+IDENTICAL  HELLO2-s.NCP == HELLO2-w.NCP
+94d2c9114225cffb62c38da20b8ddf85a966af998226b1ed256852ac7e3d2930  HELLO2-s.NCP
+94d2c9114225cffb62c38da20b8ddf85a966af998226b1ed256852ac7e3d2930  HELLO2-w.NCP
+== 2 sdk/apps/gemtest/build-gemtest.sh vs newtos-cc -nap: TESTGEM.NAP (gemlib + libc)
+newtos-cc: warning: TESTGEM-w.NAP is not an 8.3 name; GEMDOS sees only 8.3 names on the FAT volume
+IDENTICAL  TESTGEM-s.NAP == TESTGEM-w.NAP
+71b2579be3af1130bfee29fe622462224f135bdc214ca016ba67d7df04d36494  TESTGEM-s.NAP
+71b2579be3af1130bfee29fe622462224f135bdc214ca016ba67d7df04d36494  TESTGEM-w.NAP
+== 3 sdk/apps/build-coremark.sh vs newtos-cc -ncp: CORE.NCP / COREVAL.NCP (6 sources, libc)
+IDENTICAL  CORE-s.NCP == CORE-w.NCP
+02090308db563204aa7af41e41652d749b4ccc245ad1a1173bdfa0183453e6de  CORE-s.NCP
+02090308db563204aa7af41e41652d749b4ccc245ad1a1173bdfa0183453e6de  CORE-w.NCP
+newtos-cc: warning: COREVAL-w.NCP is not an 8.3 name; GEMDOS sees only 8.3 names on the FAT volume
+IDENTICAL  COREVAL-s.NCP == COREVAL-w.NCP
+dbad7c2fab1531da66fd766f9786e91d1474786a9fe814be62e2288e433c7f53  COREVAL-s.NCP
+dbad7c2fab1531da66fd766f9786e91d1474786a9fe814be62e2288e433c7f53  COREVAL-w.NCP
+== 4 sdk/ldg/build-ldg-demo.sh vs newtos-cc -nld / -lldg: EX_LIB.NLD (libshare first) + LDGTEST.NCP
+IDENTICAL  EX_LIB-s.NLD == EX_LIB-w.NLD
+bae74ad94063e6c147981638a0453862b49d0a8476738b4280724e165b9fb30f  EX_LIB-s.NLD
+bae74ad94063e6c147981638a0453862b49d0a8476738b4280724e165b9fb30f  EX_LIB-w.NLD
+newtos-cc: warning: LDGTEST-w.NCP is not an 8.3 name; GEMDOS sees only 8.3 names on the FAT volume
+IDENTICAL  LDGTEST-s.NCP == LDGTEST-w.NCP
+1985874a8b478d7e3e45a20d901d2b818a15ddf284fb809d421d1323848298ae  LDGTEST-s.NCP
+1985874a8b478d7e3e45a20d901d2b818a15ddf284fb809d421d1323848298ae  LDGTEST-w.NCP

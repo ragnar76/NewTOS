@@ -18,13 +18,14 @@ with every library rebuild.
 **What this SDK is today, and what is missing.** It is a set of build scripts
 that work from a checkout of this repository on **macOS**. There is **no**
 step-by-step quick start from nothing (installing the tools, obtaining the
-application sources), **no** compiler wrapper (a `newtos-cc` that bundles
-target flags, include order, `crt0`, linker script and archives — today you
-copy the three commands of chapter 03 or a `build-*.sh`), **no** install
-outside the repository (headers live in the extracted build trees), and
-**no** description of Linux or Windows hosts (the SD-image tool is
-macOS-only). All four are planned (TASK/SDK01 packages C, D, G); none of them
-exists yet.
+application sources), **no** install outside the repository (headers live in
+the extracted build trees), and **no** description of Linux or Windows hosts
+(the SD-image tool is macOS-only). These three are planned (TASK/SDK01
+packages C, G). Since TASK/SDK01 package D there **is** a compiler wrapper,
+`sdk/bin/newtos-cc` (target flags, include order, `crt0`, linker script and
+archives in one command), a Makefile include `sdk/mk/newtos.mk` and two
+templates in `sdk/templates/` — [16-newtos-cc.md](16-newtos-cc.md); it runs
+from the repository's `sdk/` directory and needs the libraries built once.
 
 `path:line` citations into scripts and sources were exact on the day each
 chapter was written; the scripts have changed since and the citations were
@@ -49,11 +50,17 @@ by that pass). If a line number does not match, search by the quoted text.
 | [12-windom.md](12-windom.md) | WinDom 1.21.3 (+ zView's patch) as `libwindom1.a`: pin, flags, the 10 LP64/endianness overlays, the LP64 sweep, LDG's WinDom demo client, open problems (mouse clicks, module heap) — TASK/LDG-M3 |
 | [13-zview.md](13-zview.md) | zView (LDG version) as `ZVIEW.NAP` + ten codec modules `CODECS\*.NLD`, without PDF: pin, build rules, the 13 overlays (endianness incl. the browser font, two m68k-asm retargets, `.NLD`, PDF omission), samples, what is verified, open kernel blocker K1 (`graf_handle` workstation not open) — TASK/ZVIEW-M4 |
 | [14-present.md](14-present.md) | `PRESENT.NAP`, our own full-screen slide show: slide file format (`SLIDES.TXT`), keys, how it draws (system font read back via `vro_cpyfm`, Scale2x/3x, one RGB565 frame blit, libpng pictures), build + install — TASK/PRESENT01 |
+| [16-newtos-cc.md](16-newtos-cc.md) | The compiler wrapper `sdk/bin/newtos-cc`, the Makefile include `sdk/mk/newtos.mk`, the templates `sdk/templates/{gem-hello,console-hello}`: options, libraries, PRGFLAGS/protection, byte identity with the scripts, what is untested — TASK/SDK01 D |
 | [15-host-checklist.md](15-host-checklist.md) | Checklist for a second Mac: which gitignored files to copy, which tools and versions, proof builds — written to be handed to an agent for verification |
 
 ## Thirty-second version
 
 ```sh
+# your own program, one command (16): libc always, -l for the rest
+sdk/bin/newtos-cc -nap -o MYAPP.NAP main.c          # GEM app (gemlib + libc)
+sdk/bin/newtos-cc -o HELLO.NCP hello.c              # console program (libc)
+make -C sdk/templates/gem-hello                     # template with sdk/mk/newtos.mk
+
 # freestanding console program (no libc): sdk/build.sh
 sdk/build.sh sdk/examples/hello.c /path/to/HELLO2.NCP
 

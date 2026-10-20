@@ -1,0 +1,21 @@
+rm -rf build HELLO.NAP
+$WS/sdk/bin/newtos-cc -nap   -Wall -MMD -MP -c hello.c -o build/hello.o
+$WS/sdk/bin/newtos-cc -nap      build/hello.o -o HELLO.NAP
+rm -rf build HELLO.NCP
+$WS/sdk/bin/newtos-cc -ncp   -Wall -MMD -MP -c hello.c -o build/hello.o
+$WS/sdk/bin/newtos-cc -ncp      build/hello.o -o HELLO.NCP
+cp -X HELLO.NAP $S/img/mnt.1779/
+mkdir -p $S/img/mnt.1779/AUTO
+cp -X HELLO.NCP $S/img/mnt.1779/AUTO/
+$S/img/mnt.1779/._NEWDESK.INF
+== card content
+.
+./.Spotlight-V100
+./AUTO
+./AUTO/HELLO.NCP
+./HELLO.NAP
+./NEWDESK.INF
+== sha256
+d910e864dc05ac83e2bcddbac96d5bb2112fd4e62e7ad5ec005881fda0267b84  HELLO.NAP
+8c7a908825d91379073ec96ca31e5790d04c21c4852a488cb36710c8f9bb23be  AUTO/HELLO.NCP
+03b74653fb4428763f7f0e8ceafcf7ba5c4a90a52b89175f9b57a8348224b36f  NEWDESK.INF

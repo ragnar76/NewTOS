@@ -6,8 +6,11 @@ three are mintlib-0.60.1, gemlib-0.44.0 and cflib (pinned commit `ce57817`);
 OpenLibm, LDG, libshare, WinDom and five codec libraries come on top —
 following ADR-019 ("port real Atari C libraries, don't reimplement",
 `docs/MEMORY.md`). It works from a checkout of this repository on macOS; an
-installable sysroot, a compiler wrapper, a from-scratch quick start and a
-Linux description do not exist yet (planned, TASK/SDK01). The output is an
+installable sysroot, a from-scratch quick start and a Linux description do
+not exist yet (planned, TASK/SDK01). The compiler wrapper `bin/newtos-cc`,
+the Makefile include `mk/newtos.mk` and the templates in `templates/`
+(TASK/SDK01 D) are described in
+[`docs/sdk/16-newtos-cc.md`](../docs/sdk/16-newtos-cc.md). The output is an
 ELF64 executable named `.NCP` (console), `.NAP` (GEM application) or `.NTP`
 (takes parameters) per ADR-018; the kernel loader parses the ELF directly.
 
@@ -23,6 +26,9 @@ Pi 4. This file is only a map of the directory.
 
 | Path | Purpose |
 |------|---------|
+| `bin/newtos-cc` | compiler wrapper (POSIX sh): one command compiles and links a program with the flags, crt0, libraries and linker script the scripts use; `--help` ([16](../docs/sdk/16-newtos-cc.md)) |
+| `mk/newtos.mk` | Makefile include: `PROG`/`KIND`/`SRCS`/`LIBS`/`RSC` → `make`, `make card DEST=…`, `make clean` |
+| `templates/` | `gem-hello/` (window + alert, clean exit) and `console-hello/`, each a `hello.c` + `Makefile` using `mk/newtos.mk`; `tests/newtos-cc-host.sh` (run by `run-host-tests.sh`) |
 | `build.sh` | freestanding `.NCP` builder (no libc): `clang -c crt0.S + source`, `rust-lld -T newtos.ld` |
 | `crt0.S` | startup for freestanding programs: basepage from `x0`, `SP = p_hitpa`, `bl main`, `Pterm` |
 | `newtos.ld` | linker script for **every** native program, a position-independent executable (`ET_DYN`, `-fPIE` + `-pie --no-dynamic-linker -z text`; the loader applies its `R_AARCH64_RELATIVE` relocations, ARCH03 0d): two `PT_LOAD`s from `0x1000` — `text` (R-X: `.text`+dynamic metadata+`.rodata` → `p_tbase/p_tlen`) and `data` (RW-: `.dynamic`+`.got`+`.data` + `.bss` tail → `p_dbase/p_dlen`, `p_bbase/p_blen`) plus `PT_DYNAMIC`, `_start` first, `__bss_start`/`__bss_end`/`_end` exported |
@@ -40,6 +46,8 @@ Pi 4. This file is only a map of the directory.
 ## Quick start
 
 ```sh
+sdk/bin/newtos-cc -nap -o MYAPP.NAP main.c            # your program (libc + gemlib); --help
+make -C sdk/templates/gem-hello                        # template -> HELLO.NAP
 sdk/build.sh sdk/examples/hello.c /tmp/HELLO2.NCP     # freestanding console program
 sdk/libc/build-libc.sh                                 # libc.a + build/libtest.NCP
 sdk/gemlib/build-gemlib.sh                             # gemlib.a + build/gemtest.NCP

@@ -1,0 +1,421 @@
+#!/bin/sh
+#
+# newtos-cc -- compile and link a native NewTOS program (AArch64, LP64) with
+# the SDK's toolchain, without reading the build scripts (TASK/SDK01 D).
+#
+# It runs exactly what the SDK build scripts run by hand:
+#
+#   compile  clang -target aarch64-unknown-none-elf -ffreestanding -nostdlib
+#                  -fPIE -fno-builtin -nostdinc -D__NEWTOS__
+#                  -Wno-macro-redefined -O2 <your flags>
+#                  -I<library headers> -I<mintlib> -isystem <clang resource>
+#            (= the application flag set of sdk/apps/build-qed.sh,
+#            build-gemtest.sh, build-coremark.sh; include order as there:
+#            your -I first, then cflib/windom/ldg/libshare/codecs, gemlib,
+#            mintlib, the libm adapters, clang's freestanding headers last)
+#   crt0     sdk/libc/crt0.S (libc programs), assembled with
+#            -DNEWTOS_PRGFLAGS=<value> when -prgflags / -prot is given
+#   link     rust-lld -flavor gnu (or ld.lld) -T sdk/newtos.ld -pie
+#                  --no-dynamic-linker -z text -z max-page-size=0x1000
+#                  --build-id=none crt0.o <objects>
+#                  --start-group <archives> --end-group
+#
+# The output ELF is the program itself; .NCP/.NTP/.NAP/.NAC/.NLD only name
+# how the desktop starts it (docs/sdk/01-overview.md).
+#
+# POSIX sh on purpose (macOS /bin/sh, Linux dash); no arrays, no [[ ]].
+# Reference: docs/sdk/16-newtos-cc.md.  `newtos-cc --help` for the options.
+
+set -u
+
+ME=newtos-cc
+die() { printf '%s: error: %s\n' "$ME" "$*" >&2; exit 1; }
+warn() { printf '%s: warning: %s\n' "$ME" "$*" >&2; }
+
+# --- where the SDK is: relative to this script, never a fixed path -----------
+case $0 in
+  */*) _self=$0 ;;
+  *)   _self=$(command -v -- "$0") || die "cannot locate myself ($0)" ;;
+esac
+# follow a symlink chain (e.g. ~/bin/newtos-cc -> <sdk>/bin/newtos-cc)
+while [ -h "$_self" ]; do
+  _l=$(ls -ld -- "$_self" | sed 's/.* -> //')
+  case $_l in /*) _self=$_l ;; *) _self=$(dirname -- "$_self")/$_l ;; esac
+done
+SDK=${NEWTOS_SDK:-$(cd "$(dirname -- "$_self")/.." && pwd)}
+[ -f "$SDK/newtos.ld" ] || die "SDK not found: $SDK/newtos.ld missing (set NEWTOS_SDK to the sdk/ directory)"
+
+usage() {
+  cat <<'EOF'
+usage: newtos-cc [kind] [options] files...
+
+Compiles C (.c) and assembler (.S/.s) files for NewTOS and links them with
+crt0, the SDK libraries and sdk/newtos.ld into one native program.
+
+kind (default: from the -o extension, else -ncp):
+  -ncp      console program (.NCP)
+  -ntp      console program that takes a command line (.NTP)
+  -nap      GEM application (.NAP)            implies -lgem
+  -nac      desk accessory (.NAC)             implies -lgem
+  -nld      LDG module (.NLD)                 implies -lshare -lldg (libshare first)
+  -bare     no libc: sdk/crt0.S + sdk/include/newtos.h only (= sdk/build.sh);
+            combinable with a kind, not with -l options
+
+libraries (each selects its headers when compiling and its archive when
+linking; libc is always linked unless -bare):
+  -lgem      gemlib          -lcflib   cflib (+gem)    -lm      libm (OpenLibm)
+  -lldg      libldg (+gem)   -lshare   libshare (+ldg) -lwindom WinDom (+gem)
+  -lz -lpng (+z, m) -ljpeg -lgif -lexif (+m)            codec libraries
+
+program options:
+  -prgflags V   PRGFLAGS long for the ELF note (default 7 = PF_STANDARD)
+  -prot M       memory protection mode in PRGFLAGS bits 4-7:
+                private (0x00) | global (0x10) | super (0x20) | readable (0x30)
+  -o FILE       output (default: first source's name + kind extension)
+  -c / -S / -E  compile / assembly / preprocess only, as cc does
+  -v            print every command before it runs
+  -Wl,a,b       pass a,b to the linker
+  any other -option goes to clang when compiling (-O*, -g, -W*, -f*, -D, -I,
+  -U, -include, -isystem, -std=, -MMD, -MF ...); .o/.a files go to the link.
+
+environment: CLANG (default clang), LLD (default: the Rust toolchain's
+rust-lld, else ld.lld / rust-lld from PATH), NEWTOS_SDK (default: the sdk/
+directory this script lives in).
+EOF
+}
+
+# quote <word> -- one shell-quoted word, for building command strings
+quote() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
+
+VERBOSE=0
+run() {                         # run <command string>
+  [ "$VERBOSE" = 1 ] && printf '+ %s\n' "$1" >&2
+  eval "$1"
+}
+
+# --- arguments ----------------------------------------------------------------
+KIND=""; BARE=0; MODE=link; OUT=""
+PRGFLAGS_V=""; PROT=""
+UCFLAGS=""                      # user compile flags (quoted words)
+ULDFLAGS=""                     # user linker flags (quoted words)
+SRCS=""; LINKIN=""              # sources (quoted), link inputs .o/.a (quoted)
+NSRC=0; FIRST_SRC=""
+W_gem=0 W_cflib=0 W_m=0 W_ldg=0 W_share=0 W_windom=0
+W_z=0 W_png=0 W_jpeg=0 W_gif=0 W_exif=0 ANYLIB=0
+
+setkind() {
+  [ -n "$KIND" ] && [ "$KIND" != "$1" ] && die "two program kinds given (-$KIND and -$1)"
+  KIND=$1
+}
+addlib() {
+  ANYLIB=1
+  case $1 in
+    c) ;;                                   # always linked
+    gem|gemlib)       W_gem=1 ;;
+    cflib)            W_cflib=1 ;;
+    m)                W_m=1 ;;
+    ldg)              W_ldg=1 ;;
+    share|libshare)   W_share=1 ;;
+    windom|windom1)   W_windom=1 ;;
+    z)                W_z=1 ;;
+    png)              W_png=1 ;;
+    jpeg)             W_jpeg=1 ;;
+    gif)              W_gif=1 ;;
+    exif)             W_exif=1 ;;
+    *) die "unknown library -l$1 (known: gem cflib m ldg share windom z png jpeg gif exif; pass other archives as .a files)" ;;
+  esac
+}
+needarg() { [ "$1" -gt 1 ] || die "option $2 needs an argument"; }
+
+while [ $# -gt 0 ]; do
+  a=$1; shift
+  case $a in
+    -h|--help)  usage; exit 0 ;;
+    -ncp|-ntp|-nap|-nac|-nld) setkind "${a#-}" ;;
+    -bare)      BARE=1 ;;
+    -prgflags)  needarg $(($# + 1)) "$a"; PRGFLAGS_V=$1; shift ;;
+    -prgflags=*) PRGFLAGS_V=${a#-prgflags=} ;;
+    -prot)      needarg $(($# + 1)) "$a"; PROT=$1; shift ;;
+    -prot=*)    PROT=${a#-prot=} ;;
+    -o)         needarg $(($# + 1)) "$a"; OUT=$1; shift ;;
+    -c)         MODE=c ;;
+    -S)         MODE=S ;;
+    -E)         MODE=E ;;
+    -v)         VERBOSE=1 ;;
+    -l)         needarg $(($# + 1)) "$a"; addlib "$1"; shift ;;
+    -l*)        addlib "${a#-l}" ;;
+    -Wl,*)
+      _old_ifs=$IFS; IFS=,; set -f
+      for w in ${a#-Wl,}; do ULDFLAGS="$ULDFLAGS $(quote "$w")"; done
+      IFS=$_old_ifs; set +f ;;
+    -I|-D|-U|-include|-imacros|-isystem|-iquote|-idirafter|-MF|-MT|-MQ|-x)
+      needarg $(($# + 1)) "$a"
+      UCFLAGS="$UCFLAGS $(quote "$a") $(quote "$1")"; shift ;;
+    -*)         UCFLAGS="$UCFLAGS $(quote "$a")" ;;
+    *.c|*.S|*.s)
+      [ -f "$a" ] || die "no such file: $a"
+      SRCS="$SRCS $(quote "$a")"; NSRC=$((NSRC + 1))
+      [ -z "$FIRST_SRC" ] && FIRST_SRC=$a ;;
+    *.o|*.a)
+      [ -f "$a" ] || die "no such file: $a"
+      LINKIN="$LINKIN $(quote "$a")" ;;
+    *) die "do not know what to do with '$a' (expected .c .S .s .o .a or an option)" ;;
+  esac
+done
+
+[ "$NSRC" -gt 0 ] || [ -n "$LINKIN" ] || { usage >&2; exit 1; }
+
+# kind from the output name when not given
+if [ -z "$KIND" ] && [ "$MODE" = link ] && [ -n "$OUT" ]; then
+  case $OUT in
+    *.[Nn][Cc][Pp]) KIND=ncp ;;  *.[Nn][Tt][Pp]) KIND=ntp ;;
+    *.[Nn][Aa][Pp]) KIND=nap ;;  *.[Nn][Aa][Cc]) KIND=nac ;;
+    *.[Nn][Ll][Dd]) KIND=nld ;;
+  esac
+fi
+[ -n "$KIND" ] || KIND=ncp
+EXT=$(printf '%s' "$KIND" | tr 'a-z' 'A-Z')
+
+# implications
+if [ "$BARE" = 1 ]; then
+  [ "$ANYLIB" = 0 ] || die "-bare links no library; drop the -l options"
+else
+  case $KIND in
+    nap|nac) W_gem=1 ;;
+    nld)     W_share=1 ;;
+  esac
+  [ "$W_share" = 1 ] && W_ldg=1
+  [ "$W_png" = 1 ]   && { W_z=1; W_m=1; }
+  [ "$W_exif" = 1 ]  && W_m=1
+  [ "$W_cflib" = 1 ] && W_gem=1
+  [ "$W_windom" = 1 ] && W_gem=1
+  [ "$W_ldg" = 1 ]   && W_gem=1
+fi
+
+# PRGFLAGS: base value, then the protection nibble
+if [ -n "$PRGFLAGS_V" ] || [ -n "$PROT" ]; then
+  if [ -n "$PRGFLAGS_V" ]; then
+    case $PRGFLAGS_V in
+      0[xX]*) _hex=${PRGFLAGS_V#0[xX]}
+              case $_hex in ''|*[!0-9a-fA-F]*) die "-prgflags: not a number: $PRGFLAGS_V" ;; esac ;;
+      *[!0-9]*|'') die "-prgflags: not a number: $PRGFLAGS_V" ;;
+    esac
+    PF=$((PRGFLAGS_V))
+  else
+    PF=7                                          # PF_STANDARD (crt0.S default)
+  fi
+  if [ -n "$PROT" ]; then
+    case $PROT in                                 # tos-types F_PROT_* (FreeMiNT mem.h)
+      private|P|p)   _pm=0  ;;
+      global|G|g)    _pm=16 ;;
+      super|S|s)     _pm=32 ;;
+      readable|PR|pr) _pm=48 ;;
+      *) die "-prot: unknown mode '$PROT' (private, global, super, readable)" ;;
+    esac
+    PF=$(( (PF & ~240) | _pm ))
+  fi
+  PRGFLAGS_HEX=$(printf '0x%x' "$PF")
+else
+  PRGFLAGS_HEX=""
+fi
+
+# --- toolchain ------------------------------------------------------------------
+CLANG=${CLANG:-clang}
+command -v "$CLANG" >/dev/null 2>&1 || die "clang not found (install LLVM clang, or set CLANG; docs/sdk/02-prerequisites.md)"
+RES="$("$CLANG" -print-resource-dir 2>/dev/null)/include"
+[ -f "$RES/stddef.h" ] || die "clang's freestanding headers not found ($RES)"
+
+find_lld() {
+  if [ -n "${LLD:-}" ]; then printf '%s' "$LLD"; return 0; fi
+  # asked from inside the SDK, so a rust-toolchain.toml above it (the
+  # repository's pinned nightly) is the one used, whatever the caller's cwd
+  if command -v rustc >/dev/null 2>&1; then
+    _sr=$(cd "$SDK" && rustc --print sysroot 2>/dev/null)
+    _host=$(cd "$SDK" && rustc -vV 2>/dev/null | sed -n 's/^host: //p')
+    if [ -n "$_sr" ] && [ -x "$_sr/lib/rustlib/$_host/bin/rust-lld" ]; then
+      printf '%s' "$_sr/lib/rustlib/$_host/bin/rust-lld"; return 0
+    fi
+  fi
+  for _c in ld.lld rust-lld; do
+    if command -v "$_c" >/dev/null 2>&1; then command -v "$_c"; return 0; fi
+  done
+  return 1
+}
+
+# --- library table: archive, header dirs, build script ----------------------------
+# first directory matching <glob> that contains <marker>
+find_tree() {
+  for _d in $1; do
+    case $_d in *-m68k) continue ;; esac
+    [ -f "$_d/$2" ] && { printf '%s' "$_d"; return 0; }
+  done
+  return 1
+}
+# lib_incs <name> -- prints the quoted -I words of a library, or dies
+lib_incs() {
+  case $1 in
+    c)      _t=$SDK/libc/mintlib/include; [ -f "$_t/stdio.h" ] || _t="" ;;
+    gem)    _t=$(find_tree "$SDK/gemlib/gemlib-[0-9]*" mt_gem.h) ;;
+    cflib)  _t=$(find_tree "$SDK/cflib/cflib-[0-9]*" cflib.h) ;;
+    m)      _t=$(find_tree "$SDK/libm/openlibm-[0-9]*" include/openlibm_math.h) ;;
+    ldg)    _t=$(find_tree "$SDK/ldg/ldg-r[0-9]*" include/ldg.h) ;;
+    share)  _t=$(find_tree "$SDK/libshare/libshare-[0-9]*" libshare.h) ;;
+    windom) _t=$SDK/windom/include; [ -f "$_t/windom.h" ] || _t="" ;;
+    z)      _t=$(find_tree "$SDK/zlib/zlib-[0-9]*" zlib.h) ;;
+    png)    _t=$(find_tree "$SDK/libpng/libpng-[0-9]*" pnglibconf.h) ;;
+    jpeg)   _t=$(find_tree "$SDK/libjpeg/jpeg-[0-9]*" jconfig.h) ;;
+    gif)    _t=$(find_tree "$SDK/giflib/giflib-[0-9]*" gif_lib.h) ;;
+    exif)   _t=$(find_tree "$SDK/libexif/libexif-[0-9]*" libexif/exif-data.h) ;;
+  esac
+  [ -n "$_t" ] || die "headers of '$1' not found -- the library is not built yet; run $(lib_script "$1")"
+  case $1 in
+    m)   printf ' %s %s' "$(quote "-I$SDK/libm/include")" "$(quote "-I$_t/include")" ;;
+    ldg) printf ' %s' "$(quote "-I$_t/include")" ;;
+    *)   printf ' %s' "$(quote "-I$_t")" ;;
+  esac
+}
+lib_script() {
+  case $1 in
+    c) echo sdk/libc/build-libc.sh ;;       gem) echo sdk/gemlib/build-gemlib.sh ;;
+    cflib) echo sdk/cflib/build-cflib.sh ;; m) echo sdk/libm/build-libm.sh ;;
+    ldg) echo sdk/ldg/build-ldg.sh ;;       share) echo sdk/libshare/build-libshare.sh ;;
+    windom) echo sdk/windom/build-windom.sh ;; z) echo sdk/zlib/build-zlib.sh ;;
+    png) echo sdk/libpng/build-libpng.sh ;; jpeg) echo sdk/libjpeg/build-libjpeg.sh ;;
+    gif) echo sdk/giflib/build-giflib.sh ;; exif) echo sdk/libexif/build-libexif.sh ;;
+  esac
+}
+lib_archive() {
+  case $1 in
+    c) echo "$SDK/libc/libc.a" ;;          gem) echo "$SDK/gemlib/gemlib.a" ;;
+    cflib) echo "$SDK/cflib/cflib.a" ;;    m) echo "$SDK/libm/libm.a" ;;
+    ldg) echo "$SDK/ldg/libldg.a" ;;       share) echo "$SDK/libshare/libshare.a" ;;
+    windom) echo "$SDK/windom/libwindom1.a" ;; z) echo "$SDK/zlib/libz.a" ;;
+    png) echo "$SDK/libpng/libpng.a" ;;    jpeg) echo "$SDK/libjpeg/libjpeg.a" ;;
+    gif) echo "$SDK/giflib/libgif.a" ;;    exif) echo "$SDK/libexif/libexif.a" ;;
+  esac
+}
+wanted() { eval "[ \"\$W_$1\" = 1 ]"; }
+
+# Header order (build-qed.sh, build-ldg-demo.sh, build-zview.sh): the
+# libraries above gemlib, gemlib, mintlib, then libm's math.h adapters.
+# Archive order (build-ldg-demo.sh / build-qed.sh / libtest): libshare first so
+# its allocator wins over libc's (docs/sdk/10-ldg-modules.md section 2).
+INC_ORDER="cflib windom ldg share png z jpeg gif exif gem"
+AR_ORDER="share windom cflib ldg png z jpeg gif exif gem m"
+
+# --- flags ----------------------------------------------------------------------------
+TARGET=aarch64-unknown-none-elf
+if [ "$BARE" = 1 ]; then
+  # sdk/build.sh's set (no -nostdinc there: clang's own headers are the only
+  # system headers for this target either way; -isystem $RES makes it explicit)
+  BASE="-target $TARGET -ffreestanding -nostdlib -O2 -fno-stack-protector -fPIE -fno-builtin -nostdinc -D__NEWTOS__"
+  SDKINC="$(quote "-I$SDK/include") -isystem $(quote "$RES")"
+  CRT0=$SDK/crt0.S
+  CRT0INC="$(quote "-I$SDK/include")"
+else
+  BASE="-target $TARGET -ffreestanding -nostdlib -O2 -fPIE -fno-builtin -nostdinc -D__NEWTOS__ -Wno-macro-redefined"
+  CRT0=$SDK/libc/crt0.S
+  SDKINC=""
+  if [ "$NSRC" -gt 0 ]; then
+    for l in $INC_ORDER c m; do
+      [ "$l" = c ] || wanted "$l" || continue
+      _x=$(lib_incs "$l") || exit 1
+      SDKINC="$SDKINC$_x"
+    done
+    SDKINC="$SDKINC -isystem $(quote "$RES")"
+  fi
+  _x=$(lib_incs c) || exit 1
+  CRT0INC="$(quote "-I$SDK/include")$_x"
+fi
+
+# --- compile-only modes -----------------------------------------------------------------
+if [ "$MODE" != link ]; then
+  [ "$NSRC" -gt 0 ] || die "-$MODE given but no source file"
+  [ -z "$OUT" ] || [ "$NSRC" -eq 1 ] || die "-o with -$MODE and more than one source"
+  eval "set -- $SRCS"
+  for s in "$@"; do
+    if [ -n "$OUT" ]; then o=$OUT
+    else
+      b=$(basename -- "$s"); b=${b%.*}
+      case $MODE in c) o=$b.o ;; S) o=$b.s ;; E) o=- ;; esac
+    fi
+    if [ "$o" = - ]; then
+      run "$(quote "$CLANG") $BASE $UCFLAGS $SDKINC -$MODE $(quote "$s")" || exit 1
+    else
+      run "$(quote "$CLANG") $BASE $UCFLAGS $SDKINC -$MODE $(quote "$s") -o $(quote "$o")" || exit 1
+    fi
+  done
+  exit 0
+fi
+
+# --- link mode ----------------------------------------------------------------------------
+LLDP=$(find_lld) || die "no ELF linker found: install the Rust toolchain (rust-lld) or LLVM lld (ld.lld), or set LLD"
+case $(basename -- "$LLDP") in
+  rust-lld*) LLDCMD="$(quote "$LLDP") -flavor gnu" ;;
+  *)         LLDCMD="$(quote "$LLDP")" ;;
+esac
+
+ARCHIVES=""
+if [ "$BARE" = 0 ]; then
+  for l in $AR_ORDER c; do
+    [ "$l" = c ] || wanted "$l" || continue
+    f=$(lib_archive "$l")
+    [ -f "$f" ] || die "$(basename "$f") is not built ($f missing); run $(lib_script "$l")"
+    ARCHIVES="$ARCHIVES $(quote "$f")"
+  done
+fi
+
+if [ -z "$OUT" ]; then
+  if [ -n "$FIRST_SRC" ]; then b=$(basename -- "$FIRST_SRC"); OUT=${b%.*}.$EXT
+  else OUT=a.$EXT; fi
+fi
+case $OUT in
+  *.[Nn][Cc][Pp]|*.[Nn][Tt][Pp]|*.[Nn][Aa][Pp]|*.[Nn][Aa][Cc]|*.[Nn][Ll][Dd])
+    _oe=$(printf '%s' "${OUT##*.}" | tr 'a-z' 'A-Z')
+    [ "$_oe" = "$EXT" ] || warn "output $OUT has extension .$_oe but the kind is -$KIND (.$EXT)" ;;
+  *) warn "output $OUT has no NewTOS extension (.$EXT); the desktop will not start it" ;;
+esac
+_ob=$(basename -- "$OUT"); _on=${_ob%.*}
+[ ${#_on} -le 8 ] || warn "$_ob is not an 8.3 name; GEMDOS sees only 8.3 names on the FAT volume"
+
+WORK=$(mktemp -d "${TMPDIR:-/tmp}/newtos-cc.XXXXXX") || die "mktemp failed"
+trap 'rm -rf "$WORK"' EXIT
+trap 'exit 130' HUP INT TERM
+
+# crt0 with the PRGFLAGS note value
+CRT0DEF=""
+[ -n "$PRGFLAGS_HEX" ] && CRT0DEF="-DNEWTOS_PRGFLAGS=$PRGFLAGS_HEX"
+run "$(quote "$CLANG") $BASE $CRT0DEF $CRT0INC -c $(quote "$CRT0") -o $(quote "$WORK/crt0.o")" || exit 1
+
+OBJS=""
+i=0
+eval "set -- $SRCS"
+for s in "$@"; do
+  i=$((i + 1))
+  b=$(basename -- "$s"); o="$WORK/$i-${b%.*}.o"
+  run "$(quote "$CLANG") $BASE $UCFLAGS $SDKINC -c $(quote "$s") -o $(quote "$o")" || exit 1
+  OBJS="$OBJS $(quote "$o")"
+done
+
+MAP=""
+[ "$KIND" = nld ] && [ "$BARE" = 0 ] && MAP="-Map=$(quote "$WORK/link.map")"
+
+GROUP=""
+[ -n "$ARCHIVES" ] && GROUP="--start-group$ARCHIVES --end-group"
+run "$LLDCMD -T $(quote "$SDK/newtos.ld") -pie --no-dynamic-linker -z text -z max-page-size=0x1000 --build-id=none $ULDFLAGS $MAP $(quote "$WORK/crt0.o")$OBJS$LINKIN $GROUP -o $(quote "$OUT")" || {
+  rm -f "$OUT"; die "link failed"; }
+
+# An LDG module must run on libshare's allocator only: the check of
+# sdk/libshare/libshare-link.sh (ls_check_module_map), on the link map.
+if [ -n "$MAP" ]; then
+  for m in mintlib__malloc.o mintlib__calloc.o mintlib__realloc.o mintlib__posix_memalign.o unix__sbrk.o; do
+    if grep -q "libc\\.a($m)" "$WORK/link.map"; then
+      rm -f "$OUT"; die "$OUT pulls mintlib's allocator member libc.a($m) next to libshare (sdk/libshare/libshare-link.sh)"
+    fi
+  done
+  grep -q 'libshare\.a(malloc\.o)' "$WORK/link.map" || {
+    rm -f "$OUT"; die "$OUT does not contain libshare.a(malloc.o) (sdk/libshare/libshare-link.sh)"; }
+fi
+
+[ "$VERBOSE" = 1 ] && printf '%s: wrote %s (%s bytes)\n' "$ME" "$OUT" "$(wc -c < "$OUT" | tr -d ' ')" >&2
+exit 0
