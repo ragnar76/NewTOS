@@ -27,4 +27,4 @@ rufen `rustc --print sysroot` im aktuellen Verzeichnis auf — ausserhalb des
 Checkouts waehlt rustup keine oder die falsche Toolchain (`missing LLVM tool:
 /lib/rustlib//bin/llvm-ar`). `newtos-cc` macht es richtig (`cd "$SDK" &&
 rustc`). Dokumentiert im Schnellstart („im Checkout ausfuehren“); Fix in ~15
-Skripten offen → Paket I (S).
+Skripten offen → Paket I (S). **Erledigt 2026-10-21** (`sdk/toolchain.sh`, Ausgaben byte-identisch).
