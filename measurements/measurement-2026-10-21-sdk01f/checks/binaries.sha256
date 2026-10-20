@@ -1,0 +1,7 @@
+39a8a36ab743bd6f312414434d10dd85dfb2be5c74c23ee7ece949bd00e2f552  sdk/libc/libc.a
+5dfe7f78c3aab2a6305b5cdba5ba7839337269f6cad692fdbea0e17b9b4d1fce  sdk/apps/qed/build/QED.NAP
+1dadbe88b5ce7a5b3901ca2950ba737354f2b93de8be8d49818a8ffb631ea9e2  sdk/apps/teradesk/build/DESKTOP.NAP
+be5d0aa095389e558a94cdcf1ca241a521fc7540deea8bd4b17550a252310c7b  sdk/apps/doom/build/DOOM.NAP
+9983e7eafc843400139224e2051479ff02cd84355cbb4e8c84edf0e1a8a3393d  sdk/apps/coremark/build/CORE.NCP
+40bac0f9bfbfcc422ccd46c80005a30a256bdd32fadedeccc416a81b7450974d  sdk/apps/coremark/build/COREVAL.NCP
+a61515c75e822a3a106093d9e5c4a34ab05c8ac7166239d022bb6ad62e525575  sdk/zview/build/out/ZVIEW.NAP

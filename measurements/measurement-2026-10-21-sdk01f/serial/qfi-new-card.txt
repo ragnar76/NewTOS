@@ -1,0 +1,26 @@
+== C:/
+ Volume in drive : is SDK01FPR   
+ Volume Serial Number is 6A05-0824
+Directory for ::/
+
+CLIPBRD      <DIR>     2026-10-21  10:00 
+KERNEL8  IMG        34 2026-10-21  10:00 
+APPS         <DIR>     2026-10-21   0:58  Apps
+NEWDESK  INF       401 2026-10-17  12:00 
+        4 files                 435 bytes
+                         66 314 240 bytes free
+
+== C:/Apps/QED
+ Volume in drive : is SDK01FPR   
+ Volume Serial Number is 6A05-0824
+Directory for ::/Apps/QED
+
+QED      NAP    529168 2026-10-17  12:00 
+DATED    TXT        14 2026-10-21  10:00 
+qed      rsc     41378 2026-10-17  12:00 
+        3 files             570 560 bytes
+                         66 314 240 bytes free
+
+== mtype /Apps/QED/DATED.TXT
+0000000    d   e   d   a   t   e   d       f   i   l   e  \r  \n        
+0000016

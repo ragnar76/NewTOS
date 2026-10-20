@@ -1,0 +1,18 @@
+do_stat.c under test: /Volumes/Daten/Development/PiRusTOS/sdk/libc/newtos-arch/do_stat.c
+PASS  stat  C:\T\A.TXT     mtime=atime=ctime=1792593478 type 0100000 Fsfirst "C:\T\A.TXT" (got r 0, 1792593478 1792593478 1792593478, mode 0100644, Fsfirst "C:\T\A.TXT", Fstat64 1, time() 0)
+PASS  lstat C:\T\A.TXT     mtime=atime=ctime=1792593478 type 0100000 Fsfirst "C:\T\A.TXT" (got r 0, 1792593478 1792593478 1792593478, mode 0100644, Fsfirst "C:\T\A.TXT", Fstat64 1, time() 0)
+PASS  stat  c:/t/a.txt     mtime=atime=ctime=1792593478 type 0100000 Fsfirst "c:\t\a.txt" (got r 0, 1792593478 1792593478 1792593478, mode 0100644, Fsfirst "c:\t\a.txt", Fstat64 1, time() 0)
+PASS  stat  C:\T\A.TXT size 1234, mode 0644 (got 1234, 0644)
+PASS  stat  C:\T\RO.NCP    mtime=atime=ctime=1709208002 type 0100000 Fsfirst "C:\T\RO.NCP" (got r 0, 1709208002 1709208002 1709208002, mode 0100555, Fsfirst "C:\T\RO.NCP", Fstat64 1, time() 0)
+PASS  stat  C:\T\RO.NCP read-only executable 0555 (got 0555)
+PASS  stat  C:\T\LATE.DAT  mtime=atime=ctime=2145916798 type 0100000 Fsfirst "C:\T\LATE.DAT" (got r 0, 2145916798 2145916798 2145916798, mode 0100644, Fsfirst "C:\T\LATE.DAT", Fstat64 1, time() 0)
+PASS  stat  C:\T\SUB       mtime=atime=ctime=1740787200 type 040000 Fsfirst "C:\T\SUB" (got r 0, 1740787200 1740787200 1740787200, mode 040755, Fsfirst "C:\T\SUB", Fstat64 1, time() 0)
+PASS  stat  C:\T\SUB\      mtime=atime=ctime=315532800 type 040000 Fsfirst "C:\T\SUB\*.*" (got r 0, 315532800 315532800 315532800, mode 040755, Fsfirst "C:\T\SUB\*.*", Fstat64 1, time() 0)
+PASS  stat  C:\T\SUB\.     mtime=atime=ctime=315532800 type 040000 Fsfirst "C:\T\SUB\.\*.*" (got r 0, 315532800 315532800 315532800, mode 040755, Fsfirst "C:\T\SUB\.\*.*", Fstat64 1, time() 0)
+PASS  stat  C:\            mtime=atime=ctime=312768000 type 040000 Fsfirst "" (got r 0, 312768000 312768000 312768000, mode 040755, Fsfirst "", Fstat64 1, time() 0)
+PASS  stat  C:             mtime=atime=ctime=312768000 type 040000 Fsfirst "" (got r 0, 312768000 312768000 312768000, mode 040755, Fsfirst "", Fstat64 1, time() 0)
+PASS  stat  \              mtime=atime=ctime=312768000 type 040000 Fsfirst "" (got r 0, 312768000 312768000 312768000, mode 040755, Fsfirst "", Fstat64 1, time() 0)
+PASS  stat  C:\..          mtime=atime=ctime=312768000 type 040000 Fsfirst "C:\*.*" (got r 0, 312768000 312768000 312768000, mode 040755, Fsfirst "C:\*.*", Fstat64 1, time() 0)
+PASS  stat  CON:           mtime=atime=ctime=1792599998 type 020000 Fsfirst "" (got r 0, 1792599998 1792599998 1792599998, mode 020600, Fsfirst "", Fstat64 1, time() 1)
+PASS  stat  C:\T\NONE.TXT missing -> -1, ENOENT (got -1, errno 33)
+stat-host: 16 checks, 0 failed

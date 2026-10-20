@@ -4,9 +4,10 @@
  *
  * mintlib/quickstat.c sets st_mode |= 0111 for a file whose name ends in
  * ".app", ".gtp", ".ttp", ".prg" or ".tos", compared with strcmp -- lower
- * case only, against the name as the CALLER spelled it. stat()/lstat()
- * (newtos-arch/do_stat.c __do_stat), access() (newtos-arch/access.c),
- * _buffindfile, open() and glob all read their stat through it. On NewTOS
+ * case only, against the name as the CALLER spelled it. access()
+ * (newtos-arch/access.c), _buffindfile, open() and glob read their stat
+ * through it; stat()/lstat() (newtos-arch/do_stat.c __do_stat, its own walk
+ * since TASK/SDK01 F) apply the same rule. On NewTOS
  * the executable extensions are the native .ntp/.nap/.ncp, the same set the
  * program search uses (overlay mintlib/spawnvp.c), compared without regard to
  * case because FAT names are upper case (C:\P10\P10KID.NCP). The overlay

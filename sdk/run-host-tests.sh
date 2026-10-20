@@ -155,10 +155,21 @@ report quickstat-host $rc "mintlib tree absent or host not LP64"
 # gives a regular file (GEMDOS handle >= 6) st_blksize 32 KiB, so mintlib's
 # own stdio/stdio_init.c picks a 32 KiB stream buffer; the console (fds 0-2),
 # the other standard handles and BIOS devices keep BUFSIZ (1024). With the
-# previous shim 6 of 25 fail.
+# previous shim 6 of 25 fail. Since TASK/SDK01 F also fstat()'s timestamps
+# (Fdatime on a file, time() - 2 otherwise); with the shim before SDK01 F
+# 8 of 119 fail.
 "$SDK/libc/tests/fstat-host.sh" > "$WORK/fstat-host.log" 2>&1; rc=$?
 [ $rc -eq 0 ] || [ $rc -eq 77 ] || sed 's/^/      /' "$WORK/fstat-host.log"
 report fstat-host $rc "mintlib tree absent or host not LP64"
+
+# stat-host (TASK/SDK01 F): newtos-arch/do_stat.c's __do_stat fills
+# st_mtime/st_atime/st_ctime as mintlib's TOS branch does -- the DTA stamp
+# through mintlib's own __unixtime, OLDDATE for a drive root, time() - 2 for a
+# device name. fstat-host checks the Fdatime half. With the previous
+# do_stat.c (__do_stat = __quickstat, all times 0) 13 of 16 fail.
+"$SDK/libc/tests/stat-host.sh" > "$WORK/stat-host.log" 2>&1; rc=$?
+[ $rc -eq 0 ] || [ $rc -eq 77 ] || sed 's/^/      /' "$WORK/stat-host.log"
+report stat-host $rc "mintlib tree absent or host not LP64"
 
 # waith-host (PORT-WAITH): the overlaid include/sys/wait.h -- WIFEXITED/
 # WEXITSTATUS/WIFSIGNALED/WTERMSIG/WCOREDUMP/WIFSTOPPED/WSTOPSIG and the BSD

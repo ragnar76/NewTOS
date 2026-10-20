@@ -169,10 +169,12 @@ DIRS="stdio stdlib string mintlib unix syscall time misc multibyte signal termio
 # mintlib .c files replaced by lean NewTOS glue in newtos-arch/ (see below).
 # These are dropped from the archive so the linker takes OUR definitions:
 #   mintlib/do_fstat.c -> newtos-arch/do_fstat.c  (lean __do_fstat: st_mode +
-#     honest st_size via Fseek only; no time/owner/tty resolution tail)
+#     honest st_size via Fseek; for fstat() the times from Fdatime as in
+#     mintlib's TOS branch (TASK/SDK01 F); no owner resolution)
 #   mintlib/do_stat.c  -> newtos-arch/do_stat.c   (lean __sys_stat: real Fstat64
-#     trap only, no timestamp/owner tail; __quickstat's Fsfirst emulation does
-#     the real path stat on -ENOSYS)
+#     trap only, no Fxattr fallback; __do_stat = mintlib's TOS Fsfirst branch
+#     incl. the DTA timestamps (TASK/SDK01 F), with the NewTOS exec extensions
+#     of overlay/mintlib/quickstat.c)
 #   unix/ioctl.c -> newtos-arch/ioctl.c  (forwards to the GEMDOS Fcntl trap).
 #     Until TASK/X01 this file was left in the list because it did not compile
 #     anyway: it uses Super()/SuperToUser(), and SuperToUser() still carried

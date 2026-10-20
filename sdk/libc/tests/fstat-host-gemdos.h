@@ -8,6 +8,7 @@
  *   Fseek (offset, handle, mode)  -- __do_fstat and __isatty
  *   Fcntl (handle, arg, cmd)      -- __isatty's TIOCGPGRP probe
  *   Ffstat64 (handle, stat)       -- __sys_fstat (TASK/SDK01 A)
+ *   Fdatime (timeptr, handle, rw) -- __do_fstat's stamp (TASK/SDK01 F)
  */
 #ifndef FSTAT_HOST_GEMDOS_H
 #define FSTAT_HOST_GEMDOS_H
@@ -17,4 +18,9 @@ long fh_test_Fcntl (short, void *, short);
 #define Fcntl(handle, arg, cmd)		fh_test_Fcntl ((handle), (arg), (cmd))
 long fh_test_Ffstat64 (short, void *);
 #define Ffstat64(handle, stat)		fh_test_Ffstat64 ((handle), (stat))
+/* Fdatime (timeptr, handle, rwflag) -- __do_fstat's file stamp (TASK/SDK01 F);
+ * _DOSTIME from mintlib's own <mint/ostruct.h>, which osbind.h would include */
+#include <mint/ostruct.h>
+long fh_test_Fdatime (_DOSTIME *, short, short);
+#define Fdatime(timeptr, handle, rwflag)	fh_test_Fdatime ((timeptr), (handle), (rwflag))
 #endif

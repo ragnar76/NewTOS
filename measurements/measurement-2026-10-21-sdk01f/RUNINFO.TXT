@@ -1,0 +1,57 @@
+measurement-2026-10-21-sdk01f -- Developer: TASK/SDK01 package F, stat()/lstat()/fstat() timestamps as upstream mintlib on TOS
+(docs/analysis/sdk-inventory-2026-10-20.md W4). SDK/libc only, no kernel/tos-api change. Base HEAD 33ef861a, change UNCOMMITTED in the
+working tree. Developer self-evidence; the Tester's verdict is separate.
+Host macOS, clang (Apple) + rust-lld of the pinned nightly; QEMU -M raspi4b -append "serial=on [memprot=strict|off]", one QEMU at a
+time, per-run APFS clones (cp -c) of one base card per content, deleted after each run (fsck_msdos -n + mtools listing of the clone
+first); private 64 MiB FAT16 images (label SDK01FPR) only, no SD card, no Pi. Scratch = session scratchpad .../scratchpad/sdk01f
+(method/env.sh); binaries not kept here, sha256 in checks/binaries.sha256 (sdk/ outputs) and checks/scratch-binaries.sha256.
+
+CHANGE (sdk/ only)
+  sdk/libc/newtos-arch/do_stat.c   __do_stat (stat, lstat) = mintlib's own TOS branch (mintlib/do_stat.c:146-336) instead of
+                                   __quickstat: st_mtime = st_atime = st_ctime = __unixtime(dta_time, dta_date); drive root
+                                   OLDDATE = __unixtime(0,0); device name time() - 2; exec bits .ntp/.nap/.ncp as the quickstat
+                                   overlay. __sys_stat unchanged (Fstat64 trap only).
+  sdk/libc/newtos-arch/do_fstat.c  __do_fstat with exact (fstat()): Fdatime(get) on a non-terminal handle -> __unixtime(time, date);
+                                   terminal or Fdatime error -> time() - 2 (mintlib/do_fstat.c:102-119). exact 0 (stdio, read,
+                                   dup2): unchanged, no extra trap. Classification/size/blksize unchanged.
+  sdk/libc/tests/stat-host{.sh,.c,-fs.c,-gemdos.h} new; fstat-host{.sh,.c,-fs.c,-gemdos.h} + timestamp cases; quickstat-host.c
+  comment; sdk/run-host-tests.sh (+ stat-host); sdk/libc/build-libc.sh (EXCLUDE comment only); docs/sdk/07-mintlib-limits.md §2, §5.
+
+1 HOST TESTS  checks/sdk-host-tests.txt: sdk/run-host-tests.sh 25 passed 0 failed 0 skipped (baseline 24/0/0 + stat-host).
+  stat-host 16/16 (checks/stat-host.txt); red with the HEAD do_stat.c: 13 of 16 fail (checks/stat-host-red-head-do_stat.txt).
+  fstat-host 119/119 (checks/fstat-host.txt); red with the HEAD do_fstat.c: 8 of 119 fail, exactly the new timestamp cases
+  (checks/fstat-host-red-head-do_fstat.txt). Expected seconds from Python calendar.timegm; mintlib's unixtime.c linked unchanged,
+  its mktime modelled by the host timegm (= mintlib with TZ unset, UTC). Found by the harness: mintlib's time_t is 32-bit
+  (include/bits/types.h:73), a 2107 stamp wraps (59851902) -- upstream property, cases use 2037-12-31 23:59:58.
+2 BUILDS (checks/build-libc.txt, checks/app-builds.txt): MINTLIB_REFRESH=1 build-libc.sh compiled 627, 5 expected failures, 0 new,
+  libtest links; QED, TeraDesk, zView (ZVIEW.NAP + 10 .NLD), Doom, CoreMark CORE+COREVAL rc=0, every link "undefined symbols: 0".
+  The final rebuild gives the same libc.a / QED.NAP sha256 as the binaries used in the runs below.
+3 QEMU PROBE STATT (method/statt.c -> C:\AUTO\STATT.NCP; card st-<v>: C:\KERNEL8.IMG marker stamped 2026-10-21 10:00 seeds the
+  clock (kernel/src/lib.rs seed_clock_from_kernel_file), C:\DATED.TXT stamped 2026-10-17 12:00, C:\SUB, empty C:\TMP; TZ unset).
+  Expected values from GEMDOS itself (Fsfirst DTA, Fdatime, Tgetdate/Tgettime) through the probe's own days_from_civil, or Python.
+  new libc, memprot on / strict / off: ST RESULT fails=0, 56 ok each, 0 EXC/PANIC, fsck rc=0 (serial/st-new-*):
+    stat/lstat DATED.TXT = 1792238400 (Sat Oct 17 12:00:00 2026) for mtime/atime/ctime; new file C:\TMP\NEW.TXT: stat = epoch(DTA)
+    = 1792576814, |mtime - time()| = 1; fstat(fileno) of the reopened file = stat, Fdatime(get) words = DTA words; Fdatime(set)
+    2001-02-03 04:05:06 -> fstat(handle) and stat after Fclose = 981173106; C:\SUB = epoch(DTA), C:\SUB\ = epoch("." DTA);
+    C:\ = 312768000 (OLDDATE); /dev/con and fstat(1) = time() - 2, S_IFCHR; missing -> -1 ENOENT; time() = epoch(Tgetdate/
+    Tgettime) +-2.
+  old libc (HEAD do_stat.c/do_fstat.c, method/make-old.sh), memprot on: fails=27 -- every timestamp check 0 (serial/st-old-on-*).
+  First probe version (prog/STATT.NCP, its serial log overwritten by the rerun): 4 FAIL, all probe defects -- "CON:" is no device
+  name for mintlib's _unx2dos (only /dev/<name>, unx2dos.c:30-62; stat("CON:") = -1 is upstream behaviour), and the probe's own
+  "." search used mask 0x10 while __do_stat searches 0xff and the kernel reports "." in C:\SUB with attribute 0x12 (DIR|HIDDEN),
+  which the 0x10 search skips. Probe fixed (/dev/con, mask 0xff, name/attribute printed); libc unchanged between the two versions.
+4 QED (card qfi-<v>, kernel qfi = HEAD + IKBD injector up:QED, method/qfi.spec): Ctrl+O dated.txt, Ctrl+I (Textinfo), Return, "d",
+  Ctrl+S, "e", Ctrl+S, Ctrl+I. screendumps/qfi-new-q4-info.png: "Datum: 17.10.2026  Uhrzeit: 12:00:00"; qfi-old-q4-info.png:
+  "01.01.1970 00:00:00". After the two saves qfi-new-q8-info2.png "21.10.2026 10:00:28", old again 01.01.1970. All other dumps
+  (q1-q3, q5-q7, q9) are byte-identical old vs new: both saves go through without QED's "file changed" alert (MOVED2), i.e. the
+  now-live file_time() comparison (file.c:569-583, :604) holds. Card after the run: C:\APPS\QED\DATED.TXT = "dedated file\r\n",
+  stamped 2026-10-21 10:00 (serial/qfi-*-card.txt); fsck rc=0, 0 EXC/PANIC.
+5 TeraDesk (card td-<v>, kernel tdv = HEAD + injector up:DESKTOP, TERADESK.INF in text mode): the C:\ window shows size/date/time
+  columns (DATED 17-10-26 12:.., OLD 03-02-01 05:.., KERNEL8 21-10-26 10:..) -- td-new/td-old t1, t2 byte-identical. TeraDesk
+  reads its dates itself (xfilesys.c x_attr/x_xreaddir -> Fsfirst -> dta_to_xattr), not through libc stat(): they were real before
+  SDK01 F and are unchanged; this is the no-regression check. (OLD.TXT was touched 2001-02-03 04:05 on the host; macOS wrote 05:05
+  into the FAT entry -- host msdosfs, not NewTOS.)
+Kernels: release rpi4 from `git archive 33ef861a` (build-kernels.sh refuses kernel-side working-tree changes; none),
+  SOURCE_DATE_EPOCH 1792540800; plain 6c3cf46f, qfi cebeb310, tdv 0b0a9aa8. The kernel build does not link sdk/libc/libc.a.
+NOT RUN: real Pi 4; qemu-virt (kernel unchanged); zView browser/infobox dates (uses stat().st_mtime, file.c:216, infobox.c:274 --
+  built, not run); a TZ other than unset; Doom/CoreMark at run time (build only, they do not read stat times).

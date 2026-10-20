@@ -48,6 +48,9 @@ sed '/^weak_alias/d' "$TOP/mintlib/isatty.c" > "$W/isatty.c"
 "$CC" "${MFLAGS[@]}" -Wno-void-pointer-to-int-cast \
     -I"$TOP/stdio" -c "$TOP/stdio/stdio_init.c" -o "$W/stdio_init.o" || exit 1
 "$CC" "${MFLAGS[@]}" -c "$HERE/fstat-host-fs.c" -o "$W/fs.o" || exit 1
+# mintlib's own __unixtime (DOS time/date -> mktime), unchanged; its mktime
+# is fstat-host-fs.c's (TASK/SDK01 F).
+"$CC" "${MFLAGS[@]}" -c "$TOP/mintlib/unixtime.c" -o "$W/unixtime.o" || exit 1
 "$CC" -O2 -Wall -Wextra -c "$HERE/fstat-host.c" -o "$W/harness.o" || exit 1
 "$CC" "$W"/*.o -o "$W/fstat-host" || exit 1
 

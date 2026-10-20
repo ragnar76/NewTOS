@@ -31,8 +31,10 @@
  *                 stdio buffer, not line-buffered, seekable (TASK/LIBC-FSTAT;
  *                 before: S_IFCHR, 1024 for 0-2);
  *   consistency   isatty(fd) == S_ISCHR(fstat(fd)) for 0..5 before and after
- *                 the redirection; fstat of 0..5 after isatty makes no trap
- *                 for a terminal (the cached answer);
+ *                 the redirection; the stdio/read()/dup2() stat of 0..5
+ *                 (__do_fstat exact 0) after isatty makes no trap for a
+ *                 terminal (the cached answer) -- fstat() itself (exact 1)
+ *                 asks time() for a terminal's stamp since TASK/SDK01 F;
  *   stale cache   a handle whose isatty answer is cached as a terminal and
  *                 that is Fforce'd to a file afterwards in the same process
  *                 stays S_IFCHR until the cache is cleared -- the upstream
@@ -55,11 +57,44 @@
  *                 returned unchanged (= mintlib's -ENOSYS, the "no native
  *                 stat" answer ttyname's MiNT branch expects).
  *
+ *   timestamps    (TASK/SDK01 F, mintlib/do_fstat.c:102-119 TOS branch)
+ *                 fstat() (exact 1) of a file handle 6, 7, 8: one Fdatime
+ *                 GET (rwflag 0) on that handle, st_mtime = st_atime =
+ *                 st_ctime = the DOS stamp as UTC seconds (expected values
+ *                 from Python calendar.timegm, independent of the code under
+ *                 test; 8 is 2037-12-31 23:59:58 = 2145916798, the last DOS
+ *                 stamp mintlib's 32-bit time_t holds); a standard handle
+ *                 Fforce'd to a file: its file's
+ *                 stamp; a terminal 0: no Fdatime, time() - 2; a handle
+ *                 Fdatime rejects (9 not open, -1 BIOS device): time() - 2;
+ *                 the stdio/read()/dup2() stat (exact 0): no Fdatime, no
+ *                 time(), times 0.
+ *
  * Exit status: number of failed checks; 77 = host is not LP64.
  */
 #include <stdio.h>
+#include <time.h>
+#include <string.h>
+
+/* mintlib's mktime with TZ unset = UTC (fstat-host-fs.c mktime). */
+long
+fh_host_timegm (int year, int mon, int mday, int hour, int min, int sec)
+{
+  struct tm tm;
+  memset (&tm, 0, sizeof tm);
+  tm.tm_year = year;
+  tm.tm_mon = mon;
+  tm.tm_mday = mday;
+  tm.tm_hour = hour;
+  tm.tm_min = min;
+  tm.tm_sec = sec;
+  return (long) timegm (&tm);
+}
 
 int fh_probe_stat (int, int *, int *, long *, long *);
+int fh_probe_stat_ex (int, int, int *, int *, long *, long *);
+int fh_probe_times (int, int, long[3], long *, long *, int *, int *);
+long fh_now (void);
 long fh_probe_stream (int, int *, int *);
 void fh_set_pos (short, long);
 long fh_get_pos (short);
@@ -176,14 +211,17 @@ consistency_case (int fd, const char *what)
   char w[200];
 
   tty = fh_probe_isatty (fd, &st, &fl);
-  t = fh_trap_count ();
   fh_probe_stat (fd, &reg, &chr, &sz, &bs);
-  n = fh_trap_count () - t;
   snprintf (w, sizeof w, "fd %d (%s): isatty %d == S_ISCHR(fstat) %d", fd, what, tty, chr);
+  check (tty == chr && reg == !chr, w);
+  t = fh_trap_count ();
+  fh_probe_stat_ex (fd, 0, &reg, &chr, &sz, &bs);
+  n = fh_trap_count () - t;
+  snprintf (w, sizeof w, "fd %d (%s): stdio stat (exact 0): isatty %d == S_ISCHR %d", fd, what, tty, chr);
   check (tty == chr && reg == !chr, w);
   if (tty)
     {
-      snprintf (w, sizeof w, "fd %d (%s): fstat after isatty makes no trap (got %ld)", fd, what, n);
+      snprintf (w, sizeof w, "fd %d (%s): stdio stat (exact 0) after isatty makes no trap (got %ld)", fd, what, n);
       check (n == 0, w);
     }
 }
@@ -223,6 +261,41 @@ sys_fstat_case (int fd, int exact)
   check (r == -32 && en && hok && bok && n == 1, w);
 }
 
+/* fstat() (exact 1) of a file handle: one Fdatime GET on fd, all three
+ * times = want; the exact-0 stat: no Fdatime, no time(), times 0. */
+static void
+stamp_case (int fd, long want, const char *what)
+{
+  long t[3], nt, nc;
+  int dh, drw;
+  char w[240];
+
+  fh_probe_times (fd, 1, t, &nt, &nc, &dh, &drw);
+  snprintf (w, sizeof w, "fd %d (%s): fstat mtime=atime=ctime=%ld (got %ld %ld %ld), Fdatime get on fd (got fd %d rw %d), no time() (got %ld)",
+	    fd, what, want, t[0], t[1], t[2], dh, drw, nc);
+  check (t[0] == want && t[1] == want && t[2] == want && dh == fd && drw == 0 && nc == 0, w);
+  fh_probe_times (fd, 0, t, &nt, &nc, &dh, &drw);
+  snprintf (w, sizeof w, "fd %d (%s): exact 0: times 0, no Fdatime, no time() (got %ld %ld %ld, fd %d, %ld)",
+	    fd, what, t[0], t[1], t[2], dh, nc);
+  check (t[0] == 0 && t[1] == 0 && t[2] == 0 && dh == -999 && nc == 0, w);
+}
+
+/* fstat() (exact 1) of a terminal / a handle Fdatime rejects: time() - 2;
+ * fdatime_tried says whether an Fdatime is expected first. */
+static void
+now_case (int fd, int fdatime_tried, const char *what)
+{
+  long t[3], nt, nc, want = fh_now () - 2;
+  int dh, drw;
+  char w[240];
+
+  fh_probe_times (fd, 1, t, &nt, &nc, &dh, &drw);
+  snprintf (w, sizeof w, "fd %d (%s): fstat mtime=atime=ctime=time()-2=%ld (got %ld %ld %ld, time() calls %ld, Fdatime fd %d)",
+	    fd, what, want, t[0], t[1], t[2], nc, dh);
+  check (t[0] == want && t[1] == want && t[2] == want && nc == 1
+	 && (fdatime_tried ? dh == fd : dh == -999), w);
+}
+
 int
 main (void)
 {
@@ -249,6 +322,7 @@ main (void)
   small_case (9, 0, "not open");
   for (fd = 0; fd <= 5; fd++)
     consistency_case (fd, "device");
+  now_case (0, 0, "console");	/* TASK/SDK01 F, before the redirection */
   isatty_case (0, 1, -1, "console");
   isatty_case (1, 1, -1, "console");
   isatty_case (2, 1, -1, "console");
@@ -278,6 +352,15 @@ main (void)
   sys_fstat_case (0, 0);
   sys_fstat_case (6, 1);
   sys_fstat_case (-1, 0);
+  /* TASK/SDK01 F: timestamps (expected: Python calendar.timegm) */
+  fh_reset_cache ();
+  stamp_case (6, 1792593478L, "file, 2026-10-21 14:37:58");
+  stamp_case (7, 1740787200L, "empty file, 2025-03-01 00:00:00");
+  stamp_case (8, 2145916798L, "file, 2037-12-31 23:59:58");
+  stamp_case (2, 1709208002L, "standard handle Fforce'd to a file, 2024-02-29 12:00:02");
+  now_case (5, 0, "standard device");
+  now_case (9, 1, "not open");
+  now_case (-1, 1, "BIOS device");
   printf ("fstat-host: %d checks, %d failed\n", checks, failed);
   return failed;
 }

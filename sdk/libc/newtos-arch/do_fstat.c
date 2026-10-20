@@ -4,9 +4,11 @@
  * mintlib's __do_fstat fills a full Unix `struct stat`: it resolves the file
  * times (__unixtime -> localtime -> timezone/200Hz clock via get_sysvar), the
  * owner/group (getuid/getgid -> passwd/group DB), and the tty flags (isatty ->
- * ioctl). None of that is available (or meaningful) on NewTOS, and it is
- * exactly the tail that dragged the 6 unresolved symbols
- * (get_sysvar, getpwuid, getgrent, setgrent, endgrent, ioctl).
+ * ioctl). When this shim was written that tail dragged 6 unresolved symbols
+ * (get_sysvar, getpwuid, getgrent, setgrent, endgrent, ioctl). All of them
+ * link now (newtos-arch/getsysvar.c, ioctl.c, pwdgrp/), and since
+ * TASK/SDK01 F the file times are resolved again as upstream does on TOS
+ * (see st_atime/st_mtime/st_ctime below); owner stays unresolved.
  *
  * stdio's stream initialiser (stdio/stdio_init.c __stdio_init_stream) only
  * reads st_mode (S_ISCHR test, then __isatty) and st_blksize (buffer sizing);
@@ -26,11 +28,23 @@
  *   st_blocks  derived from st_size (512-byte units).
  *   st_nlink   1.
  *
- * Times (st_atime/mtime/ctime) and owner (st_uid/st_gid) are left zeroed --
- * NOT resolved. Their resolution is the whole step-3 struct-stat tail; we do
- * the MINIMUM libtest/stdio need. Matches the mintlib `struct stat` layout
- * (include/sys/stat.h + include/bits/stat.h) via <sys/stat.h>, and the exact
- * signature stdio_init.c calls: int __do_fstat(int, struct stat *, int).
+ *   st_atime/st_mtime/st_ctime  only when `exact' is set (fstat(); the
+ *              stdio, read() and dup2() callers pass 0) -- TASK/SDK01 F, as
+ *              mintlib's TOS branch (mintlib/do_fstat.c:102-119) does:
+ *              for a handle that is not a terminal, GEMDOS Fdatime(get)
+ *              (0x57) on the handle and __unixtime(time, date) of the
+ *              DOSTIME it returns -- the file's directory-entry stamp,
+ *              converted local -> UTC by mintlib/unixtime.c exactly as
+ *              stat() converts the DTA stamp (newtos-arch/do_stat.c); for
+ *              a terminal, or a handle Fdatime rejects (a device, a handle
+ *              that is not open -- upstream's "assume TTY" case),
+ *              time(NULL) - 2. Without `exact' no Fdatime trap is made, so
+ *              the stdio initialiser's fstat stays as cheap as before.
+ *
+ * Owner (st_uid/st_gid) stays zeroed -- not resolved. Matches the mintlib
+ * `struct stat` layout (include/sys/stat.h + include/bits/stat.h) via
+ * <sys/stat.h>, and the exact signature stdio_init.c calls:
+ * int __do_fstat(int, struct stat *, int).
  *
  * STDIO BUFFER SIZE -- a named deviation from mintlib/TOS (TASK/FS08 part 4,
  * user decision 2026-10-07: "a larger buffer is no problem, we have more
@@ -71,11 +85,13 @@
  */
 
 #include <string.h>       /* memset */
+#include <time.h>         /* time */
+#include <support.h>      /* __unixtime (mintlib/unixtime.c) */
 #include <stdio.h>        /* BUFSIZ, SEEK_SET/CUR/END */
 #include <sys/types.h>
 #include <sys/stat.h>     /* struct stat, S_IFCHR, S_IFREG, S_BLKSIZE */
 #include <unistd.h>       /* __isatty (mintlib/isatty.c) */
-#include <mint/osbind.h>  /* Fseek (GEMDOS 0x42) */
+#include <mint/osbind.h>  /* Fseek (GEMDOS 0x42), Fdatime (GEMDOS 0x57) */
 #include <mint/mintbind.h> /* Ffstat64 (GEMDOS 0x15d) */
 #include "lib.h"
 
@@ -88,18 +104,30 @@
 int
 __do_fstat (int fd, struct stat *st, int exact)
 {
-	(void) exact;   /* NewTOS lean: no time/owner resolution (step-3 tail) */
-
 	memset (st, 0, sizeof (*st));
 
 	if (fd >= 0 && fd < NEWTOS_NUMSTD && __isatty (fd)) {
 		/* A standard handle at a terminal/device: no size. */
 		st->st_mode = S_IFCHR | 0600;
 		st->st_size = 0;
+		if (exact)	/* upstream's TTY stamp (do_fstat.c:110-112) */
+			st->st_mtime = st->st_ctime = st->st_atime =
+				time ((time_t *) 0) - 2;
 	} else {
 		/* Regular file: honest size via Fseek(end), restore position. */
 		long cur, end;
 
+		if (exact) {
+			/* the file's stamp (mintlib/do_fstat.c:105, 117-119) */
+			_DOSTIME timeptr;
+
+			if (Fdatime (&timeptr, fd, 0) < 0)
+				st->st_mtime = st->st_ctime = st->st_atime =
+					time ((time_t *) 0) - 2;
+			else
+				st->st_mtime = st->st_atime = st->st_ctime =
+					__unixtime (timeptr.time, timeptr.date);
+		}
 		st->st_mode = S_IFREG | 0644;
 		cur = Fseek (0L, fd, SEEK_CUR);     /* remember where we are */
 		end = Fseek (0L, fd, SEEK_END);     /* size == end offset */
