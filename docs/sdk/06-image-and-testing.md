@@ -13,9 +13,10 @@ and verifies the MBR (`:36-44`, `:294-310`). macOS only (`hdiutil`,
 `diskutil`, `dot_clean`; header comment `tools/make-sd-image.sh:13`). **There
 is no Linux (or Windows) way to build the image yet** — it is a known gap
 (TASK/SDK01 package G, planned); until then a Linux user has to build a FAT16
-image by other means. Nor is there a documented way to put only your own
-program onto a ready-made release image without building the kernel
-yourself: this page assumes a repository checkout and `cargo xtask run`.
+image by other means. To run only your own program on a ready-made release image without
+building the kernel, follow [00-quickstart](00-quickstart.md) §4 (release
+`kernel8.img` in QEMU, or the v0.6 card on a Pi). This page covers the full
+repository workflow with `make-sd-image.sh` and `cargo xtask run`.
 
 **This table and the line numbers in it date from 2026-09 and are
 incomplete.** The script has since gained more install blocks (for example

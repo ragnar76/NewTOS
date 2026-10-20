@@ -103,7 +103,8 @@ by taking the sysroot copy directly.
   Linux, and the image tool is macOS-only (see above). A Linux path (and a
   step-by-step install guide for any host: `xcode-select --install`, `rustup`
   inside the checkout, …) is planned (TASK/SDK01 packages C and G); it does
-  not exist yet.
+  not exist yet. *Update (TASK/SDK01 C):* the install guide is
+  [00-quickstart.md](00-quickstart.md); its Linux commands are untested.
 * **No network.** "A clone builds with no external network"
   (`sdk/.gitignore:6-7`): the three library tarballs are in the tree. The
   application trees under `sdk/apps/*/` are **not** tracked
@@ -114,9 +115,8 @@ by taking the sysroot copy directly.
   (`git remote -v`, `git rev-parse --short HEAD`, run 2026-10-20): QED
   `https://github.com/freemint/qed.git` @ `f12055f`, TeraDesk
   `https://github.com/freemint/teradesk.git` @ `b5532b8`. **No provenance
-  file in the repository records this**, and there is no clone-and-check-out
-  recipe yet; one is planned (TASK/SDK01 package C). Until then the trees
-  have to be copied from the machine that has them.
+  file in the repository records this**; the clone-and-check-out recipe is
+  [00-quickstart.md §5.2](00-quickstart.md#52-the-worked-examples-qed-and-teradesk).
 * **`set -uo pipefail` without `-e`** in every library/app script: a failing
   step is handled explicitly (`|| exit 1`), not by the shell.
 * **Paths with spaces are not handled** in `build-coremark.sh`'s

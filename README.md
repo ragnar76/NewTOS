@@ -127,7 +127,9 @@ The SDK under [`sdk/`](sdk/) is a clang/LLVM cross toolchain with ported
 mintlib, gemlib and cflib. Start with the developer documentation in
 [`docs/sdk/`](docs/sdk/README.md): first programs, porting an existing
 TOS/GEM application, the LP64 pitfalls, LDG modules, and getting a program
-onto the card.
+onto the card. New to it? The [quick start](docs/sdk/00-quickstart.md) goes
+from a fresh Mac (Linux: untested) to your own program on the release card,
+without building the kernel.
 
 ## Repository layout
 

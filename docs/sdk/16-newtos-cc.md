@@ -7,8 +7,8 @@ plus the package-D working tree. Evidence:
 This chapter covers only the three tools: the compiler wrapper
 `sdk/bin/newtos-cc`, the Makefile include `sdk/mk/newtos.mk` and the two
 templates in `sdk/templates/`. Installing the toolchain is
-[02](02-prerequisites.md); a quick start from nothing is TASK/SDK01
-package C (not written yet); what the programs do at start-up is
+[02](02-prerequisites.md); a quick start from nothing is
+[00-quickstart.md](00-quickstart.md); what the programs do at start-up is
 [03](03-first-programs.md) and [05](05-abi-pitfalls.md).
 
 **What they do not do.** They do not build the SDK libraries. Before the

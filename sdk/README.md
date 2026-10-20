@@ -5,9 +5,9 @@ Builds native AArch64 programs for NewTOS with **clang + rust-lld**
 three are mintlib-0.60.1, gemlib-0.44.0 and cflib (pinned commit `ce57817`);
 OpenLibm, LDG, libshare, WinDom and five codec libraries come on top —
 following ADR-019 ("port real Atari C libraries, don't reimplement",
-`docs/MEMORY.md`). It works from a checkout of this repository on macOS; an
-installable sysroot, a from-scratch quick start and a Linux description do
-not exist yet (planned, TASK/SDK01). The compiler wrapper `bin/newtos-cc`,
+`docs/MEMORY.md`). It works from a checkout of this repository on macOS; the from-scratch quick
+start is [`docs/sdk/00-quickstart.md`](../docs/sdk/00-quickstart.md) (Linux
+commands there untested); an installable sysroot does not exist. The compiler wrapper `bin/newtos-cc`,
 the Makefile include `mk/newtos.mk` and the templates in `templates/`
 (TASK/SDK01 D) are described in
 [`docs/sdk/16-newtos-cc.md`](../docs/sdk/16-newtos-cc.md). The output is an

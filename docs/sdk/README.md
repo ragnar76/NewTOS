@@ -1,5 +1,9 @@
 # NewTOS SDK — developer documentation
 
+**New here? Start with [00-quickstart.md](00-quickstart.md)** — from a
+fresh Mac (Linux: untested) to your own program on a Raspberry Pi 4 or in
+QEMU, without building the kernel.
+
 This is the entry point for anyone who wants to build a C program for NewTOS
 or port an existing TOS/GEM C application to it. Every statement in these
 pages is taken from a file in this repository (cited as `path:line`) or from a
@@ -16,12 +20,14 @@ date of its measurements; numbers such as file sizes and compile counts move
 with every library rebuild.
 
 **What this SDK is today, and what is missing.** It is a set of build scripts
-that work from a checkout of this repository on **macOS**. There is **no**
-step-by-step quick start from nothing (installing the tools, obtaining the
-application sources), **no** install outside the repository (headers live in
-the extracted build trees), and **no** description of Linux or Windows hosts
-(the SD-image tool is macOS-only). These three are planned (TASK/SDK01
-packages C, G). Since TASK/SDK01 package D there **is** a compiler wrapper,
+that work from a checkout of this repository on **macOS**. Since TASK/SDK01
+package C there is a quick start from nothing — installing the tools,
+building the libraries, obtaining the application sources, running on the
+release card — [00-quickstart.md](00-quickstart.md), with Linux commands
+that are **untested**. There is still **no** install outside the repository
+(headers live in the extracted build trees) and **no** Linux way to run
+`tools/make-sd-image.sh` (macOS-only; TASK/SDK01 package G); Windows is not
+covered. Since TASK/SDK01 package D there **is** a compiler wrapper,
 `sdk/bin/newtos-cc` (target flags, include order, `crt0`, linker script and
 archives in one command), a Makefile include `sdk/mk/newtos.mk` and two
 templates in `sdk/templates/` — [16-newtos-cc.md](16-newtos-cc.md); it runs
@@ -36,6 +42,7 @@ by that pass). If a line number does not match, search by the quoted text.
 
 | Page | What it answers |
 |------|-----------------|
+| [00-quickstart.md](00-quickstart.md) | From a fresh machine to your own program: tools, building the libraries, templates and `newtos-cc`, running on the v0.6 release card or in QEMU, fetching QED/TeraDesk, troubleshooting |
 | [01-overview.md](01-overview.md) | What the toolchain is, what it produces (`.NCP` / `.NAP` / `.NTP`), what it cannot do |
 | [02-prerequisites.md](02-prerequisites.md) | Which compiler, linker and host tools the scripts use, and where they look for them |
 | [03-first-programs.md](03-first-programs.md) | Hello World (`.NCP`), a mintlib-linked program, and a minimal GEM application (`.NAP`) — built and run for this document |

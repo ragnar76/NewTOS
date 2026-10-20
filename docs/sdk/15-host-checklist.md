@@ -15,15 +15,16 @@ Detail on why each tool is needed: [02-prerequisites.md](02-prerequisites.md).
 
 `git clone https://github.com/tuxie01/NewTOS.git` gives everything tracked
 (branch `main`, tags `v0.5`, `v0.6`). The items below are gitignored; without them the
-listed builds fail. **There is no clone recipe yet** — today they have to be
-copied from the Mac mini. The upstream origin of four of them is known (the
+listed builds fail. QED and TeraDesk can be re-cloned
+([00-quickstart.md §5.2](00-quickstart.md#52-the-worked-examples-qed-and-teradesk)),
+CoreMark per `sdk/apps/coremark-sources.md5`; the rest has to be copied
+from the Mac mini. The upstream origin of four of them is known (the
 embedded git checkouts report it: `git remote -v` / `git rev-parse --short
 HEAD`, checked 2026-10-20): QED `github.com/freemint/qed` @ `f12055f`,
 TeraDesk `github.com/freemint/teradesk` @ `b5532b8`, CoreMark
 `github.com/czietz/coremark` @ `b546802`, doomgeneric
-`github.com/ozkl/doomgeneric` @ `dcb7a8d`. A quick-start chapter that turns
-this into a clone-and-build recipe, usable by someone without access to the
-Mac mini, is planned (TASK/SDK01 package C) and does not exist yet.
+`github.com/ozkl/doomgeneric` @ `dcb7a8d`. The quick start for someone
+without access to the Mac mini is [00-quickstart.md](00-quickstart.md).
 Everything the other SDK libraries need (mintlib, gemlib, cflib, OpenLibm,
 LDG, libshare, WinDom, z-tools, the five codec libraries) **is** tracked as
 tarballs/zip in the repository.
