@@ -14,7 +14,7 @@ Grundlage: `docs/analysis/sdk-inventory-2026-10-20.md` (`a36b3280`).
 | D | Compiler-Wrapper `newtos-cc` bzw. `newtos.mk` + Vorlagenprojekt | M | **erledigt** 2026-10-20 (byte-identisch zu den Build-Skripten; Linux ungetestet) |
 | E | libm: compiler-rt-Builtins fuer 128-Bit-Gleitkomma und komplexe Multiplikation (`powf`, `remainder` …) | M | offen |
 | F | `stat`/`fstat`-Zeitstempel aus der DTA wie Upstream-mintlib | M | offen |
-| G | Linux-Weg fuer das SD-Abbild (`make-sd-image.sh` nur macOS) | M | offen |
+| G | Linux-Weg fuer das SD-Abbild (`make-sd-image.sh` nur macOS) | M | **gestrichen** 2026-10-21 (Anwender: fuer das SDK nicht noetig — `make-sd-image.sh` ist das Testabbild fuer die Arbeit am Kern; Portierer nutzen den plattformneutralen Weg aus dem Schnellstart. Notiz fuer spaeter, falls jemand unter Linux am Kern mitentwickelt) |
 | H | **Abnahme durch Portieren:** nach B–D ein bisher nicht portiertes Atari-Programm nur mit der neuen Doku portieren (Anwender 2026-10-20: „weitere Apps kompilieren“); jede Luecke, auf die man stoesst, geht zurueck in Doku/SDK. Kandidaten: Thing, das neuere zView, HighWire (ohne Netz eingeschraenkt), weitere bekannte Atari-Programme | M–L | offen |
 | — | spaeter/bei Bedarf: `-Wno-error=int-conversion`-Entscheidung, gemeinsamer LP64-Header, socket/crypt/shadow/argp, C++-Laufzeit | — | — |
 
