@@ -1,6 +1,6 @@
 # SDK01 — SDK fuer Fremde benutzbar machen: libc-Luecken und Portierungs-Doku
 
-Status: **ERLEDIGT** 2026-10-21 (A–F, H, I, J; G gestrichen) · Prioritaet: **P2** · Typ: SDK / Doku — Anwender 2026-10-20 („es gibt Leute, die Apps portieren wollen, dazu braucht es eine Doku“; GitHub-Issue #4)
+Status: **A–F, H, I, J ERLEDIGT** 2026-10-21 (G gestrichen; K, L offen) · Prioritaet: **P2** · Typ: SDK / Doku — Anwender 2026-10-20 („es gibt Leute, die Apps portieren wollen, dazu braucht es eine Doku“; GitHub-Issue #4)
 
 Grundlage: `docs/analysis/sdk-inventory-2026-10-20.md` (`a36b3280`).
 
@@ -17,6 +17,8 @@ Grundlage: `docs/analysis/sdk-inventory-2026-10-20.md` (`a36b3280`).
 | F | `stat`/`fstat`-Zeitstempel aus der DTA wie Upstream-mintlib | M | **erledigt** 2026-10-21 |
 | G | Linux-Weg fuer das SD-Abbild (`make-sd-image.sh` nur macOS) | M | **gestrichen** 2026-10-21 (Anwender: fuer das SDK nicht noetig — `make-sd-image.sh` ist das Testabbild fuer die Arbeit am Kern; Portierer nutzen den plattformneutralen Weg aus dem Schnellstart. Notiz fuer spaeter, falls jemand unter Linux am Kern mitentwickelt) |
 | H | **Abnahme durch Portieren:** nach B–D ein bisher nicht portiertes Atari-Programm nur mit der neuen Doku portieren (Anwender 2026-10-20: „weitere Apps kompilieren“); jede Luecke, auf die man stoesst, geht zurueck in Doku/SDK. Kandidaten: Thing, das neuere zView, HighWire (ohne Netz eingeschraenkt), weitere bekannte Atari-Programme | M–L | erledigt (52eeb271): HypView portiert, 15 Dokuluecken (12 behoben, G2/G9/G14 offen); Folgearbeit HypView: AV/BubbleGEM-Nachrichtenzeiger, `.REF`, Bilder |
+| K | **Rust raus aus dem C-Weg:** `sdk/toolchain.sh`/`newtos-cc` nehmen zuerst `ld.lld`, `llvm-ar`, `llvm-nm` usw. aus dem PATH (Distributionspakete `clang lld llvm`, macOS `brew install llvm lld`), die gepinnte Rust-Sysroot nur als Rueckfall. Rust brauchen dann nur Kern-Entwickler. Abnahme: dasselbe Programm mit Paket-lld und `rust-lld` gelinkt ist byte-gleich oder erklaerbar verschieden; Bau unter Linux x86_64 (Debian-Container) inkl. Frage, ob clang 14 (LMDE 6) reicht. Anlass: GitHub #4 (ragnar76, LMDE x86_64), Anwender 2026-10-21: „wieso braucht er rust?“ — erst Rueckmeldung von ragnar76 abwarten | M | offen |
+| L | **Linux-Infos in die Doku** (`00-quickstart` §1.1/§5.2): unter x86_64 kein `aarch64-linux-gnu-gcc` noetig, Pruefung `clang -print-targets \| grep aarch64`, Fedora-`dnf`-Zeile, apt.llvm.org fuer neueres clang, Befehle im NewTOS-Checkout ausfuehren, QED+TeraDesk (§5.2) als erster Toolchain-Test. Stand in der Antwort auf #4 (Kommentar 6310626343), aber noch nicht in der Doku | S | offen |
 | — | spaeter/bei Bedarf: `-Wno-error=int-conversion`-Entscheidung, gemeinsamer LP64-Header, socket/crypt/shadow/argp, C++-Laufzeit | — | — |
 
 [Gemeinsame Regeln](README.md) gelten.
