@@ -1,6 +1,6 @@
 # SDK01 — SDK fuer Fremde benutzbar machen: libc-Luecken und Portierungs-Doku
 
-Status: **IN ARBEIT** · Prioritaet: **P2** · Typ: SDK / Doku — Anwender 2026-10-20 („es gibt Leute, die Apps portieren wollen, dazu braucht es eine Doku“; GitHub-Issue #4)
+Status: **ERLEDIGT** 2026-10-21 (A–F, H, I, J; G gestrichen) · Prioritaet: **P2** · Typ: SDK / Doku — Anwender 2026-10-20 („es gibt Leute, die Apps portieren wollen, dazu braucht es eine Doku“; GitHub-Issue #4)
 
 Grundlage: `docs/analysis/sdk-inventory-2026-10-20.md` (`a36b3280`).
 
