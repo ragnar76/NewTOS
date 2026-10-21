@@ -1,6 +1,6 @@
 # GH1 — Popup im System-Info-Accessory: Fenster dahinter zeichnet sich ueber den Dialog
 
-Status: **OFFEN — Ursache belegt, Fix wartet auf Freigabe** · Prioritaet: **P2** · Typ: Fehler — GitHub-Issue #1 (ragnar76, 2026-10-19), echte Pi 4, NewTOS 0.6 (`f7cb0fd9`)
+Status: **ERLEDIGT (QEMU) 2026-10-21** (`7b295ab3`; echte Pi offen) · Prioritaet: **P2** · Typ: Fehler — GitHub-Issue #1 (ragnar76, 2026-10-19), echte Pi 4, NewTOS 0.6 (`f7cb0fd9`)
 
 ## Meldung
 
@@ -48,3 +48,32 @@ Fix-Vorschlag: F1 echter `wind_update`-Mutex (Wartende schlafen, Menue haelt
 den Lock bis Loslassen), F2 `post_button` nur an den Maus-Besitzer, F3 Klammer
 in NEWDESK, F4 Element-Neuzeichnen — F1–F3 nur zusammen (F2 allein verschiebt
 das Symptom, im Lauf belegt).
+
+
+## Fix (2026-10-21, `7b295ab3`, Anwender-Freigabe F1–F3)
+
+F1 echter `wind_update`-Mutex (Wartende parken, FIFO-Uebergabe; Control
+Manager haelt die Sperre als `ctl_pd` bis zum Loslassen, auch beim Druck,
+der ein Drop-down ueber dem Top-Fenster abbricht — `aes/gemctrl.c:81-102`),
+F2 `post_button` nur an den Maus-Besitzer, F3 BEG/END_UPDATE in NEWDESK.
+F4 nicht umgesetzt. Specs vorher korrigiert (`window-graphics.md`,
+`event.md`, `accessories.md`, `menu.md`).
+
+Belege: `measurements/measurement-2026-10-21-gh1/` (Umsetzung),
+`measurements/measurement-2026-10-21-gh1-reg/` (Tester: FAIL — QED hing nach
+Menue + Klick ins Fenster), `measurements/measurement-2026-10-21-gh1-fix2/`
+(Ursache + Fix der Regression; Desktop-Serie 40/47 gleich HEAD, Rest = GH1
+und Cursor-Blinkphase). Hosttests 1504/0/1.
+
+Gewollt (EmuTOS): ein Klick, der ein Drop-down abbricht, kommt nicht mehr
+als MU_BUTTON bei der Anwendung an.
+
+Offen:
+- Echte Pi 4 (Bild des Melders, 1920x1080; QED-Menue mit echter Maus).
+- Benannte Restabweichungen (in der Spec): `wm_open`/`wm_close`/`wm_set`/
+  `w_redraw_desktop`, `graf_rubberbox`/`graf_dragbox`, `ap_exit` und `fsel`
+  nehmen die Sperre nicht; `fm_error` aus der Shell-Schleife kann nicht
+  parken; Quick-Check in `ev_multi` fragt `own_mouse` statt „Aufrufer“.
+- Nebenbefund: `menu_intercept` stellt MN_SELECTED an die aktuelle Identitaet
+  statt an `gl_mnppd` — laeuft der Control Manager im `evnt_multi` eines
+  Accessorys, landet eine Desktop-Menuewahl dort.
