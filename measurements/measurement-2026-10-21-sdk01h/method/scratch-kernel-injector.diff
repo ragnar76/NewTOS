@@ -1,0 +1,74 @@
+--- a/kernel/src/host_env.rs
++++ b/kernel/src/host_env.rs
+@@ -115,6 +115,7 @@
+         // sole console input source; no-op until a HID device is enumerated
+         // (qemu-virt uses the PL011 RX IRQ instead).
+         pump_devices();
++        sdk01h_inject::step(); // SDK01H-TEMP: scripted IKBD mouse injector (scratch kernel only)
+         core::hint::spin_loop();
+ 
+         // SAFETY: restore the caller's original DAIF mask state.
+@@ -659,4 +660,63 @@
+ /// `kernel_main`.
+ pub fn install() {
+     tos_api::host::install_host(&KERNEL_HOST_REF);
++}
++
++// SDK01H-TEMP BEGIN -- scripted IKBD mouse injector for the SDK01 H HypView
++// run (QEMU raspi4b has no input). Modelled on
++// measurements/measurement-2026-09-17-h03/method/scratch-kernel-injector.diff.
++// Scratch kernel only, never in the repository tree.
++pub mod sdk01h_inject {
++    use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
++    static T0: AtomicU32 = AtomicU32::new(0);
++    static NEXT: AtomicUsize = AtomicUsize::new(0);
++    const fn mv(dx: i8, dy: i8) -> [u8; 3] { [0xF8, dx as u8, dy as u8] }
++    const DN: [u8; 3] = [0xFA, 0, 0];
++    const UP: [u8; 3] = [0xF8, 0, 0];
++    const P: [u8; 3] = mv(-127, -127);
++    // 640x480; IKBD dy positive = down.
++    const SCRIPT: &[(u32, &[u8])] = &[
++        // 1: click the link "Changes to the AES" at (217, 253)
++        (6000, &P), (6001, &P), (6002, &P), (6003, &P), (6004, &P), (6005, &P),
++        (6100, &mv(127, 127)), (6101, &mv(90, 126)),
++        (6300, &DN), (6320, &UP),
++        // 2: click the toolbar "back" button at (20, 52)
++        (9000, &P), (9001, &P), (9002, &P), (9003, &P), (9004, &P), (9005, &P),
++        (9100, &mv(20, 52)),
++        (9300, &DN), (9320, &UP),
++        // 3: click the window's down arrow at (628, 444) three times
++        (12000, &P), (12001, &P), (12002, &P), (12003, &P), (12004, &P), (12005, &P),
++        (12100, &mv(127, 127)), (12101, &mv(127, 127)), (12102, &mv(127, 127)),
++        (12103, &mv(127, 63)), (12104, &mv(120, 0)),
++        (12300, &DN), (12320, &UP), (12500, &DN), (12520, &UP), (12700, &DN), (12720, &UP),
++        // 4: click the window's close box at (9, 29) -> HypView ends
++        (15000, &P), (15001, &P), (15002, &P), (15003, &P), (15004, &P), (15005, &P),
++        (15100, &mv(9, 29)),
++        (15300, &DN), (15320, &UP),
++    ];
++    pub fn step() {
++        if tos_api::bdos::process::RUN.load(Ordering::Acquire).is_null() {
++            return;
++        }
++        let now = tos_api::bios::tick::hz_200();
++        if T0.load(Ordering::Relaxed) == 0 {
++            T0.store(now.max(1), Ordering::Relaxed);
++            crate::kprintln!("[sdk01h] injector armed at tick {}", now);
++            return;
++        }
++        let t0 = T0.load(Ordering::Relaxed);
++        let i = NEXT.load(Ordering::Relaxed);
++        if i >= SCRIPT.len() {
++            return;
++        }
++        let (at, bytes) = SCRIPT[i];
++        if now.wrapping_sub(t0) >= at {
++            for &b in bytes {
++                crate::ikbd::feed(b);
++            }
++            crate::kprintln!("[sdk01h] step {} at +{} ticks", i, now.wrapping_sub(t0));
++            NEXT.store(i + 1, Ordering::Relaxed);
++        }
++    }
+ }
++// SDK01H-TEMP END

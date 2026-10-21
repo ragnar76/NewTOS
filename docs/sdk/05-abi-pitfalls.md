@@ -238,6 +238,9 @@ real `Supexec` makes code paths live that used to fail silently: TeraDesk's
 shutdown (`main.c:2118`, `Supexec(rv)` with an endless-loop `lobo()`) is now
 executed for real (`osbind.h:804-812`). And do not expect privilege: an
 `Supexec`'d function that pokes MMIO faults.
+A statement `Supexec(f);` compiles with clang's `-Wunused-value` warning
+("expression result unused", from the cast in the `osbind.h` macro) —
+harmless; seen in HypView's `init.c`/`dl_routs.c` (TASK/SDK01 H).
 
 ### B5. `Fattrib` on directories — TOS 4 / FreeMiNT semantics
 
@@ -382,6 +385,18 @@ inline `rs_object[]` and a loaded `.RSC` agree. Nothing in the app changes;
 only the `.rsc` beside the `.NAP` has to be reconverted. Note that
 `build-qed.sh` does not produce `qed.rsc` — see
 [`04-porting-anatomy.md`](04-porting-anatomy.md) for the manual step.
+
+**Finding trees and free strings yourself.** Some applications (HypView's
+`dl_init.c`) do not call `rsrc_gaddr` per object but read the `RSHDR`
+behind `ap_rscmem` and index the tables at `rsh_trindex`/`rsh_frstr`
+themselves. Read the header pointer through gemlib's `_AESrscmem` (B9), not
+`*(RSHDR **)&aes_global[7]`. The in-memory layout of those two tables in a
+converted (NRSC) file is not specified on this page; the route that depends
+on nothing but the AES contract is `rsrc_gaddr(R_TREE, i, &tree)` per tree
+and `rsrc_gaddr(R_FRSTR, 0, &p)`, which returns the **address of** the
+free-string pointer table (`docs/api/aes/resource-fileselector.md`), so `p`
+can be used as the `char **` table. `sdk/overlays/hypview/dl_init.c` does
+this (TASK/SDK01 H).
 
 Also on LP64: `OBJECT` is 32 bytes with a 64-bit `ob_spec` (`docs/COMPATIBILITY.md:232-246`),
 and gemlib's `BFOBSPEC` bit-field is declared in **reverse** order on a
@@ -620,3 +635,52 @@ the upper 32 bits of the 8-byte `long` uninitialised — compare through a
 * `shel_envrn` values point into a kernel static; with an empty environment
   the NULL path is taken (`docs/analysis/qed-launch-findings-log.md`, note
   from #7). Latent until a non-empty environment exists.
+
+### B18. Pointers inside AES messages (`appl_write`, AV protocol, BubbleGEM)
+
+(Added 2026-10-21, TASK/SDK01 H — the HypView port met this and found the
+answer only in the WinDom and zView chapters.)
+
+**Symptom**: a message carrying a string or tree pointer (`VA_START`,
+`AV_*`/`VA_*`, `MN_SELECTED`'s tree in AES 4, BubbleGEM's `BUBBLEGEM_SHOW`)
+arrives as a wild pointer, or a field after the pointer is overwritten.
+
+**Cause**: a GEM message is eight 16-bit WORDs. The classic idiom
+`*(char **)&msg[3] = p` stores an 8-byte pointer on LP64, over `msg[3..6]`,
+and `*(char **)&msg[6]` reads two WORDs past the end of the buffer; a partner
+that uses the classic 32-bit layout (two WORDs) reads something else.
+
+**Do**: carry the pointer as a 32-bit value in two WORDs, high WORD first —
+`msg[n] = (short)((unsigned long)p >> 16); msg[n + 1] = (short)(unsigned long)p;`
+and `p = (char *)(((unsigned long)(unsigned short)msg[n] << 16) | (unsigned short)msg[n + 1]);`.
+That is the convention of the WinDom and zView patches
+([12 §3](12-windom.md#3-overlays-10-files-each-with-a-header-comment-upstream-line-change-reason): `evnt_windom.c`, `av_init.c`, `shel_write.c`;
+[13](13-zview.md) `av_prot.c`), and it holds every NewTOS user address
+because all of them are below 2 GiB ([A2](#a2-the-process-address-space)).
+No SDK header provides a helper yet (04 lists this as a candidate for a
+shared header). The HypView port leaves its ~25 such sites unpatched — see
+`sdk/apps/build-hypview.sh` and TASK/SDK01 H.
+
+### B19. m68k binary file formats read straight into structs
+
+(Added 2026-10-21, TASK/SDK01 H.)
+
+**Symptom**: a document or picture format the program reads with `Fread`
+into a `struct` is rejected ("wrong format", negative sizes) or shows
+garbage, although the file is fine on an Atari.
+
+**Cause**: the file holds the m68k memory image of that struct: big-endian
+WORDs and LONGs, `long` = 4 bytes, and m68k gcc's **2-byte** alignment for
+`long` and pointers. On AArch64 the same declaration is little-endian, `long`
+is 8 bytes and aligned to 8 — HypView's `INDEX_ENTRY` (`char, char, unsigned
+long, …`) has its `seek_offset` at byte 2 on disk and at byte 8 in memory,
+and `sizeof(HYP_HEADER)` is 12 on disk, 24 in memory. B1 is the same problem
+for kernel structures; here the "writer" is a file.
+
+**Do**: read the record into a byte buffer and decode it field by field
+(`(p[0] << 8) | p[1]` …), into the native struct; replace every
+`sizeof(struct)` used as a **file** offset or read length by the on-disk size.
+Bitmaps from such files are big-endian words too (see the zView codec
+patches, [13](13-zview.md)). Examples: `sdk/overlays/hypview/hyp/hyp.c`
+(header, index table, extra headers), `sdk/overlays/hypview/hyp/prepare.c`
+(`HYP_PICTURE`).

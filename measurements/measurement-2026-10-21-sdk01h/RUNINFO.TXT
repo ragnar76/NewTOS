@@ -1,0 +1,73 @@
+measurement-2026-10-21-sdk01h -- TASK/SDK01 package H: acceptance by porting
+===========================================================================
+
+WHAT
+  Port of HypView (FreeMiNT's ST-Guide hypertext viewer, freemint/hypview
+  @ 6f3eeeb4471530aaa088eb5b158b75d0e218456b) to NewTOS with docs/sdk/ as
+  the only guide, using sdk/bin/newtos-cc. Upstream tree unchanged under
+  sdk/apps/hypview/ (untracked; provenance sdk/apps/hypview-sources.sha256,
+  archive sha256 9beb7b3a...dda38a). Patches: sdk/overlays/hypview/
+  {hyp/prepare.c, hyp/hyp.c, dl_init.c}. Build: sdk/apps/build-hypview.sh.
+
+WHY
+  SDK01 H: find the gaps in the porting documentation by doing a port.
+
+HOW
+  Repository main @ 75bf5b44 plus the uncommitted SDK01 H working tree.
+  Kernel: cargo xtask build --board rpi4 (dev profile), copied out:
+    kernel8.img          sha256 cf11ed20161a14ed64eea0edda759adaa530dd5ba673f81360be7ed31f1b9c52 (r1, r2, r5)
+    scratch kernel = same tree + method/scratch-kernel-injector.diff (IKBD mouse
+    injector in kernel/src/host_env.rs), built in a copy of the workspace in the
+    session scratchpad, never in the shared tree:
+                         sha256 a2914fd1206fc85dcde9263c237fb99a352277ac8287d1922852490df7ed9e1e (r4;
+                         r3 used the same diff without the close-box step 4, hash not kept)
+  Base image: tools/make-sd-image.sh <scratch>/base.img 64
+                         sha256 ad45ccd88cd9b572eb40040976998bc8864291005baaede0c15bcdf37d1ff940
+  Per run: APFS clone (cp -c) of the base image, HypView installed with mtools
+  (partition offset 63*512 = 32256) into C:\APPS\HYPVIEW\, NEWDESK.INF =
+  method/NEWDESK.INF (#R 02 + #Z 01 C:\APPS\HYPVIEW\HYP_VIEW.NAP@), QEMU
+  raspi4b -append serial=on -display none, QMP screendumps; clone deleted
+  after the run (method/run-hv.sh).
+  Program: HYP_VIEW.NAP sha256 f7742847f6ffe983a22ed0afa3e2778088aa363c99b97c2bb97eac60b961f069
+           (r2..r5; r1 ran an earlier build without the hyp.c patch)
+           hyp_view.rsc sha256 54589e1c59da47f45a5b6529ded425908c8f6f28d4d5a9e7bcab7e47a8540caa
+  Test documents:
+    README.TXT  = sdk/apps/hypview/release/README (plain ASCII)
+    TOS4RN.HYP  = https://raw.githubusercontent.com/freemint/freemint/0218382eaf3022fa82f2e23608a0b0f1cdf0bddf/doc/programmer/atari/tos4rn.hyp
+                  sha256 cd8f7adc355a98c0813d50ee56ed2f17e4120bfc41547657f5af5f0983081f3c
+    (not kept here; third-party file)
+
+RUNS
+  r1  HYP_VIEW.CFG DEFAULT=README.TXT (method/cfg-readme.cfg)
+      -> screendumps/r1-readme-ascii.png: window with toolbar, ASCII text.
+  r2  HYP_VIEW.CFG DEFAULT=TOS4RN.HYP (method/cfg-tos4rn.cfg)
+      -> screendumps/r2-tos4rn-hyp.png: the .HYP title page, LH5-compressed
+         node decoded, links in blue/underlined, horizontal line drawn.
+  r3  as r2, scratch kernel: click link "Changes to the AES" (217,253);
+      click toolbar "back" (20,52); click window down arrow 3x (628,444)
+      -> r3-1-link-followed.png (node "Changes to the AES" shown, title set),
+         r3-2-back-button.png (title page again),
+         r3-3-scrolled-3-lines.png (content moved up three lines).
+  r4  as r3 + click on the close box (9,29)
+      -> serial: "[shell] sh_ldapp: 'C:\APPS\HYPVIEW\HYP_VIEW.NAP' exited with rc=0",
+         "[desk] desktop up (1 drives)"; r4-after-closebox-desktop.png
+         (desktop without icons: the run's NEWDESK.INF has only #R/#Z lines).
+  r5  no HYP_VIEW.CFG -> HypView asks for a file:
+      r5-no-default-fileselector.png (AES file selector, "Select hypertext to
+      load:", C:\GEMSYS\GUIDES\*.HYP).
+  No [EXC]/[PANIC] in any serial log.
+
+RESULT
+  HypView builds (57 files, 3 from patches, 0 undefined symbols) and runs in
+  QEMU raspi4b: plain text and a real ST-Guide .HYP file display; link,
+  back button, scroll arrow and close box work through the injected mouse.
+  SDK host tests: 26 passed, 0 failed, 0 skipped (sdk/run-host-tests.sh).
+
+NOT VERIFIED
+  Real Pi 4; keyboard; pictures inside .HYP files (TOS4RN.HYP has none);
+  .REF files (ref.c reads big-endian LONGs unpatched); AV protocol /
+  BubbleGEM / ST-Guide messages (pointers in msg[], unpatched, docs/sdk/05 B18);
+  search, block/clipboard, font selector, skins, iconify.
+  Observed, not a defect claim: after the first click the bottom two screen
+  rows (y 478-479) show the green desktop pattern; consistent with HypView
+  shrinking its window to the page (WINADJUST), not investigated.

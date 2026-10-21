@@ -56,6 +56,9 @@ the file headers and the inventory of 2026-10-20, section 2):
 | TeraDesk | `main.c` | low-memory words (`$4F2`, `$420`, `$43A`, `$426`, `$42A`) as 32-bit, reset-vector read at OSHEADER+0x10 (RST01, X04) | LP64 |
 | QED | `memory.c` | upstream sub-allocator assumes `sizeof(pointer)==4` in three places; `MALLOC`/`FREE` re-backed by libc | LP64 (rewrite) |
 | QED | `set.c` | `SET` addressed as 32-bit big-endian words; one flat byte numbering instead | LP64 + little-endian |
+| HypView | `hyp/prepare.c` | m68k inline asm `reduce()`/`mono_bitmap()` rewritten in C; `HYP_PICTURE` width/height big-endian (TASK/SDK01 H) | m68k asm + big-endian file format |
+| HypView | `hyp/hyp.c` | `.HYP` header, index table and extra headers are big-endian m68k structs on disk (12-byte header, `seek_offset` at byte 2); decoded into the native structs ([05 B19](05-abi-pitfalls.md#b19-m68k-binary-file-formats-read-straight-into-structs)) | big-endian file format + LP64 |
+| HypView | `dl_init.c` | resource header read as `*(RSHDR **)&aes_global[7]` (8 bytes over a 4-byte field, [05 B9](05-abi-pitfalls.md#b9-aesglobal-is-15-words-with-4-byte-pointer-fields)); now `_AESrscmem` + `rsrc_gaddr` | LP64 |
 | CoreMark | `newtos/core_portme.{c,h}` | CoreMark's own port layer — not a patch, this is where a port is meant to go | port layer |
 | zView | `sdk/zview/overlay/zview/…` (13 files) | m68k asm retarget (`plugins/img/xp32.c`, `plugins/jpg/jpgdsp.c`); big-endian file formats/bitmaps (`degasldg.c`, `neoldg.c`, `godldg.c`, `rawldg.c`, `imgldg.c`, `custom_font.c`, `av_prot.c`); LP64 (`jpgldg.c`); `.NLD` module suffix (`plugins.c`, ADR-018); PDF left out (`main.c`, `winimg.c`) | mixed, see [13](13-zview.md) |
 

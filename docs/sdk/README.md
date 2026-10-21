@@ -87,6 +87,7 @@ sdk/examples/libtest/build-libtest.sh              # LIBTEST.NCP (their round-tr
 sdk/apps/build-qed.sh                              # QED.NAP
 sdk/apps/build-teradesk.sh                         # DESKTOP.NAP + dist/
 sdk/apps/build-coremark.sh                         # CORE.NCP, COREVAL.NCP
+sdk/apps/build-hypview.sh                          # HYP_VIEW.NAP + hyp_view.rsc (newtos-cc, SDK01 H)
 
 # put everything on an SD image and boot it in QEMU
 tools/make-sd-image.sh /tmp/sd.img 64
@@ -102,8 +103,9 @@ overlays `sdk/{gemlib,cflib,ldg,libshare,libjpeg,libexif,windom}/overlay/` (Open
 What **only one program** needs is a **per-program patch file** in
 `sdk/overlays/<program>/` (zView: `sdk/zview/overlay/`), layered over the
 upstream tree at build time and carrying a header that says why. Such patches
-exist for QED (2: LP64), TeraDesk (7: 1 m68k asm, 6 LP64) and zView (13: m68k
-asm, endianness, LP64, the `.NLD` suffix, PDF left out); CoreMark's
+exist for QED (2: LP64), TeraDesk (7: 1 m68k asm, 6 LP64), zView (13: m68k
+asm, endianness, LP64, the `.NLD` suffix, PDF left out) and HypView (3: m68k
+asm, big-endian file format, LP64; TASK/SDK01 H, built with `newtos-cc`); CoreMark's
 `sdk/overlays/coremark/` is its own port layer, not a patch. The full list
 with reasons is in [04-porting-anatomy.md](04-porting-anatomy.md#the-rule-upstream-stays-unchanged-fixes-go-where-they-belong).
 
@@ -125,7 +127,7 @@ sdk/
 ├── zlib/ libpng/ libjpeg/ giflib/ libexif/   codec libraries for zView (release tarball + config overlay), LDG-M2
 ├── vendor-lib.sh         shared build steps of those five
 ├── libshare/ windom/ zview/   libshare 0.1.1, WinDom 1.21.3 (zip + patch + overlay/), zView (z-tools tarball + overlay/, per-program patches)
-├── overlays/{qed,teradesk,coremark}/   per-program patch files (zView's are in zview/overlay/)
+├── overlays/{qed,teradesk,coremark,hypview}/   per-program patch files (zView's are in zview/overlay/)
 ├── apps/                 build scripts + vendored app trees (untracked)
 └── examples/             example programs (examples/libtest/: the codec-library test, LDG-M2)
 tools/make-sd-image.sh    builds the FAT16 SD image, installs the binaries

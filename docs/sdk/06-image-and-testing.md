@@ -52,6 +52,13 @@ tools/make-sd-image.sh`, 2026-10-20): `SD_SCRFLIP_AUTO=1`, `SD_SYSINFO_AUTO=1`,
 `SD_LDGTEST_AUTO=1`. Every one of them names a program that ends by itself —
 a program that waits for a key would stop the boot from there.
 
+**Copying with `mtools` instead.** The quick start's `mcopy -i sd.img@@1M`
+assumes its own image (partition at sector 2048). `make-sd-image.sh` puts
+the partition at **sector 63**, so for its images the offset is
+`63 × 512 = 32256`: `mcopy -i sd.img@@32256 -o MYAPP.NAP ::/APPS/MYAPP/`
+(check with `mdir -i sd.img@@32256 ::/`; the script prints `start_lba=` at
+the end). No mounting, no AppleDouble files. Used for every run of TASK/SDK01 H.
+
 **Adding your own program.** The project rule is that the script is the
 single source of truth for the base image — add an install block to it
 rather than hand-editing `/tmp/sd.img` (memory note *auto-folder-console-only*,
@@ -178,7 +185,16 @@ Facts about that machine that matter for a test:
 * **No input**: `[pcie] RC not present (no response at RC_BASE); USB disabled`
   — the Pi's USB sits behind PCIe/xHCI, which `raspi4b` does not emulate. A
   `.NAP` parked in `evnt_multi` stays there; only autorun-able runs are
-  possible.
+  possible — unless you build a **scratch kernel** with a scripted IKBD
+  mouse injector, which feeds mouse packets from the AES input pump on a
+  timetable. That is how the SDK01 H run clicked a link, a toolbar button,
+  a scroll arrow and the close box of HypView:
+  `measurements/measurement-2026-10-21-sdk01h/method/scratch-kernel-injector.diff`
+  (against `kernel/src/host_env.rs` of 2026-10-21; the older H03 diff,
+  `measurements/measurement-2026-09-17-h03/method/`, no longer applies — it
+  calls a `tos_api::vdi::mouse_position` that is gone). Build it in a copy of
+  the workspace, never in the shared tree; it is test scaffolding, not a
+  substitute for the hardware check.
 * The SD controller **is** emulated, so `C:` works.
 * Boot to `[desk] desktop up` (or to the `#Z` program) takes roughly 25 s,
   15 s of which are the boot info screen (tester recipe, memory note

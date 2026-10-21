@@ -1,0 +1,17 @@
+# HypView -- provenance of the vendored source tree (TASK/SDK01 H).
+#
+# sdk/apps/hypview/ is untracked (sdk/.gitignore `/apps/*/`); this file is how
+# it is re-obtained and re-verified. Upstream: https://github.com/freemint/hypview
+# (FreeMiNT's ST-Guide hypertext viewer, GPL-2.0-or-later), commit
+# 6f3eeeb4471530aaa088eb5b158b75d0e218456b (2026-06-18, "Redirect uploads to
+# joska's server"), fetched as GitHub's archive of that commit:
+#
+#     curl -L -o hypview-6f3eeeb.tar.gz \
+#       https://codeload.github.com/freemint/hypview/tar.gz/6f3eeeb4471530aaa088eb5b158b75d0e218456b
+#     shasum -a 256 -c sdk/apps/hypview-sources.sha256   # in the download directory
+#     mkdir -p sdk/apps/hypview
+#     tar xzf hypview-6f3eeeb.tar.gz -C sdk/apps/hypview --strip-components 1
+#
+# The tree is used unchanged; the three per-program patches are in
+# sdk/overlays/hypview/, the build is sdk/apps/build-hypview.sh.
+9beb7b3aabc42956ed25d15e6d9228e9d814bcbb19764938f9907dff32dda38a  hypview-6f3eeeb.tar.gz

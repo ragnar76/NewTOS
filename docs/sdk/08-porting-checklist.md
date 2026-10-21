@@ -26,10 +26,16 @@ Tick each line; every line points at the section that explains it.
       like `sdk/apps/coremark-sources.md5` → [04 §skeleton](04-porting-anatomy.md#adding-a-new-port-the-skeleton)
 - [ ] `sdk/overlays/<app>/` created when the first per-program patch is needed
       (tracked; the patch files of one program live there)
-- [ ] `sdk/apps/build-<app>.sh` copied from `build-qed.sh` (cflib app) or
-      `build-teradesk.sh` (header overlays / own dialog lib); keeps
-      `lib_ensure`, the shared flag set, `-D__NEWTOS__`, `--start-group`
-      link, the "any failure stops" rule → [04](04-porting-anatomy.md)
+- [ ] Build route chosen. **Outside the repository** (your own project):
+      `newtos-cc` or a `newtos.mk` Makefile, patches in a directory of your
+      own → [00 §5](00-quickstart.md#5-porting-an-existing-atari-c-program),
+      [16](16-newtos-cc.md). **Inside the repository**: a
+      `sdk/apps/build-<app>.sh`, either on `newtos-cc` (model:
+      `build-hypview.sh`, TASK/SDK01 H) or copied from `build-qed.sh`
+      (cflib app) / `build-teradesk.sh` (header overlays, own dialog lib),
+      which call clang and `rust-lld` directly and keep `lib_ensure`, the
+      shared flag set, `-D__NEWTOS__`, `--start-group` link. Either way: any
+      failing file stops the build → [04](04-porting-anatomy.md)
 - [ ] Output name decided: `.NAP` (GEM), `.NCP` (console), `.NTP` (takes a
       tail — no dialog yet) → [01](01-overview.md#output-native-elf-binaries-with-a-new-extension-family)
 
@@ -80,24 +86,31 @@ Tick each line; every line points at the section that explains it.
 - [ ] `long double` works (soft-float binary128, compiler-rt builtins;
       `printf("%Lf")`, `strtold`, the `…l` libm functions since SDK01 J);
       `*`/`/` ignore `fesetround()` and `sqrtl` can be 1 ulp off
-      → [05 B12](05-abi-pitfalls.md#b12-long-double-is-128-bit-and-the-compiler-runtime-is-compiler-rt)
       → [05 B12](05-abi-pitfalls.md#b12-long-double-is-128-bit-and-the-compiler-runtime-is-compiler-rt), [07 §4](07-mintlib-limits.md#4-mintlib-directories-not-compiled-at-all)
 - [ ] libc `malloc` grows through GEMDOS `Malloc` (mintlib's `_stksize`
       model, ARCH03 E9); a program that needs its own heap sets `_stksize`
       → [05 A3/B15](05-abi-pitfalls.md#b15-a-libc-malloc-that-suddenly-fails)
 - [ ] Console output strategy chosen (`.NCP` vs. log file) → [05 B14](05-abi-pitfalls.md#b14-console-output-is-not-the-desktop)
+- [ ] Pointers in AES messages (`*(char **)&msg[3]`, AV protocol, BubbleGEM)
+      carried as two WORDs, high first → [05 B18](05-abi-pitfalls.md#b18-pointers-inside-aes-messages-appl_write-av-protocol-bubblegem)
+- [ ] Binary file formats read with `Fread` into structs decoded byte by
+      byte (big-endian, 4-byte `long`, 2-byte alignment) → [05 B19](05-abi-pitfalls.md#b19-m68k-binary-file-formats-read-straight-into-structs)
 
 ## On the image and in the machine
 
-- [ ] Install block added to `tools/make-sd-image.sh` (`C:\Apps\<APP>\`,
-      `.rsc` beside the `.NAP`; `.NAP` **never** in `\AUTO\`) → [06](06-image-and-testing.md#the-sd-image-toolsmake-sd-imagesh)
+- [ ] Program and `.rsc` in their own folder (`C:\APPS\<APP>\`, `.rsc`
+      beside the `.NAP`; `.NAP` **never** in `\AUTO\`): on the release card
+      or a self-made image → [00 §4](00-quickstart.md#4-run-it); for a port
+      that lives **in this repository**, as an install block in
+      `tools/make-sd-image.sh` → [06](06-image-and-testing.md#the-sd-image-toolsmake-sd-imagesh)
 - [ ] After any manual copy onto the FAT volume: `dot_clean -m` (AppleDouble
       `._X.NCP` files would be launched) → [06](06-image-and-testing.md#the-sd-image-toolsmake-sd-imagesh)
 - [ ] Headless QEMU run via `#Z 01 C:\…\APP.NAP@` in `NEWDESK.INF`; serial
       log shows `[shell] sh_ldapp: starting …` and no `[EXC]`/`[PANIC]`;
       screendump via QMP checked → [06](06-image-and-testing.md#newdeskinf-z--a-gem-application-instead-of-the-desktop)
-- [ ] Kernel built fresh for the board being booted (`--board rpi4`), release
-      profile for hardware → [06 footgun](06-image-and-testing.md#the-board-footgun)
+- [ ] Only if you build the kernel yourself (not needed with the release
+      `kernel8.img`): built fresh for the board being booted (`--board rpi4`),
+      release profile for hardware → [06 footgun](06-image-and-testing.md#the-board-footgun)
 - [ ] Interactive behaviour (clicks, keys, menus, closing) verified on a real
       Pi 4 — QEMU `raspi4b` has no input → [06](06-image-and-testing.md#real-raspberry-pi-4)
 

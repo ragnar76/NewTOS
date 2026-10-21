@@ -398,6 +398,23 @@ own, pass those `.c` files instead of the originals, and put that directory's
 `-I` first so changed headers win. The list of existing patches and the
 reason for each is in [04](04-porting-anatomy.md#the-rule-upstream-stays-unchanged-fixes-go-where-they-belong).
 
+Two details that are easy to miss (TASK/SDK01 H, HypView):
+
+* A patched `.c` that includes upstream headers by a **quoted relative path**
+  (`#include "../diallib.h"`) no longer finds them once it lives in the patch
+  directory: quoted includes are searched relative to the file being
+  compiled first. Pass `-I` of the upstream file's **own** directory when
+  compiling the patched copy, so the relative path resolves there.
+* Many FreeMiNT-style trees list their sources in `SRCFILES`/`Makefile.objs`
+  (`COBJS = …`), one per subdirectory. Use that manifest instead of a glob
+  (it leaves out test programs and Pure C assembler modules such as
+  HypView's `hyp/gfx.s`); `make` can print it:
+  `printf 'include SRCFILES\nall: ; @echo $(COBJS)\n' | make -s -f - -C <dir>`.
+
+`sdk/apps/build-hypview.sh` is a complete `newtos-cc` port script of this
+shape (manifest per directory, patch substitution, `.rsc` conversion); the
+HypView sources are fetched as `sdk/apps/hypview-sources.sha256` describes.
+
 ---
 
 ## 6. Troubleshooting
