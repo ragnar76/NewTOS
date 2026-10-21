@@ -17,7 +17,8 @@ use newtos_gem::gemdos::{dos_gdrv, dos_sdrv};
 use newtos_gem::xbios;
 use super::global::{self, Point, DROOT, MAX_DEPTH, NUM_WNODES, WINDOW_STYLE};
 use tos_types::aes::{
-    Grect, DESKWH, G_ICON, MN_SELECTED, MU_BUTTON, MU_KEYBD, MU_MESAG, MU_TIMER, M_OFF, M_ON, NIL,
+    Grect, BEG_UPDATE, DESKWH, END_UPDATE, G_ICON, MN_SELECTED, MU_BUTTON, MU_KEYBD, MU_MESAG,
+    MU_TIMER, M_OFF, M_ON, NIL,
     SELECTED, WA_DNLINE, WA_DNPAGE, WA_LFLINE, WA_RTLINE, WA_UPLINE, WA_UPPAGE, WF_CXYWH, WF_FXYWH,
     WF_HSLIDE, WF_HSLSIZ, WF_INFO, WF_NAME, WF_PXYWH, WF_TOP, WF_VSLIDE, WF_VSLSIZ, WM_ARROWED,
     WM_CLOSED, WM_FULLED, WM_HSLID, WM_MOVED, WM_REDRAW, WM_SIZED, WM_TOPPED, WM_VSLID,
@@ -76,11 +77,20 @@ pub(super) fn restart_desktop() -> bool {
 /// any further queued messages with a message-only `evnt_multi` before blocking
 /// again. Runs until a handler requests exit (currently only a Task-#9 shutdown
 /// path would; the desktop otherwise runs forever, which is correct).
+///
+/// Everything between the blocking `evnt_multi` and the next one runs with the
+/// screen held — `wind_update(BEG_UPDATE); /* grab the screen */` …
+/// `wind_update(END_UPDATE); /* free the screen */` (`deskmain.c:2094,2121`):
+/// while a desk accessory holds the window-tree lock (its dialog is up) the
+/// desktop does not act on an event, it waits for the lock first (GH1).
 pub fn event_loop() {
     let mut msg = [0i16; 8];
     let mut done = false;
     while !done {
         let ev = super::evnt_multi_msg(MU_KEYBD | MU_BUTTON | MU_MESAG, &mut msg);
+
+        // `wind_update(BEG_UPDATE); /* grab the screen */` (`deskmain.c:2094`).
+        super::wind_update(BEG_UPDATE);
 
         if ev.which & MU_KEYBD != 0 && hndl_kbd(ev.kret) {
             done = true;
@@ -104,6 +114,9 @@ pub fn event_loop() {
             let ev2 = super::evnt_multi_msg(MU_MESAG | MU_TIMER, &mut msg);
             which = ev2.which;
         }
+
+        // `wind_update(END_UPDATE); /* free the screen */` (`deskmain.c:2121`).
+        super::wind_update(END_UPDATE);
     }
 }
 

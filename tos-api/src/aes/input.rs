@@ -164,7 +164,7 @@ impl Mown {
 /// own (A62); for ownership they fold back: a registered accessory
 /// ([`super::acc::is_process`]) is itself, every other identity is the one
 /// application chain.
-fn same_pd(a: usize, b: usize) -> bool {
+pub(super) fn same_pd(a: usize, b: usize) -> bool {
     a == b || (!super::acc::is_process(a) && !super::acc::is_process(b))
 }
 
@@ -491,9 +491,12 @@ fn bchange(new: u8, clicks: i16, x: i16, y: i16) {
 /// decrements `gl_bpend` (`:477-479`).
 ///
 /// Only the owner's list is walked: with the Control Manager owning the mouse
-/// (`gl_mowner == ctl_pd`) no application wait is completed. At single-app
-/// "the owner" is every application identity with a parked wait — the same
-/// approximation [`own_mouse`] makes. A completed waiter is woken through the
+/// (`gl_mowner == ctl_pd`) no application wait is completed, and with an
+/// application owning it only **that process's** waits are — the identities
+/// [`same_pd`] folds into the owner's `AESPD` ([`GL_MOWNER_PD`]: the whole
+/// application chain, or one desk accessory). A press inside an accessory's
+/// dialog therefore completes the accessory's wait and not the desktop's
+/// parked `MU_BUTTON` (GH1). A completed waiter is woken through the
 /// scheduler's input class, as `evremove` → `azombie` makes the process
 /// runnable.
 fn post_button(new: u8, numclicks: i16) {
@@ -508,9 +511,12 @@ fn post_button(new: u8, numclicks: i16) {
         }
         return;
     }
+    // `for (e = pd->p_cda->c_bsleep; …)` with `pd = gl_mowner`
+    // (aes/geminput.c:463-469): the owner's own list.
+    let owner = GL_MOWNER_PD.load(Ordering::Relaxed);
     let mut woke = false;
-    for (w, parm) in BWAIT.iter().zip(BWAIT_PARM.iter()) {
-        if w.load(Ordering::Relaxed) != BW_ARMED {
+    for (idx, (w, parm)) in BWAIT.iter().zip(BWAIT_PARM.iter()).enumerate() {
+        if !same_pd(owner, idx) || w.load(Ordering::Relaxed) != BW_ARMED {
             continue;
         }
         let p = parm.load(Ordering::Relaxed);
@@ -720,6 +726,14 @@ pub(super) fn ct_msgup_hold() {
 /// press that selected a menu item is held; the first call that finds the
 /// button up ends the wait (`ct_msgup` returns, `ctlmgr` loops) and answers
 /// `false`.
+///
+/// `ct_msgup` waits **inside** `ctlmgr`'s screen lock (`wm_update(BEG_UPDATE)`
+/// … `wm_update(END_UPDATE)`, `aes/gemctrl.c:463,484`), so the end of the wait
+/// is also the Control Manager's `END_UPDATE`
+/// ([`window::ctl_release`](super::window::ctl_release)): only now does a
+/// process that asked for the lock meanwhile — an accessory answering its
+/// `AC_OPEN` with `wind_update(BEG_UPDATE)` — get it, with the button up, so
+/// its `fm_own(TRUE)` → `set_mown` can give it the mouse (GH1).
 pub(super) fn ct_msgup_busy() -> bool {
     if !CT_MSGUP.load(Ordering::Relaxed) {
         return false;
@@ -728,6 +742,7 @@ pub(super) fn ct_msgup_busy() -> bool {
         return true;
     }
     CT_MSGUP.store(false, Ordering::Relaxed);
+    super::window::ctl_release();
     false
 }
 

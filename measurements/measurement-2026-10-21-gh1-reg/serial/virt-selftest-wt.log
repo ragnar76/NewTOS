@@ -1,0 +1,222 @@
+RB1
+NewTOS booting on qemu-virt
+Phase 02 reached.
+[mm] DTB at 0x0000000048000000
+[mm] firmware: no VideoCore mailbox on this board — device tree decides
+[mm] device tree: /memory first bank: 0x0000000040000000 + 285212672 bytes (272 MiB)
+[mm] memory map:
+[mm]   DRAM  : 0x0000000040000000..0x0000000051000000 (285212672 bytes) — source: device tree
+[mm]   kernel: 0x0000000040080000..0x00000000402fd000 (2609152 bytes)
+[mm]   ST-RAM: 0x0000000040400000..0x0000000040e00000 (10485760 bytes)
+[mm]   TT-RAM: 0x0000000041000000..0x0000000050017000 (251752448 bytes)
+[mm]   OSrsvd: 0x0000000050017000..0x0000000051000000 (16683008 bytes)
+[mm]     heap: 0x0000000050017000..0x0000000050817000 (8388608 bytes)
+[mm]     fb  : 0x0000000050817000..0x0000000051000000 (8294400 bytes)
+[mm]   MMIO 00: 0x0000000008000000..0x0000000008010000
+[mm]   MMIO 01: 0x0000000008010000..0x0000000008020000
+[mm]   MMIO 02: 0x0000000009000000..0x0000000009001000
+[mm]   MMIO 03: 0x0000000010000000..0x000000003eff0000
+[mm] MMU reinstalled (high-half via TTBR1, TTBR0 deferred to Phase 06).
+[mm] frames ST-RAM: total=2560 used=0 free=2560 (10485760 B free)
+[mm] frames TT-RAM: total=61463 used=0 free=61463 (251752448 B free)
+[mm] alloc ST-RAM frame -> 0x0000000040400000
+[mm] alloc TT-RAM frame -> 0x0000000041000000
+[mm] heap after init: total=8388608 used=0 free=8388608 largest=8388608 blocks=1
+[mm] heap smoke OK
+[mm] heap after smoke: total=8388608 used=0 free=8388608 largest=8388608 blocks=1
+[fb] ramfb up: 1920x1080
+[mm] MEM05 per-process block limit: 8192 allocated blocks (default)
+[mm] MEM05 MD supply: 117 MDs static, grows by 117 MDs per 4096-byte page from the kernel heap; page budget 512 pages (2048 KiB) for MDs + block records + snapshot + F_KEEP flags
+[mm] memory protection ON: table arena 0x41000000+1422 tables
+[mm] BDOS pools: ST-RAM 0x40400000+10485760 TT-RAM 0x4158e000+245927936
+[mm] user address space: pools mapped VA = PA (124 shared L3 tables, 4-KiB pages, rights per process)
+[mm] BDOS ST-RAM after init: total=10485760 free=10485760 used=0 largest_free=10485760 (free_mds=1 alloc_mds=0)
+[mm] BDOS TT-RAM after init: total=245927936 free=245927936 used=0 largest_free=245927936 (free_mds=1 alloc_mds=0)
+[mm] MEM05 after init: MDs in_use=2 capacity=117 (+0 pages); pages held=0/512 (md=0 recs=0 snap=0 kept=0) peak=0 refused budget=0 heap=0; records=0 snapshot_cap=0 snapshot_short=0; heap used=0 free=8388608 largest=8388608
+[input] keyboard/mouse pump: AES waits and console reads; pointer motion also from the 200 Hz tick while a program runs (input=aes switches that off)
+[bcache] FS09 block read cache: none (no block device on this board)
+[ST] >> p02
+[selftest] EINVFN OK
+[selftest] RX echo (CR/LF or ~2s timeout)> 
+[selftest] RX timeout
+[ST] << p02
+[ST] >> p04
+
+[selftest p04] === BDOS memory tests ===
+[selftest p04] EC2 Mxalloc(-1, …) probes per-pool largest OK
+[selftest p04] EC8 alloc round-trip (Mxalloc + Malloc) OK
+[selftest p04] EC4 Mfree wild + double-free → EIMBA OK
+[selftest p04] EC5 Mshrink grow → EGSBF FAIL
+[selftest p04] EC5 Mshrink smaller → E_OK OK
+[selftest p04] EC6 Mshrink(0, blk, 0) ≡ Mfree(blk) OK
+[selftest p04] EC7 Maddalt ST-RAM overlap → −1 OK
+[selftest p04] F5 Maddalt fully below ST-RAM → −1 OK
+[selftest p04] EC3 PREFSTRAM falls back to TT-RAM OK
+[selftest p04] EC1 1000-cycle alloc/free no leak OK
+[selftest p04] baseline-restored OK
+[selftest p04] === BDOS memory: 10 passed, 1 failed ===
+[ST] << p04
+[ST] >> p07-time
+
+[time] === Phase 07 time/date + Sversion test ===
+[time]   Sversion = 0x3000  OK
+[time]   now: 2026-06-16 12:34:56  (date OK time OK)
+[time]   Tsetdate(month=13) → -1  OK
+[time]   CNTPCT advanced (+271563)  OK
+[time]   hz_200 advanced +100 in 500 ms (expected 100)  OK
+[time] === Phase 07 time PASS ===
+[ST] << p07-time
+[ST] >> bios
+[bios] === BIOS trap-13 test (Bcon* / Kbshift / Setexc / Getmpb) ===
+[bios]   Bcostat(CON=2) ready = -1: OK
+[bios]   Bcostat(PRT=0) absent = 0: OK
+[bios]   Bcostat(RAW_CON=5) = 0 (F5): OK
+X[bios]   Bconout(CON,'X') = 1: OK
+Y[bios]   Bconout(RAW_CON,'Y') = 1: OK
+[bios]   Bconout(PRT,'X') = 0: OK
+[bios]   Bconstat(IKBD=4) = 0 (no input slot): OK
+[bios]   Bconin(IKBD=4) = 0 immediately (handle-4 hang fix): OK
+[bios]   Bconstat(CON) no input = 0: OK
+[bios]   Bconstat(CON) with input = -1: OK
+[bios]   Bconin(CON) returns 'Z' = 0x5A: OK
+[bios]   Kbshift(-1) returns a zero-extended byte bitmask: OK
+[bios]   Kbshift set/get round-trip (0x04) + returns old: OK
+[bios]   Bios(0x0C) out-of-range = func# 0x0C (F2): OK
+[bios]   Bios(0x20) out-of-range = func# 0x20 (F2): OK
+[bios]   Setexc(etv_timer,-1) non-null default (F3): OK
+[bios]   Setexc(etv_term) set/get round-trip + old non-null: OK
+[bios]   Getmpb fills MPB from ST-RAM extent (F4): OK
+[bios] === BIOS trap-13 test PASS ===
+[ST] << bios
+[ST] >> xbios-audit
+[xbios-audit] === XBIOS trap-14 contract test ===
+[xbios-audit]   unimpl in-range Xbios(0x0D) returns func# 13: OK
+[xbios-audit]   out-of-range Xbios(0x60) returns func# 96: OK
+[xbios-audit]   Floprd(0x08) -> EUNDEV (-15): OK
+[xbios-audit]   Flopwr(0x09) -> EUNDEV (-15): OK
+[xbios-audit]   DMAread(0x2A) -> EUNDEV (-15): OK
+[xbios-audit]   Protobt(exec) checksum == 0x1234: OK
+[xbios-audit]   Protobt serial LE 0x123456: OK
+[xbios-audit]   Protobt BPB bps=512: OK
+[xbios-audit]   Protobt BPB spc=2: OK
+[xbios-audit]   Protobt BPB sec=720: OK
+[xbios-audit]   Protobt BPB media=0xFD: OK
+[xbios-audit]   Protobt(non-exec) checksum == 0x1235: OK
+[xbios-audit]   Kbrate(-1,-1) query = 0x0F02 (defaults 15/2): OK
+[xbios-audit]   Kbrate(20,3) returns old 0x0F02: OK
+[xbios-audit]   Kbrate re-query = 0x1403 (20<<8|3): OK
+[xbios-audit]   Rsconf(-2,...) query baud = 1 (B9600): OK
+[xbios-audit]   Rsconf packed old regs = 0x88010100: OK
+[xbios-audit]   Rsconf UCR round-trip = 0x8A010100: OK
+[xbios-audit]   Giaccess -> 0 (no PSG): OK
+[xbios-audit]   Ikbdws -> 0 (void no-op): OK
+[xbios-audit]   Setprt(-1) query = 0 (default): OK
+[xbios-audit]   Setprt(0x000A) returns old 0: OK
+[xbios-audit]   Setprt re-query = 0x000A (round-trip): OK
+[xbios-audit] === 23 checks, 0 FAIL ===
+[ST] << xbios-audit
+[ST] >> xbios
+[xbios] Physbase=0xffff000050817000 Logbase=0xffff000050817000 Getrez=4 (expect base!=0, log==phys, rez=4 TT_MEDIUM)
+[xbios] screen memory: 1 page(s) of 8294400 bytes (expect 2 on the VideoCore, 1 on ramfb)
+[xbios] Setscreen(0x42000000) off-screen -> Logbase=0xffff000050817000 Physbase=0xffff000050817000 (both unchanged)
+[xbios] Setscreen(rez=9) -> 0 (expect 0, ignored)
+[xbios] Setcolor(3,0x700) old=0 ; query=0x700 (expect 0x700)
+[xbios] Random -> 0x73c9de, 0xda5f5a (OK; both 24-bit)
+[xbios] Kbdvbase -> 0xffff0000401bb1e8 (OK)
+[xbios] Tickcal -> 20 (expect 20)
+[xbios] Vsync x2 returned (did not hang) OK
+[xbios] Settime(2021-06-15 14:30:20) -> Gettime=0x52cf73ca (expect 0x52cf73ca) OK
+[ST] << xbios
+[ST] >> cookie
+[cookie] === Cookie jar / Ssystem test ===
+[cookie]   Ssystem(-1, 0, 0) = E_OK (probe): OK
+[cookie]   Ssystem(-1, .., ..) = E_OK (args ignored): OK
+[cookie]   Getcookie(NTOS) = version 0x100: OK
+[cookie]   Getcookie(_MCH) = 0x00050000: OK
+[cookie]   Getcookie(0) = capacity 32 (not count): OK
+[cookie]   Getcookie(unknown tag) = EERROR (-1): OK
+[cookie]   Getcookie(slot 1) = NTOS tag: OK
+[cookie]   Getcookie(slot 9999) = EINVAL (-25): OK
+[cookie]   Setcookie(invalid tag) = EINVAL (-25): OK
+[cookie]   Setcookie(tag 0) = EINVAL (-25): OK
+[cookie]   Delcookie(unknown) = EINVAL (-25): OK
+[cookie]   Setcookie(TEST) = E_OK: OK
+[cookie]   Getcookie(TEST) = 0xCAFE: OK
+[cookie]   Getcookie(0) = capacity 32 (after add): OK
+[cookie]   Delcookie(TEST) = E_OK: OK
+[cookie]   Getcookie(TEST) after del = EERROR (-1): OK
+[cookie]   Ssystem(unimplemented mode) = EINVFN (-32): OK
+[cookie] === Cookie jar PASS (17/17) ===
+[ST] << cookie
+[ST] >> gemtrap
+[gemtrap] === GEM trap selector contract (V16) ===
+[gemtrap]   selector -2 leaves x0 unchanged (-2): OK
+[gemtrap]   selector 999 leaves x0 unchanged (999): OK
+[gemtrap]   vq_gdos() reports no GDOS (0): OK
+[gemtrap]   vq_vgdos() reports no GDOS (-2): OK
+[gemtrap]   selector -1 answers 0 (no jsr-able address; documented deviation): OK
+[gemtrap] === all checks passed ===
+[ST] << gemtrap
+[ST] >> p13-aes
+[aes] === Phase 13 AES Application-Manager test (D1/D2) ===
+[aes]   appl_init returns the application chain's id, 0: OK
+[aes]   AESGLOBAL ap_version = 0x0340: OK
+[aes]   AESGLOBAL ap_count = 1: OK
+[aes]   AESGLOBAL ap_id = returned id: OK
+[aes]   AESGLOBAL ap_private = registered WF_NEWDESK ROOT ob_spec (0x1143): OK
+[aes]   AESGLOBAL ap_planes = screen colour planes: OK
+[aes]   AESGLOBAL ap_planes non-zero (LP64 index 10, byte 20): OK
+[aes]   AESGLOBAL ap_3resv (byte 22) = AES table addr, non-zero: OK
+[aes]   AESGLOBAL ap_ptree/ap_rscmem/ap_rsclen untouched (indices 5..9): OK
+[aes]   AESGLOBAL ap_4resv untouched (indices 13..14): OK
+[aes]   AESGLOBAL appl_init writes nothing past word 14 (30 bytes): OK
+[aes]   appl_find(unknown) = -1: OK
+[aes]   appl_write delivers a message: OK
+[aes]   appl_read returns the message: OK
+[aes]   message contents round-trip: OK
+[aes]   appl_exit returns 1: OK
+[aes] === AES Application-Manager PASS ===
+[ST] << p13-aes
+[ST] >> objc-window
+[objc] window opened, handle 1
+[objc] hit (88,68)=closer (510,68)=fuller (300,68)=mover
+[objc] hit (510,370)=sizer (510,88)=up (300,200)=none
+[ST] << objc-window
+[ST] >> objc-two-windows
+[objc] two windows: A=2 B=3 (B on top)
+[objc]   A piece 0: x=61 y=92 w=336 h=78
+[objc]   A piece 1: x=61 y=170 w=169 h=107
+[objc] A visible pieces: 2
+[ST] << objc-two-windows
+[ST] >> objc-p6-msgqueue
+[p6] fifo: queued=2 first=[20,h1] second=[21,h1] -> PASS
+[p6] union: count=1 rect=(10,5,60,100) exp=(10,5,60,100) -> PASS
+[ST] << objc-p6-msgqueue
+[usb] PCIe ECAM at 0x4010000000 (size 0x10000000)
+[usb] xHCI at PCI 00:02.0 → BAR0 0x10000000 (size 0x4000)
+[usb] scratchpad buffers needed: 0
+[usb] dma addrs: dcbaap=0x40e47000 crcr=0x40e470c0 erstba=0x40e472c0 dcbaa0=0x0
+[usb] reg readback: ac64=1 csz=0 dcbaap_hw=0x40e47000
+[usb] xHCI up: 16 slots enabled, 8 root ports
+[usb] root ports powered (PPC=false)
+[usb] port 1: ccs=0 ped=0 pp=1 speed=0
+[usb] port 2: ccs=0 ped=0 pp=1 speed=0
+[usb] port 3: ccs=0 ped=0 pp=1 speed=0
+[usb] port 4: ccs=0 ped=0 pp=1 speed=0
+[usb] port 5: ccs=1 ped=0 pp=1 speed=3
+[usb] port 6: ccs=1 ped=0 pp=1 speed=3
+[usb] port 7: ccs=0 ped=0 pp=1 speed=0
+[usb] port 8: ccs=0 ped=0 pp=1 speed=0
+[usb] device slot 1 (root port 5 route 0x0 speed 3)
+[usb] device descriptor: bLength=18 type=1 bcdUSB=0200 class=0 maxpkt0=64 VID=0627 PID=0001
+[usb] HID iface 0 protocol 1 → int-IN ep 0x81 max 8 interval 7
+[usb] HID configured: slot 1 ep 0x81 dci 3 (keyboard)
+[usb] device slot 2 (root port 6 route 0x0 speed 3)
+[usb] device descriptor: bLength=18 type=1 bcdUSB=0200 class=0 maxpkt0=64 VID=0627 PID=0001
+[usb] HID iface 0 protocol 2 → int-IN ep 0x81 max 4 interval 7
+[usb] HID configured: slot 2 ep 0x81 dci 3 (mouse)
+[proc] stand-in PDs: initial_basepage 0x401c4000, AES PD 0x401c4100, accdesk 0x401c4300, EmuCON 0x401c4400 (read-only to all)
+[aes] gsx_malloc: screen buffer pa=0x4158e000 len=4147200 (kernel-owned, WF_SCREEN)
+[shell] sh_ldapp: starting desktop NEWDESK (D.s_cmd NEWDESK), sh_nextapp=3, sh_isgem=1
+[launch] EL0: slot 0 entry 0x41986000
+[desk] desktop up (0 drives)

@@ -1,0 +1,36 @@
+   1 [inj] up:QED feed 0xa7 at hz_200 4250 (+1215)
+   1 [dg] mchange -> ctl at (83,9)
+   1 [inj] up:QED feed 0xfa at hz_200 4255 (+1220)
+   2 [inj] up:QED feed 0x00 at hz_200 4255 (+1220)
+   1 [inj] up:QED feed 0xf8 at hz_200 4265 (+1230)
+   2 [inj] up:QED feed 0x00 at hz_200 4265 (+1230)
+   1 [inj] up:QED feed 0xf8 at hz_200 4535 (+1500)
+   2 [inj] up:QED feed 0x7f at hz_200 4535 (+1500)
+   1 [dg] bchange new=1 old=0 ctmown=true app=false pd=0
+   1 [dg] bchange new=0 old=1 ctmown=true app=false pd=0
+   1 [inj] up:QED feed 0xf8 at hz_200 4540 (+1505)
+   1 [inj] up:QED feed 0x5a at hz_200 4540 (+1505)
+   1 [inj] up:QED feed 0x7f at hz_200 4540 (+1505)
+   1 [inj] up:QED feed 0xf8 at hz_200 4545 (+1510)
+   1 [inj] up:QED feed 0x00 at hz_200 4545 (+1510)
+   1 [inj] up:QED feed 0x25 at hz_200 4545 (+1510)
+   1 [inj] up:QED feed 0xfa at hz_200 4550 (+1515)
+   2 [inj] up:QED feed 0x00 at hz_200 4550 (+1515)
+   1 [dg] bchange new=1 old=0 ctmown=true app=false pd=0
+   1 [dg] track -> None button=1
+   1 [dg] set_mown 0 button=1
+   1 [dg] wind_update mode=1 who=0 lock=0 owner=-1 mcnt=0 own=false btn=1
+   1 [dg] wind_update mode=0 who=0 lock=1 owner=0 mcnt=0 own=false btn=1
+   1 [dg] set_mown 0 button=1
+   1 [dg] evnt_multi idx=0 fired=0x2 pass=0 arm_own=false arm_mb=1 own_now=false btn=1 lock=true
+   1 [dg] wind_update mode=3 who=0 lock=0 owner=-1 mcnt=0 own=false btn=1
+   1 [dg] set_mown 0 button=1
+   1 [inj] up:QED feed 0xf8 at hz_200 4560 (+1525)
+   2 [inj] up:QED feed 0x00 at hz_200 4560 (+1525)
+   1 [dg] bchange new=0 old=1 ctmown=false app=false pd=0
+   1 [inj] up:QED feed 0x2d at hz_200 5630 (+2595)
+   1 [inj] up:QED feed 0xad at hz_200 5640 (+2605)
+   1 [inj] up:QED feed 0x1d at hz_200 5910 (+2875)
+   1 [inj] up:QED feed 0x10 at hz_200 5918 (+2883)
+   1 [inj] up:QED feed 0x90 at hz_200 5926 (+2891)
+   1 [inj] up:QED feed 0x9d at hz_200 5934 (+2899)

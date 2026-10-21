@@ -1,0 +1,21 @@
+== C:/
+ Volume in drive : is GH1PRB     
+ Volume Serial Number is 3F1B-1406
+Directory for ::/
+
+SUB          <DIR>     2026-10-21  12:28 
+APPS         <DIR>     2026-10-21  12:28  Apps
+NEWDESK  INF        44 2026-10-17  12:00 
+        3 files                  44 bytes
+                         66 578 432 bytes free
+
+== C:/SUB
+ Volume in drive : is GH1PRB     
+ Volume Serial Number is 3F1B-1406
+Directory for ::/SUB
+
+No files
+                         66 578 432 bytes free
+
+== C:/TMP
+mdir: File "::/TMP" not found

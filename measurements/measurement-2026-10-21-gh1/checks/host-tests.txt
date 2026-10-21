@@ -1,0 +1,6 @@
+cargo test --no-fail-fast -p tos-api
+  HEAD f1c225fc (git archive tree):   passed 1391 failed 0 ignored 1 (150 test binaries)
+  working tree with GH1 F1-F3:        passed 1400 failed 0 ignored 1 (151 test binaries) = HEAD + the 9 cases of tests/aes_gh1_update_mutex.rs
+cargo test -p tos-api -p tos-types -p xtask (working tree, with GH1): passed 1502 failed 0 ignored 1 (154 test binaries)
+tests/aes_gh1_update_mutex.rs copied into the HEAD tree: 0 passed, 9 failed (every case detects the defect)
+(The xtask suite cannot run in a git-archive tree: 5 rsc tests read gitignored references/ files.)

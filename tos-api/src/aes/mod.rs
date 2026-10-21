@@ -855,6 +855,24 @@ fn chkkbd() {
 fn crysbind(pb: &Aespb) -> Option<crate::bdos::process::sched::Switch> {
     let opcode = pb.control(C_OPCODE);
 
+    // The opcodes whose body opens with `fm_own(TRUE)` → `wm_update(BEG_UPDATE)`
+    // (`fm_do`, `aes/gemfmlib.c:287`; `fm_alert`, `aes/gemfmalt.c:361`, also
+    // behind `fm_error` for a code it has an alert for, `gemfmlib.c:436-472`;
+    // `mn_popup`'s `wm_update(BEG_MCTRL)`, `aes/gemmnext.c:312`) block there
+    // while another process holds the window-tree lock (`ev_block(MU_MUTEX,
+    // …)`, `aes/gemwmlib.c:1785-1786`). The wait comes before the opcode has
+    // committed anything, so a yield re-executes the whole call (GH1).
+    let takes_screen = match opcode {
+        36 | 50 | 52 => true,
+        53 => pb.intin(0) <= 63,
+        _ => false,
+    };
+    if takes_screen {
+        if let Some(sw) = window::update_block() {
+            return Some(sw);
+        }
+    }
+
     match opcode {
         10 => appl::appl_init(pb),
         19 => return appl::appl_exit(pb),
@@ -924,7 +942,9 @@ fn crysbind(pb: &Aespb) -> Option<crate::bdos::process::sched::Switch> {
         104 => window::wind_get(pb),
         105 => window::wind_set(pb),
         106 => window::wind_find(pb),
-        107 => window::wind_update(pb),
+        // `wind_update(BEG_UPDATE/BEG_MCTRL)` blocks while another process
+        // holds the window-tree lock (GH1) — it may yield to a peer.
+        107 => return window::wind_update(pb),
         108 => window::wind_calc(pb),
         109 => window::wind_new(pb),
         110 => resource::rsrc_load(pb),

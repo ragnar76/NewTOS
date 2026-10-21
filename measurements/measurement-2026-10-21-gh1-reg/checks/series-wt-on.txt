@@ -1,0 +1,4 @@
+run wt-on-nd: rc=0 fsck: fsck rc=0 Warning: 8 files, 65288 KiB free (32644 clusters)  EXC/PANIC: 0 lines: 681 sched-switch: 57
+run wt-on-td: rc=0 fsck: fsck rc=0 Warning: 19 files, 64238 KiB free (32119 clusters)  EXC/PANIC: 0 lines: 256 sched-switch: 20
+run wt-on-qed: rc=0 fsck: fsck rc=0 Warning: 12 files, 64746 KiB free (32373 clusters)  EXC/PANIC: 0 lines: 170 sched-switch: 0
+run wt-on-hv: rc=0 fsck: fsck rc=0 Warning: 12 files, 65018 KiB free (32509 clusters)  EXC/PANIC: 0 lines: 180 sched-switch: 0

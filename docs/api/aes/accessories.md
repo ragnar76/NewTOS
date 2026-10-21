@@ -324,10 +324,13 @@ halves of `disp` live in two places: `sched::dsptch` is the process switch that
 puts the caller on the ready list (the `disp_act` insert, SCHED01 — NewTOS has
 no `pstart` for a launched program and therefore no other step that would),
 `aes::dsptch` is `disp`'s `forker(); schedule();` input drain that every
-completed AES call ends with. The one piece of `all_run` that has no
-counterpart is the `wm_update` pair: NewTOS's update lock is a counter nobody
-is ever parked on (`window.rs::update_beg`'s own note), so `BEG` immediately
-followed by `END` is provably a no-op here. See §9.5 for what this cost.
+completed AES call ends with. The `wm_update` pair that closes `all_run`
+("then get in the wait line") is reproduced since GH1 (2026-10-21), when the
+update lock became a real mutex (`window-graphics.md` `wind_update (107)`
+§ "The refusal parks the taker"): the caller waits there behind whoever holds
+the window-tree lock, then takes and drops it (`window.rs::update_wait_line`;
+`acc.rs::IN_WAIT_LINE` keeps a parked caller from dispatching the accessories
+again when its call is re-executed). See §9.5 for what this cost.
 
 ---
 
@@ -870,9 +873,11 @@ What landed:
   loop whose condition no wake class covers — `wait_for_accs` over the DAs'
   `p_flags` is the AES's only one — must use this.
 * **`acc.rs::all_run`** — `count()` `dsptch` passes, EmuTOS's `geminit.c:559-562`.
-  The `wm_update` pair (`:564-565`) is not reproduced: NewTOS's update lock
-  never parks anyone (`window.rs::update_beg`), so `BEG` + `END` back to back
-  is a no-op by construction.
+  The `wm_update` pair (`:564-565`) was not reproduced then: NewTOS's update
+  lock parked nobody, so `BEG` + `END` back to back was a no-op by
+  construction. *(Superseded 2026-10-21, GH1: the lock is a real mutex now and
+  the pair is reproduced — `all_run` waits there behind the holder, see §3a
+  "NewTOS's spelling of `dsptch()`".)*
 * **`acc.rs::WAIT_PASSES`** — EmuTOS's `n` (`geminit.c:602,609`) is a C
   automatic and its loop never leaves the function; ours leaves it on every
   `Yield` and re-enters from the top, which would hand each re-entry a fresh

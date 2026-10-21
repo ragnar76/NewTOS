@@ -1,0 +1,5 @@
+desk: fx2-vs-head 0 px differ | fx2-vs-gh1wt 0 px differ | fx2-vs-devrun-after 280537 px differ bbox x11..628 y1..477
+open: fx2-vs-head 0 px differ | fx2-vs-gh1wt 0 px differ | fx2-vs-devrun-after 180 px differ bbox x20..490 y59..265
+popup: fx2-vs-head 27578 px differ bbox x16..401 y64..321 | fx2-vs-gh1wt 0 px differ | fx2-vs-devrun-after 0 px differ
+esc: fx2-vs-head 27359 px differ bbox x16..401 y64..321 | fx2-vs-gh1wt 0 px differ | fx2-vs-devrun-after 0 px differ
+closed: fx2-vs-head 0 px differ | fx2-vs-gh1wt 0 px differ | fx2-vs-devrun-after 0 px differ

@@ -1,0 +1,84 @@
+measurement-2026-10-21-gh1-fix2 -- Developer: cause + fix of the GH1 regression (QED hangs after "open a menu, click into the window")
+found by the Tester in measurements/measurement-2026-10-21-gh1-reg/. Base: HEAD f1c225fc + the uncommitted GH1 fix F1-F3
+(measurements/measurement-2026-10-21-gh1/). Nothing committed, stashed or checked out; no hardware. The two earlier runs are untouched.
+
+RESULT IN ONE LINE: cause established (the press that cancels a drop-down was not the Control Manager's under the screen lock);
+EmuTOS-faithful fix in window::intercept/hctl_window; QED hang gone, GH1 stays fixed, every other shot identical to HEAD.
+
+CAUSE (evidence: checks/diag0-fx2-excerpt.txt = instrumented GH1 tree BEFORE this fix, scenario qedd)
+  1 Pointer to "Datei" -> mchange gives the mouse to ctl_pd; the drop-down is tracked (gl_ctmown up).
+  2 The press at (300,300) arrives inside the track: "bchange new=1 ... ctmown=true app=false" -- the owner stays ctl_pd
+    (EmuTOS aes/geminput.c:334-335, gl_ctmown raised by mn_do aes/gemmnlib.c:277). The track ends on that press: "track -> None button=1".
+  3 Our inline Control Manager released the screen at once (ctl_finish(false)) and window::intercept/hctl_window left the press alone,
+    because it is in the top window's work area (Gadget::None "belongs to the application"). w_setactive -> set_mown(QED) is refused,
+    the button is down ("set_mown 0 button=1").
+  4 QED (lock free) takes BEG_UPDATE/END_UPDATE, re-arms evnt_multi and gets the held press from abutton's ownership-blind level test
+    ("evnt_multi fired=0x2 pass=0 arm_own=false arm_mb=1"), then wind_update(BEG_MCTRL) with the button down: fm_own's set_mown refuses
+    again -> QED holds lock + ml_ocnt=1 while ctl_pd owns the mouse.
+  5 The release goes to ctl_pd ("bchange new=0 ... app=false"); w_setactive, the only thing that could hand the mouse back, is gated by
+    ctl_may_run() = false because QED holds the lock (GH1 F1, contract point 4). No key/button/rectangle ever reaches QED: the hang
+    (Tester: UPDATE_LOCK=1 UPDATE_OWNER=QED MCTRL_CNT=1). HEAD survived only because its w_setactive ran on every pass regardless.
+  EmuTOS: after mn_do returns on the cancelling press, ctlmgr's loop (aes/gemctrl.c:439-484) ends its BEG_UPDATE/END_UPDATE, w_setactive
+  cannot move the mouse (button down), its next ev_multi(MU_BUTTON, 0x0001ff01) fires at once on the held button (rlr == gl_mowner,
+  aes/gemevlib.c:185-198), it takes the screen again, wm_find > 0 -> hctl_window (aes/gemctrl.c:468-470); on the top window's work area
+  there is no control point, message stays 0 and ct_msgup(0, ...) waits "while (button & 0x0001) dsptch();" INSIDE the lock
+  (aes/gemctrl.c:81-102,182,314). QED's BEG_UPDATE/BEG_MCTRL therefore waits for the release, and fm_own's ct_chgown(rlr) -> set_mown
+  (aes/gemfmlib.c:93, aes/geminput.c:220-235) then gives QED the mouse.
+  The F1 gate itself (ctl_may_run) is faithful; the missing piece was that hold. Reverting F2 does not help (Tester), as expected.
+
+FIX (uncommitted, working tree)
+  tos-api/src/aes/window.rs: hctl_window() -> bool; its Gadget::None arm, when the mouse is not the application's (input::own_mouse()
+  false = ctl_pd owns it), consumes the press (ev_consume = ctlmgr's ev_rets, aes/gemevlib.c:268) and returns true; intercept() then
+  enters ct_msgup's wait (input::ct_msgup_hold) and keeps the lock as CTL_PD (ctl_finish(true)) while the button is still down;
+  input::ct_msgup_busy -> ctl_release hands it to the next waiter on the release (existing GH1 F1 path). A work-area press the
+  application owns is unchanged (ctlmgr never sees it in EmuTOS).
+  Specs: docs/api/aes/window-graphics.md wind_update (107) contract point 3 + NewTOS mapping; docs/api/aes/menu.md mn_do point 5.
+  Host test: tos-api/tests/aes_gh1_update_mutex.rs case 9, two new tests:
+    the_press_that_cancels_a_dropdown_holds_the_screen_until_released, beg_mctrl_after_the_cancelling_press_waits_for_the_release.
+  checks/diag-fx2-excerpt.txt (same instrumentation, WITH the fix): "track -> None button=1", "intercept held=true", QED's BEG_UPDATE
+  finds lock=1 owner=CTL_PD (-2) and parks, release -> "ctl_release owner=-2 wait_len=1" -> QED gets the lock, own=true, key 'x'
+  arrives (fired=0x1).
+
+HOW
+  Host macOS, QEMU -M raspi4b -append "serial=on [memprot=...]", headless, release rpi4 kernels (SOURCE_DATE_EPOCH=1792368000), one QEMU
+  at a time, per-run APFS clone (cp -c) of the base cards of the -reg run (scratch ghreg/cards, sha256 = checks/cards.sha256 =
+  the -reg run's cards.sha256) and of the -gh1 run (gh1run/cards/gh1.img), clones deleted after each run (fsck_msdos -n before: rc 0, 20/20).
+  method/ = copies of the -reg run's scripts (env.sh: scratch ghreg) plus: cmp3.py (fx2 shots vs the -reg run's head-/wt- shots),
+  gh1plain.sh + gh1run.py + gh1plain.script + gh1-build-kernel.sh (the developer run's GH1 popup case; run.py/gh1.script/build-kernel.sh
+  of measurement-2026-10-21-gh1 copied, build script default script renamed), diag-instrumentation.patch (scratch-only serial
+  instrumentation "[dg]" + injector arm, applied to a scratch tree; its window.rs hunk is relative to the fixed tree; the first diag run
+  diag0-fx2 used the pre-fix window.rs).
+  Kernels (checks/binaries.sha256): fx2D (qedd.script armed, build-diag.sh wt), fx2A (four arms, build-armed.sh wt), fx2-plain (gh1.script
+  armed), fx2diag/fx2diag2 (instrumented). HEAD kernels reused from the -reg run (headD, headA) and the -gh1 run (before-plain), GH1-wt
+  kernel after-plain from the -gh1 run -- all sha256 identical to those runs' manifests.
+
+RESULTS
+ 1 QED hang case (qedd.script, screendumps-qed/, serial/qedd-*): fx2 vs HEAD (headD) per mark: d-new 0, d-typed 54, d-menu 0, d-away1 54,
+   d-away2 54, d-away3 54, d-x 0, d-ctrlq 0, d-ctrlq-late 0 px. The 54 px are the QED text cursor (x48..50 y61..78, blink phase; also in
+   d-typed, before any menu). fx2: "x" typed after the click-away, Ctrl-Q brings QED's "Datei Namenlos wurde geaendert" alert
+   (screendumps-qed/qedd-fx2-d-ctrlq.png) -- QED alive. The GH1 tree before this fix hung here (-reg run).
+ 2 GH1 popup case (developer method, screendumps-gh1/, checks/compare-gh1plain.txt): fx2 vs GH1-wt (after-plain): 0 px in all 5 shots;
+   fx2 vs HEAD: desk 0, open 0, popup 27578 px, esc 27359 px (x16..401 y64..321 = the C:\ACC\ frame HEAD paints over the dialog), closed 0.
+   fx2-plain-popup.png: System Information dialog with the popup open, no window frame over it. GH1 stays fixed.
+ 3 Tester's raspi4b desktop series (series.sh fx2 <mode>, scenarios nd/td/qed/hv, 47 shots per mode, modes on/off/strict/verify;
+   checks/compare-<mode>.txt vs the -reg run's head-/wt- shots), identical in every mode:
+     40/47 identical to HEAD; the 7 others: the 6 GH1 shots nd-p-popup, nd-p-esc, nd-k-popup, nd-k-picked, nd-k-popup2, nd-k-picked2
+     (33.8k-35.2k px vs HEAD, 0 px vs the GH1 tree = fixed) and qed-q-menu-away (54 px vs HEAD = the text cursor, see 4).
+     qed-q-alert / q-alert2 / q-cancelled: 0 px vs HEAD (the GH1 tree differed by 44612/87/217 px = the hang).
+   0 [EXC]/PANIC in all serial logs (incl. the gzipped diag logs); fsck rc 0 for every clone.
+ 4 The one behavioural difference to HEAD (deliberate, EmuTOS): the click that cancels a drop-down over the top window is eaten by the
+   Control Manager; QED no longer receives it as MU_BUTTON (HEAD delivered it via abutton because the lock was never held). Visible only
+   as the text cursor's blink phase in qed-q-menu-away; the status line (Z: 1 S: 4) is the same in both, every later shot identical.
+ 5 Host tests (checks/cargo-test.log): cargo test --no-fail-fast -p tos-api -p tos-types -p xtask: 154 binaries, 1504 passed, 0 failed,
+   1 ignored (GH1 tree before: 1502/0/1; +2 new). The new tests against the GH1 tree before this fix (hctl_window's Gadget::None arm
+   restored by hand, then the fix restored from a copy): both FAIL ("the cancelling press must be the Control Manager's ..." /
+   "BEG_MCTRL returned while the cancelling press was held ..."), the other 9 pass.
+ 6 Build/clippy (checks/lint/summary.txt, the -reg run's lint.sh on a scratch copy of the working tree): cargo xtask build exit 0 both
+   boards, 160 warnings each; clippy kernel qemu-virt/rpi4: tos-api 76, kernel 125; clippy newdesk 0; clippy tos-api host 76 -- all
+   equal to HEAD and to the GH1 tree (-reg run checks/lint-summary.txt). clippy of the test target: no warnings in aes_gh1_update_mutex.rs.
+
+NOT RUN / OPEN
+  Real Pi 4 (no hardware actions); qemu-virt boot/selftests not re-run (the change is in the AES Control Manager path only; Tester).
+  Same deadlock shape in EmuTOS itself, not addressed: a ctl_pd-owned press on the DESKTOP (wm_find == 0) gets no ct_msgup hold in
+  EmuTOS either (aes/gemctrl.c:468-470); an application taking BEG_MCTRL with that press held would wait the same way there.
+Binaries/cards/trees not kept (scratch); sha256 in checks/. Scratch trees of this run deleted.

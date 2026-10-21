@@ -521,9 +521,17 @@ The *values* are contract (which call returns `MU_BUTTON`, its `EV_BRET` and
 so the countdown is evaluated lazily against the host clock in whole 20-ms
 ticks (`input::b_delay_poll`) at every mouse packet (`b_click`, `mchange`)
 and at the head of every Event Manager pass — the same transitions in the same
-order. `post_button` walks the parked waits of every application identity
-while the application owns the mouse (`own_mouse`, single-app), and wakes
-them through the scheduler's input class. The Control Manager runs inline
+order. `post_button` walks the parked waits of the **mouse owner only** —
+`post_button(gl_mowner, …)` (`aes/geminput.c:344,463-483`): the identities
+`input::same_pd` folds into the owner's `AESPD` (the whole application chain,
+or one desk accessory), none while `ctl_pd` owns the mouse — and wakes them
+through the scheduler's input class. *(Corrected 2026-10-21, GH1: until then
+it walked the waits of every application identity while any application
+owned the mouse, so a press in a desk accessory's dialog also completed the
+desktop's parked `MU_BUTTON`, `TASK/GH1.md`.)* `ev_multi`'s quick check
+(`if (rlr == gl_mowner)`, `aes/gemevlib.c:185`) is still answered as "an
+application owns the mouse" (`input::own_mouse`), not "the caller does" —
+open, not part of GH1. The Control Manager runs inline
 (below); its loop wait (`ctlmgr`'s `ev_multi(…, 0x0001ff01L, …)`,
 `aes/gemctrl.c:456-462`) is a latch that `post_button` sets when it completes
 a left press for `ctl_pd` outside a menu track, so a short click on a frame

@@ -1,0 +1,290 @@
+--- a/tos-api/src/lib.rs
++++ b/tos-api/src/lib.rs
+@@ -35,3 +35,17 @@
+ 
+ pub use host::Host;
+ pub use trap::{TrapArgs, TrapClass};
++
++/// DIAG (scratch only): serial sink installed by the kernel.
++pub static DIAG_SINK: core::sync::atomic::AtomicUsize = core::sync::atomic::AtomicUsize::new(0);
++/// DIAG write.
++pub fn diag_fmt(args: core::fmt::Arguments) {
++    let p = DIAG_SINK.load(core::sync::atomic::Ordering::Relaxed);
++    if p != 0 {
++        let f: fn(core::fmt::Arguments) = unsafe { core::mem::transmute(p) };
++        f(args);
++    }
++}
++/// DIAG macro.
++#[macro_export]
++macro_rules! dlog { ($($a:tt)*) => { $crate::diag_fmt(format_args!($($a)*)) }; }
+--- a/kernel/src/host_env.rs
++++ b/kernel/src/host_env.rs
+@@ -463,6 +463,7 @@
+     };
+     if !crate::ikbd::release_held() {
+         crate::drivers::usb::poll();
++        inj_arm::step(); // INJ-ARM-TEMP
+     }
+     crate::ikbd::poll_repeat();
+ }
+@@ -657,6 +658,179 @@
+ 
+ /// Install the kernel host into `tos-api`. Called once from
+ /// `kernel_main`.
++fn diag_sink(a: core::fmt::Arguments) { crate::kprintln!("[dg] {}", a); }
+ pub fn install() {
++    tos_api::DIAG_SINK.store(diag_sink as fn(core::fmt::Arguments) as usize, core::sync::atomic::Ordering::Relaxed);
+     tos_api::host::install_host(&KERNEL_HOST_REF);
++}
++
++// INJ-ARM-TEMP BEGIN -- tools/inject-arm.py: scripted IKBD bytes armed on a program
++// identity (T10). Scratch only.
++/// Scratch IKBD injector armed on program-identity events (tools/inject-arm.py).
++pub mod inj_arm {
++    use core::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
++
++    struct Arm {
++        trig: &'static str,
++        /// 0 = desktop up, 1 = launch:NAME, 2 = up:NAME.
++        kind: u8,
++        name: [u8; 8],
++        script: &'static [(u32, u8)],
++    }
++    const S0: &[(u32, u8)] = &[(200, 0xf8), (200, 0x80), (200, 0x80), (200, 0xf8), (200, 0x80), (200, 0x80), (200, 0xf8), (200, 0x80), (200, 0x80), (200, 0xf8), (200, 0x80), (200, 0x80), (210, 0xf8), (210, 0x64), (210, 0x09), (210, 0xf8), (210, 0x23), (210, 0x00), (300, 0xf8), (300, 0x00), (300, 0x12), (500, 0xfa), (500, 0x00), (500, 0x00), (510, 0xf8), (510, 0x00), (510, 0x00), (1500, 0xf8), (1500, 0x80), (1500, 0x80), (1500, 0xf8), (1500, 0x80), (1500, 0x80), (1500, 0xf8), (1500, 0x80), (1500, 0x80), (1500, 0xf8), (1500, 0x80), (1500, 0x80), (1510, 0xf8), (1510, 0x14), (1510, 0x09), (1600, 0xf8), (1600, 0x00), (1600, 0x12), (1800, 0xfa), (1800, 0x00), (1800, 0x00), (1810, 0xf8), (1810, 0x00), (1810, 0x00), (2800, 0x1c), (2810, 0x9c), (3600, 0xf8), (3600, 0x80), (3600, 0x80), (3600, 0xf8), (3600, 0x80), (3600, 0x80), (3600, 0xf8), (3600, 0x80), (3600, 0x80), (3600, 0xf8), (3600, 0x80), (3600, 0x80), (3610, 0xf8), (3610, 0x1a), (3610, 0x4b), (3700, 0xfa), (3700, 0x00), (3700, 0x00), (3710, 0xf8), (3710, 0x00), (3710, 0x00), (4500, 0xf8), (4500, 0x80), (4500, 0x80), (4500, 0xf8), (4500, 0x80), (4500, 0x80), (4500, 0xf8), (4500, 0x80), (4500, 0x80), (4500, 0xf8), (4500, 0x80), (4500, 0x80), (4510, 0xf8), (4510, 0x32), (4510, 0x7f), (4600, 0xfa), (4600, 0x00), (4600, 0x00), (4603, 0xf8), (4603, 0x00), (4603, 0x00), (4606, 0xfa), (4606, 0x00), (4606, 0x00), (4609, 0xf8), (4609, 0x00), (4609, 0x00), (5500, 0xf8), (5500, 0x80), (5500, 0x80), (5500, 0xf8), (5500, 0x80), (5500, 0x80), (5500, 0xf8), (5500, 0x80), (5500, 0x80), (5500, 0xf8), (5500, 0x80), (5500, 0x80), (5510, 0xf8), (5510, 0x14), (5510, 0x09), (5520, 0xf8), (5520, 0x00), (5520, 0x32), (5600, 0xfa), (5600, 0x00), (5600, 0x00), (5610, 0xf8), (5610, 0x00), (5610, 0x00), (6900, 0xf8), (6900, 0x80), (6900, 0x80), (6900, 0xf8), (6900, 0x80), (6900, 0x80), (6900, 0xf8), (6900, 0x80), (6900, 0x80), (6900, 0xf8), (6900, 0x80), (6900, 0x80), (6900, 0xf8), (6900, 0x7f), (6900, 0x7f), (6900, 0xf8), (6900, 0x7f), (6900, 0x7f), (6900, 0xf8), (6900, 0x7f), (6900, 0x7f), (6900, 0xf8), (6900, 0x57), (6900, 0x4a), (7000, 0xfa), (7000, 0x00), (7000, 0x00), (7010, 0xf8), (7010, 0x00), (7010, 0x00), (7900, 0xf8), (7900, 0x80), (7900, 0x80), (7900, 0xf8), (7900, 0x80), (7900, 0x80), (7900, 0xf8), (7900, 0x80), (7900, 0x80), (7900, 0xf8), (7900, 0x80), (7900, 0x80), (7910, 0xf8), (7910, 0x64), (7910, 0x09), (7910, 0xf8), (7910, 0x23), (7910, 0x00), (7920, 0xf8), (7920, 0x00), (7920, 0x22), (8000, 0xfa), (8000, 0x00), (8000, 0x00), (8010, 0xf8), (8010, 0x00), (8010, 0x00), (9300, 0xf8), (9300, 0x80), (9300, 0x7f), (9303, 0xf8), (9303, 0x80), (9303, 0x7f), (9306, 0xf8), (9306, 0x80), (9306, 0x7f), (9309, 0xf8), (9309, 0x80), (9309, 0x7f), (9312, 0xf8), (9312, 0x80), (9312, 0x7f), (9315, 0xf8), (9315, 0x80), (9315, 0x7f), (9318, 0xf8), (9318, 0x7f), (9318, 0x81), (9323, 0xf8), (9323, 0x49), (9323, 0x81), (9328, 0xf8), (9328, 0x00), (9328, 0x81), (9333, 0xf8), (9333, 0x00), (9333, 0xe9), (9438, 0xfa), (9438, 0x00), (9438, 0x00), (9498, 0xfa), (9498, 0x0c), (9498, 0x0c), (9518, 0xfa), (9518, 0x0c), (9518, 0x0c), (9538, 0xfa), (9538, 0x0c), (9538, 0x0c), (9558, 0xfa), (9558, 0x0c), (9558, 0x0c), (9578, 0xfa), (9578, 0x0c), (9578, 0x0c), (9598, 0xfa), (9598, 0x00), (9598, 0x0c), (9618, 0xfa), (9618, 0x00), (9618, 0x0c), (9638, 0xfa), (9638, 0x00), (9638, 0x01), (9728, 0xf8), (9728, 0x00), (9728, 0x00), (9988, 0xf8), (9988, 0x7f), (9988, 0x7f), (9993, 0xf8), (9993, 0x3e), (9993, 0x6a), (10098, 0xfa), (10098, 0x00), (10098, 0x00), (10158, 0xfa), (10158, 0x0c), (10158, 0x0c), (10178, 0xfa), (10178, 0x0c), (10178, 0x0c), (10198, 0xfa), (10198, 0x0c), (10198, 0x0c), (10218, 0xfa), (10218, 0x0c), (10218, 0x0b), (10238, 0xfa), (10238, 0x0c), (10238, 0x00), (10258, 0xfa), (10258, 0x0c), (10258, 0x00), (10278, 0xfa), (10278, 0x0c), (10278, 0x00), (10298, 0xfa), (10298, 0x0c), (10298, 0x00), (10318, 0xfa), (10318, 0x0c), (10318, 0x00), (10338, 0xfa), (10338, 0x03), (10338, 0x00), (10428, 0xf8), (10428, 0x00), (10428, 0x00), (10688, 0xf8), (10688, 0x00), (10688, 0x81), (10693, 0xf8), (10693, 0x00), (10693, 0x81), (10698, 0xf8), (10698, 0x00), (10698, 0xe6), (10753, 0xfa), (10753, 0x00), (10753, 0x00), (10763, 0xf8), (10763, 0x00), (10763, 0x00), (11033, 0xfa), (11033, 0x00), (11033, 0x00), (11043, 0xf8), (11043, 0x00), (11043, 0x00), (11313, 0xf8), (11313, 0x81), (11313, 0x00), (11318, 0xf8), (11318, 0x81), (11318, 0x00), (11323, 0xf8), (11323, 0x81), (11323, 0x00), (11328, 0xf8), (11328, 0xa4), (11328, 0x00), (11333, 0xfa), (11333, 0x00), (11333, 0x00), (11343, 0xf8), (11343, 0x00), (11343, 0x00), (13200, 0xf8), (13200, 0x80), (13200, 0x80), (13200, 0xf8), (13200, 0x80), (13200, 0x80), (13200, 0xf8), (13200, 0x80), (13200, 0x80), (13200, 0xf8), (13200, 0x80), (13200, 0x80), (13210, 0xf8), (13210, 0x14), (13210, 0x09), (13300, 0xf8), (13300, 0x00), (13300, 0x32), (13500, 0xfa), (13500, 0x00), (13500, 0x00), (13510, 0xf8), (13510, 0x00), (13510, 0x00), (14500, 0xf8), (14500, 0x73), (14500, 0x30), (14500, 0xf8), (14500, 0x73), (14500, 0x30), (14500, 0xf8), (14500, 0x73), (14500, 0x30), (14500, 0xf8), (14500, 0x73), (14500, 0x2f), (14600, 0xfa), (14600, 0x00), (14600, 0x00), (14610, 0xf8), (14610, 0x00), (14610, 0x00), (16000, 0x01), (16010, 0x81), (17400, 0xf8), (17400, 0xf4), (17400, 0x67), (17400, 0xf8), (17400, 0x00), (17400, 0x66), (17500, 0xfa), (17500, 0x00), (17500, 0x00), (17510, 0xf8), (17510, 0x00), (17510, 0x00), (19200, 0xf8), (19200, 0x80), (19200, 0x80), (19200, 0xf8), (19200, 0x80), (19200, 0x80), (19200, 0xf8), (19200, 0x80), (19200, 0x80), (19200, 0xf8), (19200, 0x80), (19200, 0x80), (19210, 0xf8), (19210, 0x14), (19210, 0x09), (19300, 0xf8), (19300, 0x00), (19300, 0x32), (19500, 0xfa), (19500, 0x00), (19500, 0x00), (19510, 0xf8), (19510, 0x00), (19510, 0x00), (20500, 0xf8), (20500, 0x73), (20500, 0x30), (20500, 0xf8), (20500, 0x73), (20500, 0x30), (20500, 0xf8), (20500, 0x73), (20500, 0x30), (20500, 0xf8), (20500, 0x73), (20500, 0x2f), (20600, 0xfa), (20600, 0x00), (20600, 0x00), (20610, 0xf8), (20610, 0x00), (20610, 0x00), (21400, 0xf8), (21400, 0x00), (21400, 0x11), (21500, 0xfa), (21500, 0x00), (21500, 0x00), (21510, 0xf8), (21510, 0x00), (21510, 0x00), (22400, 0xf8), (22400, 0x00), (22400, 0xef), (22500, 0xfa), (22500, 0x00), (22500, 0x00), (22510, 0xf8), (22510, 0x00), (22510, 0x00), (23300, 0xfa), (23300, 0x00), (23300, 0x00), (23310, 0xf8), (23310, 0x00), (23310, 0x00), (24300, 0xf8), (24300, 0xf4), (24300, 0x67), (24300, 0xf8), (24300, 0x00), (24300, 0x66), (24400, 0xfa), (24400, 0x00), (24400, 0x00), (24410, 0xf8), (24410, 0x00), (24410, 0x00), (26200, 0xf8), (26200, 0x80), (26200, 0x80), (26200, 0xf8), (26200, 0x80), (26200, 0x80), (26200, 0xf8), (26200, 0x80), (26200, 0x80), (26200, 0xf8), (26200, 0x80), (26200, 0x80), (26210, 0xf8), (26210, 0x14), (26210, 0x09), (26300, 0xf8), (26300, 0x00), (26300, 0x32), (26500, 0xfa), (26500, 0x00), (26500, 0x00), (26510, 0xf8), (26510, 0x00), (26510, 0x00), (27500, 0xf8), (27500, 0x28), (27500, 0x3a), (27600, 0xfa), (27600, 0x00), (27600, 0x00), (27603, 0xf8), (27603, 0x00), (27603, 0x00), (27606, 0xfa), (27606, 0x00), (27606, 0x00), (27609, 0xf8), (27609, 0x00), (27609, 0x00), (29000, 0xf8), (29000, 0x7f), (29000, 0x7f), (29000, 0xf8), (29000, 0x7f), (29000, 0x7f), (29000, 0xf8), (29000, 0x60), (29000, 0x2a), (29100, 0xfa), (29100, 0x00), (29100, 0x00), (29110, 0xf8), (29110, 0x00), (29110, 0x00)];
++    const S1: &[(u32, u8)] = &[(600, 0x1d), (608, 0x31), (616, 0xb1), (624, 0x9d), (902, 0x1e), (907, 0x9e), (912, 0x30), (917, 0xb0), (922, 0x2e), (927, 0xae), (1182, 0xf8), (1182, 0x80), (1182, 0x7f), (1185, 0xf8), (1185, 0x80), (1185, 0x7f), (1188, 0xf8), (1188, 0x80), (1188, 0x7f), (1191, 0xf8), (1191, 0x80), (1191, 0x7f), (1194, 0xf8), (1194, 0x80), (1194, 0x7f), (1197, 0xf8), (1197, 0x80), (1197, 0x7f), (1200, 0xf8), (1200, 0x53), (1200, 0x81), (1205, 0xf8), (1205, 0x00), (1205, 0x81), (1210, 0xf8), (1210, 0x00), (1210, 0x81), (1215, 0xf8), (1215, 0x00), (1215, 0xa7), (1220, 0xfa), (1220, 0x00), (1220, 0x00), (1230, 0xf8), (1230, 0x00), (1230, 0x00), (1500, 0xf8), (1500, 0x7f), (1500, 0x7f), (1505, 0xf8), (1505, 0x5a), (1505, 0x7f), (1510, 0xf8), (1510, 0x00), (1510, 0x25), (1515, 0xfa), (1515, 0x00), (1515, 0x00), (1525, 0xf8), (1525, 0x00), (1525, 0x00), (2595, 0x2d), (2605, 0xad), (2875, 0x1d), (2883, 0x10), (2891, 0x90), (2899, 0x9d)];
++    const S2: &[(u32, u8)] = &[(600, 0xf8), (600, 0x80), (600, 0x7f), (603, 0xf8), (603, 0x80), (603, 0x7f), (606, 0xf8), (606, 0x80), (606, 0x7f), (609, 0xf8), (609, 0x80), (609, 0x7f), (612, 0xf8), (612, 0x80), (612, 0x7f), (615, 0xf8), (615, 0x80), (615, 0x7f), (618, 0xf8), (618, 0x7f), (618, 0x81), (623, 0xf8), (623, 0x44), (623, 0x81), (628, 0xf8), (628, 0x00), (628, 0x81), (633, 0xf8), (633, 0x00), (633, 0xc6), (688, 0xfa), (688, 0x00), (688, 0x00), (696, 0xf8), (696, 0x00), (696, 0x00), (708, 0xfa), (708, 0x00), (708, 0x00), (716, 0xf8), (716, 0x00), (716, 0x00), (998, 0xf8), (998, 0x7f), (998, 0x71), (1003, 0xf8), (1003, 0x7f), (1003, 0x00), (1008, 0xf8), (1008, 0x01), (1008, 0x00), (1113, 0xfa), (1113, 0x00), (1113, 0x00), (1173, 0xfa), (1173, 0xf4), (1173, 0xf4), (1193, 0xfa), (1193, 0xf4), (1193, 0xf4), (1213, 0xfa), (1213, 0xf4), (1213, 0xf4), (1233, 0xfa), (1233, 0xf4), (1233, 0xf4), (1253, 0xfa), (1253, 0xf4), (1253, 0xf4), (1273, 0xfa), (1273, 0xf4), (1273, 0xf4), (1293, 0xfa), (1293, 0xf4), (1293, 0xf6), (1313, 0xfa), (1313, 0xf4), (1313, 0x00), (1333, 0xfa), (1333, 0xf4), (1333, 0x00), (1353, 0xfa), (1353, 0xf4), (1353, 0x00), (1373, 0xfa), (1373, 0xf4), (1373, 0x00), (1393, 0xfa), (1393, 0xf4), (1393, 0x00), (1413, 0xfa), (1413, 0xf4), (1413, 0x00), (1433, 0xfa), (1433, 0xf4), (1433, 0x00), (1453, 0xfa), (1453, 0xf4), (1453, 0x00), (1473, 0xfa), (1473, 0xf4), (1473, 0x00), (1493, 0xfa), (1493, 0xf8), (1493, 0x00), (1583, 0xf8), (1583, 0x00), (1583, 0x00), (1843, 0xf8), (1843, 0x81), (1843, 0xc2), (1848, 0xf8), (1848, 0x9e), (1848, 0x00), (1853, 0xfa), (1853, 0x00), (1853, 0x00), (1863, 0xf8), (1863, 0x00), (1863, 0x00), (2133, 0xf8), (2133, 0x28), (2133, 0x32), (2138, 0xfa), (2138, 0x00), (2138, 0x00), (2148, 0xf8), (2148, 0x00), (2148, 0x00), (2568, 0xf8), (2568, 0x7f), (2568, 0x7f), (2573, 0xf8), (2573, 0x7f), (2573, 0x40), (2578, 0xf8), (2578, 0x7f), (2578, 0x00), (2583, 0xf8), (2583, 0x22), (2583, 0x00), (2638, 0xfa), (2638, 0x00), (2638, 0x00), (2648, 0xf8), (2648, 0x00), (2648, 0x00), (2918, 0x01), (2928, 0x81), (3198, 0xf8), (3198, 0xf4), (3198, 0x7f), (3203, 0xf8), (3203, 0x00), (3203, 0x4e), (3258, 0xfa), (3258, 0x00), (3258, 0x00), (3268, 0xf8), (3268, 0x00), (3268, 0x00)];
++    static ARMS: [Arm; 3] = [
++        Arm { trig: "desktop", kind: 0, name: *b"        ", script: S0 },
++        Arm { trig: "up:QED", kind: 2, name: *b"QED     ", script: S1 },
++        Arm { trig: "up:DESKTOP", kind: 2, name: *b"DESKTOP ", script: S2 },
++    ];
++    /// Per arm: 0 = waiting, 1 = event seen (arms at the next tick), 2 = armed.
++    static STATE: [AtomicU32; 3] = [const { AtomicU32::new(0) }; 3];
++    static T0: [AtomicU32; 3] = [const { AtomicU32::new(0) }; 3];
++    static NEXT: [AtomicUsize; 3] = [const { AtomicUsize::new(0) }; 3];
++
++    /// The shell child the injector last saw (`usize::MAX` = none), its name.
++    static SEEN_SLOT: AtomicUsize = AtomicUsize::new(usize::MAX);
++    static mut SEEN_NAME: [u8; 8] = [b' '; 8];
++    /// `up:` -- the child's `appl_init` seen, its next `evnt_multi` is "up".
++    static CHILD_INIT: AtomicBool = AtomicBool::new(false);
++
++    /// `p_nameit` of `D.s_cmd`'s base name (aes/gempd.c:77-86).
++    fn child_name() -> [u8; 8] {
++        let mut cmd = [0u8; 128];
++        let len = tos_api::aes::shell::s_cmd(&mut cmd).min(cmd.len());
++        let cmd = &cmd[..len];
++        let start = cmd.iter().rposition(|&c| c == b'\\' || c == b':').map_or(0, |i| i + 1);
++        let mut out = [b' '; 8];
++        for (o, &c) in out.iter_mut().zip(cmd[start..].iter().take_while(|&&c| c != 0 && c != b'.')) {
++            *o = c;
++        }
++        out
++    }
++
++    /// Track the launcher's published child; a new one fires `launch:` arms.
++    fn track_child() -> Option<usize> {
++        let cur = crate::launch::shell_child_slot();
++        let seen = SEEN_SLOT.load(Ordering::Relaxed);
++        match cur {
++            None => {
++                if seen != usize::MAX {
++                    SEEN_SLOT.store(usize::MAX, Ordering::Relaxed);
++                    CHILD_INIT.store(false, Ordering::Relaxed);
++                }
++            }
++            Some(slot) if slot != seen => {
++                launched(slot);
++            }
++            Some(_) => {}
++        }
++        cur
++    }
++
++    /// The launcher published a shell child in `slot` -- the launch event
++    /// (hook in launch.rs right after the publication, T16; also the poll's
++    /// fallback in `track_child`). A child reusing the previous one's slot is
++    /// a new child all the same.
++    pub fn launched(slot: usize) {
++        SEEN_SLOT.store(slot, Ordering::Relaxed);
++        CHILD_INIT.store(false, Ordering::Relaxed);
++        let name = child_name();
++        // SAFETY: single CPU; written only here, read by `event`.
++        unsafe { SEEN_NAME = name };
++        event(1, &name);
++    }
++
++    /// An identity event of `kind` for the program `name`: every waiting arm
++    /// of that kind (and name) is armed at the next tick.
++    fn event(kind: u8, name: &[u8; 8]) {
++        for (i, a) in ARMS.iter().enumerate() {
++            if a.kind == kind && (kind == 0 || &a.name == name) {
++                let _ = STATE[i].compare_exchange(0, 1, Ordering::AcqRel, Ordering::Relaxed);
++            }
++        }
++    }
++
++    /// The kernel's "[desk] desktop up" (shell_loop.rs, at the line).
++    pub fn desktop_up() {
++        event(0, &[b' '; 8]);
++    }
++
++    /// Every GEM trap (top of `observe_desktop_gem_call`): the shell child's
++    /// first `evnt_multi` after its `appl_init` fires the `up:` arms. Reads
++    /// `control[0]` the way that function does.
++    pub fn gem_call(args: &tos_api::trap::TrapArgs) {
++        use tos_api::bdos::process::{current_abi, Abi};
++        let Some(child) = track_child() else { return };
++        if !args.space.is_user()
++            || tos_api::bdos::process::sched::running_slot() != child
++            || args.regs[0] != 200
++            || args.regs[1] == 0
++        {
++            return;
++        }
++        let control = match current_abi() {
++            Abi::Lp64 => args.space.get_u64(args.regs[1]),
++            Abi::Ilp32 => args.space.get_u32(args.regs[1]).map(u64::from),
++        };
++        let Ok(control) = control else { return };
++        if control == 0 {
++            return;
++        }
++        let Ok(op) = args.space.get_u16(control) else { return };
++        match op {
++            10 => CHILD_INIT.store(true, Ordering::Relaxed),
++            25 if CHILD_INIT.swap(false, Ordering::Relaxed) => {
++                // SAFETY: single CPU; see `launched`.
++                let name = unsafe { SEEN_NAME };
++                event(2, &name);
++            }
++            _ => {}
++        }
++    }
++
++    /// One injector tick (from `pump_devices`).
++    pub fn step() {
++        track_child();
++        let now = tos_api::bios::tick::hz_200();
++        for (i, a) in ARMS.iter().enumerate() {
++            match STATE[i].load(Ordering::Acquire) {
++                1 => {
++                    T0[i].store(now.max(1), Ordering::Relaxed);
++                    STATE[i].store(2, Ordering::Release);
++                    let slot = crate::launch::shell_child_slot();
++                    // SAFETY: single CPU; see `launched`.
++                    let name = unsafe { SEEN_NAME };
++                    crate::kprintln!(
++                        "[inj] {} armed at hz_200 {} (slot {:?} name {})",
++                        a.trig,
++                        now,
++                        slot,
++                        core::str::from_utf8(&name).unwrap_or("?").trim_end()
++                    );
++                }
++                2 => {
++                    let t0 = T0[i].load(Ordering::Relaxed);
++                    loop {
++                        let k = NEXT[i].load(Ordering::Relaxed);
++                        let Some(&(at, b)) = a.script.get(k) else { break };
++                        if now.wrapping_sub(t0) < at {
++                            break;
++                        }
++                        crate::kprintln!(
++                            "[inj] {} feed {:#04x} at hz_200 {} (+{})",
++                            a.trig,
++                            b,
++                            now,
++                            now.wrapping_sub(t0)
++                        );
++                        crate::ikbd::feed(b);
++                        NEXT[i].store(k + 1, Ordering::Relaxed);
++                    }
++                }
++                _ => {}
++            }
++        }
++    }
+ }
++// INJ-ARM-TEMP END
+--- a/tos-api/src/aes/input.rs
++++ b/tos-api/src/aes/input.rs
+@@ -455,12 +455,14 @@
+ /// click as `MU_BUTTON` (`TASK/H02-STATUS-DONE.MD` §4).
+ fn bchange(new: u8, clicks: i16, x: i16, y: i16) {
+     let button = BUTTON.load(Ordering::Relaxed);
++    crate::dlog!("bchange new={} old={} ctmown={} app={} pd={}", new, button, GL_CTMOWN.load(Ordering::Relaxed), GL_MOWNER_APP.load(Ordering::Relaxed), GL_MOWNER_PD.load(Ordering::Relaxed));
+     // `if (!gl_ctmown && (new == MB_DOWN) && (button == 0)) gl_mowner = chkown();`
+     // (aes/geminput.c:334-335)
+     if !GL_CTMOWN.load(Ordering::Relaxed) && new == MB_DOWN && button == 0 {
+         // chkown: +1 → gl_cowner, 0 → D.w_win[0].w_owner, −1 → ctl_pd
+         // (aes/geminput.c:310-322).
+         let val = super::window::chk_ctrl(x, y);
++        crate::dlog!("bchange chkown val={} at ({},{})", val, x, y);
+         GL_MOWNER_APP.store(val >= 0, Ordering::Relaxed);
+         match val {
+             1 => GL_MOWNER_PD.store(GL_COWNER_PD.load(Ordering::Relaxed), Ordering::Relaxed),
+@@ -610,6 +612,7 @@
+         && !super::menu::active().is_null()
+         && super::menu::in_ctwait(rx, ry)
+     {
++        crate::dlog!("mchange -> ctl at ({},{})", rx, ry);
+         GL_MOWNER_APP.store(false, Ordering::Relaxed);
+     }
+ 
+@@ -688,6 +691,7 @@
+ /// only the flag does.
+ fn set_mown(owner: Mown) {
+     let button = BUTTON.load(Ordering::Relaxed);
++    crate::dlog!("set_mown {:?} button={}", owner.to_raw() as isize, button);
+     if button == 0 {
+         match owner {
+             Mown::Ctl => GL_MOWNER_APP.store(false, Ordering::Relaxed),
+--- a/tos-api/src/aes/event.rs
++++ b/tos-api/src/aes/event.rs
+@@ -181,7 +181,9 @@
+     if !super::window::ctl_begin() {
+         return false;
+     }
+-    match super::menu::track(tree, backend) {
++    let tr = super::menu::track(tree, backend);
++    crate::dlog!("track -> {:?} button={}", tr, super::input::button());
++    match tr {
+         Some((title, item)) => {
+             let mut msg = [0i16; pd::MSG_WORDS];
+             // ap_sendmsg: msg[1] = rlr->p_pid — the Screen Manager's, 1
+@@ -804,6 +806,7 @@
+             }
+ 
+             if fired != 0 {
++                crate::dlog!("evnt_multi idx={} fired={:#x} pass={} arm_own={} arm_mb={} own_now={} btn={} lock={}", idx, fired, pass, arm_own, arm_mb, super::input::own_mouse(), super::input::button(), super::window::ctl_may_run());
+                 break;
+             }
+             // Not fired: sleep on the **union** of the armed events (A112;
+--- a/tos-api/src/aes/window.rs
++++ b/tos-api/src/aes/window.rs
+@@ -4204,6 +4204,7 @@
+     // `fm_own(mode - 2)` (non-zero → begin the mouse-control transfer). The two
+     // guard arms reproduce that for out-of-range modes.
+     let mode = pb.intin(0);
++    crate::dlog!("wind_update mode={} who={} lock={} owner={} mcnt={} own={} btn={}", mode, super::appl::current_identity(), UPDATE_LOCK.load(Ordering::Relaxed), UPDATE_OWNER.load(Ordering::Relaxed) as isize, MCTRL_CNT.load(Ordering::Relaxed), super::input::own_mouse(), super::input::button());
+     let takes = if mode < 2 { mode != 0 } else { mode - 2 != 0 };
+     if takes {
+         if let Some(sw) = update_block() {
+@@ -4537,6 +4538,7 @@
+ /// Only a hold that is still the Control Manager's is released: an AES
+ /// restart or `wind_new` may have taken it away in between.
+ pub(super) fn ctl_release() {
++    crate::dlog!("ctl_release owner={} wait_len={}", UPDATE_OWNER.load(Ordering::Relaxed) as isize, UPDATE_WAIT_LEN.load(Ordering::Relaxed));
+     if UPDATE_OWNER.load(Ordering::Relaxed) == CTL_PD {
+         unsync(CTL_PD);
+     }
+@@ -5669,6 +5671,7 @@
+     // ([`super::input::ct_msgup_busy`] → [`ctl_release`]). A press already
+     // released ends that wait at once — the plain `END_UPDATE`.
+     let held = hctl_window() && super::input::button() & 0x01 != 0;
++    crate::dlog!("intercept held={}", held);
+     if held {
+         super::input::ct_msgup_hold();
+     }

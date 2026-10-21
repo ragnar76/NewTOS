@@ -1,0 +1,68 @@
+== C:/
+ Volume in drive : is NEWTOS     
+ Volume Serial Number is 7922-1515
+Directory for ::/
+
+README   TXT        64 2026-10-21  13:43 
+HELLO    TXT        32 2026-10-21  13:43 
+CONFIG   TXT        20 2026-10-21  13:43 
+NEWDESK  INF        21 2026-10-21  13:43 
+KEYBOARD KBD        28 2026-10-21  13:43 
+KERNEL8  IMG      4096 2026-10-21  13:43 
+LYNXBOOT IMG       512 2026-10-21  13:43 
+DATA     BIN      4096 2026-10-21  13:43 
+ACC          <DIR>     2026-10-21  13:43 
+GEMSYS       <DIR>     2026-10-21  13:43 
+SUB          <DIR>     2026-10-21  13:43 
+PROOF    TXT        19 2026-10-21  13:43 
+AUTO         <DIR>     2026-10-21  13:43 
+HELLO    NCP      4388 2026-10-21  13:43 
+PHYSBASE NCP      6616 2026-10-21  13:43 
+BIG      NCP     16336 2026-10-21  13:43 
+HELLO2   NCP      5968 2026-10-21  13:43 
+CMDLINE  NTP      6752 2026-10-21  13:43 
+CMDLINE  NCP      6752 2026-10-21  13:43 
+SCRFLIP  NCP      7224 2026-10-21  13:43 
+ARGVTEST NAP     48688 2026-10-21  13:43 
+CTRLCPAR NCP      6584 2026-10-21  13:43 
+DTACHILD NCP      6104 2026-10-21  13:43 
+PTERMCH  NCP      6328 2026-10-21  13:43 
+SYSACC2  NAC     38688 2026-10-21  13:43 
+SYSINFO  NCP     10240 2026-10-21  13:43 
+FPPEXEC  NCP     10128 2026-10-21  13:43 
+LIBTEST  NCP    145168 2026-10-21  13:43 
+CLOCKTST NCP    102080 2026-10-21  13:43 
+SETJMPT  NCP     53208 2026-10-21  13:43 
+MATHTST  NCP    110488 2026-10-21  13:43 
+LDG          <DIR>     2026-10-21  13:43 
+LDGTEST  NCP    122912 2026-10-21  13:43 
+ZVIEW        <DIR>     2026-10-21  13:43 
+COREMARK     <DIR>     2026-10-21  13:43 
+DUMPVDI  NAP    156048 2026-10-21  13:43 
+VDI      TSV      6636 2026-10-21  13:43 
+VDIDRAW  NAP    164792 2026-10-21  13:43 
+APPS         <DIR>     2026-10-21  13:43  Apps
+TERADESK INF      3058 2026-10-21  13:43 
+       40 files           1 054 074 bytes
+                         61 163 520 bytes free
+
+== C:/ACC
+ Volume in drive : is NEWTOS     
+ Volume Serial Number is 7922-1515
+Directory for ::/ACC
+
+SYSACC   NAC     38688 2026-10-21  13:43 
+        1 file               38 688 bytes
+                         61 163 520 bytes free
+
+== C:/APPS
+ Volume in drive : is NEWTOS     
+ Volume Serial Number is 7922-1515
+Directory for ::/APPS
+
+QED          <DIR>     2026-10-21  13:43 
+TERADESK     <DIR>     2026-10-21  13:43 
+PRESENT      <DIR>     2026-10-21  13:43 
+        3 files                   0 bytes
+                         61 163 520 bytes free
+

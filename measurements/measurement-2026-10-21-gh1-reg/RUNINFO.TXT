@@ -1,0 +1,54 @@
+measurement-2026-10-21-gh1-reg -- Tester: regression series for the uncommitted GH1 fix (F1 wind_update mutex, F2 post_button to the mouse owner,
+F3 NEWDESK BEG/END_UPDATE bracket) against HEAD f1c225fc. Developer's own run: measurements/measurement-2026-10-21-gh1/ (not touched).
+Nothing in the shared working tree was edited, committed, stashed or checked out. All kernels were built in scratch trees
+(session scratchpad .../scratchpad/ghreg/trees/*: head = git archive f1c225fc, wt = tracked+untracked files of the working tree; injector
+armed only in scratch copies; temp selftest wiring only in scratch copies headT/wtT). No hardware, no card writes.
+
+RESULT IN ONE LINE: one REGRESSION found (QED hangs after "open a menu, click away"), GH1 itself fixed, everything else pixel-identical.
+
+WHAT / HOW
+ Machine: QEMU -M raspi4b -append "serial=on [memprot=...]" headless, release rpi4 kernels (SOURCE_DATE_EPOCH fixed), one QEMU at a time,
+   per-run APFS clone (cp -c) of one base card per scenario, clone deleted after each run, QMP screendumps keyed to injector feed lines
+   (method/run.sh, mdrive.py, steps.sh, gen.py, combine.py; 0.5 s after the mark). Pixel compare: method/compare.py (head-X vs wt-X).
+ Kernels (checks/binaries.sha256): kernel8-headA / kernel8-wtA = HEAD / working tree with four injector arms
+   (desktop=nd.script, up:DESKTOP=td.script, up:QED=qed.script, up:HYP_VIEW=hv.script; method/build-armed.sh).
+ Cards (checks/cards.sha256; MBR+FAT16 64 MiB, method/mkcard.sh): gh1 (NEWDESK.INF C:\ACC\ window open, C:\ACC\SYSACC.NAC), td (TeraDesk #Z + QED
+   + SYSACC), qed (QED #Z), hv (HypView #Z + README.TXT + HYP_VIEW.CFG), std (tools/make-sd-image.sh, 2 accessories), api (AUTO\APITEST.NCP).
+ Scenarios (marks in method/*.spec, nd.script.marks):
+   nd  NEWDESK on gh1 card: View->icons, Desk->Desktop info (dialog) + Return, closer of C:\ACC\, double-click ACC, Desk->System Info (SYSACC) + Cancel,
+       View->text, title-bar drag, sizer drag, fuller x2, closer, then the GH1 cases: popup + Esc + Cancel, popup pick On/Off + Cancel, double-click on dialog text.
+   td  TeraDesk: double-click drive icon (window), title drag, Desk menu, Desk->System Info (SYSACC), popup, Esc, Cancel.
+   qed QED: Ctrl-N, type, Datei menu, click away, Ctrl-Q (alert), Abbruch, Ctrl-Q, Verwerfen.
+   hv  HypView: README loaded, Ctrl-O file selector, drive click, Cancel, scroll arrow x3, close box.
+ Memory-protection modes: on (default), off, strict, verify -- series.sh <side> <mode>; checks/series-*.txt, checks/compare-*.txt.
+
+RESULTS
+ 1 Host tests: cargo test --no-fail-fast -p tos-api -p tos-types -p xtask in the scratch wt tree: 154 binaries, 1502 passed 0 failed 1 ignored
+   (checks/cargo-test-wt.log); HEAD tos-api: 150 binaries 1391/0/1 (checks/cargo-test-head-tos-api.log). Difference = the 9 new cases + xtask/tos-types.
+   (The xtask rsc tests need references/ and sdk/apps/teradesk/cicons.rsc, which a scratch tree lacks: symlinked/copied, then green.)
+ 2 Build + clippy both boards, HEAD vs working tree (checks/lint-summary.txt): cargo xtask build exit 0 both boards, 160 warnings each side;
+   clippy kernel qemu-virt+rpi4: tos-api 76 / kernel 125 on both sides, warning kinds identical; clippy newdesk 0; clippy tos-api host 76 = 76.
+   Not claimed: aes-trace build does not link on either side (kernel image overruns STRAM_OS_RESERVE) -- pre-existing, same on HEAD.
+ 3 Selftests (none is wired into a boot path; temp wiring only in scratch copies, method/selftest-wire.py, qemu-virt release):
+   p02, p04, p07-time, bios, xbios-audit, xbios, cookie, gemtrap, p13-aes, objc window/two-windows/p6-msgqueue, then boot to "[desk] desktop up (0 drives)":
+   HEAD and working tree serial logs identical except kernel size/addresses (serial/virt-selftest-*.log), 0 EXC/PANIC, screendumps identical 0 px.
+   Existing failure on BOTH sides: "[selftest p04] EC5 Mshrink grow -> EGSBF FAIL" (10 passed 1 failed). p13 Event-Manager test (run_phase13_event_test)
+   blocks in evnt_mouse on HEAD AND working tree (waits for input) -> not run to completion, left out of the wiring.
+ 4 raspi4b desktop series (on/off/strict/verify; 47 shots per mode and side): 37 identical, 10 differ in every mode:
+   - 6 nd shots (p-popup, p-esc, k-popup, k-picked, k-popup2, k-picked2; 33.8k-35.2k px, bbox x80..562 y149..442) = the GH1 fix: HEAD paints the C:\ACC\ frame over
+     the dialog, working tree keeps the dialog intact (looked at in all six).
+   - 4 qed shots (q-alert 44612 px, q-alert2 87, q-cancelled 217, q-menu-away 78 px) = REGRESSION, see 5.
+   All other shots 0 px (NEWDESK menus/dialogs/window drag/size/full/close/double-click/accessory open+close; TeraDesk window/title drag/Desk menu/SYSACC popup;
+   HypView load/file selector/scroll/close box; QED new/type/menu). 0 EXC/PANIC in all 8x4 serial logs; fsck_msdos -n of every run clone: rc 0.
+   Plain boot of the make-sd-image card (2 accessories): desktop identical 0 px (std-head-desktop / std-wt-desktop); nd series on that card: 26/26 identical.
+   APITEST (C:\AUTO\APITEST.NCP): HEAD and working tree: 105 pass / 0 fail / 9 skip both, logs identical except addresses.
+ 5 REGRESSION (checks/hang-diagnosis.txt): QED hangs permanently when a menu drop-down is open and the click lands in the document window.
+   Repro: qed card, up:QED script qedd.script (kernel8-wtD.img): Ctrl-N, "abc", click Datei (83,9), click (300,300). HEAD alive, working tree: busy bee, keys/timer dead,
+   guest PC spinning in tos_api::aes::event::evnt_multi (X30 samples), UPDATE_LOCK=1 UPDATE_OWNER=0 (QED) MCTRL_CNT=1. Scratch bisection: F2 undone -> still hangs;
+   window::ctl_may_run() forced true -> hang gone (0 px vs HEAD). Plain click without menu, menu+Esc, NEWDESK and TeraDesk click-away: no hang (0 px).
+   Reproduced 3x in series (on/off/strict/verify) + 2 diag builds, deterministic.
+ Not done / open: real Pi 4 (hardware), QED/TeraDesk with a real mouse, HypView .HYP documents, APITEST under injector keys, memprot modes for the diag builds,
+   qemu-virt interactive input, accessory-popup case on a 1920x1080 card, native-NCP console apps other than APITEST.
+
+FILES: method/ (scripts, specs, injector scripts), screendumps/ (series), screendumps-rerun/ (qed rerun), screendumps-diag/ (hang diagnosis + narrowing),
+ serial/ (logs, hangprobe, SVCSEQ.LOG), checks/ (series-*, compare-*, cargo-test, lint, sha256 manifests). Binaries/cards/trees are not kept (gitignored scratch), sha256 in checks/.

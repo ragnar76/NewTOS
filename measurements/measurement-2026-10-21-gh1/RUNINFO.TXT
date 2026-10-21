@@ -1,0 +1,63 @@
+measurement-2026-10-21-gh1 -- Developer: GH1 fix F1+F2+F3 (TASK/GH1.md, user approval 2026-10-21; F4 not in scope), before/after evidence.
+HEAD f1c225fc (main); the change is UNCOMMITTED in the working tree (nothing committed/stashed/checked out by this run).
+
+WHAT CHANGED (product, uncommitted)
+  F1  wind_update is a real mutex as EmuTOS tak_flag/amutex/unsync (aes/gemflag.c:68-130, aes/gemwmlib.c:1778-1797): a BEG_UPDATE
+      (or the one fm_own(TRUE) takes: BEG_MCTRL, form_do, form_alert, form_error with an alert, menu_popup) by another AESPD parks
+      on the wait line (sched WAIT_MUTEX) and gets the lock handed over FIFO on the holder's last END_UPDATE. The inline Control
+      Manager takes the lock as ctl_pd before a bar track / frame click and keeps it across ct_msgup's wait for the selecting press
+      to be released (aes/gemctrl.c:100-101,463,484); while another process holds the lock the inline Control Manager does not run
+      (no track, no frame click, no w_setactive). all_run's "wait line" (geminit.c:564-565) reproduced.
+      tos-api/src/aes/window.rs, event.rs, input.rs, mod.rs, acc.rs, tos-api/src/bdos/process/sched.rs.
+  F2  post_button completes only the mouse owner's parked button waits (post_button(gl_mowner,...), aes/geminput.c:344,463-483).
+      tos-api/src/aes/input.rs.
+  F3  NEWDESK brackets its event handling with wind_update(BEG_UPDATE)/END_UPDATE (desk/deskmain.c:2094,2121).
+      programs/desktop/src/main.rs.
+  Specs corrected first: docs/api/aes/window-graphics.md (wind_update 107, new section "The refusal parks the taker"),
+  docs/api/aes/event.md (post_button mapping), docs/api/aes/accessories.md (all_run wait line, two places).
+  New host test: tos-api/tests/aes_gh1_update_mutex.rs (9 cases).
+
+HOW
+  Host macOS, QEMU -M raspi4b -append serial=on, headless, one QEMU at a time, per-run APFS clone (cp -c) of one base card
+  (method/run.py, unchanged copy of measurement-2026-10-19-gh1/method/run.py). Card = the 2026-10-19 GH1 card rebuilt by
+  method/card.sh + mkcard.sh: 64 MiB MBR+FAT16, NEWDESK.INF = method/gh1.inf (C:\ACC\ window open), C:\ACC\SYSACC.NAC built from
+  sdk/examples/sysacc.c with sdk/build.sh (38688 bytes, sha256 identical to the 2026-10-19 run).
+  Kernels: fresh release rpi4 builds in scratch trees, injector armed on "desktop" (method/build-kernel.sh):
+    before-*  = git archive HEAD f1c225fc
+    after-*   = the working tree (git ls-files -co --exclude-standard) with F1-F3
+  Injector scripts: gh1.script / gh1-pick.script / gh1-dbl.script (copies of the 2026-10-19 run), reg.script (new regression walk).
+  Screendumps N s after the injector feed line "(+tick)"; pixel comparison method/pixdiff.py.
+
+RESULTS
+ 1 GH1 reproduction (gh1.script): before = the defect, after = fixed.
+     screendumps/before-plain-popup.png: C:\ACC\ window frame (title, info line, scroll bars, sizer) drawn over the System
+       Information dialog -- pixel-identical to measurement-2026-10-19-gh1/screendumps/head-plain-popup.png (0 px differ).
+     screendumps/after-plain-popup.png, after-plain-esc.png: dialog intact, no window frame over it.
+     before vs after: desk 0 px, open 0 px, popup 27578 px (x16..401 y64..321 = exactly the window frame), esc 27359 px (same
+       area), closed 0 px.
+     after-pick-* (pick "On", reopen, pick): dialog intact in every shot, closed state = desktop. after-dbl-* (double-click on
+       static dialog text over the window's row): dialog intact, no desktop action (the script's Cancel coordinate misses, as in
+       the 2026-10-19 run -- the dialog stays open by design of that script).
+ 2 Regression walk (reg.script, before-reg vs after-reg): all 8 shots pixel-identical (0 px differ each) and each shows the
+     intended state: View->Show as icons, Desk->Desktop info... dialog open, closed by Return, closer of C:\ACC\ -> C:\ (ACC, SUB,
+     NEWDESK.INF icons), double-click on ACC -> C:\ACC\ reopened, Desk->System Info open, Cancel closed it, View->Show as text.
+     => desktop menu clicks, a NEWDESK dialog inside its own BEG/END_UPDATE bracket, a Control-Manager frame click, double-click
+     open, accessory open/close: unchanged.
+ 3 Deadlock check: no hang in any run -- the accessory holds the lock (its BEG_UPDATE + form_do) while the desktop waits, the
+     menu/popup/Cancel sequence completes, the desktop is responsive afterwards (reg steps 5-6). Host test cases 1/3/4/5 cover
+     the parked waiter, FIFO order, BEG_MCTRL waiting, and a holder that dies while another waits.
+ 4 serial/: 0 [EXC]/PANIC in all logs.
+ 5 qemu-virt smoke (release kernel from the working tree, no card): boots to "[desk] desktop up (0 drives)",
+     screendumps/virt-after-desktop.png = desktop drawn, serial/virt-after.log. Smoke only (no selftest run).
+ 6 Host tests and lint: checks/host-tests.txt, checks/lint-head.txt (HEAD tree), checks/lint-gh1.txt (working tree).
+     tos-api host tests: HEAD 1391/0/1, with the change 1400/0/1 (= HEAD + the 9 new cases); tos-api+tos-types+xtask with the
+     change 1502/0/1 (154 binaries); the new file run against HEAD f1c225fc: 0/9 (all fail -- they detect the defect).
+     cargo xtask build both boards: exit 0, 160 compiler warnings each, same as HEAD. clippy kernel (rpi4, qemu-virt): tos-api 76 /
+     kernel 125 warnings, same as HEAD, identical warning kinds and locations; clippy newdesk both boards: 0; new test file: 0.
+
+NOT RUN / OPEN
+  Real Pi 4 (1920x1080 card): not touched (no hardware actions); QED launch: not on this card (Tester); selftests: not run here.
+  Named open deviations (spec window-graphics.md "Not reproduced"): wm_open/wm_close/wm_set/w_redraw_desktop, graf_rubberbox/
+  graf_dragbox, ap_exit and fsel's fm_do do not take the lock; an in-kernel taker that cannot yield (shell loop fm_error) nests
+  instead of parking. ev_multi's quick check still asks "an application owns the mouse" (input::own_mouse), not "the caller".
+Binaries (kernels, card, SYSACC.NAC) not kept: checks/binaries.sha256. Scratch trees/cards deleted after the run.

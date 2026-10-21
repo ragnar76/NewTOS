@@ -1,0 +1,144 @@
+off-hv-h-closed.png                                0 px
+off-hv-h-fsel-cancel.png                           0 px
+off-hv-h-fsel-drive.png                            0 px
+off-hv-h-fsel.png                                  0 px
+off-hv-h-loaded.png                                0 px
+off-hv-h-scroll.png                                0 px
+off-nd-d-after.png                                 0 px
+off-nd-d-dbl.png                                   0 px
+off-nd-d-open.png                                  0 px
+off-nd-k-closed.png                                0 px
+off-nd-k-open.png                                  0 px
+off-nd-k-picked.png                            35169 px  bbox x80..562 y149..442
+off-nd-k-picked2.png                           33776 px  bbox x80..562 y149..442
+off-nd-k-popup.png                             35235 px  bbox x80..562 y149..442
+off-nd-k-popup2.png                            34007 px  bbox x80..562 y149..442
+off-nd-p-closed.png                                0 px
+off-nd-p-esc.png                               33794 px  bbox x80..562 y149..442
+off-nd-p-open.png                                  0 px
+off-nd-p-popup.png                             35235 px  bbox x80..562 y149..442
+off-nd-r1-icons.png                                0 px
+off-nd-r2-deskinfo.png                             0 px
+off-nd-r2b-deskinfo-closed.png                     0 px
+off-nd-r3-closer.png                               0 px
+off-nd-r4-dbl.png                                  0 px
+off-nd-r5-accopen.png                              0 px
+off-nd-r5b-acc-closed.png                          0 px
+off-nd-r6-text.png                                 0 px
+off-nd-w-closed.png                                0 px
+off-nd-w-full.png                                  0 px
+off-nd-w-moved.png                                 0 px
+off-nd-w-restored.png                              0 px
+off-nd-w-sized.png                                 0 px
+off-qed-q-alert.png                            44612 px  bbox x49..605 y1..319
+off-qed-q-alert2.png                              87 px  bbox x49..174 y46..76
+off-qed-q-cancelled.png                          217 px  bbox x48..435 y46..306
+off-qed-q-menu-away.png                           78 px  bbox x301..315 y300..315
+off-qed-q-menu.png                                 0 px
+off-qed-q-new.png                                  0 px
+off-qed-q-quit.png                                 0 px
+off-qed-q-typed.png                                0 px
+off-td-t-deskmenu.png                              0 px
+off-td-t-esc.png                                   0 px
+off-td-t-moved.png                                 0 px
+off-td-t-open.png                                  0 px
+off-td-t-popup.png                                 0 px
+off-td-t-sysclosed.png                             0 px
+off-td-t-sysinfo.png                               0 px
+== mode off: 47 compared, 37 identical, 10 differ, 0 missing
+strict-hv-h-closed.png                             0 px
+strict-hv-h-fsel-cancel.png                        0 px
+strict-hv-h-fsel-drive.png                         0 px
+strict-hv-h-fsel.png                               0 px
+strict-hv-h-loaded.png                             0 px
+strict-hv-h-scroll.png                             0 px
+strict-nd-d-after.png                              0 px
+strict-nd-d-dbl.png                                0 px
+strict-nd-d-open.png                               0 px
+strict-nd-k-closed.png                             0 px
+strict-nd-k-open.png                               0 px
+strict-nd-k-picked.png                         34635 px  bbox x80..562 y149..442
+strict-nd-k-picked2.png                        33777 px  bbox x80..562 y149..442
+strict-nd-k-popup.png                          35236 px  bbox x80..562 y149..442
+strict-nd-k-popup2.png                         34008 px  bbox x80..562 y149..442
+strict-nd-p-closed.png                             0 px
+strict-nd-p-esc.png                            33795 px  bbox x80..562 y149..442
+strict-nd-p-open.png                               0 px
+strict-nd-p-popup.png                          35236 px  bbox x80..562 y149..442
+strict-nd-r1-icons.png                             0 px
+strict-nd-r2-deskinfo.png                          0 px
+strict-nd-r2b-deskinfo-closed.png                  0 px
+strict-nd-r3-closer.png                            0 px
+strict-nd-r4-dbl.png                               0 px
+strict-nd-r5-accopen.png                           0 px
+strict-nd-r5b-acc-closed.png                       0 px
+strict-nd-r6-text.png                              0 px
+strict-nd-w-closed.png                             0 px
+strict-nd-w-full.png                               0 px
+strict-nd-w-moved.png                              0 px
+strict-nd-w-restored.png                           0 px
+strict-nd-w-sized.png                              0 px
+strict-qed-q-alert.png                         44612 px  bbox x49..605 y1..319
+strict-qed-q-alert2.png                           87 px  bbox x49..174 y46..76
+strict-qed-q-cancelled.png                       217 px  bbox x48..435 y46..306
+strict-qed-q-menu-away.png                        78 px  bbox x301..315 y300..315
+strict-qed-q-menu.png                              0 px
+strict-qed-q-new.png                               0 px
+strict-qed-q-quit.png                              0 px
+strict-qed-q-typed.png                             0 px
+strict-td-t-deskmenu.png                           0 px
+strict-td-t-esc.png                                0 px
+strict-td-t-moved.png                              0 px
+strict-td-t-open.png                               0 px
+strict-td-t-popup.png                              0 px
+strict-td-t-sysclosed.png                          0 px
+strict-td-t-sysinfo.png                            0 px
+== mode strict: 47 compared, 37 identical, 10 differ, 0 missing
+verify-hv-h-closed.png                             0 px
+verify-hv-h-fsel-cancel.png                        0 px
+verify-hv-h-fsel-drive.png                         0 px
+verify-hv-h-fsel.png                               0 px
+verify-hv-h-loaded.png                             0 px
+verify-hv-h-scroll.png                             0 px
+verify-nd-d-after.png                              0 px
+verify-nd-d-dbl.png                                0 px
+verify-nd-d-open.png                               0 px
+verify-nd-k-closed.png                             0 px
+verify-nd-k-open.png                               0 px
+verify-nd-k-picked.png                         35170 px  bbox x80..562 y149..442
+verify-nd-k-picked2.png                        33777 px  bbox x80..562 y149..442
+verify-nd-k-popup.png                          35236 px  bbox x80..562 y149..442
+verify-nd-k-popup2.png                         34008 px  bbox x80..562 y149..442
+verify-nd-p-closed.png                             0 px
+verify-nd-p-esc.png                            33795 px  bbox x80..562 y149..442
+verify-nd-p-open.png                               0 px
+verify-nd-p-popup.png                          35236 px  bbox x80..562 y149..442
+verify-nd-r1-icons.png                             0 px
+verify-nd-r2-deskinfo.png                          0 px
+verify-nd-r2b-deskinfo-closed.png                  0 px
+verify-nd-r3-closer.png                            0 px
+verify-nd-r4-dbl.png                               0 px
+verify-nd-r5-accopen.png                           0 px
+verify-nd-r5b-acc-closed.png                       0 px
+verify-nd-r6-text.png                              0 px
+verify-nd-w-closed.png                             0 px
+verify-nd-w-full.png                               0 px
+verify-nd-w-moved.png                              0 px
+verify-nd-w-restored.png                           0 px
+verify-nd-w-sized.png                              0 px
+verify-qed-q-alert.png                         44612 px  bbox x49..605 y1..319
+verify-qed-q-alert2.png                           87 px  bbox x49..174 y46..76
+verify-qed-q-cancelled.png                       217 px  bbox x48..435 y46..306
+verify-qed-q-menu-away.png                        78 px  bbox x301..315 y300..315
+verify-qed-q-menu.png                              0 px
+verify-qed-q-new.png                               0 px
+verify-qed-q-quit.png                              0 px
+verify-qed-q-typed.png                             0 px
+verify-td-t-deskmenu.png                           0 px
+verify-td-t-esc.png                                0 px
+verify-td-t-moved.png                              0 px
+verify-td-t-open.png                               0 px
+verify-td-t-popup.png                              0 px
+verify-td-t-sysclosed.png                          0 px
+verify-td-t-sysinfo.png                            0 px
+== mode verify: 47 compared, 37 identical, 10 differ, 0 missing

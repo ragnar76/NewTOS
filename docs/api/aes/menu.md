@@ -807,6 +807,20 @@ message.
    the button never reaches a selecting transition, `set_mown` never runs
    for it either (`:222-235`): the cancelling press is consumed exactly
    like a selecting one, just without a message reaching the application.
+   After `mn_do` the press is still `ctl_pd`'s and still held: `ctlmgr`
+   gives up the screen, its loop head's `w_setactive` cannot move the mouse
+   (`set_mown` refuses with a button down, `:222`), and its next `ev_multi`
+   returns on the held button at once (`rlr == gl_mowner`,
+   `aes/gemevlib.c:185-198`). It takes the screen again and, if the press is
+   over a window (`wm_find > 0`), runs `hctl_window` on it
+   (`aes/gemctrl.c:463-470`); on the top window's work area (no control
+   point) that is `ct_msgup(0, …)` — no message, then `while (button &
+   0x0001) dsptch();` **inside the screen lock** (`:81-102,182,314`). An
+   application that asks for the lock meanwhile (`wind_update(BEG_UPDATE)`
+   / `BEG_MCTRL`) runs on only after the release, and its `fm_own(TRUE)`
+   then finds the button up and takes the mouse (`docs/api/aes/
+   window-graphics.md` `wind_update (107)`, contract point 3; GH1 fix 2,
+   `tos-api/tests/aes_gh1_update_mutex.rs` case 9).
 6. **Out of a submenu into no man's land, the parent item stays; a press
    selects it (A89, 2026-09-21).** When the hit-test falls through with
    `menu_state == SUBMENU_STATE`, `mn_do` keeps `cur_item = last_item`

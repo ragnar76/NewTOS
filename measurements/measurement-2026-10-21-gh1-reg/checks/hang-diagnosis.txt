@@ -1,0 +1,25 @@
+QED hang with the GH1 working tree (kernel8-wtD.img, qedd.script on the QED card), evidence of the Tester, 2026-10-21
+Reproduction: C:\Apps\QED\QED.NAP (#Z card), Ctrl-N, type "abc", click menu title "Datei" (83,9) -> drop-down open, then click in the
+text area (300,300) -> QED is dead: busy-bee pointer, no key (plain x, Ctrl-Q) ever reaches it, no timer events, >10 s later still dead.
+HEAD f1c225fc: same input, QED alive (screendumps-diag/diag-head-*).  Serial: no [EXC]/[PANIC], injector keeps feeding.
+
+Guest PC samples (QMP human-monitor "info registers", method/hangprobe.py, checks/hangprobe-wt*.txt), 8 s after the last injected byte:
+  PC always 0xffff0000000aa168 = <KernelHost as Host>::monotonic_millis (entry), EL1h, X30 varying:
+  X30 = 0xffff0000000c6798 -> tos_api::aes::event::evnt_multi +0x4d8 ; X30 = 0xffff000000113f9c -> tos_api::bdos::process::sched::wake_timers +0x24
+  => the process spins in the kernel (evnt_multi loop re-running without sleeping), it is not parked.
+AES window-lock state read from guest memory (QMP "x/..", checks/hangprobe-wt-state.txt; symbols from llvm-nm of the wtD ELF):
+  UPDATE_LOCK = 1, UPDATE_OWNER = 0 (QED's identity), MCTRL_CNT = 1, CTL_RUNNING = 0, CT_MSGUP = 0, GL_CTMOWN = 0, GL_MOWNER_PD = 0, UPDATE_WAIT_LEN = 0
+  => QED holds an open BEG_MCTRL/BEG_UPDATE count while it sits in evnt_multi; window::ctl_may_run() = (UPDATE_LOCK<=0 || UPDATE_OWNER==CTL_PD) = false.
+C:\SVCSEQ.LOG of the same run (kernel8-wtS.img = wtD + --features svc-seq-trace, serial/diagS-wt-SVCSEQ.LOG, tools/svc-seq.py --no-vdi):
+  last QED conversation: evnt_multi -> MU_BUTTON at (300,300) btn=1 clicks=1 ; wind_find, graf_mkstate, graf_mouse, wind_get, wind_set, graf_mouse,
+  graf_mkstate, graf_mouse, wind_update, then evnt_multi entry (the log is only flushed at evnt_multi entries, so nothing later is visible).
+Scratch bisection (own scratch trees, NOT the working tree; sources only differ in one line each):
+  wtF2 = working tree with F2 undone (post_button walks all waiters again): hang UNCHANGED (diag-wtF2-d-ctrlq 44687 px differ from HEAD).
+  wtG  = working tree with window::ctl_may_run() forced to `true`:          hang GONE, d-away3 / d-x / d-ctrlq 0 px differ from HEAD.
+  => the trigger is the F1 gate `ctl_may_run()` in evnt_multi / evnt_keybd / evnt_mouse (tos-api/src/aes/event.rs, window.rs ctl_may_run):
+     w_setactive and the menu/frame interception are skipped while the lock is held by the CALLING process itself (not only by another one).
+Narrowing runs (same HEAD-vs-working-tree comparison, 0 px = identical):
+  plain click in the QED text area without a menu: 0 px (no hang)       -> screendumps-diag/diagc-*
+  Datei menu open, then Esc (no click-away):         0 px (no hang)       -> screendumps-diag/diage-*
+  NEWDESK: View menu, click on the desktop, Desk menu, click away:  0 px  -> screendumps-diag/diagn-*
+  TeraDesk: Desk menu + click into window, Window menu + click on desktop, then Desk->System Info: 0 px -> screendumps-diag/diagt-*

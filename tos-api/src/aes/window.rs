@@ -678,11 +678,53 @@ fn renumber_z() -> i16 {
 // gemfmlib.c:52). Single boot CPU, so plain `Relaxed` atomics suffice.
 
 /// Counting window-tree lock — EmuTOS `wind_spb.sy_tas`. `BEG_UPDATE` takes it
-/// (`tak_flag`), `END_UPDATE` releases it (`unsync`, clamped at 0). Single-
-/// tasking has no contended waiter, so the take always succeeds; the count is
-/// tracked so nested BEG/END pairs and [`wind_new`]'s release stay balanced.
-/// Who holds it is [`UPDATE_OWNER`].
+/// (`tak_flag`, `aes/gemflag.c:68-86`), `END_UPDATE` releases it (`unsync`,
+/// `:99-130`, clamped at 0). A second process asking for a held lock is
+/// refused and parked on the lock's wait line ([`UPDATE_WAIT`]) until the
+/// holder's last `END_UPDATE` hands the lock to it (GH1). Who holds it is
+/// [`UPDATE_OWNER`].
 static UPDATE_LOCK: AtomicI16 = AtomicI16::new(0);
+
+/// `ctl_pd` as a holder of the window-tree lock — the Screen Manager, which
+/// `ctlmgr` runs as when it takes the screen after its own `ev_multi` fired
+/// (`wm_update(BEG_UPDATE)` … `wm_update(END_UPDATE)`, `aes/gemctrl.c:463,484`).
+/// Not an AES identity (those are GEMDOS slots and
+/// [`super::pd::KERNEL_CONTEXT`]) and not [`NO_OWNER`].
+const CTL_PD: usize = usize::MAX - 1;
+
+/// `rlr == ctl_pd` — the inline Control Manager is running ([`ctl_begin`] …
+/// [`ctl_finish`]). Our Control Manager executes inside an application's
+/// `evnt_multi` trap; what it does there is `ctlmgr`'s, in `ctl_pd`'s name, so
+/// the lock calls it makes on the way (`gr_dragbox`/`gr_rubwind`'s
+/// `wm_update` pair, `aes/gemgrlib.c:205,219,250,267`) nest under the
+/// Control Manager's own hold instead of being refused as a second process's.
+static CTL_RUNNING: AtomicBool = AtomicBool::new(false);
+
+/// Each AES identity's share of [`UPDATE_LOCK`] — how many of the counted
+/// `BEG_UPDATE`s are its own. EmuTOS has one `AESPD` for the whole application
+/// chain (`aes/geminit.c:851-877`), so a launched program nests on the
+/// desktop's hold as the same process; NewTOS gives each GEMDOS slot an
+/// identity of its own and folds them back for the ownership test
+/// ([`same_holder`]). The per-identity split is what lets the dead-slot sweep
+/// ([`release_locks_of`]) take exactly the dead client's holds off — `sh_ldapp`'s
+/// `if (wind_spb.sy_owner == rlr) unsync(&wind_spb)` (`aes/gemshlib.c:668-669`)
+/// for a client that is not the only one alive.
+static UPDATE_HOLDS: [AtomicI16; super::pd::NUM_PDS] = [const { AtomicI16::new(0) }; super::pd::NUM_PDS];
+
+/// The lock's wait line — EmuTOS `wind_spb.sy_wait`, the `EVB` list
+/// `amutex` appends a refused taker to (`evinsert(e, &sy->sy_wait)`,
+/// `aes/gemflag.c:89-101`) and `unsync` takes the head off
+/// (`sy->sy_wait = p->e_link`, `:120`). AES identities in arrival order,
+/// [`UPDATE_WAIT_LEN`] of them; each identity waits at most once.
+static UPDATE_WAIT: [AtomicUsize; super::pd::NUM_PDS] = [const { AtomicUsize::new(NO_OWNER) }; super::pd::NUM_PDS];
+static UPDATE_WAIT_LEN: AtomicUsize = AtomicUsize::new(0);
+
+/// The lock was handed to this identity while it slept on the wait line
+/// (`sy_owner = p->e_pd; sy_tas = 1; azombie(p, 0);`, `aes/gemflag.c:121-123`).
+/// The hold is already counted; the waiter's re-executed call (the S2
+/// restartable block) collects it in [`tak_flag`] instead of counting it a
+/// second time.
+static UPDATE_GRANTED: [AtomicBool; super::pd::NUM_PDS] = [const { AtomicBool::new(false) }; super::pd::NUM_PDS];
 
 /// Owner of the window-tree lock — EmuTOS `wind_spb.sy_owner`
 /// (`aes/geminit.c:138,837-839`). `tak_flag` writes the taking process into it
@@ -698,8 +740,8 @@ static UPDATE_LOCK: AtomicI16 = AtomicI16::new(0);
 /// Our per-slot sweep ([`wm_new_for_slot`]) needs the same test, because unlike
 /// EmuTOS's shell loop it runs while another client is still alive (A110).
 ///
-/// A GEMDOS slot index or [`super::pd::KERNEL_CONTEXT`]; [`NO_OWNER`] = free
-/// (`sy_owner = NULL`).
+/// A GEMDOS slot index or [`super::pd::KERNEL_CONTEXT`], [`CTL_PD`] for the
+/// Control Manager; [`NO_OWNER`] = free (`sy_owner = NULL`).
 static UPDATE_OWNER: AtomicUsize = AtomicUsize::new(NO_OWNER);
 
 /// Mouse-control-ownership counter — EmuTOS `ml_ocnt`. `BEG_MCTRL` increments,
@@ -4148,12 +4190,27 @@ pub fn wind_find(pb: &Aespb) {
 /// in effect (`ml_ocnt > 0`) the app has taken over the mouse, so the AES frame
 /// interception ([`intercept`]) switches off; the `ml_ocnt == 0` edge bodies
 /// (menu-tree hold, control rectangle, `ct_chgown`) are [`mctrl_own`]'s.
-pub fn wind_update(pb: &Aespb) {
+///
+/// **A taking mode blocks while another process holds the lock** —
+/// `if (!tak_flag(&wind_spb)) ev_block(MU_MUTEX, (LONG)&wind_spb);`
+/// (`gemwmlib.c:1785-1786`), reached directly for `BEG_UPDATE` and through
+/// `fm_own(TRUE)`'s own `wm_update(BEG_UPDATE)` (`gemfmlib.c:86`) for
+/// `BEG_MCTRL`. The wait ([`update_block`]) comes first and commits nothing,
+/// so a call that has to give the CPU away is re-executed from the top when
+/// the lock has been handed to it (GH1).
+pub fn wind_update(pb: &Aespb) -> Option<crate::bdos::process::sched::Switch> {
     // EmuTOS `wm_update` (gemwmlib.c:1778-1797): mode `< 2` is the window-tree
     // lock (0 = END_UPDATE, any non-zero = BEG_UPDATE); mode `>= 2` is
     // `fm_own(mode - 2)` (non-zero → begin the mouse-control transfer). The two
     // guard arms reproduce that for out-of-range modes.
-    match pb.intin(0) {
+    let mode = pb.intin(0);
+    let takes = if mode < 2 { mode != 0 } else { mode - 2 != 0 };
+    if takes {
+        if let Some(sw) = update_block() {
+            return Some(sw);
+        }
+    }
+    match mode {
         END_UPDATE => update_end(),
         BEG_UPDATE => update_beg(),
         END_MCTRL => mctrl_own(false),
@@ -4162,10 +4219,32 @@ pub fn wind_update(pb: &Aespb) {
         m => mctrl_own(m - 2 != 0), // `> 3`: fm_own(m-2) begins
     }
     pb.set_ret(1);
+    None
 }
 
-/// `tak_flag(&wind_spb)` — take the counting window-tree lock and record who
-/// holds it (EmuTOS `aes/gemflag.c:68-86`):
+/// EmuTOS `rlr` for the window-tree lock: [`CTL_PD`] while the inline Control
+/// Manager runs ([`CTL_RUNNING`]), else the calling AES identity.
+fn rlr() -> usize {
+    if CTL_RUNNING.load(Ordering::Relaxed) {
+        CTL_PD
+    } else {
+        super::appl::current_identity()
+    }
+}
+
+/// `sy_owner == rlr` for two holders of the lock. EmuTOS compares `AESPD`s;
+/// NewTOS identities fold back to them as the mouse owner's do
+/// ([`input::same_pd`](super::input::same_pd): one descriptor for the whole
+/// application chain, one per desk accessory). `ctl_pd` is only itself.
+fn same_holder(a: usize, b: usize) -> bool {
+    if a == CTL_PD || b == CTL_PD {
+        return a == b;
+    }
+    a != NO_OWNER && b != NO_OWNER && super::input::same_pd(a, b)
+}
+
+/// `tak_flag(&wind_spb)` (EmuTOS `aes/gemflag.c:68-86`) — take the counting
+/// window-tree lock for `me` if it is free or `me`'s already:
 ///
 /// ```c
 /// sy->sy_tas++;
@@ -4173,47 +4252,313 @@ pub fn wind_update(pb: &Aespb) {
 ///     sy->sy_tas--;           /* refused: wm_update blocks on sy_wait */
 /// else
 ///     sy->sy_owner = rlr;     /* free, or we already had it */
+/// return (sy->sy_owner == rlr);
 /// ```
 ///
-/// So ownership moves to the caller on the 0 → 1 edge and stays with it while
-/// it nests; a *different* process asking for a held lock is refused and
-/// `wm_update` parks it on `wind_spb.sy_wait` (`ev_block(MU_MUTEX, …)`,
-/// `gemwmlib.c:1785-1786`).
-///
-/// **The refusal is the one thing that is not reproduced**, and it never was:
-/// there is no AES scheduler to park a caller on, so the count keeps rising
-/// and the first owner keeps the lock — which is the behaviour the rest of the
-/// AES already assumes (the screen is never actually withheld from anyone).
-/// What the owner field buys us is [`wm_new_for_slot`]'s `sh_ldapp` test: a
-/// dead client's holds are released, a living one's are not (A110).
-fn update_beg() {
-    let rlr = super::appl::current_identity();
-    let tas = UPDATE_LOCK.fetch_add(1, Ordering::Relaxed) + 1;
-    if tas == 1 || UPDATE_OWNER.load(Ordering::Relaxed) == rlr {
-        UPDATE_OWNER.store(rlr, Ordering::Relaxed);
+/// A lock [`unsync`] handed to `me` while it slept on the wait line is already
+/// counted for it (`sy_tas = 1`, `:122`); the re-executed call collects the
+/// hand-over here ([`UPDATE_GRANTED`]) and counts nothing. Ownership moves on
+/// the 0 → 1 edge only: a nested take by another identity of the same
+/// application chain ([`same_holder`]) keeps the first taker as the recorded
+/// owner and counts its own share in [`UPDATE_HOLDS`].
+fn tak_flag(me: usize) -> bool {
+    if UPDATE_GRANTED.get(me).is_some_and(|g| g.swap(false, Ordering::Relaxed)) {
+        return true;
+    }
+    let tas = UPDATE_LOCK.load(Ordering::Relaxed);
+    if tas <= 0 {
+        UPDATE_LOCK.store(1, Ordering::Relaxed);
+        UPDATE_OWNER.store(me, Ordering::Relaxed);
+        hold_add(me);
+        return true;
+    }
+    if same_holder(UPDATE_OWNER.load(Ordering::Relaxed), me) {
+        UPDATE_LOCK.store(tas + 1, Ordering::Relaxed);
+        hold_add(me);
+        return true;
+    }
+    false
+}
+
+/// May `me` take the lock without waiting — `tak_flag` would succeed.
+fn may_take(me: usize) -> bool {
+    UPDATE_GRANTED.get(me).is_some_and(|g| g.load(Ordering::Relaxed))
+        || UPDATE_LOCK.load(Ordering::Relaxed) <= 0
+        || same_holder(UPDATE_OWNER.load(Ordering::Relaxed), me)
+}
+
+/// Count one more hold for identity `me` in [`UPDATE_HOLDS`] (`ctl_pd` and the
+/// unowned are counted in [`UPDATE_LOCK`] only).
+fn hold_add(me: usize) {
+    if let Some(h) = UPDATE_HOLDS.get(me) {
+        h.fetch_add(1, Ordering::Relaxed);
     }
 }
 
-/// `unsync(&wind_spb)` — release the counting window-tree lock: decrement, but
-/// never below zero (EmuTOS gemflag.c:105-115: a stray `END_UPDATE` with the
-/// count already 0 is ignored), and give up ownership when it reaches zero
-/// (`sy->sy_owner = NULL`, `:128`; the wait-list hand-over at `:120-126` has no
-/// counterpart — nobody is ever parked, see [`update_beg`]).
-fn update_end() {
-    let v = UPDATE_LOCK.load(Ordering::Relaxed);
-    if v > 0 {
-        UPDATE_LOCK.store(v - 1, Ordering::Relaxed);
-        if v == 1 {
-            UPDATE_OWNER.store(NO_OWNER, Ordering::Relaxed);
+/// Take one hold off [`UPDATE_HOLDS`] for an `unsync` by `me`. EmuTOS's
+/// `unsync` does not look at the caller at all — a stray `END_UPDATE` simply
+/// counts the owner's lock down — so when `me` has no hold of its own the one
+/// taken off is the recorded owner's, else any holder's.
+fn hold_take(me: usize) {
+    let dec = |i: usize| -> bool {
+        match UPDATE_HOLDS.get(i) {
+            Some(h) if h.load(Ordering::Relaxed) > 0 => {
+                h.fetch_sub(1, Ordering::Relaxed);
+                true
+            }
+            _ => false,
+        }
+    };
+    if dec(me) || dec(UPDATE_OWNER.load(Ordering::Relaxed)) {
+        return;
+    }
+    for i in 0..UPDATE_HOLDS.len() {
+        if dec(i) {
+            return;
         }
     }
+}
+
+/// Append `me` to the lock's wait line unless it is on it already — `amutex`'s
+/// `evinsert(e, &sy->sy_wait)` (`aes/gemflag.c:97-101`), once per refused
+/// `wm_update` (a re-executed call is still the same `EVB`).
+fn wait_append(me: usize) {
+    let n = UPDATE_WAIT_LEN.load(Ordering::Relaxed);
+    if UPDATE_WAIT[..n].iter().any(|w| w.load(Ordering::Relaxed) == me) || n >= UPDATE_WAIT.len() {
+        return;
+    }
+    UPDATE_WAIT[n].store(me, Ordering::Relaxed);
+    UPDATE_WAIT_LEN.store(n + 1, Ordering::Relaxed);
+}
+
+/// Take `me` off the wait line, keeping the others' order.
+fn wait_remove(me: usize) {
+    let n = UPDATE_WAIT_LEN.load(Ordering::Relaxed);
+    let Some(pos) = UPDATE_WAIT[..n].iter().position(|w| w.load(Ordering::Relaxed) == me) else {
+        return;
+    };
+    for i in pos..n - 1 {
+        UPDATE_WAIT[i].store(UPDATE_WAIT[i + 1].load(Ordering::Relaxed), Ordering::Relaxed);
+    }
+    UPDATE_WAIT[n - 1].store(NO_OWNER, Ordering::Relaxed);
+    UPDATE_WAIT_LEN.store(n - 1, Ordering::Relaxed);
+}
+
+/// The head of the wait line, taken off — `p = sy->sy_wait; sy->sy_wait =
+/// p->e_link;` (`aes/gemflag.c:118-120`).
+fn wait_pop() -> Option<usize> {
+    let n = UPDATE_WAIT_LEN.load(Ordering::Relaxed);
+    if n == 0 {
+        return None;
+    }
+    let head = UPDATE_WAIT[0].load(Ordering::Relaxed);
+    wait_remove(head);
+    Some(head)
+}
+
+/// The `ev_block(MU_MUTEX, (LONG)&wind_spb)` half of `wm_update(BEG_UPDATE)`
+/// (`aes/gemwmlib.c:1785-1786`; `amutex`, `aes/gemflag.c:89-101`): wait until
+/// the calling identity may take the lock — it is free, or held by the
+/// caller's own process, or [`unsync`] has handed it over. Takes nothing; the
+/// caller's [`update_beg`] (directly, or inside `fm_own(TRUE)`) does that
+/// right after, with nothing in between that could give the CPU away.
+///
+/// Every AES opcode that reaches a `wm_update(BEG_UPDATE)` waits here **first**,
+/// before it has committed anything — `wind_update` itself, and the opcodes
+/// whose body opens with `fm_own(TRUE)` (`form_do`, `form_alert`,
+/// `form_error`, `fsel_input`/`fsel_exinput`, `menu_popup`). A refused caller
+/// is appended to the wait line and sleeps until the lock is handed to it
+/// (`sched::WAKE_MUTEX`); then the call — the S2 restartable block —
+/// re-executes from its `svc` and finds the hand-over. Returns the
+/// [`Switch`](crate::bdos::process::sched::Switch) to give the CPU away with,
+/// or `None` when the caller may go on.
+///
+/// While the Control Manager holds the lock across `ct_msgup`'s wait for the
+/// selecting press to come up (`while (button & 0x0001) dsptch();`,
+/// `aes/gemctrl.c:100-101`, inside `ctlmgr`'s `BEG_UPDATE`, `:463,484`), the
+/// release of that press is what frees the lock; the waiter therefore also
+/// wakes on input and lets the Control Manager finish
+/// ([`input::ct_msgup_busy`](super::input::ct_msgup_busy)) — our Control
+/// Manager has no process of its own to do it.
+///
+/// No host means nothing can run to release the lock: the caller is not
+/// parked, and [`update_beg`] nests the count (host-side unit tests only).
+pub(super) fn update_block() -> Option<crate::bdos::process::sched::Switch> {
+    use crate::bdos::process::sched;
+    let me = rlr();
+    if me == CTL_PD || host().is_none() {
+        return None;
+    }
+    loop {
+        // The Control Manager's progress: `ct_msgup` ends with the release.
+        let _ = super::input::ct_msgup_busy();
+        if may_take(me) {
+            wait_remove(me);
+            return None;
+        }
+        wait_append(me);
+        let mut events = sched::WAKE_MUTEX;
+        if UPDATE_OWNER.load(Ordering::Relaxed) == CTL_PD {
+            events |= sched::WAKE_INPUT;
+        }
+        let key = sched::wait_multi(events, if me < super::pd::NUM_PDS { me } else { 0 });
+        if let sched::SleepOutcome::Yield(sw) = sched::sleep(key) {
+            return Some(sw); // parked on `sy_wait`; re-executed on the hand-over
+        }
+    }
+}
+
+/// `wm_update(BEG_UPDATE)` — take the lock for the caller ([`tak_flag`]).
+///
+/// Reached after [`update_block`] (an opcode) or from inside the AES with the
+/// lock already the caller's (an `fm_own(TRUE)` nested in a dialog, the
+/// Control Manager's own drags), so the take succeeds. The one exception is an
+/// in-kernel taker that cannot give the CPU away — the shell loop's
+/// `fm_error` alert (`kernel/src/shell_loop.rs`), a host-less unit test —
+/// finding the lock held by another process: it cannot park, and its hold is
+/// counted on top of the owner's instead (the owner keeps the lock; the
+/// matching `END_UPDATE` takes the count back off).
+fn update_beg() {
+    let me = rlr();
+    if !tak_flag(me) {
+        UPDATE_LOCK.fetch_add(1, Ordering::Relaxed);
+        hold_add(me);
+    }
+}
+
+/// `all_run`'s "then get in the wait line" (`aes/geminit.c:564-565`):
+/// `wm_update(BEG_UPDATE); wm_update(END_UPDATE);` — wait behind whoever holds
+/// the window-tree lock ([`update_block`]), then take it and give it back at
+/// once. `Some` = parked; the caller's call re-executes on the hand-over.
+pub(super) fn update_wait_line() -> Option<crate::bdos::process::sched::Switch> {
+    if let Some(sw) = update_block() {
+        return Some(sw);
+    }
+    update_beg();
+    update_end();
+    None
+}
+
+/// `wm_update(END_UPDATE)` — [`unsync`] in the caller's name.
+fn update_end() {
+    unsync(rlr());
+}
+
+/// `unsync(&wind_spb)` (EmuTOS `aes/gemflag.c:105-130`) — release one count of
+/// the window-tree lock: never below zero (a stray `END_UPDATE` with the count
+/// already 0 is ignored, `:109-113`), and on the 1 → 0 edge give the lock to
+/// the head of the wait line —
+///
+/// ```c
+/// if ((p = sy->sy_wait) != 0) {
+///     sy->sy_wait = p->e_link;
+///     sy->sy_owner = p->e_pd;
+///     sy->sy_tas = 1;           /* restart counting semaphore */
+///     azombie(p, 0);
+///     dsptch();
+/// } else
+///     sy->sy_owner = NULL;
+/// ```
+///
+/// `azombie` is the wake ([`sched::wait_mutex`](crate::bdos::process::sched::wait_mutex));
+/// the `dsptch()` is the dispatch every completed AES call ends with
+/// (`sched::dispatch_after_call`), which hands the CPU to the woken waiter
+/// before the caller goes on. `me` is the releasing identity, used only for the
+/// per-identity share ([`hold_take`]).
+fn unsync(me: usize) {
+    let tas = UPDATE_LOCK.load(Ordering::Relaxed);
+    if tas <= 0 {
+        UPDATE_LOCK.store(0, Ordering::Relaxed);
+        return;
+    }
+    hold_take(me);
+    let tas = tas - 1;
+    UPDATE_LOCK.store(tas, Ordering::Relaxed);
+    if tas > 0 {
+        // The recorded owner gave its last share back while another identity
+        // of the same process still holds one: the lock stays with that
+        // process, recorded under the remaining holder.
+        let owner = UPDATE_OWNER.load(Ordering::Relaxed);
+        if UPDATE_HOLDS.get(owner).is_some_and(|h| h.load(Ordering::Relaxed) == 0) {
+            if let Some(i) = UPDATE_HOLDS.iter().position(|h| h.load(Ordering::Relaxed) > 0) {
+                UPDATE_OWNER.store(i, Ordering::Relaxed);
+            }
+        }
+        return;
+    }
+    for h in UPDATE_HOLDS.iter() {
+        h.store(0, Ordering::Relaxed);
+    }
+    match wait_pop() {
+        Some(w) => {
+            UPDATE_OWNER.store(w, Ordering::Relaxed);
+            UPDATE_LOCK.store(1, Ordering::Relaxed);
+            hold_add(w);
+            if let Some(g) = UPDATE_GRANTED.get(w) {
+                g.store(true, Ordering::Relaxed);
+            }
+            crate::bdos::process::sched::wake(crate::bdos::process::sched::wait_mutex());
+        }
+        None => UPDATE_OWNER.store(NO_OWNER, Ordering::Relaxed),
+    }
+}
+
+/// `ctlmgr`'s `wm_update(BEG_UPDATE); /* take the screen */`
+/// (`aes/gemctrl.c:463`) for the inline Control Manager, taken once its event
+/// is known (a press on a frame, the pointer over the bar): the lock is taken
+/// in `ctl_pd`'s name and [`CTL_RUNNING`] makes everything the Control Manager
+/// does until [`ctl_finish`] its own. `false` — nothing taken, nothing run —
+/// while another process holds the lock: `ctlmgr` would be blocked in that
+/// `wm_update` until the holder lets go, so the inline Control Manager does
+/// not act this pass and the event stays pending ([`ctl_may_run`]).
+pub(super) fn ctl_begin() -> bool {
+    if !ctl_may_run() {
+        return false;
+    }
+    let took = tak_flag(CTL_PD);
+    debug_assert!(took, "ctl_may_run: the lock is free or the Control Manager's");
+    CTL_RUNNING.store(true, Ordering::Relaxed);
+    true
+}
+
+/// The end of the inline Control Manager's body. `hold` = `ct_msgup` is now
+/// waiting for the selecting press to come up (`aes/gemctrl.c:100-101`): the
+/// lock stays the Control Manager's until [`ctl_release`]. Otherwise this is
+/// the loop's `wm_update(END_UPDATE); /* give up the screen */` (`:484`).
+pub(super) fn ctl_finish(hold: bool) {
+    CTL_RUNNING.store(false, Ordering::Relaxed);
+    if !hold {
+        ctl_release();
+    }
+}
+
+/// `ctlmgr`'s `wm_update(END_UPDATE)` (`aes/gemctrl.c:484`) after
+/// `ct_msgup`'s wait ended ([`input::ct_msgup_busy`](super::input::ct_msgup_busy)).
+/// Only a hold that is still the Control Manager's is released: an AES
+/// restart or `wind_new` may have taken it away in between.
+pub(super) fn ctl_release() {
+    if UPDATE_OWNER.load(Ordering::Relaxed) == CTL_PD {
+        unsync(CTL_PD);
+    }
+}
+
+/// Could the Control Manager take the screen now? `true` while the lock is
+/// free or already the Control Manager's. While another process holds it,
+/// EmuTOS's `ctlmgr` is either still asleep in its `ev_multi` or blocked in
+/// the `wm_update(BEG_UPDATE)` after it (`aes/gemctrl.c:439-463`) — in
+/// neither place does it intercept a click, track the bar or reach its loop
+/// head's `w_setactive()` (`:442`). The inline Control Manager is gated on
+/// this ([`super::event`]).
+pub(super) fn ctl_may_run() -> bool {
+    UPDATE_LOCK.load(Ordering::Relaxed) <= 0 || UPDATE_OWNER.load(Ordering::Relaxed) == CTL_PD
 }
 
 /// Public `fm_own` entry for the Form Manager (EmuTOS gemfmlib.c:82-107): a
 /// modal dialog brackets its wait loop with `fm_own(TRUE)` / `fm_own(FALSE)`
 /// (`fm_do`, gemfmlib.c:287,349; `fm_alert` reaches the loop via `fm_do`).
 /// Delegates to [`mctrl_own`], the shared mouse-control-ownership + menu-hold
-/// transition that `wind_update(BEG/END_MCTRL)` also drives.
+/// transition that `wind_update(BEG/END_MCTRL)` also drives. The opcode that
+/// leads here waits for the lock first ([`update_block`]).
 pub fn fm_own(begin: bool) {
     mctrl_own(begin);
 }
@@ -4255,22 +4600,29 @@ fn mctrl_own(begin: bool) {
         }
         MCTRL_CNT.fetch_add(1, Ordering::Relaxed);
     } else {
-        // ml_ocnt-- then, on the 1 → 0 edge, give the mouse back to the
-        // remembered owner and restore the parked menu tree (EmuTOS
-        // `ml_ocnt--; if (ml_ocnt == 0) { ct_chgown(ml_pmown, &ml_ctrl);
-        // gl_mntree = ml_mnhold; }`, gemfmlib.c:99-104), then
-        // wm_update(END_UPDATE). `fetch_sub` returns the PRE-decrement value,
-        // so the outermost edge is `prev == 1`. EmuTOS decrements
-        // unconditionally; the `intercept` gate (`> 0`) treats any
-        // non-positive count as "app does not own the mouse", so an unbalanced
-        // END_MCTRL cannot wedge interception off.
-        if MCTRL_CNT.fetch_sub(1, Ordering::Relaxed) == 1 {
-            super::input::ct_chgown(super::input::Mown::from_raw(ML_PMOWN.load(Ordering::Relaxed)));
-            super::menu::release_menu();
-            MCTRL_OWNER.store(NO_OWNER, Ordering::Relaxed);
-        }
-        update_end();
+        mctrl_end(rlr());
     }
+}
+
+/// The `fm_own(FALSE)` half of [`mctrl_own`] with the releasing identity
+/// explicit — the per-slot sweep ([`release_locks_of`]) releases a dead
+/// client's holds in that client's name, not the sweeping caller's.
+fn mctrl_end(me: usize) {
+    // ml_ocnt-- then, on the 1 → 0 edge, give the mouse back to the
+    // remembered owner and restore the parked menu tree (EmuTOS
+    // `ml_ocnt--; if (ml_ocnt == 0) { ct_chgown(ml_pmown, &ml_ctrl);
+    // gl_mntree = ml_mnhold; }`, gemfmlib.c:99-104), then
+    // wm_update(END_UPDATE). `fetch_sub` returns the PRE-decrement value,
+    // so the outermost edge is `prev == 1`. EmuTOS decrements
+    // unconditionally; the `intercept` gate (`> 0`) treats any
+    // non-positive count as "app does not own the mouse", so an unbalanced
+    // END_MCTRL cannot wedge interception off.
+    if MCTRL_CNT.fetch_sub(1, Ordering::Relaxed) == 1 {
+        super::input::ct_chgown(super::input::Mown::from_raw(ML_PMOWN.load(Ordering::Relaxed)));
+        super::menu::release_menu();
+        MCTRL_OWNER.store(NO_OWNER, Ordering::Relaxed);
+    }
+    unsync(me);
 }
 
 /// `wind_calc` (108) — convert work↔border rect for `kind`.
@@ -4341,8 +4693,7 @@ pub fn wm_new() {
     // owner (`unsync`'s `sy_owner = NULL`, `gemflag.c:128`).
     MCTRL_CNT.store(0, Ordering::Relaxed);
     MCTRL_OWNER.store(NO_OWNER, Ordering::Relaxed);
-    UPDATE_LOCK.store(0, Ordering::Relaxed);
-    UPDATE_OWNER.store(NO_OWNER, Ordering::Relaxed);
+    drain_update_lock();
     // `for (wh = 1; wh < NUM_WIN; wh++)` (`:1886`) — handle 0, the desktop
     // window, is not one of the windows `wm_new` deletes.
     for wh in 1..NUM_WIN as i16 {
@@ -4360,6 +4711,33 @@ pub fn wm_new() {
     // instead and has no counter to reset).
     // SAFETY: single-CPU AES.
     unsafe { *TABLE.next_z.get() = 1 };
+}
+
+/// `while (wind_spb.sy_tas > 0) wm_update(END_UPDATE);` (`gemwmlib.c:1882-1883`)
+/// — drain the window-tree lock completely. Each `unsync` that reaches 0
+/// hands the lock to the head of the wait line with `sy_tas = 1` and
+/// `azombie`s it (`aes/gemflag.c:117-124`), and the loop's next pass counts
+/// that hand-over down again; so the drain ends with the count at 0, no owner,
+/// an empty wait line, and **every** waiter woken believing it holds the lock.
+/// Reproduced as that end state: each waiter's call is handed the lock without
+/// a count ([`UPDATE_GRANTED`]), so its later `END_UPDATE` finds the count at 0
+/// and is ignored (`:109-113`), as in EmuTOS.
+fn drain_update_lock() {
+    UPDATE_LOCK.store(0, Ordering::Relaxed);
+    UPDATE_OWNER.store(NO_OWNER, Ordering::Relaxed);
+    for h in UPDATE_HOLDS.iter() {
+        h.store(0, Ordering::Relaxed);
+    }
+    let mut woke = false;
+    while let Some(w) = wait_pop() {
+        if let Some(g) = UPDATE_GRANTED.get(w) {
+            g.store(true, Ordering::Relaxed);
+        }
+        woke = true;
+    }
+    if woke {
+        crate::bdos::process::sched::wake(crate::bdos::process::sched::wait_mutex());
+    }
 }
 
 /// The `sh_ldapp` window sweep narrowed to **one dead client**: the GEMDOS
@@ -4439,12 +4817,24 @@ pub fn wm_new_for_slot(slot: usize) {
 /// goes back to [`ML_PMOWN`] and the parked menu tree is restored
 /// (`gemfmlib.c:99-104`) — and its own `END_UPDATE` (`:105`), which is what
 /// makes the `sy_tas` the child's `BEG_MCTRL` took come off again.
+///
+/// **The screen lock goes by the dead client's own share** ([`UPDATE_HOLDS`]),
+/// released in its name ([`unsync`]) — so the lock passes to the next waiter
+/// on its wait line exactly as if the client had called `END_UPDATE` itself.
+/// A hand-over it never collected is part of that share; and a dead client
+/// still on the wait line leaves it (GH1).
 fn release_locks_of(slot: usize) {
     while MCTRL_OWNER.load(Ordering::Relaxed) == slot && MCTRL_CNT.load(Ordering::Relaxed) > 0 {
-        mctrl_own(false);
+        mctrl_end(slot);
     }
-    while UPDATE_OWNER.load(Ordering::Relaxed) == slot && UPDATE_LOCK.load(Ordering::Relaxed) > 0 {
-        update_end();
+    if let Some(g) = UPDATE_GRANTED.get(slot) {
+        g.store(false, Ordering::Relaxed);
+    }
+    wait_remove(slot);
+    while UPDATE_HOLDS.get(slot).is_some_and(|h| h.load(Ordering::Relaxed) > 0)
+        && UPDATE_LOCK.load(Ordering::Relaxed) > 0
+    {
+        unsync(slot);
     }
 }
 
@@ -4516,6 +4906,17 @@ pub(super) fn reinit() {
     MCTRL_OWNER.store(NO_OWNER, Ordering::Relaxed);
     UPDATE_LOCK.store(0, Ordering::Relaxed);
     UPDATE_OWNER.store(NO_OWNER, Ordering::Relaxed);
+    // `wind_spb` is re-zeroed with the rest of `theglo` (`geminit.c:837-839`):
+    // no holder, no wait line — no process of the ended session is left to
+    // be handed anything.
+    for h in UPDATE_HOLDS.iter() {
+        h.store(0, Ordering::Relaxed);
+    }
+    for g in UPDATE_GRANTED.iter() {
+        g.store(false, Ordering::Relaxed);
+    }
+    while wait_pop().is_some() {}
+    CTL_RUNNING.store(false, Ordering::Relaxed);
     *gl_wtcolor() = GL_WTCOLOR_DEFAULT;
     *gl_wbcolor() = GL_WBCOLOR_DEFAULT;
     ML_PMOWN.store(super::pd::KERNEL_CONTEXT, Ordering::Relaxed);
@@ -5216,6 +5617,16 @@ pub(super) fn mctrl_held() -> bool {
 /// dequeue, so frame messages obey FIFO order (and same-window redraw / arrow
 /// coalescing) instead of clobbering a message the app has not yet read
 /// (AUD-P2-001). A click in the work area (or on the desktop) is a no-op.
+///
+/// **It runs as `ctlmgr`'s loop body, under the screen lock** — `ev_multi`
+/// fired, `wm_update(BEG_UPDATE); /* take the screen */`, `hctl_window(…)`,
+/// `wm_update(END_UPDATE); /* give up the screen */` (`aes/gemctrl.c:463-484`).
+/// While another process holds the lock `ctlmgr` is blocked in that
+/// `wm_update`, so a press on a frame is not handled until the holder lets go:
+/// the press stays latched ([`super::input::ctl_press_take`] is not consumed)
+/// and is handled on the first pass after the release. The handling itself
+/// runs in `ctl_pd`'s name ([`ctl_begin`]/[`ctl_finish`]), so the drags'
+/// own `wm_update` pair nests under it.
 pub fn intercept() {
     // While an app holds mouse control via `wind_update(BEG_MCTRL)`
     // (`ml_ocnt > 0`), the app has taken over the mouse and the AES frame
@@ -5223,6 +5634,11 @@ pub fn intercept() {
     // app so `ctlmgr` no longer processes frame clicks (gemfmlib.c:82-107). See
     // [`wind_update`] and [`mctrl_own`].
     if MCTRL_CNT.load(Ordering::Relaxed) > 0 {
+        return;
+    }
+    // `ctlmgr` blocked in `wm_update(BEG_UPDATE)` (`aes/gemctrl.c:463`): the
+    // event is left for later, latch included.
+    if !ctl_may_run() {
         return;
     }
     // The level `ctlmgr`'s `ev_multi(MU_BUTTON, …, 0x0001ff01)` tests is the
@@ -5241,20 +5657,45 @@ pub fn intercept() {
     if super::input::button() & 0x01 == 0 && !latched {
         return;
     }
+    // `wm_update(BEG_UPDATE); /* take the screen */` … `wm_update(END_UPDATE);
+    // /* give up the screen */` (`aes/gemctrl.c:463,484`). `ctl_may_run` above
+    // answered, so the take succeeds.
+    if !ctl_begin() {
+        return;
+    }
+    // `true` = the press ended in `ct_msgup(0, …)`'s wait for the release,
+    // which runs inside the screen lock (`aes/gemctrl.c:100-101,463,484`):
+    // the lock stays the Control Manager's until the button is up
+    // ([`super::input::ct_msgup_busy`] → [`ctl_release`]). A press already
+    // released ends that wait at once — the plain `END_UPDATE`.
+    let held = hctl_window() && super::input::button() & 0x01 != 0;
+    if held {
+        super::input::ct_msgup_hold();
+    }
+    ctl_finish(held);
+}
+
+/// The press half of [`intercept`]: `ctlmgr`'s `MU_BUTTON` arm, `wh =
+/// wm_find(…); if (wh > 0) hctl_window(wh, …)` (`aes/gemctrl.c:468-470`),
+/// run with the screen lock held in `ctl_pd`'s name. Returns `true` when the
+/// arm ended in `ct_msgup`'s wait for the button to come up with the press
+/// still to be released — the Control Manager's own press on the top window
+/// that produced no message (see the `Gadget::None` arm).
+fn hctl_window() -> bool {
     let (mx, my) = crate::vdi::mouse_position();
     let handle = find_handle(mx, my);
     // 0 = the desktop window, −1 = no window at all: neither has a frame to
     // intercept.
     if handle <= DESKWH {
-        return;
+        return false;
     }
     let Some(backend) = host().and_then(|h| h.raster()) else {
-        return;
+        return false;
     };
     // The FIFO target is the window owner (EmuTOS `ct_msgup`'s `owner` =
     // `pwin->w_owner`, `gemctrl.c:314`); at single-app this is the running app.
     let Some(owner) = owner_of(handle) else {
-        return;
+        return false;
     };
 
     let mut msg = [0i16; 8];
@@ -5295,12 +5736,12 @@ pub fn intercept() {
         wait_release();
         post_untopped(old_top, handle);
         post_to_owner(owner, &msg);
-        return;
+        return false;
     }
 
     let w = match win(handle) {
         Some(w) => w,
-        None => return,
+        None => return false,
     };
     // `hctl_window` reads the window's current border rect once, before the
     // gadget switch — `w_getsize(WS_CURR, w_handle, &t); r_get(&t, &x, &y,
@@ -5315,7 +5756,8 @@ pub fn intercept() {
     // A press on a frame gadget is the Control Manager's: `ctlmgr`'s
     // `ev_multi` returned on it (`aes/gemctrl.c:456-462`) and its `ev_rets`
     // consumed the transition (`aes/gemevlib.c:268`). A press in the work area
-    // (`Gadget::None`) belongs to the application and is left for it.
+    // (`Gadget::None`) belongs to the application and is left for it — unless
+    // the Control Manager owns the mouse (see the `Gadget::None` arm).
     if !matches!(gad, Gadget::None) {
         super::input::ev_consume();
     }
@@ -5334,19 +5776,19 @@ pub fn intercept() {
                 put_rect(&mut msg, ws_curr);
                 post_to_owner(owner, &msg);
                 super::input::ct_msgup_hotclose();
-                return;
+                return false;
             }
             // The clicked window is the top one (checked above), so the
             // gadget's topped colour word applies.
             if !watchbox(gad_rect(w, Gadget::Closer), G_CLOSE, gadget_ink(w, W_CLOSER_IDX, true), backend) {
-                return;
+                return false;
             }
             msg[0] = WM_CLOSED;
             put_rect(&mut msg, ws_curr);
         }
         Gadget::Fuller => {
             if !watchbox(gad_rect(w, Gadget::Fuller), G_FULL, gadget_ink(w, W_FULLER_IDX, true), backend) {
-                return;
+                return false;
             }
             msg[0] = WM_FULLED;
             put_rect(&mut msg, ws_curr);
@@ -5424,9 +5866,33 @@ pub fn intercept() {
             put_rect(&mut msg, ws_curr);
             msg[4] = drag_elevator(w, false, backend);
         }
-        Gadget::None => return,
+        // No control point: `message` stays 0 and `hctl_window` ends in
+        // `ct_msgup(0, …)` — no message, then `while (button & 0x0001)
+        // dsptch();` inside `ctlmgr`'s screen lock (`aes/gemctrl.c:81-102,
+        // 182,314`). `ctlmgr` reaches this only for a press **it** owns
+        // (`ev_multi`'s quick check `rlr == gl_mowner`,
+        // `aes/gemevlib.c:185`; `post_button(gl_mowner, …)`,
+        // `aes/geminput.c:463-483`): the press that cancelled a drop-down,
+        // which `bchange` left with `ctl_pd` because `gl_ctmown` was up
+        // (`aes/geminput.c:334-335`, `aes/gemmnlib.c:277`), or one outside
+        // the top window's work area (`chkown` → `ctl_pd`,
+        // `aes/geminput.c:310-322`). It is eaten (`ev_rets`,
+        // `aes/gemevlib.c:268`) and the screen stays the Control Manager's
+        // until the release — an application that asks for it meanwhile
+        // (`wind_update(BEG_UPDATE/BEG_MCTRL)`) gets it with the button up,
+        // so its `fm_own(TRUE)` → `set_mown` can hand it the mouse
+        // (`aes/geminput.c:220-235`). A work-area press the application owns
+        // never reaches `ctlmgr` and is left alone.
+        Gadget::None => {
+            if super::input::own_mouse() {
+                return false;
+            }
+            super::input::ev_consume();
+            return true;
+        }
     }
     post_to_owner(owner, &msg);
+    false
 }
 
 /// Post a Control-Manager `WM_*` message into `owner`'s per-app FIFO — the

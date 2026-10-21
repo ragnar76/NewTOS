@@ -25,7 +25,7 @@
 //! process table, which sit below this layer.
 
 use core::cell::UnsafeCell;
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use super::pd;
 use crate::bdos::process::sched;
@@ -171,6 +171,9 @@ pub(super) fn reinit() {
     for c in WAIT_PASSES.iter() {
         c.store(0, Ordering::Release);
     }
+    for f in IN_WAIT_LINE.iter() {
+        f.store(false, Ordering::Release);
+    }
 }
 
 /// `true` when every loaded accessory has `bitmask` set in its `p_flags` —
@@ -195,20 +198,40 @@ pub fn all_have(bitmask: u16) -> bool {
 /// call — the same sequence of switches, with the loop state kept in
 /// [`WAIT_PASSES`] instead of on the stack.
 ///
-/// EmuTOS's trailing `wm_update(BEG_UPDATE); wm_update(END_UPDATE);` (`:564-565`,
-/// "then get in the wait line") has no counterpart on purpose: it is there to
-/// block behind whoever holds the window-tree lock, and NewTOS's lock never
-/// parks anybody (`super::window`'s `update_beg`: "the refusal is the one thing
-/// that is not reproduced"), so taking and immediately dropping it is provably
-/// a no-op here.
+/// Then EmuTOS's trailing `wm_update(BEG_UPDATE); wm_update(END_UPDATE);`
+/// (`:564-565`, "then get in the wait line"): block behind whoever holds the
+/// window-tree lock, and let it go at once
+/// ([`window::update_wait_line`](super::window::update_wait_line), GH1). A
+/// caller parked there is re-executed from the top like any other; it is
+/// marked in [`IN_WAIT_LINE`] so the re-executed pass goes straight back to the
+/// wait line instead of dispatching the accessories again.
 fn all_run() -> Option<sched::Switch> {
-    for _ in 0..count() {
-        if let sched::Dispatch::Yield(sw) = sched::dsptch() {
-            return Some(sw);
+    let who = super::appl::current_identity();
+    let in_line = IN_WAIT_LINE.get(who).is_some_and(|f| f.load(Ordering::Acquire));
+    if !in_line {
+        for _ in 0..count() {
+            if let sched::Dispatch::Yield(sw) = sched::dsptch() {
+                return Some(sw);
+            }
         }
+        if let Some(f) = IN_WAIT_LINE.get(who) {
+            f.store(true, Ordering::Release);
+        }
+    }
+    if let Some(sw) = super::window::update_wait_line() {
+        return Some(sw);
+    }
+    if let Some(f) = IN_WAIT_LINE.get(who) {
+        f.store(false, Ordering::Release);
     }
     None
 }
+
+/// AES identity `who` has done `all_run`'s dispatches and is in its
+/// `wm_update` wait line (`aes/geminit.c:564`) — kept across the S2 restart of
+/// a caller parked there, for the reason [`WAIT_PASSES`] is. Cleared when the
+/// wait line is passed and with [`forget_wait`].
+static IN_WAIT_LINE: [AtomicBool; pd::NUM_PDS] = [const { AtomicBool::new(false) }; pd::NUM_PDS];
 
 /// `wait_for_accs(bitmask)` (`aes/geminit.c:599-628`) — let every desk
 /// accessory run until each has `bitmask` set in its `p_flags`, or
@@ -279,5 +302,8 @@ fn spend_pass(who: usize) -> u32 {
 pub(super) fn forget_wait(who: usize) {
     if let Some(c) = WAIT_PASSES.get(who) {
         c.store(0, Ordering::Release);
+    }
+    if let Some(f) = IN_WAIT_LINE.get(who) {
+        f.store(false, Ordering::Release);
     }
 }

@@ -103,6 +103,27 @@ pub const WAKE_MESG: u64 = 2;
 /// `azombie` → `signal` (`aes/gemflag.c:32-68`), run by any dispatcher pass.
 pub const WAKE_TIMER: u64 = 4;
 
+/// [`wait_multi`] event bit: the AES window-tree lock `wind_spb` changed hands
+/// — `unsync` gave it to the head of its wait line (`azombie(p, 0)`,
+/// `aes/gemflag.c:117-124`) after a refused `tak_flag` had parked the waiter
+/// with `ev_block(MU_MUTEX, &wind_spb)` (`aes/gemwmlib.c:1785-1786`). Woken
+/// like a [`wait_mutex`] waiter (GH1).
+pub const WAKE_MUTEX: u64 = 8;
+
+/// `WAIT_MUTEX` class tag: the AES window-tree lock (`wind_spb`) — there is
+/// one such lock, so the key carries no argument. Woken by the AES's `unsync`
+/// hand-over (`crate::aes::window`, GH1).
+const CLASS_MUTEX: u64 = 5;
+
+/// The `WAIT_MUTEX` wake key: the window-tree lock was handed to the head of
+/// its wait line. Every waiter re-checks; only the one the lock was handed to
+/// proceeds, the others sleep again (FIFO order is kept by the AES's own wait
+/// line, not by the wake).
+#[inline]
+pub const fn wait_mutex() -> u64 {
+    CLASS_MUTEX << WAIT_CLASS_SHIFT
+}
+
 /// Bit position of the AES identity within a [`wait_multi`] argument.
 const MULTI_IDX_SHIFT: u32 = 8;
 /// Mask of the event bits within a [`wait_multi`] argument.
@@ -664,7 +685,8 @@ pub fn wake(cond: u64) {
 }
 
 /// `true` when the [`wait_multi`] key `waiter` asked for the source the
-/// single-class key `cond` names ([`wait_input`] or [`wait_mesg`]).
+/// single-class key `cond` names ([`wait_input`], [`wait_mesg`] or
+/// [`wait_mutex`]).
 fn multi_covers(waiter: u64, cond: u64) -> bool {
     if wait_class(waiter) != CLASS_MULTI {
         return false;
@@ -672,6 +694,7 @@ fn multi_covers(waiter: u64, cond: u64) -> bool {
     let events = wait_arg(waiter) & MULTI_EVENTS_MASK;
     match wait_class(cond) {
         CLASS_INPUT => events & WAKE_INPUT != 0,
+        CLASS_MUTEX => events & WAKE_MUTEX != 0,
         CLASS_MESG => {
             events & WAKE_MESG != 0
                 && (wait_arg(waiter) >> MULTI_IDX_SHIFT) == wait_arg(cond)

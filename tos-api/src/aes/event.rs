@@ -174,6 +174,13 @@ fn menu_intercept(idx: usize) -> bool {
     let Some(backend) = host().and_then(|h| h.raster()) else {
         return false;
     };
+    // `ctlmgr`'s `ev_multi` fired on `MU_M1`: `wm_update(BEG_UPDATE); /* take
+    // the screen */` (`gemctrl.c:463`), then `hctl_rect()` (`:472-473`). With
+    // the lock another process's, `ctlmgr` waits in that `wm_update` and the
+    // bar is not tracked (the caller gates on `window::ctl_may_run`).
+    if !super::window::ctl_begin() {
+        return false;
+    }
     match super::menu::track(tree, backend) {
         Some((title, item)) => {
             let mut msg = [0i16; pd::MSG_WORDS];
@@ -219,11 +226,19 @@ fn menu_intercept(idx: usize) -> bool {
                 pd::post_msg(target, msg);
             }
             // `ct_msgup`: "send message and wait for the mouse button to come
-            // up" (`gemctrl.c:81-104`).
+            // up" (`gemctrl.c:81-104`) — still inside `ctlmgr`'s screen lock,
+            // which the end of that wait gives up (`:484`;
+            // `input::ct_msgup_busy` → `window::ctl_release`).
             super::input::ct_msgup_hold();
+            super::window::ctl_finish(true);
             true
         }
-        None => false, // cancelled — the click is consumed, no message
+        None => {
+            // cancelled — the click is consumed, no message;
+            // `wm_update(END_UPDATE)` (`gemctrl.c:484`).
+            super::window::ctl_finish(false);
+            false
+        }
     }
 }
 
@@ -377,7 +392,9 @@ pub fn evnt_mouse(pb: &Aespb) -> Option<sched::Switch> {
         // test (A112 F4).
         let mut pass = if ev_armed(idx) { 1u32 } else { 0u32 };
         loop {
-            if !super::input::ct_msgup_busy() {
+            // The Control Manager's loop head runs only when it could have
+            // taken the screen (`window::ctl_may_run`, `gemctrl.c:439-463`).
+            if !super::input::ct_msgup_busy() && super::window::ctl_may_run() {
                 super::input::w_setactive();
             }
             let fired = (pass == 0 && rect_event_at(&m, arm_pos))
@@ -587,7 +604,15 @@ pub fn evnt_multi(pb: &Aespb) -> Option<sched::Switch> {
             // the press that selected a menu item to come up
             // (`gemctrl.c:100-101`): no interception, no `w_setactive`, until the
             // button is released.
-            if !super::input::ct_msgup_busy() {
+            //
+            // Nor does it run while **another process holds the screen lock**
+            // (GH1): EmuTOS's `ctlmgr` is then asleep in its `ev_multi` or
+            // blocked in the `wm_update(BEG_UPDATE)` that follows it
+            // (`gemctrl.c:439-463`) — no bar track, no frame click, no
+            // `w_setactive()` until the holder's `END_UPDATE`
+            // (`window::ctl_may_run`). The events it would have acted on stay
+            // pending: the pointer over the bar, the latched frame press.
+            if !super::input::ct_msgup_busy() && super::window::ctl_may_run() {
                 // AES intercepts a click in the menu bar or a window frame before
                 // the app sees the raw button: it owns the mouse over the
                 // menu/frame and posts the resulting MN_SELECTED / WM_* message
@@ -851,7 +876,7 @@ pub fn evnt_keybd(pb: &Aespb) -> Option<sched::Switch> {
     let idx = super::appl::current_identity();
     let key = match host() {
         Some(h) => loop {
-            if !super::input::ct_msgup_busy() {
+            if !super::input::ct_msgup_busy() && super::window::ctl_may_run() {
                 super::input::w_setactive();
             }
             if super::input::owns_keys(idx) {

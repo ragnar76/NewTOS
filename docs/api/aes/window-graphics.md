@@ -1099,8 +1099,10 @@ window-gadget hits.
 
 > **Reference vs. contract.** The lock *semantics* a program observes — "while I
 > hold BEG_UPDATE the window layout is frozen and my rectangle list stays
-> valid" — are contract; the `tak_flag`/`ev_block`/`sy_tas` cooperative-mutex
-> mechanics are EmuTOS internals NewTOS reimplements over its own process locks.
+> valid", and "a second process's BEG_UPDATE waits until I let go" (see
+> "The refusal parks the taker" below) — are contract; the
+> `tak_flag`/`ev_block`/`sy_tas` cooperative-mutex mechanics are EmuTOS
+> internals NewTOS reimplements over its own scheduler.
 
 ### Each counter carries its owner (A110, 2026-09-23)
 
@@ -1129,10 +1131,129 @@ runs (`gemfmlib.c:99-104`) and the `BEG_UPDATE` it took comes off with it; then
 the screen lock, under `sh_ldapp`'s owner test. Receipts:
 `tos-api/tests/aes_a96_zombie_windows.rs` `a110_*`.
 
-**The one thing that is not reproduced** is `tak_flag`'s refusal: there is no
-AES scheduler to park a second taker on, so a second client's `BEG_UPDATE`
-raises the count instead of blocking and the first owner keeps the lock. The
-rest of the AES never withholds the screen from anyone, so nothing observes it.
+### The refusal parks the taker — a real mutex (GH1, 2026-10-21)
+
+*Correction.* Until 2026-10-21 this section said that `tak_flag`'s refusal was
+"the one thing that is not reproduced" and that "nothing observes it". Both
+were wrong. GitHub issue #1 (`TASK/GH1.md`,
+`measurements/measurement-2026-10-19-gh1/RUNINFO.TXT`) is what observes it: a
+desk accessory opened from the *Desk* menu called `wind_update(BEG_UPDATE)`,
+`form_center`, `form_dial`, `objc_draw` and `form_do`'s `fm_own(TRUE)` while
+the press that picked its menu entry was still held, so `set_mown` refused to
+move the mouse (`if (!button)`, `aes/geminput.c:222`), the desktop stayed the
+mouse owner, the desktop's parked `MU_BUTTON` was completed by the clicks in
+the accessory's dialog, and the desktop repainted its window frame over the
+dialog. In EmuTOS the accessory cannot get there before the release, because
+the lock it asks for is held by the Control Manager across exactly that wait.
+
+**EmuTOS** (`aes/gemflag.c:68-130`, `aes/gemwmlib.c:1778-1797`):
+
+```c
+WORD tak_flag(SPB *sy) {                 /* :68-86 */
+    sy->sy_tas++;
+    if ((sy->sy_owner != rlr) && (sy->sy_tas != 1))
+        sy->sy_tas--;                    /* refused */
+    else
+        sy->sy_owner = rlr;
+    return (sy->sy_owner == rlr);
+}
+/* wm_update(BEG_UPDATE): */
+if (!tak_flag(&wind_spb))
+    ev_block(MU_MUTEX, (LONG)&wind_spb); /* amutex: evinsert(e, &sy->sy_wait) */
+void unsync(SPB *sy) {                   /* :105-130 */
+    if (sy->sy_tas <= 0) { sy->sy_tas = 0; return; }
+    sy->sy_tas--;
+    if (sy->sy_tas == 0) {
+        if ((p = sy->sy_wait) != 0) {    /* hand over to the head of the line */
+            sy->sy_wait = p->e_link;
+            sy->sy_owner = p->e_pd;
+            sy->sy_tas = 1;
+            azombie(p, 0);
+            dsptch();
+        } else
+            sy->sy_owner = NULL;
+    }
+}
+```
+
+The Control Manager is a taker like any other: `ctlmgr`'s loop is
+`w_setactive(); ev_multi(…); wm_update(BEG_UPDATE); /* take the screen */ …
+hctl_window / hctl_rect … wm_update(END_UPDATE); /* give up the screen */`
+(`aes/gemctrl.c:439-484`), and a menu selection's `ct_msgup` waits for the
+selecting press to come up *inside* that bracket (`while (button & 0x0001)
+dsptch();`, `:100-101`). The desktop brackets every event it handles the same
+way (`desk/deskmain.c:2094,2121`).
+
+**Contract (what NewTOS reproduces):**
+
+1. A `BEG_UPDATE` — the mode itself, or the one `fm_own(TRUE)` takes
+   (`BEG_MCTRL`, `form_do`, `form_alert`, `form_error` for a code with an
+   alert, `menu_popup`) — by a process while **another** process holds the
+   lock does not return until the lock has been handed to it. Waiters are
+   served in arrival order; the holder's last `END_UPDATE` hands the lock to
+   the head of the line with the count at 1.
+2. "Another process" is EmuTOS's `AESPD`: the desktop, every launched program
+   and every `Pexec` child are one (they nest on each other's hold), each desk
+   accessory is one of its own.
+3. The Control Manager holds the lock from the moment it acts on an event —
+   a menu track, a frame click — until it is done with it; after a menu
+   selection or an `AC_OPEN` that is **the release of the selecting press**.
+   An accessory that answers `AC_OPEN` with `wind_update(BEG_UPDATE)` (or a
+   dialog) therefore runs on only after the release, with the button up, and
+   its `fm_own(TRUE)` gives it the mouse. The same holds for a press the
+   Control Manager owns that produces **no** message: on a window,
+   `hctl_window` ends in `ct_msgup(0, …)` and waits for the release under the
+   lock (`aes/gemctrl.c:81-102,182,314,463-470`) — the press that cancelled a
+   drop-down over the top window's work area (`bchange` left it with
+   `ctl_pd`, `gl_ctmown` was up, `aes/geminput.c:334-335`;
+   `docs/api/aes/menu.md` point 5). An application that takes the lock or
+   mouse control (`BEG_MCTRL`) after that press gets it with the button up,
+   so `set_mown` gives it the mouse; were the lock free, it would hold the
+   screen with `ctl_pd` owning the mouse and, by point 4, nobody to hand it
+   back (the GH1 regression, QED hang,
+   `measurements/measurement-2026-10-21-gh1-fix2/`).
+4. While a process holds the lock the Control Manager does not act: no bar
+   track, no frame click, no `w_setactive` hand-back of the mouse. The pointer
+   over the bar and a latched frame press stay pending until the holder's
+   `END_UPDATE`.
+5. `wind_new`/`wm_new`'s drain (`while (wind_spb.sy_tas > 0)
+   wm_update(END_UPDATE)`, `gemwmlib.c:1882-1883`) ends with the count at 0
+   and every waiter released.
+
+**NewTOS mapping** (`tos-api/src/aes/window.rs`): `tak_flag`/`unsync` are
+the EmuTOS functions over `UPDATE_LOCK`/`UPDATE_OWNER`, the wait line is
+`UPDATE_WAIT`. A refused caller is parked by `update_block` — called by the
+opcode **before** it commits anything (`wind_update`, and the dispatcher's
+gate for opcodes 36/50/52/53) — on the scheduler's `WAIT_MUTEX` wake class;
+the hand-over sets `UPDATE_GRANTED` for the waiter and wakes it, and its
+re-executed call (the S2 restartable block) collects the hand-over in
+`tak_flag` without counting it twice. The inline Control Manager takes the lock
+in `ctl_pd`'s name (`ctl_begin`/`ctl_finish`, the `CTL_PD` owner), keeps it
+across `ct_msgup`'s wait (`input::ct_msgup_hold`; for a press on the top
+window that yields no message, with the mouse not the application's:
+`window::hctl_window`'s `Gadget::None` arm) and gives it up when that
+wait ends (`input::ct_msgup_busy` → `ctl_release`); the event loops run it
+only while `ctl_may_run()`. A waiter parked behind the Control Manager also
+wakes on input, because the release that frees the lock is input. Each
+identity's share of the count is kept in `UPDATE_HOLDS`, so the dead-slot
+sweep below releases exactly the dead client's holds, through `unsync`,
+handing the lock on to the next waiter. Receipts:
+`tos-api/tests/aes_gh1_update_mutex.rs`, the GH1 run
+`measurements/measurement-2026-10-21-gh1/`.
+
+**Not reproduced (named, open):**
+
+* An in-kernel taker that cannot give the CPU away — the shell loop's
+  `fm_error` alert (`kernel/src/shell_loop.rs`) — finding the lock held by
+  another process cannot park; its hold is counted on top of the owner's.
+* EmuTOS also takes the lock inside `wm_open`/`wm_close`/`wm_set`
+  (`gemwmlib.c:1422-1429,1450-1456,1638,1757`) and `w_redraw_desktop`
+  (`:1924-1941`), in `gr_rubwind`/`gr_dragbox` behind the
+  `graf_rubberbox`/`graf_dragbox` opcodes (`gemgrlib.c:205,219,250,267`), in
+  `ap_exit` (`gemaplib.c:253,258`) and through `fs_input`'s `fm_do`
+  (`gemfslib.c:718`): those NewTOS paths do not take it, so they neither wait
+  for a holder nor make others wait. (The Control Manager's own window drags
+  do take it, nested under its hold.)
 
 ---
 
