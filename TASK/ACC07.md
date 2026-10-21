@@ -1,6 +1,6 @@
 # ACC07 — Accessory-Titel im Menuebaum einer Anwendung
 
-Status: **OFFEN** · Prioritaet: **P3** · Typ: Funktionsluecke — Nebenbefund ACC04
+Status: **ERLEDIGT 2026-10-07** (QEMU, `05b3376d`: Titelkopien auf gemeinsamer read-only Seite, ADR-023; TeraDesk und QED zeigen die Titel, [Quittung](ACCTITLE-STATUS-DONE.MD), `measurements/measurement-2026-10-07-acctitle/`) · Prioritaet: **P3** · Typ: Funktionsluecke — Nebenbefund ACC04
 
 Abhaengigkeiten: [ACC04](ACC04.md) (erledigt)
 

@@ -1,6 +1,6 @@
 # BOOT01 — Bootschirm: Layout auf hohen Aufloesungen, Ausrichtung, Tippfehler
 
-Status: **OFFEN** · Prioritaet: **P3** · Typ: Optik / Feinschliff — Anwenderbefund am Geraet (2026-09-23)
+Status: **OFFEN** (Punkt 1 zentrierte Box erledigt `2ace2639`, `measurements/measurement-2026-10-09-initinfo/`; Punkte 2–5 offen: `USB_INSET`, `Port`-Anzeige, „isnt“, Hold-Zeilen in `kernel/src/initinfo.rs`) · Prioritaet: **P3** · Typ: Optik / Feinschliff — Anwenderbefund am Geraet (2026-09-23)
 
 Abhaengigkeiten: —
 

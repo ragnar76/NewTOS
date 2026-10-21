@@ -1,6 +1,6 @@
 # DESK43 — Der Desktop muss im User-Space laufen, wie jede andere Anwendung
 
-Status: **OFFEN** · Prioritaet: **P1** · Typ: **Abweichung von EmuTOS** (nicht blosse Architekturfrage) — Anwenderentscheidung 2026-08-31, geschaerft 2026-09-01, belegt 2026-09-25
+Status: **ERLEDIGT 2026-10-16** (U1–U10; U10 `f6f90202`, Tester-Lauf `87436d52` PASS, ADR-026; Pi 2026-10-16 gebootet; offen nur: Pi-Gegenprobe des EmuCON-Rueckfalls bei defektem NEWDESK) · Prioritaet: **P1** · Typ: **Abweichung von EmuTOS** (nicht blosse Architekturfrage) — Anwenderentscheidung 2026-08-31, geschaerft 2026-09-01, belegt 2026-09-25
 
 Abhaengigkeiten: **[PORT05](PORT05.md) muss vorher stehen** (Begruendung unten).
 Plan liegt: `docs/analysis/desktop-userspace-plan.md` (68 KB, 2026-09-01)

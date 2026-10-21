@@ -1,6 +1,6 @@
 # MEM03 — Der Umgebungsblock eines Kindes ist in EL0 nicht abgebildet; `p_env` traegt eine physische Adresse
 
-Status: **OFFEN** · Prioritaet: **P2** · Typ: Kernfehler (Lader / Speicherabbildung) — gefunden in [PORT09](PORT09.md)
+Status: **ERLEDIGT 2026-10-05** (mit ARCH03 Stufe 1 `c6280342`; Sonde ENVKID/MEM03 PASS in QEMU, siehe [ARCH03-1-Quittung](ARCH03-1-STATUS-DONE.MD) und ARCH03-2; Folge PORT09 `861ad038`; eigene Pi-Probe nicht belegt) · Prioritaet: **P2** · Typ: Kernfehler (Lader / Speicherabbildung) — gefunden in [PORT09](PORT09.md)
 
 Abhaengigkeiten: — · **blockiert** [PORT09](PORT09.md) Schritt 2
 

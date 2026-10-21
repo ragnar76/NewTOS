@@ -1,6 +1,6 @@
 # DESK45 — Die vier Selbsttests in `kernel/src/desk/` haengen in keinem Startpfad
 
-Status: **OFFEN** · Prioritaet: **P3** · Typ: Verrottungsrisiko — aus DESK43 U4, 2026-09-26
+Status: **ERLEDIGT als Form A** (DESK43 U8a `09eaca14`: Feature `selftest-desk`, ein Kommando, Gegenprobe Karte unberuehrt; Tester-Lauf nach U10 `87436d52`: 64 PASS / 1 FAIL vorbestehend); offen/optional: Form B (EL0-Testprogramm) · Prioritaet: **P3** · Typ: Verrottungsrisiko — aus DESK43 U4, 2026-09-26
 
 Abhaengigkeiten: —
 
