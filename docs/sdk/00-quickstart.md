@@ -103,7 +103,8 @@ sdk/compiler-rt/build-compiler-rt.sh     # libclang_rt.builtins.a (compiler runt
 `build-cflib.sh` builds the chain below it first (`sdk/lib-stale.sh`), so
 these three commands give you the four core libraries and the compiler
 runtime (LLVM compiler-rt's builtins: 128-bit `long double` and complex
-arithmetic, which `newtos-cc` links into every program — it stops with
+arithmetic — `long double` works in `printf`/`scanf` and the `…l` math
+functions too since TASK/SDK01 J — which `newtos-cc` links into every program — it stops with
 `libclang_rt.builtins.a is not built` until this has run). Measured: 62 s,
 9 s and 7 s.
 Building them one by one is equivalent: `sdk/libc/build-libc.sh` (33 s),
@@ -128,18 +129,20 @@ sdk/run-host-tests.sh
 
 Expected (measured in a fresh clone before TASK/SDK01 E: 20 passed, 34 s; it
 builds the codec libraries for its own test on the way. SDK01 E added
-`rt-host`, about 20 s, which passes once step 2 is done — the fresh-clone run
-was not repeated):
+`rt-host`, about 20 s, and SDK01 J `ldbl-host`, about 20 s (it needs
+`python3` for its oracle and skips without it); both pass once step 2 is
+done — the fresh-clone run was not repeated):
 
 ```
-host tests: 21 passed, 0 failed, 3 skipped
+host tests: 22 passed, 0 failed, 3 skipped
 ```
 
 The three skips are tests whose inputs you do not have yet and are fine:
 `aesglobal_fields` (needs the TeraDesk source, step 5), `custom-font-host`
 (needs a zView build), `libshare-host` (needs `sdk/libshare/build-libshare.sh`).
-On a non-AArch64 host (a Linux PC) `setjmp-host` and `rt-host` (it runs the
-AArch64 code of the compiler runtime natively) skip as well.
+On a non-AArch64 host (a Linux PC) `setjmp-host`, `rt-host` and `ldbl-host`
+(they run the AArch64 code of the compiler runtime and of libc/libm
+natively) skip as well.
 
 ---
 

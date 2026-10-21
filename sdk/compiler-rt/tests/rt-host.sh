@@ -37,7 +37,7 @@ done
 CRT_TOP="$SDK/compiler-rt/compiler-rt-21.1.8.src"
 OL_TOP="$SDK/libm/openlibm-0.8.8"
 MINT="$SDK/libc/mintlib/include"
-for f in "$SDK/compiler-rt/build/srcs.txt" "$SDK/libm/build/srcs.txt" "$CRT_TOP/lib/builtins" "$OL_TOP/src" "$MINT"; do
+for f in "$SDK/compiler-rt/build/srcs.txt" "$SDK/libm/build/srcs.txt" "$SDK/libm/build/srcs-ld.txt" "$CRT_TOP/lib/builtins" "$OL_TOP/src" "$MINT"; do
   [ -e "$f" ] || { echo "skip: $f missing (run the library's build script)"; exit 77; }
 done
 . "$SDK/toolchain.sh"
@@ -77,7 +77,7 @@ CRT_FLAGS=(-target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 -fPIE -
            -I"$CRT_TOP/lib/builtins" -isystem "$RES")
 OL_FLAGS=(-target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 -fPIE -fno-builtin -nostdinc
           -std=c99 -fno-strict-aliasing -D__BSD_VISIBLE
-          -I"$OL_TOP" -I"$OL_TOP/include" -I"$OL_TOP/aarch64" -I"$OL_TOP/src" -I"$MINT" -isystem "$RES")
+          -I"$OL_TOP" -I"$OL_TOP/include" -I"$OL_TOP/aarch64" -I"$OL_TOP/src" -I"$OL_TOP/ld128" -I"$MINT" -isystem "$RES")
 mkdir -p "$WORK/ship/crt" "$WORK/ship/libm" "$WORK/same" "$WORK/x18/crt" "$WORK/x18/libm" "$WORK/olh"
 (cd "$WORK/ship/crt" && "$AR" x "$SDK/compiler-rt/libclang_rt.builtins.a") || exit 1
 (cd "$WORK/ship/libm" && "$AR" x "$SDK/libm/libm.a") || exit 1
@@ -93,6 +93,10 @@ while IFS= read -r c; do
   "$CLANG" "${OL_FLAGS[@]}" -c "$OL_TOP/$c" -o "$WORK/same/$o" 2>/dev/null || { echo "FAIL: $c does not compile"; exit 1; }
   if cmp -s "$WORK/same/$o" "$WORK/ship/libm/$o"; then nsame=$((nsame+1)); else ndiff=$((ndiff+1)); echo "FAIL: rebuild of $c differs from the shipped member"; fi
   "$CLANG" "${OL_FLAGS[@]}" -ffixed-x18 -c "$OL_TOP/$c" -o "$WORK/x18/libm/$o" 2>/dev/null || exit 1
+  # the `long double' members (build/srcs-ld.txt, TASK/SDK01 J) have no host
+  # counterpart: OpenLibm's Darwin configuration does not build them, the
+  # host's `long double' is double. sdk/libc/tests/ldbl-host.sh checks them.
+  grep -qxF "$c" "$SDK/libm/build/srcs-ld.txt" && continue
   # the host build of the same source: OpenLibm's own Make.inc flags for a
   # clang host (-std=c99 -fno-builtin -fno-strict-aliasing -D__BSD_VISIBLE,
   # its four include dirs), -O2 like the target build

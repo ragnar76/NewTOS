@@ -1,0 +1,13 @@
+run coreval: 78 lines; end: 1; EXC/PANIC: 0
+CoreMark 1.0 -- NewTOS/AArch64 (validation run)
+CoreMark Size    : 666
+Total ticks      : 4198
+Total time (secs): 20.990000
+Iterations/Sec   : 5240.590758
+Iterations       : 110000
+seedcrc          : 0x18f2
+[0]crclist       : 0xe3c1
+[0]crcmatrix     : 0x0747
+[0]crcstate      : 0x8d84
+[0]crcfinal      : 0x0956
+Correct operation validated. See README.md for run and reporting rules.

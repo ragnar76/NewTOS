@@ -1,0 +1,15 @@
+before refresh:
+aa9a79777b9310db01b339089f7b2549d6063239c63494a581cb9005de0c9c0a  libc/libc.a
+41fda8506327f772ad39c608b34e1ac28092579b7510cc0c37af23a4a0f10894  libm/libm.a
+after MINTLIB_REFRESH=1 / OPENLIBM_REFRESH=1 (fresh extract + overlay):
+aa9a79777b9310db01b339089f7b2549d6063239c63494a581cb9005de0c9c0a  libc/libc.a
+41fda8506327f772ad39c608b34e1ac28092579b7510cc0c37af23a4a0f10894  libm/libm.a
+libc-refresh.log:compiled OK=627  skipped=5  (of 632)
+libc-refresh.log:failures match libc/expected-failures.txt: 5 today, 5 recorded, 0 new
+libc-refresh.log:archived -> /Volumes/Daten/Development/PiRusTOS/sdk/libc/libc.a (1305442 bytes)
+libc-refresh.log:LINK OK -> /Volumes/Daten/Development/PiRusTOS/sdk/libc/build/libtest.NCP (145168 bytes)
+libm-refresh.log:compiled OK=256  skipped=0  (of 256)
+libm-refresh.log:failures match libm/expected-failures.txt: 0 today, 0 recorded, 0 new
+libm-refresh.log:archived -> /Volumes/Daten/Development/PiRusTOS/sdk/libm/libm.a (688030 bytes)
+libm-refresh.log:defined symbols: 403  dangling references: 25 (build/dangling.txt)
+libm-refresh.log:LINK OK -> /Volumes/Daten/Development/PiRusTOS/sdk/libm/build/mathtst.NCP (110488 bytes)

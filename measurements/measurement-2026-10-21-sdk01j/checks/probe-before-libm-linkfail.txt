@@ -1,0 +1,3 @@
+FAIL scalbln: undefined symbol: scalbnl 
+FAIL scalblnf: undefined symbol: scalbnl 
+FAIL scalblnl: undefined symbol: scalbnl 

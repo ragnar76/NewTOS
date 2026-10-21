@@ -1,0 +1,1 @@
+40 double midpoints (exact decimal strings of 55..118 characters), 22 not rounded to the even neighbour

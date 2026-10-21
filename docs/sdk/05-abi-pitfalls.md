@@ -481,19 +481,23 @@ for C99 complex `*` and `/`. These live in the compiler runtime.
 builtins, built by `sdk/compiler-rt/build-compiler-rt.sh` into
 `sdk/compiler-rt/libclang_rt.builtins.a`; `newtos-cc` (and so `newtos.mk`)
 links it last, always. A hand-written link line adds that archive after the
-libraries. `long double` arithmetic is then correct binary128 (soft-float, so
-slow; it honours the `fesetround()` rounding mode), but the printf/scanf side
-is not: libc is built with `-D__NO_LONG_DOUBLE_MATH`
-(`sdk/libc/build-libc.sh:19-25`), so `printf("%Lf", x)` with a real `long
-double` argument reads it as a `double` and prints garbage (measured for
-`qecvt`, [07 §11](07-mintlib-limits.md#11-functions-that-do-not-link-measured-per-symbol-tasksdk01-a));
-convert to `double` before printing. `strtold` returns `strtod()`'s value
-widened (`__extenddftf2`, still `sdk/libc/newtos-arch/softfloat.c`, which
-wins over the archive's copy because `libc.a` comes first). The libm's
-`long double` (`…l`) functions are still not built
-([07 §4/§6](07-mintlib-limits.md#4-mintlib-directories-not-compiled-at-all)),
-which leaves `scalbln`/`scalblnf` unlinkable; `powf`, `remainder`, `fdim`,
-`nexttowardf`, `cpowf` and the complex inverse functions link.
+libraries. Since TASK/SDK01 J `long double` is binary128 end to end:
+arithmetic (soft-float, so slow), `printf`/`scanf` with `%Lf %Le %Lg %La`,
+`strtold`, `qecvt`/`qfcvt`/`qgcvt`, and the libm's `…l` functions (OpenLibm's
+`ld128/` set: `expl`, `logl`, `powl`, `sinl`, `sqrtl`, … and `scalbln`/
+`scalblnf`/`scalblnl`) — [07 §4, §11](07-mintlib-limits.md#11-functions-that-do-not-link-measured-per-symbol-tasksdk01-a).
+Until then libc was built with `-D__NO_LONG_DOUBLE_MATH` and `printf("%Lf")`
+read a `double` where a binary128 had been passed. Plain `printf` needs no
+compiler runtime (a hand-written link of a program without `long double`
+still links without the archive); `libc.a` needs it only in
+`qecvt`/`qfcvt`/`qgcvt(_r)` and `printf_size`. Limits, measured
+(`sdk/libc/tests/ldbl-host.sh`): compiler-rt honours the `fesetround()` mode
+in `+`/`-` only — `*`, `/` and conversions always round to nearest — and
+raises `FE_INEXACT` only there, so OpenLibm's `sqrtl` (which decides the last
+bit with `fetestexcept(FE_INEXACT)` after a division) is within 1 ulp but not
+always correctly rounded; the other `…l` functions are within 2 ulp (measured
+maxima 0.5–1.7). `__extenddftf2` still comes from
+`sdk/libc/newtos-arch/softfloat.c` (`libc.a` comes first in the group).
 
 ### B13. clang drops cross-translation-unit `alias` attributes
 

@@ -1,0 +1,7 @@
+FAIL __gethostid: undefined symbol: gethostbyname 
+FAIL gethostid: undefined symbol: gethostbyname 
+FAIL if_getifflags: undefined symbol: socket 
+FAIL if_getlnkflags: undefined symbol: socket 
+FAIL if_link: undefined symbol: socket 
+FAIL if_setifflags: undefined symbol: socket 
+FAIL if_setlnkflags: undefined symbol: socket 

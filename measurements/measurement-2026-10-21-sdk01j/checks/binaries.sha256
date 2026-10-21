@@ -1,0 +1,10 @@
+# before (archives as found at HEAD 04f81551, copies in $S/before)
+39a8a36ab743bd6f312414434d10dd85dfb2be5c74c23ee7ece949bd00e2f552  libc.a
+5de4bdaafeb04079c247310cd9237f7db1ee908203fe1d549401ec2fbc81f4f5  libm.a
+3132dbf239c18dde40c0c6db7f6b21809e81e79c605235444a8962b487fdffc2  libclang_rt.builtins.a
+# after (working tree)
+aa9a79777b9310db01b339089f7b2549d6063239c63494a581cb9005de0c9c0a  sdk/libc/libc.a
+41fda8506327f772ad39c608b34e1ac28092579b7510cc0c37af23a4a0f10894  sdk/libm/libm.a
+3132dbf239c18dde40c0c6db7f6b21809e81e79c605235444a8962b487fdffc2  sdk/compiler-rt/libclang_rt.builtins.a
+# probe
+2d1e9ba6e0898e8398fc4a86f10d1fb2e555aa197ef671ced5819a89d9062038  LDP.NCP

@@ -1,0 +1,26 @@
+E_P35E_THIRD   3.33333333333333333333333333333333317e-01
+E_PLA_THIRD    0x1.5555555555555555555555555555p-2
+E_PLF_THIRD    0.333333
+E_PLG_1E4000   1e+4000
+E_P20E_MAX     1.18973149535723176509e+4932
+E_P20E_DMIN    6.47517511943802511092e-4966
+E_PLA_DMIN     0x0.0000000000000000000000000001p-16382
+E_P40F_TWO3    0.6666666666666666666666666666666666345678
+E_STRTOLD_01   3ffb999999999999:999999999999999a
+E_STRTOLD_SUB  0000000000000000:00057c9647e1a018
+E_STRTOLD_MAX  7ffeffffffffffff:ffffffffffffffff
+E_SSCANF_PI    4000921fb54442d1:8469898cc51701b8
+E_QECVT        3333333333
+E_QFCVT        2500
+E_QGCVT        0.125
+E_THIRD        3ffd555555555555:5555555555555555
+E_EXPL1        40005bf0a8b14576:95355fb8ac404e7a
+   expl: 0.476 ulp from the 130-digit reference (correctly rounded: 40005bf0a8b14576:95355fb8ac404e7a)
+E_LOGL2        3ffe62e42fefa39e:f35793c7673007e6
+   logl: 0.073 ulp from the 130-digit reference (correctly rounded: 3ffe62e42fefa39e:f35793c7673007e6)
+E_SINL1        3ffeaed548f090ce:e0418dd3d2138a1f
+   sinl: 0.530 ulp from the 130-digit reference (correctly rounded: 3ffeaed548f090ce:e0418dd3d2138a1e)
+E_POWL         3fff6a09e667f3bc:c908b2fb1366ea95
+   powl: 0.489 ulp from the 130-digit reference (correctly rounded: 3fff6a09e667f3bc:c908b2fb1366ea95)
+E_CBRTL2       3fff428a2f98d728:ae223ddab715be25
+   cbrtl: 0.051 ulp from the 130-digit reference (correctly rounded: 3fff428a2f98d728:ae223ddab715be25)

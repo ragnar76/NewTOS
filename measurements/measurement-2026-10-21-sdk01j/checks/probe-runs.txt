@@ -1,0 +1,6 @@
+run ldp-on: 104 lines; end: 1; EXC/PANIC: 0
+  LDP RESULT fails=0 ok=42  FAIL lines: 0  ok lines: 42  desktop: 1  fsck: fsck rc=0 
+run ldp-strict: 104 lines; end: 1; EXC/PANIC: 0
+  LDP RESULT fails=0 ok=42  FAIL lines: 0  ok lines: 42  desktop: 1  fsck: fsck rc=0 
+run ldp-off: 104 lines; end: 1; EXC/PANIC: 0
+  LDP RESULT fails=0 ok=42  FAIL lines: 0  ok lines: 42  desktop: 1  fsck: fsck rc=0 

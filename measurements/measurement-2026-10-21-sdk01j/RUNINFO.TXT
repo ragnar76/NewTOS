@@ -1,0 +1,106 @@
+measurement-2026-10-21-sdk01j -- Developer: TASK/SDK01 package J, `long double' (IEEE binary128) in libc and libm: mintlib printf/scanf/
+strtold/qecvt family, OpenLibm's ld128 `l' functions (scalbln & Co.), <fenv.h> through newtos-cc -lm, stale "no compiler-rt" comments.
+SDK only, no kernel/tos-api/tos-types change. Base HEAD 04f81551, change UNCOMMITTED in the working tree. Developer self-evidence; the
+Tester's verdict is separate.
+Host macOS (Apple Silicon), Apple clang 21.0.0 + rust-lld/llvm-* of the pinned nightly, python3 3.14 (oracle); QEMU -M raspi4b -append
+"serial=on [memprot=strict|off]", one QEMU at a time, per-run APFS clone (cp -c) of one base card, fsck_msdos -n of the clone, clone
+deleted; private 64 MiB FAT16 images (label SDK01JPR), no SD card, no Pi. Scratch = session scratchpad .../scratchpad/sdk01j
+(method/env.sh); binaries not kept here, sha256 in checks/binaries.sha256, checks/apps-*.sha256, checks/kernels.sha256.
+
+ANALYSIS (does upstream mintlib do binary128?)  No. mintlib-0.60.1's long double code is the m68k 96-bit extended format only:
+  include/ieee754.h union ieee854_long_double (32+32-bit mantissa with explicit integer bit, 16-bit pad), gmp/ldbl2mpn.c and
+  gmp/mpn2ldbl.c (64-bit significand), stdlib/strtold.c (m68k DENORM_EXP, 80-bit NaN payload), stdio/printf_fphex.c (asserts
+  sizeof(long double) == 12), mintlib/s_isinfl.c, s_isnanl.c (80-bit word layout). printf_fp.c/strtod.c/fpioconst.c and the
+  q*cvt family are generic (LDBL_MANT_DIG; qefgcvt knows 113 -> 36 digits). Size of the binary128 port: 9 overlay files, glibc's
+  ldbl-128 code where mintlib has the m68k one -- not a rewrite, so implemented (no STOP).
+
+CHANGE
+  sdk/libc/build-libc.sh       without -D__NO_LONG_DOUBLE_MATH; header comments rewritten (no "no compiler-rt"); every archive
+                               member's compile command recorded in build/compile-commands.txt (run_cc; libc.a byte-identical with
+                               and without the recording)
+  sdk/libc/overlay/            include/ieee754.h      binary128 union ieee854_long_double (glibc ldbl-128 layout, LE)
+                               gmp/ldbl2mpn.c         __mpn_extract_long_double for 113 bits / 64-bit limbs (normal + denormal)
+                               gmp/mpn2ldbl.c         __mpn_construct_long_double
+                               stdlib/strtold.c       m68k DENORM_EXP off for binary128; NaN payload macro for binary128
+                               stdio/printf_fphex.c   %La binary128 branch (28 hex digits), numbuf 16 -> 32
+                               stdio/printf_fp.c      (1) frac_shift: the first scale 10^n gets (fracsize - _FPIO_CONST_OFFSET)
+                                                      zero limbs -- FRAC has 2 fraction limbs for binary128, the __tens table 1;
+                                                      without it every |x| >= 8 printed wrong (dev evidence below); 0 for
+                                                      double, so the double path is unchanged; (2) sign of an infinity from
+                                                      signbit() instead of `x < 0' (the only __lttf2 libcall: plain printf needs
+                                                      no compiler runtime)
+                               mintlib/s_isinfl.c, s_isnanl.c   binary128 bit tests (GET_LDOUBLE_WORDS64)
+                               include/bits/endian.h  __FLOAT_WORD_ORDER__ fallback = __BYTE_ORDER__ (was m68k BIG). clang does
+                                                      not predefine it; math_private.h/math_ldbl.h took the m68k word layout:
+                                                      __finitel(inf) = 1 and -- PRE-EXISTING, double too -- printf("%f",
+                                                      INFINITY) printed DBL_MAX's 309 digits, NaN a number (checks/
+                                                      before-after-host.txt). Root cause of the long double classification
+                                                      failure, so fixed here; declared as a double-side behaviour change.
+  sdk/libm/build-libm.sh       OpenLibm's own AArch64-non-Darwin configuration: LONG_DOUBLE_NOT_DOUBLE=1, SUBDIRS += ld128,
+                               -I ld128; build/srcs-ld.txt = the long double part (for rt-host.sh); comments rewritten.
+                               256 members (was 175; the 175 are byte-identical to before), 0 failures, 0 new warnings classes.
+  sdk/libm/overlay/src/s_scalbln.c   upstream defect: scalblnl passed (int)n instead of the clamped n (scalblnl(1, 1L<<40) = 1)
+  sdk/libm/include/cdefs-compat.h    new adapter: openlibm_fenv_aarch64.h includes "cdefs-compat.h" (OpenLibm src/; its own
+                               install-headers copies src/*.h next to include/*.h) -> <fenv.h> compiles with newtos-cc -lm
+  sdk/libm/include/math.h      comment (the `l' functions are in libm.a now)
+  sdk/libc/tests/ldbl-host.sh, ldbl-host.c, ldbl-elf.c, ldbl-oracle.py   new host test (see 2); sdk/run-host-tests.sh (+ ldbl-host)
+  sdk/compiler-rt/tests/rt-host.sh   OL_FLAGS + -I ld128 (parity of the new members); host OpenLibm build skips srcs-ld.txt
+  docs/sdk/05 B12, 07 (header, 4, 5, 6, 11), 00-quickstart (host test count, ldbl-host), 08, 09, 04 (stale facts)
+  NOT changed: kernel, tos-api, tos-types, compiler-rt archive (sha256 3132dbf2 before and after), newtos-cc, any vendored tarball.
+
+1 LINK PROBE PER SYMBOL (method/link-probe.sh = sdk01a's, copied; method/probes.sh; archives + builtins in both runs)
+  libm.a: before 214 global symbols, 3 fail (scalbln scalblnf scalblnl -> scalbnl); after 322 symbols, 0 fail.
+  libc.a: before 1229, 7 fail; after 1231 (+__mpn_extract_long_double, __mpn_construct_long_double), the same 7 (socket/).
+  libc.a dangling references 10 -> 10 (__trunctfdf2 gone, __floatsitf new); members needing builtins: misc/qefgcvt_r.c,
+  stdio/printf_size.c only (printf_fp.c none).  checks/probe-{before,after}-*
+2 HOST TEST sdk/libc/tests/ldbl-host.sh (checks/ldbl-host.txt): newtos-cc -lm link 0 undefined; the 202 archive members it pulls
+  rebuilt byte-identical (libc: recorded commands; libm/builtins: build flags), then with -ffixed-x18 (macOS clobbers x18, see
+  rt-host.c) and run natively on the host; oracle = exact rational arithmetic in Python (Fraction/Decimal), seed 20261021:
+  66405 checks, 0 failed: printf %.35Le/%La on 3221 values (whole range, subnormals, specials) byte-exact, %.pLE/%.pLg/%.pLf;
+  strtold(%.35Le) round trip 3219/3219; strtold of 1519 random decimal strings + sscanf %Lf/%Lg/%Le 600; qecvt/qecvt_r/qfcvt_r/
+  qgcvt 410 each; binary128 + - * / on full-width operands 3000 each (SDK01 E only had 53-bit operands); classification; double
+  printf/strtod/sscanf 799 + inf/nan; libm exact functions bit-exact (scalbnl, ldexpl, scalblnl incl. |n| = 2^40, scalbln,
+  scalblnf, frexpl, ilogbl, logbl, modfl, fabsl, copysignl, floorl, ceill, truncl, roundl, rintl, nextafterl, fmodl,
+  remainderl, remquol, fmal), sqrtl <= 1 ulp, 17 transcendental l functions <= 2 ulp (max: expl 1.680, sinhl 1.433, coshl 1.409,
+  sinl 1.119, tanhl 1.112, tanl 1.061, hypotl 1.000, others <= 0.66).
+  INFO (upstream, never a failure): sqrtl correctly rounded in 606 of 808 (OpenLibm e_sqrtl.c tests FE_INEXACT after a division;
+  compiler-rt raises flags in add/sub only); strtold of exact halfway strings and +-1 last digit: 276 of 904 round to the wrong
+  neighbour -- mintlib strtod = glibc before 2.17 (BZ #3479, strtod.c:1087 truncates fraction digits to a sticky bit); the same
+  for DOUBLE: method/double-halfway.sh, 22 of 40 double midpoints wrong (checks/double-halfway.txt); strtold("infinity") consumes
+  3 (strtod.c:562 tests "inf" first; double too).
+  sdk/run-host-tests.sh: 26 passed, 0 failed, 0 skipped (before: 25/0/0)   checks/sdk-host-tests-{before,after}.txt
+  rt-host.sh after the libm change: 407 of 407 members byte-identical, 1950316 checks, 0 failed (checks/rt-host.txt)
+  Fresh extract: MINTLIB_REFRESH=1 / OPENLIBM_REFRESH=1 rebuild gives the same libc.a/libm.a sha256 (checks/build-refresh.txt).
+  Dev evidence (session, not re-run): before the frac_shift fix, %.20Le of 2^3 printed "?.8e+01" (first byte not a digit, debug
+  dump: frac/scale ratio 2^64 off), 2^100 "m.1258...e+31", 2^191 "?.0977...e+63"; the oracle's first run died on non-UTF-8 output.
+3 BEFORE/AFTER ON THE HOST (method/before-host.sh, checks/before-after-host.txt; HEAD libc.a vs new, same requests):
+  printf("%Lf", 1/3L): before "11945305291614955...064.000000" (111 chars), after "0.333333"; %La 1.0L "0x0p+0" -> "0x1p+0";
+  printf("%f", INFINITY) 309 digits -> "inf", NaN -> "nan"; strtold("0.1") ...:a000000000000000 (double widened) ->
+  ...:999999999999999a; qecvt(1/3,10) "-0.000000000" -1 1 -> "3333333333" 0 0; qfcvt_r(2.5,3) "" -3 -> "2500" 1;
+  qgcvt(0.125,6) "0" -> "0.125". <fenv.h> with HEAD's sdk/libm/include: "'cdefs-compat.h' file not found"; now compiles, also
+  through newtos-cc -lm without -I .../src.
+4 QEMU PROBE LDP (method/ldp.c -> C:\AUTO\LDP.NCP, newtos-cc -lm, shipped archives; build-probe.sh, cards.sh, run-probe.sh;
+  expected values: method/expected.py -> expected.h/.txt from the oracle; transcendental = host run of the same code, 0.05-0.53 ulp
+  from the 130-digit reference): memprot on / strict / off: LDP RESULT fails=0 ok=42 each, 0 EXC/PANIC, desktop up, fsck rc=0
+  (serial/ldp-*.log, checks/probe-runs.txt). Covers %.35Le/%La/%Lf/%Lg/%.40Lf (1/3, 2/3, 1e4000L, LDBL_MAX, denorm_min, -0, +-inf),
+  double %f/%e of inf/nan, strtold (0.1, 1e-4950, LDBL_MAX), sscanf %Lf, qecvt/qfcvt (static buffer)/qgcvt, fesetround
+  UPWARD/DOWNWARD/NEAREST on 1 +- 2^-200, scalbln/scalblnf/scalblnl(2^40), scalbnl to denorm_min, expl/logl/sinl/powl/cbrtl,
+  sqrtl(2.25), isinf/isnan/isfinite on long double. INFO line: 1/3 under FE_UPWARD = ...5555 (compiler-rt __divtf3 ignores the
+  rounding mode; fp_add_impl.inc is the only user of __fe_getround). HEAD archives: LDP does not link (undefined cbrtl expl
+  logl powl scalbnl sinl sqrtl; checks/build-probe.txt).
+  Kernels: the release rpi4 kernels of measurement-2026-10-21-sdk01f (git archive 33ef861a; `git diff --stat 33ef861a 04f81551 --
+  kernel tos-api tos-types tools` empty), sha256 6c3cf46f (plain) cebeb310 (qfi) 0b0a9aa8 (tdv) = that RUNINFO's.
+5 APPLICATIONS (method/app-builds.sh, checks/app-builds.txt, apps-{before,after}.sha256): QED, TeraDesk, CoreMark CORE+COREVAL, Doom,
+  zView (+10 .NLD), APITEST rebuilt with their own scripts (no newtos-cc, no builtins on their link lines): rc=0, every link 0
+  undefined. Changed: QED, Doom, CORE/COREVAL, ZVIEW.NAP, PNG.NLD, JPG.NLD; byte-identical: TeraDesk DESKTOP.NAP, APITEST.NCP,
+  8 .NLD. "before" = the binaries in the tree at HEAD (QED.NAP 5dfe7f78, DESKTOP.NAP 1dadbe88 = sdk01f's checks/binaries.sha256).
+  Runs (method/series-apps.sh, IKBD injector kernels + scripts of sdk01f, copied unchanged):
+  QED new vs old (Ctrl+O dated.txt, Textinfo, edit, Ctrl+S twice, Textinfo): all 9 screendumps byte-identical new vs old
+  (screendumps/qfi-*), file saved ("dedated file\r\n", serial/qfi-*-card.txt), fsck rc=0, 0 EXC/PANIC.
+  TeraDesk new (binary unchanged): dclick drive C -> C:\ window with size/date columns (screendumps/td-new-t1-window.png), fsck 0.
+  CoreMark COREVAL.NCP from C:\AUTO (method/run-coremark.sh, checks/coreval-run.txt): "Correct operation validated",
+  Iterations/Sec 5240.590758 printed through the double %f path, 0 EXC/PANIC.
+NOT RUN: real Pi 4; qemu-virt (kernel unchanged); cargo build/clippy (no Rust crate touched); Doom/zView at run time (build only);
+  the other link sites without newtos-cc (gemtest, chaintest, present, fsbench, tosdump/*, ldg demo/client): not rebuilt --
+  they link libc.a without the builtins and need them only if they pull qefgcvt_r.o or printf_size.o; a fresh-clone run of the
+  quickstart (its 22/0/3 line is expected, not measured).

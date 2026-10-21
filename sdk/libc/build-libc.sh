@@ -16,11 +16,27 @@
 #     -D_GNU_SOURCE.
 #
 # NewTOS-specific deltas from the pristine m68k build:
-#   - -D__NO_LONG_DOUBLE_MATH: AArch64 `long double` is 128-bit IEEE quad, which
-#     would make the float printf engine (stdio/printf_fp.c) emit soft-float
-#     quad libcalls (__lttf2 & friends) we have no compiler-rt for. Forcing
-#     long double == double routes float printf through hardware `double`
-#     (%f/%e/%g fully correct; %Lf handled as double). No stub.
+#   - `long double' is real (TASK/SDK01 J): AArch64 `long double' is IEEE
+#     binary128, which mintlib does not know (its long double code is the m68k
+#     96-bit extended format). Until SDK01 J the library was built with
+#     -D__NO_LONG_DOUBLE_MATH (long double == double inside libc), because the
+#     binary128 code needs soft-float libcalls (__lttf2, __multf3, ...) and the
+#     SDK had no compiler runtime; %Lf then read a double where the caller had
+#     passed a long double, and qecvt/qfcvt/qgcvt printed wrong digits. Since
+#     SDK01 E sdk/bin/newtos-cc links compiler-rt's builtins, and the binary128
+#     format is added by overlays (glibc's ldbl-128 code where mintlib has the
+#     m68k one): include/ieee754.h (the union), gmp/ldbl2mpn.c +
+#     gmp/mpn2ldbl.c (significand <-> mpn), stdlib/strtold.c (denormal
+#     exponent, NaN payload), stdio/printf_fphex.c (%La), mintlib/s_isinfl.c +
+#     s_isnanl.c, stdio/printf_fp.c (the scale of 10^n for two fraction limbs;
+#     the sign of an infinity from its bit, so plain printf needs no compiler
+#     runtime), include/bits/endian.h (float word order little-endian -- it
+#     claimed the m68k order, which broke the double/long double
+#     classification). The libc members that compute in binary128
+#     (misc/qefgcvt_r.c, stdio/printf_size.c) need the builtins; newtos-cc
+#     links them, and a program not linked through newtos-cc needs
+#     sdk/compiler-rt/libclang_rt.builtins.a on its link line only if it
+#     pulls one of those two members (or uses long double itself).
 #   - Arch shims in sdk/libc/newtos-arch/ replace m68k-only assembly:
 #       memops.c  -> memcpy/memmove/memset/bcopy/bzero (were bcopy.S/memset.S)
 #       proc.S    -> _exit/_Exit/__libc_exit via the Pterm trap (was libc_exit.S)
@@ -75,6 +91,11 @@
 #                                link_warning line (an a.out `.stabs' directive
 #                                clang rejects -- the files did not compile;
 #                                TASK/SDK01 A)
+#       include/ieee754.h, include/bits/endian.h, gmp/ldbl2mpn.c,
+#       gmp/mpn2ldbl.c, stdlib/strtold.c, stdio/printf_fp.c,
+#       stdio/printf_fphex.c, mintlib/s_isinfl.c, mintlib/s_isnanl.c
+#                                binary128 `long double' (TASK/SDK01 J, see
+#                                above; checked by tests/ldbl-host.sh)
 #   - newtos-arch/nf_ops.c replaces the m68k mintlib/nf_ops.c (NatFeats: "not
 #     available" on AArch64), and newtos-arch/do_fstat.c also provides
 #     __sys_fstat (ttyname/ctermid) -- TASK/SDK01 A, see EXCLUDE below.
@@ -149,7 +170,7 @@ done
 # --- flags (mintlib buildrules/configvars, retargeted) -----------------------
 CFLAGS=(-target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2
         -fPIE -fno-builtin -nostdinc
-        -D_LIBC -D_REENTRANT -DHAVE_CONFIG_H -D_GNU_SOURCE -D__NO_LONG_DOUBLE_MATH
+        -D_LIBC -D_REENTRANT -DHAVE_CONFIG_H -D_GNU_SOURCE
         -Wno-macro-redefined)
 INCS=(-I"$TOP" -I"$TOP/include" -I"$TOP/mintlib" -I"$TOP/stdlib" -isystem "$RES")
 
@@ -203,6 +224,13 @@ echo "lld   : $LLD"
 echo
 
 # --- compile mintlib core into objects --------------------------------------
+# Every archive member's compile command is recorded, shell-quoted, one line
+# each, in build/compile-commands.txt: tests/ldbl-host.sh re-runs the
+# commands of the members it links, once unchanged (must give the shipped
+# bytes) and once with -ffixed-x18 for the host run (TASK/SDK01 J; the x18
+# reason is in sdk/compiler-rt/tests/rt-host.c).
+: > "$BUILD/compile-commands.txt"
+run_cc() { printf '%q ' "$@" >> "$BUILD/compile-commands.txt"; printf '\n' >> "$BUILD/compile-commands.txt"; "$@"; }
 rm -f "$OBJ"/*.o "$OBJ"/*.err
 : > "$BUILD/compiled.txt"; : > "$BUILD/failed.txt"; : > "$BUILD/excluded.txt"
 : > "$BUILD/failed-err.txt"   # "<source><TAB><its .err>" -- lib_check_failures
@@ -245,7 +273,7 @@ for d in $DIRS; do
         # error and the object (which QED's rsc.c references) is missing.
         DEFS_FILE=()
         case "$d/$b" in mintlib/ident) DEFS_FILE=(-DVERSION='"0.60.1"');; esac
-        if "$CLANG" "${CFLAGS[@]}" ${DEFS_FILE[@]+"${DEFS_FILE[@]}"} -I"$TOP/$d" "${INCS[@]}" -c "$c" -o "$o" 2>"$OBJ/${d}__${b}.err"; then
+        if run_cc "$CLANG" "${CFLAGS[@]}" ${DEFS_FILE[@]+"${DEFS_FILE[@]}"} -I"$TOP/$d" "${INCS[@]}" -c "$c" -o "$o" 2>"$OBJ/${d}__${b}.err"; then
             echo "$d/$b.c" >> "$BUILD/compiled.txt"; ok=$((ok+1))
         else
             echo "$d/$b.c" >> "$BUILD/failed.txt"; fail=$((fail+1)); rm -f "$o"
@@ -272,38 +300,38 @@ lib_check_failures "libc" "$BUILD/failed.txt" "$LIBC/expected-failures.txt" \
 # excluded mintlib files. The stat/tty/ioctl shims need the full mintlib
 # include path (struct stat, lib.h), so use $INCS for them; heap_init.c too,
 # since it sets `_base` through <mint/basepage.h> (TASK/T05).
-"$CLANG" "${CFLAGS[@]}" -I"$SDK/include" -I"$TOP/include" -isystem "$RES" \
+run_cc "$CLANG" "${CFLAGS[@]}" -I"$SDK/include" -I"$TOP/include" -isystem "$RES" \
     -c "$LIBC/newtos-arch/memops.c"    -o "$OBJ/arch__memops.o"   || exit 1
-"$CLANG" "${CFLAGS[@]}" -I"$SDK/include" "${INCS[@]}" \
+run_cc "$CLANG" "${CFLAGS[@]}" -I"$SDK/include" "${INCS[@]}" \
     -c "$LIBC/newtos-arch/heap_init.c" -o "$OBJ/arch__heapinit.o" || exit 1
 # argc/argv from the BasePage command tail -- the argument half of mintlib's
 # crtinit.c parseargs() (that file does not compile here). Defines
 # __libc_argc/__libc_argv, which crtinit.c would otherwise own and which
 # posix/wordexp.c references (TASK/PORT01).
-"$CLANG" "${CFLAGS[@]}" -I"$SDK/include" "${INCS[@]}" \
+run_cc "$CLANG" "${CFLAGS[@]}" -I"$SDK/include" "${INCS[@]}" \
     -c "$LIBC/newtos-arch/cmdargs.c"   -o "$OBJ/arch__cmdargs.o"  || exit 1
-"$CLANG" "${CFLAGS[@]}" -I"$TOP/include" \
+run_cc "$CLANG" "${CFLAGS[@]}" -I"$TOP/include" \
     -c "$LIBC/newtos-arch/proc.S"      -o "$OBJ/arch__proc.o"     || exit 1
 # setjmp/longjmp -- the AArch64 retarget of mintlib/setjmp.S (m68k, never
 # assembled here). Reads mintlib's own _sigmask (signal/initsig.c) and __mint
 # (mintlib/globals.c), so both archive members resolve it; jmp_buf is the
 # overlay include/setjmp.h's long[22]. Host-checked by tests/setjmp-host.sh.
-"$CLANG" "${CFLAGS[@]}" -I"$TOP/include" \
+run_cc "$CLANG" "${CFLAGS[@]}" -I"$TOP/include" \
     -c "$LIBC/newtos-arch/setjmp.S"    -o "$OBJ/arch__setjmp.o"   || exit 1
 # vfork (TOS branch: tfork = Pexec 5 + Pexec 4 on the caller's code) and
 # _setstack -- AArch64 retargets of mintlib's m68k unix/vfork.S and
 # mintlib/setstack.S (TASK/PROC01). vfork reads __mint and writes errno.
-"$CLANG" "${CFLAGS[@]}" -I"$TOP/include" \
+run_cc "$CLANG" "${CFLAGS[@]}" -I"$TOP/include" \
     -c "$LIBC/newtos-arch/vfork.S"     -o "$OBJ/arch__vfork.o"    || exit 1
-"$CLANG" "${CFLAGS[@]}" -I"$TOP/include" \
+run_cc "$CLANG" "${CFLAGS[@]}" -I"$TOP/include" \
     -c "$LIBC/newtos-arch/setstack.S"  -o "$OBJ/arch__setstack.o" || exit 1
-"$CLANG" "${CFLAGS[@]}" -I"$SDK/include" "${INCS[@]}" \
+run_cc "$CLANG" "${CFLAGS[@]}" -I"$SDK/include" "${INCS[@]}" \
     -c "$LIBC/newtos-arch/do_fstat.c"  -o "$OBJ/arch__do_fstat.o" || exit 1
-"$CLANG" "${CFLAGS[@]}" -I"$SDK/include" "${INCS[@]}" \
+run_cc "$CLANG" "${CFLAGS[@]}" -I"$SDK/include" "${INCS[@]}" \
     -c "$LIBC/newtos-arch/ioctl.c"     -o "$OBJ/arch__ioctl.o"    || exit 1
-"$CLANG" "${CFLAGS[@]}" -I"$SDK/include" "${INCS[@]}" \
+run_cc "$CLANG" "${CFLAGS[@]}" -I"$SDK/include" "${INCS[@]}" \
     -c "$LIBC/newtos-arch/do_stat.c"   -o "$OBJ/arch__do_stat.o"  || exit 1
-"$CLANG" "${CFLAGS[@]}" "${INCS[@]}" \
+run_cc "$CLANG" "${CFLAGS[@]}" "${INCS[@]}" \
     -c "$LIBC/newtos-arch/getcookie.c" -o "$OBJ/arch__getcookie.o" || exit 1
 # get_sysvar() -- the AArch64 replacement for the m68k mintlib/getsysvar.S
 # (never assembled here). With it, mintlib's OWN time/clock.c compiles and
@@ -311,17 +339,20 @@ lib_check_failures "libc" "$BUILD/failed.txt" "$LIBC/expected-failures.txt" \
 # process's low-memory sysvar area, which the kernel's 200 Hz timer interrupt
 # keeps live (tos-api/src/bios/tick.rs). Also: lean access() without the Unix
 # passwd/group tail (replaces unix/access.c), and the __extenddftf2 f64->f128
-# compiler-rt builtin the AArch64 long-double ABI needs (pulled by strtold via
-# sscanf/vfscanf).
-"$CLANG" "${CFLAGS[@]}" "${INCS[@]}" \
+# builtin (newtos-arch/softfloat.c). It predates compiler-rt in the SDK
+# (SDK01 E): strtold returned strtod's double widened to long double. Since
+# SDK01 J no libc member references it any more; it stays because it is the
+# definition programs have linked (first archive wins over the builtins'
+# identical one, sdk/compiler-rt/tests/rt-host.sh checks that).
+run_cc "$CLANG" "${CFLAGS[@]}" "${INCS[@]}" \
     -c "$LIBC/newtos-arch/getsysvar.c" -o "$OBJ/arch__getsysvar.o" || exit 1
-"$CLANG" "${CFLAGS[@]}" "${INCS[@]}" \
+run_cc "$CLANG" "${CFLAGS[@]}" "${INCS[@]}" \
     -c "$LIBC/newtos-arch/access.c"    -o "$OBJ/arch__access.o"    || exit 1
-"$CLANG" "${CFLAGS[@]}" "${INCS[@]}" \
+run_cc "$CLANG" "${CFLAGS[@]}" "${INCS[@]}" \
     -c "$LIBC/newtos-arch/softfloat.c" -o "$OBJ/arch__softfloat.o" || exit 1
 # NatFeats detection (replaces the m68k mintlib/nf_ops.c, see EXCLUDE above):
 # nf_init/nf_get_id/nf_catch_sigsys, so mintlib's own nf_*.c members link.
-"$CLANG" "${CFLAGS[@]}" "${INCS[@]}" \
+run_cc "$CLANG" "${CFLAGS[@]}" "${INCS[@]}" \
     -c "$LIBC/newtos-arch/nf_ops.c"    -o "$OBJ/arch__nf_ops.o"    || exit 1
 
 # --- archive -----------------------------------------------------------------

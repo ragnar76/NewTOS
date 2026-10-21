@@ -5,11 +5,12 @@ Tick each line; every line points at the section that explains it.
 ## Before touching anything
 
 - [ ] The app is C (plus at most inline m68k asm, which has to be rewritten)
-      and needs only mintlib / gemlib / cflib / libm — not sockets, threads,
-      the `long double` (`…l`) libm functions or `scalbln`/`scalblnf`;
-      `setjmp`/`longjmp` and the C99 double/float libm are available since
-      T07, `long double` arithmetic and complex `*`/`/` (compiler-rt
-      builtins, linked by `newtos-cc`) since SDK01 E
+      and needs only mintlib / gemlib / cflib / libm — not sockets or
+      threads; `setjmp`/`longjmp` and the C99 double/float libm are
+      available since T07, `long double` arithmetic and complex `*`/`/`
+      (compiler-rt builtins, linked by `newtos-cc`) since SDK01 E, `long
+      double` in printf/scanf/`strtold` and the `…l` libm functions since
+      SDK01 J
       → [07 §3–4](07-mintlib-limits.md#3-mintlib-assembly-that-is-never-assembled)
 - [ ] Toolchain present: `clang`, the pinned Rust nightly with
       `llvm-tools-preview` (`rust-lld`, `llvm-ar`, …), `make`, `python3`
@@ -76,10 +77,10 @@ Tick each line; every line points at the section that explains it.
 - [ ] Every AES/VDI call that passes a `long` or a pointer through `int_in`
       goes through a binding that splits it arithmetically, not by casting
       `&arg` to `short *` → [05 B16](05-abi-pitfalls.md#b16-gemlib-bindings-that-split-a-long-with-a-pointer-cast)
-- [ ] `long double` arithmetic works (soft-float binary128, compiler-rt
-      builtins) but is not printed correctly: `printf("%Lf")` reads a
-      `double`, so convert first; libm (OpenLibm, since T07) is there for
-      `double`/`float` and the complex functions, not for the `…l` ones
+- [ ] `long double` works (soft-float binary128, compiler-rt builtins;
+      `printf("%Lf")`, `strtold`, the `…l` libm functions since SDK01 J);
+      `*`/`/` ignore `fesetround()` and `sqrtl` can be 1 ulp off
+      → [05 B12](05-abi-pitfalls.md#b12-long-double-is-128-bit-and-the-compiler-runtime-is-compiler-rt)
       → [05 B12](05-abi-pitfalls.md#b12-long-double-is-128-bit-and-the-compiler-runtime-is-compiler-rt), [07 §4](07-mintlib-limits.md#4-mintlib-directories-not-compiled-at-all)
 - [ ] libc `malloc` grows through GEMDOS `Malloc` (mintlib's `_stksize`
       model, ARCH03 E9); a program that needs its own heap sets `_stksize`

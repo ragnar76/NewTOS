@@ -13,28 +13,32 @@
 #
 # What is compiled (OpenLibm's own manifests, sdk/libm/openlibm-0.8.8/*/Make.files,
 # expanded by `make` exactly as OpenLibm's Makefile does it):
-#   - src/      the C99 double/float functions and the complex functions
+#   - src/      the C99 double/float functions and the complex functions, and
+#               the LONG_DOUBLE_NOT_DOUBLE block (the `l' functions)
 #   - bsdsrc/   b_exp.c b_log.c b_tgamma.c (tgamma)
 #   - aarch64/  fenv.c (the <fenv.h> functions over FPCR/FPSR)
-# and NOT:
-#   - the LONG_DOUBLE_NOT_DOUBLE block of src/Make.files and all of ld128/:
-#     AAPCS64 `long double` is IEEE binary128, clang lowers every operation on
-#     it to a soft-float libcall (__addtf3, __multf3, ...), and the SDK links
-#     no compiler-rt (docs/sdk/05-abi-pitfalls.md B12). The `l` functions are
-#     therefore not built; they are a separate item (TASK/T07 "Arbeit" 2).
-#     OpenLibm's own Darwin/aarch64 configuration makes the same cut
-#     (Make.inc: LONG_DOUBLE_NOT_DOUBLE unset there), which is why no source
-#     needs an overlay for it.
-#   - the amd64/i387/arm/... directories: other architectures. OpenLibm has no
-#     AArch64 assembly beyond fenv.c, so this is a pure C build.
+#   - ld128/    the IEEE binary128 `l' functions (expl, logl, powl, the sinl
+#               kernels, ...)
+# This is OpenLibm's own configuration for AArch64 outside Darwin/Windows
+# (Make.inc: LONG_DOUBLE_NOT_DOUBLE := 1 and -I ld128; Makefile: SUBDIRS +=
+# ld128): AAPCS64 `long double' is IEEE binary128. Until TASK/SDK01 J the SDK
+# built the Darwin cut instead (no `l' functions), because clang lowers every
+# binary128 operation to a soft-float libcall (__addtf3, __multf3, ...) and
+# the SDK had no compiler runtime; since SDK01 E sdk/bin/newtos-cc links
+# compiler-rt's builtins (docs/sdk/05-abi-pitfalls.md B12), so the `l'
+# functions link. The double/float members are byte-identical to the Darwin-
+# cut build (measured, SDK01 J). One upstream defect is fixed by an overlay:
+# overlay/src/s_scalbln.c (scalblnl passed (int)n instead of the clamped n).
+# NOT compiled: the amd64/i387/arm/... directories (other architectures;
+# OpenLibm has no AArch64 assembly beyond fenv.c, so this is a pure C build).
 #
 # Flags: the shared SDK freestanding set + OpenLibm's own Make.inc CFLAGS_add
 # for a clang build (-std=c99 -fno-builtin -fno-strict-aliasing
-# -D__BSD_VISIBLE). Not taken from Make.inc: -fPIC (the SDK is -fPIE),
-# -DASSEMBLER (only read by i387/osx_asm.h), -Wall (warnings go to the per-file
-# .err files either way), -I ld128 (excluded above).
+# -D__BSD_VISIBLE, -I ld128). Not taken from Make.inc: -fPIC (the SDK is
+# -fPIE), -DASSEMBLER (only read by i387/osx_asm.h), -Wall (warnings go to the
+# per-file .err files either way).
 #
-# Include order: OpenLibm's four (top, include/, aarch64/, src/), then mintlib's
+# Include order: OpenLibm's five (top, include/, aarch64/, src/, ld128/), then mintlib's
 # include/ for <assert.h> <ctype.h> <string.h> <stdint.h> <limits.h>, then
 # clang's freestanding headers for <float.h>. The three libc symbols libm.a
 # references -- __assert_fail, _ctype, memset -- resolve from libc.a, which is
@@ -121,7 +125,7 @@ done
 CFLAGS=(-target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2
         -fPIE -fno-builtin -nostdinc
         -std=c99 -fno-strict-aliasing -D__BSD_VISIBLE)
-INCS=(-I"$TOP" -I"$TOP/include" -I"$TOP/aarch64" -I"$TOP/src" -I"$MINT" -isystem "$RES")
+INCS=(-I"$TOP" -I"$TOP/include" -I"$TOP/aarch64" -I"$TOP/src" -I"$TOP/ld128" -I"$MINT" -isystem "$RES")
 
 echo "clang : $($CLANG --version | head -1)"
 echo "ar    : $AR"
@@ -130,26 +134,35 @@ echo
 
 # --- authoritative file list: OpenLibm's own Make.files manifests ------------
 # OpenLibm's Makefile includes <dir>/Make.files for SUBDIRS = src $(ARCH) bsdsrc
-# (+ ld128 only when LONG_DOUBLE_NOT_DOUBLE=1), each appending to
-# $(CUR_SRCS). Expanded here with the same INC_template, ARCH=aarch64, and
-# LONG_DOUBLE_NOT_DOUBLE left unset -- the long-double cut explained above.
+# (+ ld128 when LONG_DOUBLE_NOT_DOUBLE=1, as on AArch64 Linux), each appending
+# to $(CUR_SRCS). Expanded here with the same INC_template and ARCH=aarch64.
+# build/srcs-ld.txt is the part LONG_DOUBLE_NOT_DOUBLE adds (the list expanded
+# without it and without ld128, subtracted): sdk/compiler-rt/tests/rt-host.sh
+# builds OpenLibm for the host from the rest only, because on the host (Apple
+# AArch64) `long double' is double.
 SRCS_MK="$BUILD/print_srcs.mk"
 SRCS_LIST="$BUILD/srcs.txt"
 cat > "$SRCS_MK" <<EOF
 OS = NewTOS
 ARCH = aarch64
+LONG_DOUBLE_NOT_DOUBLE ?= 1
+SUBDIRS ?= src aarch64 bsdsrc ld128
 TOP = $TOP
 define INC_template
 override CUR_SRCS = \$(1)_SRCS
 include \$(TOP)/\$(1)/Make.files
 SRCS += \$\$(addprefix \$(1)/,\$\$(\$(1)_SRCS))
 endef
-\$(foreach dir,src aarch64 bsdsrc,\$(eval \$(call INC_template,\$(dir))))
+\$(foreach dir,\$(SUBDIRS),\$(eval \$(call INC_template,\$(dir))))
 print-srcs:
 	@echo \$(SRCS)
 EOF
 make -s -f "$SRCS_MK" print-srcs | tr ' ' '\n' | grep -v '^$' > "$SRCS_LIST" || {
     echo "error: could not expand OpenLibm's Make.files" >&2; exit 1; }
+make -s -f "$SRCS_MK" LONG_DOUBLE_NOT_DOUBLE= SUBDIRS="src aarch64 bsdsrc" print-srcs | tr ' ' '\n' \
+    | grep -v '^$' | sort > "$BUILD/srcs-double.txt" || {
+    echo "error: could not expand OpenLibm's Make.files" >&2; exit 1; }
+sort "$SRCS_LIST" | comm -23 - "$BUILD/srcs-double.txt" > "$BUILD/srcs-ld.txt"
 n_srcs=$(wc -l < "$SRCS_LIST" | tr -d ' ')
 [ "$n_srcs" -gt 0 ] || { echo "error: empty source list from Make.files" >&2; exit 1; }
 
@@ -183,8 +196,9 @@ echo "archived -> $LIBM/libm.a ($(wc -c < "$LIBM/libm.a" | tr -d ' ') bytes)"
 # Symbols some member references and no member defines. The libc ones
 # (__assert_fail, _ctype, memset) resolve from libc.a; the quad-float
 # compiler-rt ones (__addtf3 ...) and the complex-multiply ones
-# (__muldc3/__mulsc3) do not resolve anywhere -- a program that pulls one of
-# those members fails to link. The list is written to build/dangling.txt and
+# (__muldc3/__mulsc3) resolve from compiler-rt's builtins, which sdk/bin/
+# newtos-cc links (TASK/SDK01 E) -- a link line without that archive fails on
+# a member that needs them. The list is written to build/dangling.txt and
 # documented in docs/sdk/07-mintlib-limits.md.
 "$NM" --defined-only "$LIBM/libm.a" 2>/dev/null | awk 'NF>=3 && $1 !~ /:$/ {print $NF}' | sort -u > "$BUILD/defined.txt"
 "$NM" -u "$LIBM/libm.a" 2>/dev/null | awk 'NF>=2 && $1 !~ /:$/ && $NF !~ /:$/ {print $NF}' | sort -u > "$BUILD/undefined.txt"

@@ -1,0 +1,4 @@
+LDP.NCP 226464 bytes, undefined: 0
+libm members linked: 25, ld128 among them: e_expl e_logl e_powl k_cosl k_sinl 
+HEAD archives: link fails, undefined: cbrtl expl logl powl scalbnl sinl sqrtl 
+2d1e9ba6e0898e8398fc4a86f10d1fb2e555aa197ef671ced5819a89d9062038  /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/6484c0fd-61c5-4c60-a3ef-ede2401f4ca7/scratchpad/sdk01j/prog/LDP.NCP

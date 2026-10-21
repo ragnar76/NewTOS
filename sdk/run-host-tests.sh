@@ -222,6 +222,17 @@ report libc-link $rc "libc.a not built"
 [ $rc -eq 0 ] || [ $rc -eq 77 ] || sed 's/^/      /' "$WORK/rt-host.log"
 report rt-host $rc "$(tail -1 "$WORK/rt-host.log")"
 
+# ldbl-host (SDK01 J): `long double' (binary128) in libc and libm -- printf
+# %Le/%Lf/%Lg/%La, strtold/sscanf, qecvt/qfcvt_r/qgcvt, the classification
+# functions, the OpenLibm `l' functions (scalbnl, expl, logl, sinl, ...) and
+# full-width binary128 + - * /, run natively on the AArch64 host from the
+# -ffixed-x18 rebuild of the very members a newtos-cc -lm program links (each
+# first proven byte-identical to the shipped one), judged by
+# sdk/libc/tests/ldbl-oracle.py against exact rational arithmetic.
+"$SDK/libc/tests/ldbl-host.sh" > "$WORK/ldbl-host.log" 2>&1; rc=$?
+[ $rc -eq 0 ] || [ $rc -eq 77 ] || sed 's/^/      /' "$WORK/ldbl-host.log"
+report ldbl-host $rc "$(tail -1 "$WORK/ldbl-host.log")"
+
 # --- app host tests --------------------------------------------------------------
 # c2p-host (PORT06, user decision 2026-10-04): DOOM's table chunky-to-planar
 # (sdk/apps/doom/doomgeneric_gem.c, compiled without its GEM half) equals the

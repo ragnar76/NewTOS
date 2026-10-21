@@ -29,7 +29,13 @@ runtime now — LLVM compiler-rt's builtins, `sdk/compiler-rt/
 libclang_rt.builtins.a`, linked by `newtos-cc` — so the binary128 and
 complex-arithmetic helpers resolve: in `libm.a` 21 → 3 functions that do not
 link (`scalbln`/`scalblnf`/`scalblnl`, which need `scalbnl`), in `libc.a`
-12 → 7; `qecvt` & Co. link but print wrong digits (§11).
+12 → 7; `qecvt` & Co. link but print wrong digits (§11). TASK/SDK01 J
+(2026-10-21) updated §4, §5, §6 and §11: `long double` (binary128) is real —
+libc without `-D__NO_LONG_DOUBLE_MATH`, binary128 overlays for mintlib's
+m68k-only long double code, OpenLibm's `ld128/` `…l` functions built;
+`libm.a` 3 → 0 functions that do not link, `qecvt` & Co. print correct
+digits; and the float word order of `<bits/endian.h>` is little-endian, so
+`printf("%f", INFINITY)` prints `inf`.
 
 ## 1. mintlib files that do not compile (recorded, not repaired)
 
@@ -162,30 +168,43 @@ OpenBSD libm / fdlibm-5.3-derived standalone libm the Julia project maintains,
 MIT + ISC + 2-clause BSD + the SunPro fdlibm notice — `sdk/libm/
 LICENSE.openlibm.md`, provenance and SHA-256 in `sdk/libm/openlibm-sources.sha256`),
 built exactly like the other three libraries: pinned tarball + `overlay/`
-(empty so far) + `sdk/libm/build-libm.sh` → `sdk/libm/libm.a`, with the
+(one file, `src/s_scalbln.c`, SDK01 J) + `sdk/libm/build-libm.sh` → `sdk/libm/libm.a`, with the
 `expected-failures.txt` gate (empty) and a place in `lib-stale.sh`'s chain
 (`libc → libm`, a second branch off libc; gemlib/cflib do not depend on it).
 
-What is in `libm.a` (175 objects, 279 defined symbols, OpenLibm's own
-`src/`, `bsdsrc/` and `aarch64/` `Make.files` manifests expanded by `make`):
-the C99 `double` and `float` functions, the complex functions, `tgamma`, and
-the `<fenv.h>` functions over FPCR/FPSR (`aarch64/fenv.c`). Pure C — OpenLibm
-has no AArch64 assembly beyond that. What is **not** in it: the `long double`
-(`…l`) functions and `ld128/` — AAPCS64 `long double` is binary128, every
-operation on it is a soft-float libcall, and until TASK/SDK01 E the SDK linked
-no compiler runtime
-([05 B12](05-abi-pitfalls.md#b12-long-double-is-128-bit-and-the-compiler-runtime-is-compiler-rt));
-OpenLibm's Darwin/aarch64 configuration makes the same cut, so no source
-needed an overlay. Building them is still a separate item (TASK/T07
-"Arbeit" 2); since SDK01 E it is no longer blocked by a missing runtime.
+What is in `libm.a` (256 objects, 322 global symbols since TASK/SDK01 J;
+OpenLibm's own `src/`, `bsdsrc/`, `aarch64/` and `ld128/` `Make.files`
+manifests expanded by `make`): the C99 `double` and `float` functions, the
+complex functions, `tgamma`, the `<fenv.h>` functions over FPCR/FPSR
+(`aarch64/fenv.c`) and — since SDK01 J — the `long double` (`…l`) functions:
+OpenLibm's own AArch64 configuration outside Darwin (`LONG_DOUBLE_NOT_DOUBLE`,
+`ld128/`), AAPCS64 `long double` being binary128, every operation on it a
+soft-float libcall into compiler-rt
+([05 B12](05-abi-pitfalls.md#b12-long-double-is-128-bit-and-the-compiler-runtime-is-compiler-rt)).
+Until SDK01 J the SDK built the Darwin cut without them (TASK/T07 "Arbeit"
+2). The 175 `double`/`float` members are byte-identical to that build. Pure C
+— OpenLibm has no AArch64 assembly beyond `fenv.c`. One upstream defect is
+fixed by the overlay: `scalblnl` passed `(int)n` instead of the clamped `n`
+(`scalblnl(1, 1L << 40)` returned 1). Measured on the host against a
+130-digit reference (`sdk/libc/tests/ldbl-host.sh`, the target's machine code
+run natively): the exact functions (`scalbnl`, `ldexpl`, `frexpl`, `modfl`,
+`floorl`, `ceill`, `truncl`, `roundl`, `rintl`, `nextafterl`, `fmodl`,
+`remainderl`, `remquol`, `fmal`, …) are bit-exact; `expl`, `exp2l`,
+`expm1l`, `logl`, `log2l`, `log10l`, `log1pl`, `powl`, `cbrtl`, `hypotl`,
+`sinl`, `cosl`, `tanl`, `atanl`, `sinhl`, `coshl`, `tanhl` within 2 ulp
+(maxima 0.49–1.68 ulp); `sqrtl` within 1 ulp but not correctly rounded in
+about a quarter of the cases — FreeBSD's `e_sqrtl.c` decides the last bit
+with `fetestexcept(FE_INEXACT)` after a division, and compiler-rt's
+`__divtf3` raises no flags. With `-lm`, `__isinfl` comes from OpenLibm
+(`1` for −∞) rather than from mintlib (`-1`), as before SDK01 J.
 The `double`/`float` members that carry `long double` on a NaN/inf path
 (`powf`, `remainder`, `remainderf`, `fdim`/`fdimf`, `nexttowardf`) and the
 complex ones that need the compiler-rt complex multiply (`casin`, `cacos`,
 `casinh`, `cacosh`, `catanh` and the `f` forms, `cpowf`) **link since
 SDK01 E** through `sdk/compiler-rt/libclang_rt.builtins.a`; `fdiml` too (it
-shares `s_fdim`). Only `scalbln`/`scalblnf` still do not: they share their
-object with `scalblnl`, which calls `scalbnl` — an `l` function, not a
-builtin. §6 lists the references.
+shares `s_fdim`). `scalbln`/`scalblnf`, which share their object with
+`scalblnl` and so need `scalbnl`, link since SDK01 J. §6 lists the
+references.
 
 **Upstream accuracy of the complex inverse functions** (measured for SDK01
 E, `measurements/measurement-2026-10-21-sdk01e/checks/olm-accuracy.txt`):
@@ -232,7 +251,8 @@ neither uses the libm). `libm.a` needs three libc symbols, `memset`, `_ctype`
 | `time()`/`gettimeofday()` | GEMDOS clock via mintlib's own path (`Tgettimeofday` = `EINVFN`, then `Tgetdate`/`Tgettime` through `mktime`); QEMU-checked by TASK/SDK01 F: `time()` = the GEMDOS clock read as UTC (± 2 s) when `TZ` is not set (`measurements/measurement-2026-10-21-sdk01f/`) | `unix/gettimeofday.c` |
 | `stat`/`fstat` times | since TASK/SDK01 F as mintlib on TOS: the FAT entry's DOS stamp (DTA of `Fsfirst` for `stat`/`lstat`, `Fdatime` for `fstat`), `st_mtime = st_atime = st_ctime` (FAT keeps one stamp), 2-second resolution; drive roots 1979-11-30 00:00 (mintlib's `OLDDATE`), devices `time() - 2`. The DOS stamp is **local time** converted by `mktime` with the program's `TZ`: with `TZ` unset (the NewTOS default — no `/etc/localtime`, mintlib falls back to UTC, `tz/localtime.c` `zoneinit("")`) the seconds are the clock face read as UTC, the same rule `time()` uses, so `localtime(&st.st_mtime)` shows the date and time GEMDOS shows. mintlib's `time_t` is 32 bits (`include/bits/types.h:73`): stamps after 2038-01-19 03:14:07 wrap negative, as for `time()`. QED's *Datei → Info* shows them (`measurements/measurement-2026-10-21-sdk01f/`; before: 01.01.1970 00:00:00) | §2 |
 | `stat`/`fstat` uid/gid | unchanged by SDK01 F: `stat` from `geteuid`/`getegid`, `fstat` zero; permission bits from the attributes only | §2 |
-| `printf("%Lf")` | handled as `double` (`-D__NO_LONG_DOUBLE_MATH`) | `build-libc.sh:19-25` |
+| `long double` I/O | binary128 since TASK/SDK01 J: `printf`/`scanf` `%Le %Lf %Lg %La` (exact digits, ties to even), `strtold`, `qecvt`/`qfcvt`/`qgcvt` — mintlib's printf/strtod engine with overlays for the binary128 format (mintlib knows only the m68k 96-bit one). Upstream limits kept, for `double` too: `strtod`/`strtold` convert only `(MANT_DIG − bits + 2)/3 + 1` fraction digits exactly and keep the rest as a sticky bit, so an input at or one last-digit unit from a halfway point can round to the wrong neighbour (glibc before 2.17, BZ #3479; measured: 276 of 904 such inputs); `"infinity"` is consumed as `"inf"` (`strtod.c:562` tests the 3-letter form first). Until SDK01 J: `%Lf` read a `double` (`-D__NO_LONG_DOUBLE_MATH`) | `build-libc.sh` header, `overlay/{include/ieee754.h,gmp/,stdlib/strtold.c,stdio/printf_fp*.c}` |
+| `printf("%f", INFINITY)` | `inf`/`nan` since TASK/SDK01 J; before, mintlib's `<bits/endian.h>` claimed a big-endian float word order (clang does not predefine `__FLOAT_WORD_ORDER__`), `__isinf`/`__isnan` read the wrong half and the value printed as a 309-digit number | `overlay/include/bits/endian.h` |
 | `Getcookie` | over `Ssystem(S_GETCOOKIE)`; `C_FOUND`/`C_NOTFOUND` contract kept | `newtos-arch/getcookie.c` |
 | `Super`/`Supexec` | bindings without privilege — see [05](05-abi-pitfalls.md#b4) | `overlay/include/mint/osbind.h` |
 | `signal`/`raise`/`kill` | compile and link; whether NewTOS delivers signals to a process is **unverified** here (the kernel has an EL0 upcall mechanism, `loader.rs:735-765`) | — |
@@ -247,8 +267,10 @@ member that references them is pulled in — `build/why.txt` (written by every
 link, `--why-extract`) shows the chain.
 
 ```
-__divtf3 __eqtf2 __getf2 __lttf2 __multf3 __trunctfdf2      binary128 builtins (qecvt/qfcvt/qgcvt(_r)): resolved by
+__divtf3 __eqtf2 __getf2 __lttf2 __multf3 __floatsitf       binary128 builtins (qecvt/qfcvt/qgcvt(_r), printf_size): resolved by
                                                             sdk/compiler-rt/libclang_rt.builtins.a since SDK01 E
+                                                            (SDK01 J: __trunctfdf2 gone, __floatsitf new; plain printf
+                                                            references none of them)
 socket gethostbyname                                        socket/ not compiled: if_link, if_*flags, gethostid
 main                                                        the program's own (mintlib/main.c calls it)
 _end                                                        provided by sdk/newtos.ld at link
@@ -284,8 +306,12 @@ Consequence until SDK01 E: `powf`, `remainder`, `remainderf`, `fdim`,
 above resolve from `sdk/compiler-rt/libclang_rt.builtins.a` (LLVM
 compiler-rt 21.1.8, `newtos-cc` links it after the libraries); `libm.a`
 itself is unchanged and still lists them in `dangling.txt` (it does not
-contain them). Left: `scalbnl` (an `l` function, §4) — `scalbln`, `scalblnf`,
-`scalblnl`. The `mathtst.NCP` link pulls 28 libm members and none of these.
+contain them). Left until SDK01 J: `scalbnl` (an `l` function, §4) —
+`scalbln`, `scalblnf`, `scalblnl`. Since SDK01 J `scalbnl` is a member and
+`dangling.txt` lists 25 symbols: the three libc ones and 22 compiler-rt
+builtins (the 12 above plus `__eqtf2 __getf2 __letf2 __lttf2 __unordtf2
+__fixtfdi __fixtfsi __floatditf __floatsitf __multc3` of the `…l` members).
+The `mathtst.NCP` link pulls 28 libm members and none of these.
 
 ## 7. What the test programs prove
 
@@ -588,22 +614,24 @@ the builtins themselves were checked on the host against exact oracles
 (`sdk/compiler-rt/tests/rt-host.sh`). Accuracy of OpenLibm's complex inverse
 functions is upstream's (§4).
 
-**`qecvt` & Co. link but are wrong.** mintlib formats them through
-`snprintf("%.*Lf", …, long double)` (`misc/efgcvt_r.c` included by
-`misc/qefgcvt_r.c`); `libc.a` is built with `-D__NO_LONG_DOUBLE_MATH`
-(`build-libc.sh`), so `vfprintf` takes `%Lf` with `va_arg(ap, double)` while
-the caller passed a binary128 (source reading). Measured on NewTOS:
-`qecvt(1.0L/3, 10)` = `"-0.000000000"`, decpt −1 (correct `"3333333333"`,
-0), `qfcvt(2.5L, 3)` = `""`, `qgcvt(0.125L, 6)` = `"0"`
-(`measurements/measurement-2026-10-21-sdk01e/serial/rt-on.log`). Do not use
-them; `ecvt`/`fcvt`/`gcvt` on `double` are unaffected. Fixing it means a
-`long double` path in the libc printf engine — not part of SDK01 E.
+**`qecvt` & Co. linked with SDK01 E but were wrong**: mintlib formats them
+through `snprintf("%.*Lf", …, long double)` (`misc/efgcvt_r.c` included by
+`misc/qefgcvt_r.c`), and `libc.a` was built with `-D__NO_LONG_DOUBLE_MATH`,
+so `vfprintf` took `%Lf` with `va_arg(ap, double)`: `qecvt(1.0L/3, 10)` =
+`"-0.000000000"`, decpt −1, `qfcvt(2.5L, 3)` = `""`, `qgcvt(0.125L, 6)` =
+`"0"` (`measurements/measurement-2026-10-21-sdk01e/serial/rt-on.log`).
+**Since TASK/SDK01 J** they are right — `"3333333333"`/0, `"2500"`/1,
+`"0.125"` on NewTOS (`measurements/measurement-2026-10-21-sdk01j/`), and on
+the host 410 random arguments each against exact arithmetic
+(`sdk/libc/tests/ldbl-host.sh`). Per-symbol link probe after SDK01 J:
+`libc.a` 7 of 1231 do not link (the two new symbols are
+`__mpn_extract_long_double`/`__mpn_construct_long_double`), `libm.a` **0 of
+322** (`scalbln`, `scalblnf`, `scalblnl` and every `…l` function link).
 
-Still not linking (7 in `libc.a`, 3 in `libm.a`):
+Still not linking (7 in `libc.a`, 0 in `libm.a` since SDK01 J):
 
 | Function | Missing | Reason |
 |---|---|---|
-| `scalbln`, `scalblnf`, `scalblnl` (libm) | `scalbnl` | the `l` functions are not built (§4); one object holds all three |
 | `gethostid`, `__gethostid` | `gethostbyname` | `socket/` not compiled (§4) |
 | `if_link`, `if_getifflags`, `if_setifflags`, `if_getlnkflags`, `if_setlnkflags` | `socket` | same |
 

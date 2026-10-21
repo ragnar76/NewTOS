@@ -4,13 +4,12 @@
  * The AArch64 procedure call standard makes C `long double` an IEEE-754
  * binary128 (quad). clang emits a call to the compiler-rt builtin
  * __extenddftf2 whenever it has to widen a `double` result to `long double`.
- * The freestanding NewTOS SDK links no compiler-rt, so this builtin is
- * unresolved.
  *
- * QED pulls it through options.c -> sscanf -> mintlib vfscanf -> strtold: under
- * -D__NO_LONG_DOUBLE_MATH (set by build-libc.sh so the float printf/scanf
- * engine uses hardware double), mintlib's strtold returns strtod()'s `double`
- * as a `long double`, and that return widening is __extenddftf2.
+ * Since SDK01 E the SDK ships LLVM compiler-rt (libclang_rt.builtins.a), which
+ * newtos-cc links; this copy stays in libc.a so that programs linked without
+ * the builtins archive still resolve __extenddftf2 wherever libc or the
+ * program widens a double. Since SDK01 J strtold is a real binary128 parser and
+ * no longer widens strtod()'s result.
  *
  * This is the real compiler-rt fp_extend algorithm (LLVM
  * compiler-rt/lib/builtins/fp_extend_impl.inc) for binary64 -> binary128,
