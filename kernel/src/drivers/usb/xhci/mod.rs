@@ -343,6 +343,9 @@ pub struct Xhci {
     /// Command-ring producer index + cycle state.
     cmd_enq: usize,
     cmd_cycle: bool,
+    /// Command TRBs issued since `open` (the enumeration summary and the
+    /// `cmd timeout` line report it).
+    cmd_count: u32,
     /// Event-ring consumer index + cycle state.
     evt_deq: usize,
     evt_cycle: bool,
@@ -590,6 +593,7 @@ impl Xhci {
             ports: max_ports,
             cmd_enq: 0,
             cmd_cycle: true,
+            cmd_count: 0,
             evt_deq: 0,
             evt_cycle: true,
             erdp_hi,
@@ -807,6 +811,8 @@ impl Xhci {
         } else {
             data[3] &= !1;
         }
+        self.cmd_count += 1;
+        let cmd_index = self.cmd_enq;
         dma.cmd_ring.0[self.cmd_enq] = Trb(data);
         self.cmd_enq += 1;
         if self.cmd_enq >= CMD_RING_LEN - 1 {
@@ -839,7 +845,10 @@ impl Xhci {
         dcache_inval((&raw const dma.evt_ring.0[0]) as u64, 64);
         let e = dma.evt_ring.0[0].0;
         kprintln!(
-            "[usb] cmd timeout: hch={} hse={} hce={} cnr={} evt0={:08x} {:08x} {:08x} {:08x}",
+            "[usb] cmd timeout: command #{} at ring index {}: hch={} hse={} hce={} cnr={} \
+             evt0={:08x} {:08x} {:08x} {:08x}",
+            self.cmd_count,
+            cmd_index,
             sts.hc_halted(),
             sts.host_system_error(),
             sts.host_controller_error(),
@@ -886,10 +895,23 @@ impl Xhci {
     }
 
     /// Enable Slot command → a device slot ID.
+    ///
+    /// `None` when the command timed out **or** completed with anything but
+    /// Success — in particular No Slots Available once the controller's
+    /// enabled slots (`MAX_SLOTS` cap in `open`) are used up. That error
+    /// carries Slot ID 0 (xHCI 1.2 §4.6.3: "If a Device Slot is not available,
+    /// the Slot ID field shall be cleared to '0'"), which was claimed as a
+    /// device slot when the completion code went unchecked.
     pub fn enable_slot(&mut self) -> Option<u8> {
         let data = command::Allowed::EnableSlot(command::EnableSlot::new()).into_raw();
         let cc = self.command(data)?;
-        Some(cc.slot_id())
+        match cc.completion_code() {
+            Ok(event::CompletionCode::Success) => Some(cc.slot_id()),
+            code => {
+                kprintln!("[usb] enable slot → {:?}; device not enumerated", code);
+                None
+            }
+        }
     }
 
     /// Reset a root-hub port (1-based) and wait for it to enable.
@@ -1241,10 +1263,20 @@ impl Xhci {
             return None;
         }
         // SAFETY: single-CPU; DEV is ours.
-        let total = {
+        let (total, w_total) = {
             let b = unsafe { &(*(&raw const DEV))[di].buf };
-            u16::from_le_bytes([b[2], b[3]]).min(255)
+            let w_total = u16::from_le_bytes([b[2], b[3]]);
+            (w_total.min(255), w_total)
         };
+        if w_total > total {
+            kprintln!(
+                "[usb] slot {}: configuration is {} bytes, read only the first {} \
+                 (descriptor buffer limit); descriptors past that are not seen",
+                self.hid[di].slot,
+                w_total,
+                total
+            );
+        }
         if !self.get_descriptor(di, 2, 0, total) {
             return None;
         }
@@ -1466,15 +1498,21 @@ impl Xhci {
     /// Returns the number of device slots claimed (hubs included).
     pub fn enumerate_all(&mut self) -> usize {
         for port in 1..=self.ports {
-            if self.n_hid >= MAX_HID {
-                break;
-            }
             let p = self
                 .regs
                 .port_register_set
                 .read_volatile_at((port - 1) as usize)
                 .portsc;
             if !p.current_connect_status() {
+                continue;
+            }
+            if self.n_hid >= MAX_HID {
+                kprintln!(
+                    "[usb] root port {}: device not enumerated — all {} device entries \
+                     (MAX_HID, hubs included) in use",
+                    port,
+                    MAX_HID
+                );
                 continue;
             }
             if !self.port_reset(port) {
@@ -1487,6 +1525,13 @@ impl Xhci {
         }
         // Only now that the whole tree has been walked.
         self.arm_hid_endpoints();
+        let n_input = (0..self.n_hid).filter(|&i| self.hid[i].dci != 0).count();
+        kprintln!(
+            "[usb] enumeration done: {} devices ({} keyboard/mouse), {} commands issued",
+            self.n_hid,
+            n_input,
+            self.cmd_count
+        );
         self.n_hid
     }
 
@@ -1527,6 +1572,13 @@ impl Xhci {
         depth: u8,
     ) {
         if self.n_hid >= MAX_HID {
+            kprintln!(
+                "[usb] device at root port {} route {:#x} not enumerated — all {} device \
+                 entries (MAX_HID, hubs included) in use",
+                root_port,
+                route,
+                MAX_HID
+            );
             return;
         }
         let Some(slot) = self.enable_slot() else {
@@ -1608,6 +1660,14 @@ impl Xhci {
             (self.hid[di].tt_hub_slot, self.hid[di].tt_port);
         for p in 1..=nbr {
             if self.n_hid >= MAX_HID {
+                kprintln!(
+                    "[usb] hub slot {}: ports {}..{} not scanned — all {} device entries \
+                     (MAX_HID, hubs included) in use",
+                    hub_slot,
+                    p,
+                    nbr,
+                    MAX_HID
+                );
                 break;
             }
             // A failed status read is not "nothing connected": FreeMiNT
