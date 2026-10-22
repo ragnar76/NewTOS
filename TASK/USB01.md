@@ -54,4 +54,8 @@ Anwender-Freigabe 2026-10-23: **F1** (Befehlsring mit Link-TRB), **F2**
 (`bInterfaceClass == 3` vor Protokoll 1/2), **F8** (Slot-Budget/stille Abbrueche
 loggen) bauen. Diagnoseweg, F3–F7 noch offen.
 
+F1/F2/F8 umgesetzt (`0a1b80f4`, `7e7fbafa`, `190281c6`, `7c1f621d`), Tester PASS
+(`34f73b01`). Echte Pi offen: Steckkombinationen, >15 Befehle am VL805,
+`C:\USBDIAG.LOG`. Nebenbefunde: [USB02](USB02.md).
+
 [Gemeinsame Regeln](README.md) gelten.
