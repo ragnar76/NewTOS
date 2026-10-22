@@ -975,6 +975,52 @@ replaceable. **Observable difference:** without an assignment the double-click
 does nothing. EmuCON's `more` is a separate question ([CON03](../TASK/CON03.md)).
 Ticket [GUI01](../TASK/GUI01.md).
 
+**The VT52 console (`Bconout(2)`) — four named deviations** — user decisions
+2026-10-22 (`TASK/CON04.md` "Entscheidungen", spec `docs/api/bios/_vt52.md`
+§13). Everything else of the console is EmuTOS' (`bios/vt52.c`,
+`bios/conout.c`): every sequence, the swallowed unknown escapes, the
+clamping, the cursor as an inverted cell with `disab_cnt`, wrap off at boot,
+non-destructive BS, clamping HT, LF/VT/FF without CR, Handle 5 without the
+automaton.
+
+* **Q3 — erasing under reverse video uses the background throughout.**
+  EmuTOS' `erase_to_eol_impl`/`erase_from_bol_impl` clear the border cell
+  with `ascii_out(' ')` because `blank_out` needs an even start and odd end
+  column on interleaved bit-planes (`bios/vt52.c:471-500,752-775`,
+  `bios/conout.c:586-596`); under `ESC p` that cell is painted in the
+  *foreground*. Checked on the reference (pinned EmuTOS on Hatari Falcon
+  truecolor, `measurements/measurement-2026-10-22-con04/`, probe rows 2–7):
+  with reverse video on, `ESC K` at an odd column and at the last column and
+  `ESC o` at an even column (and column 0) leave one cell in the foreground,
+  `ESC K` at an even and `ESC o` at an odd column do not. The pairing is an
+  artefact of the bit-plane layout, not a feature; NewTOS erases the whole
+  run — `ESC K`, `ESC o`, `ESC J`, `ESC d` — with the background register.
+  **Observable difference:** that one cell, only with `ESC p` active.
+* **Q5 — the cursor blink runs on the 200 Hz counter.** EmuTOS counts
+  `v_period` (default 30) in VBLs (`blink()` per VBL, `bios/vectors.S:355`),
+  so the default lasts 0.43–0.6 s depending on the monitor's frame rate — a
+  device parameter. NewTOS has no VBL; it counts one `v_period` unit as
+  1/60 s on `_hz_200` (EmuTOS' own comment on the default, "0.5 second blink
+  rate (@ 60Hz vblank)", `vt52.c:933`), so the default is exactly 0.5 s on
+  every board. `Cursconf(4)`/`Cursconf(5)` set and return `v_period` as in
+  EmuTOS. **Observable difference:** the blink period in real time.
+* **Q6 — `vs_curaddress` sets the position directly.** EmuTOS sends
+  `ESC Y` with `0x20 + INTIN - 1` cut to a byte (`vdi/vdi_esc.c:177-182`),
+  so no column beyond 223 is reachable and out-of-range values wrap. NewTOS
+  has up to 240 columns (1920 pixels); `vs_curaddress` calls the console's
+  `move_cursor` with `INTIN - 1`, which clamps to the screen. The `ESC Y`
+  stream sequence itself stays byte-coded as in EmuTOS. **Observable
+  difference:** columns 224..239, and clamping instead of wrap-around for
+  values outside the screen; also, a half-received escape sequence in the
+  console is not disturbed by `vs_curaddress`.
+* **D4 — BEL makes no sound.** `do_bell` evaluates `conterm & 4` as EmuTOS
+  does (`vt52.c:213-218`); EmuTOS' `bell()` calls `bell_hook`, whose default
+  sounds only with a YM2149 (`bios/sound.c:251-261`). NewTOS has no audio
+  device and no `bell_hook` system variable, so nothing sounds — the same
+  result as an EmuTOS build without `CONF_WITH_YM2149`. **Observable
+  difference:** no bell, and a program cannot hook the bell through
+  `bell_hook` ($5AC).
+
 ## EmuTOS is the reference, not the template
 
 CLAUDE.md Rule 1 says EmuTOS source *is* the spec. Through this charter that

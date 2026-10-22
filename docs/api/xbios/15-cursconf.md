@@ -41,16 +41,22 @@ sub-operations, `operand` is used only by subfunction 4:
 
 - **0 hide** — `cursor_off()` (increments the `disab_cnt` nesting counter).
 - **1 show** — `cursor_on()`.
-- **2 blink** — clear `M_CFLASH` in `v_stat_0` (flash **enabled**).
-- **3 steady** — set `M_CFLASH` (flash **disabled**).
+- **2** — clear `M_CFLASH` in `v_stat_0`: the cursor stops flashing
+  (steady). The source comment says "blinking cursor"; the code does the
+  opposite (see edge case 2).
+- **3** — set `M_CFLASH`: the cursor flashes. Comment: "not blinking".
 - **4 set rate** — `v_period = LOBYTE(operand)` (blink interval in VBL ticks).
 - **5 get rate** — `return v_period`.
 
 Subfunctions 0-4 (and any unhandled `function`) return `0`; only subfunction
 5 returns a value (the current blink rate). The blink itself runs in the VBL
 `blink()` routine, which decrements a timer and toggles `M_CSTATE` when it
-reaches `v_period`; `Cursconf` only sets the parameters/flags. Note the sign
-of `M_CFLASH` is inverted from intuition: **clear = blinking, set = steady**.
+reaches `v_period`; `Cursconf` only sets the parameters/flags. `blink()`
+flashes only while `M_CFLASH` is **set** (`bios/vt52.c:855-857`, and
+`bios/conout.h:17`: "cursor flash 0:disabled 1:enabled"), so subfunction 2
+makes the cursor **steady** and 3 makes it **blink** — the reverse of the
+comments in `cursconf` and of the Atari documentation's names. Measured on
+the reference (CON04, below).
 
 `Cursconf` does not touch `conterm` (the bell/click/repeat byte).
 
@@ -91,8 +97,8 @@ of `M_CFLASH` is inverted from intuition: **clear = blinking, set = steady**.
 |-----------:|--------|----------------|--------|
 | 0 | hide cursor | `cursor_off()` (`disab_cnt`++/`M_CVIS`) | 0 |
 | 1 | show cursor | `cursor_on()` (`M_CVIS`) | 0 |
-| 2 | blink (flash on) | `v_stat_0 &= ~M_CFLASH` | 0 |
-| 3 | steady (flash off) | `v_stat_0 \|= M_CFLASH` | 0 |
+| 2 | flash off (steady) — commented "blinking" | `v_stat_0 &= ~M_CFLASH` | 0 |
+| 3 | flash on (blinking) — commented "not blinking" | `v_stat_0 \|= M_CFLASH` | 0 |
 | 4 | set blink rate | `v_period = LOBYTE(operand)` | 0 |
 | 5 | get blink rate | (none) | `v_period` |
 | other | (falls through) | (none) | 0 |
@@ -137,8 +143,9 @@ An out-of-range `function` falls through the switch and returns `0`.
   `20`.
 - **Hide/show:** `Cursconf(0, 0)` hides the cursor (returns 0); `Cursconf(1,
   0)` shows it.
-- **Blink toggle:** `Cursconf(2, 0)` enables blinking (clears `M_CFLASH`);
-  `Cursconf(3, 0)` makes it steady (sets `M_CFLASH`). Both return 0.
+- **Blink toggle:** `Cursconf(2, 0)` makes the cursor steady (clears
+  `M_CFLASH`); `Cursconf(3, 0)` makes it blink (sets `M_CFLASH`). Both
+  return 0.
 
 ---
 
@@ -147,9 +154,17 @@ An out-of-range `function` falls through the switch and returns `0`.
 1. **Only subfunction 5 returns a value.** Every other subfunction returns
    `0`, so a program cannot read back the visibility/blink flags — only the
    rate (`bios/vt52.c:911-914`).
-2. **`M_CFLASH` sense is inverted.** `function == 2` **clears** `M_CFLASH`
-   (blinking on) and `function == 3` **sets** it (steady). "Flash bit set" =
-   flash disabled (`bios/vt52.c:903,906`).
+2. **Subfunctions 2 and 3 do the opposite of their comments.**
+   `function == 2` **clears** `M_CFLASH` and `function == 3` **sets** it
+   (`bios/vt52.c:902-906`); `M_CFLASH` set means "flash enabled"
+   (`conout.h:17`, `blink()` returns early without it, `vt52.c:855-857`,
+   and `vt52_init` sets it for the blinking power-up cursor, `:932`). So 2
+   gives a steady cursor and 3 a blinking one. *Correction 2026-10-22
+   (CON04):* this entry said "flash bit set = flash disabled", which
+   contradicts `blink()`. Measured on the pinned EmuTOS on Hatari Falcon
+   (`measurements/measurement-2026-10-22-con04/`): after `ESC e` +
+   `Cursconf(2,0)` six screenshots 0.3 s apart all show the cursor; with
+   `Cursconf(3,0)` it alternates.
 3. **Hide/show is nested via `disab_cnt`.** `cursor_off` increments a disable
    counter; balanced `cursor_on` calls are needed to re-show — subsystems can
    independently hide/show without fighting.
@@ -204,9 +219,12 @@ An out-of-range `function` falls through the switch and returns `0`.
 
 (Empty during Phase 00.)
 
-PHASE-08: `Cursconf` drives the NewTOS text-console cursor (the VT52
-emulator's `v_stat_0`/`v_period` equivalents); subfn 5 returns the rate, the
-rest return 0, and the `M_CFLASH` inverted sense is preserved.
+CON04 (2026-10-22): `Cursconf` drives the VT52 console's own state
+(`tos-api/src/vdi/escape.rs` `cursconf`, called from
+`tos-api/src/xbios/screen.rs`), the same `v_stat_0`/`disab_cnt`/`v_period`
+that `ESC e`/`ESC f` change; the cursor is drawn (cell inversion) and blinks
+from the 200 Hz timer (`docs/api/bios/_vt52.md` §6, decision Q5). Subfunction
+semantics exactly as the EmuTOS code above, including 2 = steady.
 
 ---
 
@@ -218,27 +236,14 @@ rest return 0, and the `M_CFLASH` inverted sense is preserved.
 > inverted `M_CFLASH` sense. Peripheral + driver: the framebuffer VT52
 > console over the VideoCore buffer (`docs/HARDWARE-PROFILE.md` §2/§3.2).
 
-- **State model, no blinking caret.** `cursconf` tracks the VT52 cursor
-  flags in software: `V_STAT_0` carries `M_CVIS (0x10)` /
-  `M_CFLASH (0x02)`, defaulting to visible + flashing, and `V_PERIOD`
-  the blink period (default 30 VBLs)
-  (`tos-api/src/xbios/screen.rs:126-157`). The GUI-oriented framebuffer
-  console has **no visible blinking text caret**, so hide/show/flash update
-  their state but render no on-screen blink; the blink **rate** get/set are
-  real values, so this is a thin state model, not a stub.
-- **Subfunction behaviour.** 0 hide, 1 show, 2 enable-flash (clears
-  `M_CFLASH`), 3 disable-flash (sets `M_CFLASH`), 4 set period (low byte),
-  5 return period, ≥ 6 no-op — all returning `0` except subfn 5
-  (`screen.rs:136-157`). The inverted `M_CFLASH` sense (clear = blinking)
-  is preserved.
-- **Bit-value note.** NewTOS uses `M_CFLASH = 0x02`, `M_CVIS = 0x10`
-  (`screen.rs:126-127`), which differ from EmuTOS's `conout.h`
-  (`M_CFLASH=0x0001`, `M_CVIS=0x0004`). These are **internal** flag bits
-  never exposed by the ABI — only subfn 5's *rate* is returned, and the
-  visibility/flash bits are write-only — so the difference is not
-  observable to a program. (Noted for Step-2 completeness; no contract
-  impact.)
+- **The console's cursor (since CON04, 2026-10-22).** `cursconf` reaches
+  the VT52 console state in `tos-api/src/vdi/escape.rs`: 0 `cursor_off`
+  (`disab_cnt`++), 1 `cursor_on` (forced), 2 clear / 3 set `M_CFLASH`,
+  4 `v_period = LOBYTE(operand)`, 5 return `v_period`, all else 0. The
+  flag bits are EmuTOS' (`M_CFLASH 0x01`, `M_CVIS 0x04`); they are internal
+  either way — only subfunction 5's rate is returned.
 - **No Atari hardware dependency.** There is no Shifter or MFP-driven
-  blink; if a real blinking caret is added later it would run off the frame
-  clock (§ `Vsync`), not a VBL interrupt.
+  blink: the kernel's 200 Hz timer interrupt runs the blink step, one
+  `v_period` unit = 1/60 s, default 30 = 0.5 s (`docs/COMPATIBILITY.md`,
+  CON04 Q5).
 - **1080p later.** Cursor config is geometry-independent.

@@ -273,26 +273,23 @@ returns 0 for a handle > 7 (`bios/bios.c:1008-1010`) and before
 |-------:|------------|------------|--------|
 | 0 | PRT / Centronics | **absent** → discard | `0` |
 | 1 | AUX / RS-232 | no-cable port entry (option A); PL011 UART0 later (`TASK/IO01.md`) | `1` (accept+discard) |
-| 2 | CON / screen (VT52) | **framebuffer VT52** (`fbcon.rs`) + UART echo | `1` |
+| 2 | CON / screen (VT52) | **framebuffer VT52** (`fbcon.rs` → `vdi/escape.rs` automaton) + UART echo | `1` |
 | 3 | MIDI out | **absent** → discard | `0` |
 | 4 | IKBD command out | **absent** → discard | `0` |
-| 5 | raw screen (no VT52) | framebuffer (same path) | `1` |
+| 5 | raw screen (no VT52) | framebuffer `ascii_out` (`alpha_rawout`), no automaton, no UART echo | `1` |
 | 6,7 | unused / Bconmap | absent → discard | `0` |
 
-- **CON output = framebuffer VT52.** Console-output handles (2 CON, 5 raw)
-  write via `Host::console_write_byte` (`tos-api/src/bios/chardev.rs:61-71`),
-  which the kernel routes to **both** the framebuffer VT52 console
-  (`kernel/src/fbcon.rs::write_byte`) and the PL011 UART
-  (`kernel/src/host_env.rs:17-20`). The framebuffer path is the TOS console
-  (`fbcon.rs` renders glyphs + CR/LF/BS/TAB/scroll through the 8×16 system
-  font over the VideoCore buffer, §3.1); the UART write is a debug mirror,
-  not the primary console. Return `1` per `bconout2`/`bconout5`.
-- **VT52 scope (Step-2).** `fbcon.rs` currently handles printable glyphs +
-  `CR`/`LF`/`BS`/`TAB` + wrap + upward scroll (`fbcon.rs:62-89`); full VT52
-  escape sequences (cursor addressing, clear-to-EOL, etc.) that the handle-2
-  `bconout2` contract implies are not yet parsed. Recorded as K-series (a
-  screen/console overlap — the VT52 escape work is also noted in the Screen
-  section).
+- **CON output = framebuffer VT52.** Handle 2 writes via
+  `Host::console_write_byte`, which the kernel routes to **both** the
+  framebuffer VT52 console (`kernel/src/fbcon.rs::write_byte` →
+  `tos_api::vdi::alpha_conout`, the automaton of [`_vt52.md`](_vt52.md)) and
+  the PL011 UART (a debug mirror, not the primary console). Handle 5 goes to
+  the console's `ascii_out` directly (`tos_api::vdi::alpha_rawout`): every
+  byte a glyph, no automaton, no UART mirror (EmuTOS `bconout5` without
+  `CONF_SERIAL_CONSOLE`). Return `1` per `bconout2`/`bconout5`.
+- **VT52 scope.** Since CON04 (2026-10-22) the full EmuTOS automaton:
+  every sequence, cursor, colours, wrap, Handle 5 raw — [`_vt52.md`](_vt52.md)
+  §15; deviations Q3/Q5/Q6/D4 in `docs/COMPATIBILITY.md`.
 - **Handle 1 (AUX) discarded today.** `is_console_out` is true only for
   handles 2 and 5 (`chardev.rs:29-32`), so `Bconout(1, …)` returns `0`
   (dummy; **superseded by option A: returns `1`, byte discarded**) even though the PL011 exists — the UART is written only as the

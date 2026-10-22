@@ -379,21 +379,13 @@ and console paths documented in [`input/_mouse.md`](input/_mouse.md).
 - `v_dspcur`/`v_rmcur` bind to the mouse-cursor sprite path
   ([`input/_mouse.md`](input/_mouse.md)); ignore the `PTSIN` coordinates
   exactly as EmuTOS does.
-- **Current NewTOS status** (`kernel/src/fbcon.rs`, read for context, not
-  edited by this pass): the framebuffer console already derives `cols()`/
-  `rows()` live from `vdi_backend::dims()` (`fbcon.rs:38-43`) — structurally
-  the same "geometry ÷ cell size, read live" shape `vq_chcells` needs — and
-  tracks `COL`/`ROW` 0-based cursor position internally
-  (`fbcon.rs:35-36`), but (a) exposes no public getter for the cursor
-  position (needed for `vq_curaddress`/sub 15), (b) has no absolute
-  cursor-set entry point (needed for `vs_curaddress`/sub 11), (c) has no
-  escape-sequence parser at all yet — the module's own header comment
-  says "Full VT52 escape sequences (cursor addressing, clear-to-EOL) can
-  layer on later" (`fbcon.rs:9-11`) — and (d) treats every byte
-  `0x20..=0xFF` uniformly as a printable glyph (`fbcon.rs:86`), i.e. it
-  does **not** currently have `Crawio`'s `0xFF` read/write duality, so a
-  NewTOS `v_curtext` built directly on `fbcon::write_byte` would *not*
-  inherit the `D-083` gap unless it is deliberately routed through a
-  NewTOS `Crawio` implementation — see the open question logged in
-  `D-083`. None of this is a spec gap; it is a Phase-12 implementation
-  surface gap for the Developer, noted here for continuity.
+- **Current NewTOS status (CON04, 2026-10-22):** the alpha sub-functions
+  write their VT52 strings into the one console automaton
+  (`tos-api/src/vdi/escape.rs`, spec `docs/api/bios/_vt52.md`), as
+  `bios_conws` does; `v_curtext` (12) goes through `Crawio`
+  (`gemdos::console::rawio`) and so keeps the `D-083` `0x00FF` sentinel;
+  `vq_chcells`/`vq_curaddress` read the console's live `v_cel_*`/`v_cur_*`.
+  **Deviation Q6:** `vs_curaddress` (11) sets the position directly through
+  `move_cursor`'s clamp instead of the byte-coded `ESC Y` (no 223-column
+  limit, no wrap-around; `docs/COMPATIBILITY.md`). `esc_init`/`esc_exit`
+  run in `v_opnwk`/`v_clswk` (`vdi_control.c:564,589`).
