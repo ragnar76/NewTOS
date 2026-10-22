@@ -1,7 +1,7 @@
 # CON04 — Quittung
 
 **Status: IMPLEMENTIERT · QEMU raspi4b und Hatari-Falcon belegt · Tester-Abnahme
-offen · echte Pi offen** · 2026-10-22 · Basis `main` @ `1dec9058` · Commits
+PASS (`5ca5fa30`, `measurements/measurement-2026-10-22-con04-test/RUNINFO.TXT`) · echte Pi offen** · 2026-10-22 · Basis `main` @ `1dec9058` · Commits
 `9409f35a` (Code), `deb6e253` (Hosttests), `b31a0a76` (Doku), `373ff2a9`
 (Sonde + Beleg) · Beleg
 [measurements/measurement-2026-10-22-con04/](../measurements/measurement-2026-10-22-con04/RUNINFO.TXT)
