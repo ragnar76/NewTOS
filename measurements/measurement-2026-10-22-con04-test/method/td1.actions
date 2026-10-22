@@ -1,0 +1,5 @@
+# TeraDesk: park, double-click first HARD DISC icon (C:) at (195,36)
+7000 parkbr
+7800 move 195 36
+8000 dclick
+8400 parkbr

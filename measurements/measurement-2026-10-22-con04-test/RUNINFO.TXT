@@ -1,0 +1,50 @@
+CON04 -- Tester acceptance (VT52 console, raw Bconout(5), visible blinking alpha cursor)
+=========================================================================================
+
+Date      2026-10-22
+Tested    main @ 49249a2d (= 1f8da36d + one docs-only commit TASK/T17); implementation commits 9409f35a..1f8da36d
+Baseline  1dec9058 (before CON04), built in a scratch git worktree, compared run by run
+Who       Tester agent; no hardware, no SD card, no push. Product code untouched.
+
+RESULT (details per item in the Tester report; evidence paths below)
+  1  host tests            PASS  tos-api+tos-types 1461 passed / 0 failed / 1 ignored (156 suites), xtask 96/0/0 -> 1557/0/1 (= developer);
+                                 sdk/run-host-tests.sh 26 PASS / 0 FAIL / 0 SKIP                       serial/cargo-test-tos-api-tos-types.log
+  2  fresh builds          PASS  release, fresh worktree + own target dir, qemu-virt then rpi4: warnings 160/160 (= base 160/160);
+                                 clippy tos-api 76, kernel 125 on both boards (= base)                 checks/
+  3  qemu-virt boot        PASS  reaches "[desk] desktop up (0 drives)", 0 EXC/PANIC, boot log equals base except the kernel size line
+                                                                                                       serial/qemu-virt-{head,base}-boot.log
+  4a NEWDESK, no cursor    PASS  desktop identical to base, pixel-identical in 8 blink phases          screendumps/regauto-*-t50, ndblinkafter-head-b*
+  4b NEWDESK dclick .NCP   PASS  cursor blinks during the program (cell (2,3) black/white at 0.5 s), pixel-identical to base after return
+                                                                                                       screendumps/nd-launch-*, ndblink-head-b*, ndblinkafter-head-b*
+  4c TeraDesk dclick .NCP  PASS  same                                                                  screendumps/td-launch-*, tdblink-head-b*, tdblinkafter-head-b*
+  4d crash report          PASS  readable, no staircase, identical to base pixel for pixel            screendumps/crash-{head,base}-t40
+  4e APITEST               PASS  TOTAL 109 / 0 / 5 on head and on base                                 serial/api-{head,base}.log
+  4f VT52 probe            PASS  screen 1 vs Hatari reference: 4/2400 cells (exactly the four documented Q3 cells); screen 2: 0; vs developer's
+                                 NewTOS dumps 0/0; blink 0.5 s per phase                               screendumps/vt52a-head-t28, vt52b-head-t28, vt52c-head-b*
+  4g regression            PASS  HELLO2+CoreMark, NEWDESK, TeraDesk, QED start: 0 differing cells vs 1dec9058
+  5  other                 see report: B1 serial text changed (intended D5), crash report serial has ESC f ESC v (intended), EmuCON not driven
+
+HOW
+  Kernels (release, rpi4):  fresh `cargo xtask build --board rpi4 --release` in scratch worktrees (SOURCE_DATE_EPOCH=1792152000):
+    head (49249a2d)  kernel8-head-rpi4.img fdb12bfa49948218ef2aaea953630706bce2e93ce22b8ef59986d2c3b7a0f8b0
+    base (1dec9058)  kernel8-base-rpi4.img 5d7e4006890949afb94db7eef04ec11e8aad94b86f5e3fbfd4471cf62617a6be
+  qemu-virt: `cargo xtask run --release` in each worktree, 90 s bound.
+  Scratch kernels with a scripted IKBD mouse injector (method/mk-injector.py, build-inj.sh; same mechanism as
+  measurements/measurement-2026-10-21-sdk01h/method/scratch-kernel-injector.diff, script generated from method/*.actions;
+  the hook is in kernel/src/host_env.rs of the scratch worktree only and was removed again by hand, cmp-verified):
+    nd-head c469b35e..., nd-base de7460db..., td-head 6eefc5f1..., td-base 090012da... (full sha256 in the Tester report)
+  Cards: 64 MiB FAT16 per method/mkcard.sh / cards.sh / api-card.sh, one APFS clone per run (run.sh), clone deleted after the run.
+  Programs: ctest.c (new, method/ctest.c: Cconws banner, ~14 s Tgettime poll without Cconin, return) CTEST.NCP e702c979...;
+    CRASHTST.NAP 8de94ad7..., CRCHILD.NAP 2fc0e09d...; APITEST.NCP 96ae4de5..., PTERMCH.NCP 30fa331e..., DTACHILD.NCP eaf92b08...;
+    VT52A/B/C.NCP, HELLO2.NCP, COREVAL.NCP, DESKTOP.NAP byte-identical to the developer's hashes (measurement-2026-10-22-con04/RUNINFO.TXT).
+    QED.NAP 4c447767..., qed.rsc 30ac6bf2... .
+  Comparison: method/cmp-cells.py (80x30 cells), PIL pixel diffs for the blink series.
+  Pointer park: bottom-right only (never across the menu bar). Injector does not run during Cconin: CTEST waits without Cconin.
+
+NEWDESK launch: card NEWDESK.INF = placeholder text (desktop defaults: DISK C icon at (38,42)); double-click DISK C, then CTEST.NCP at (262,100).
+TeraDesk launch: #Z autorun of DESKTOP.NAP; double-click first HARD DISC (195,36), then CTEST.NCP at (590,203).
+
+NOT VERIFIED
+  Real Pi 4 (blink from the timer IRQ on silicon, 1920x1080 = 240 columns, vs_curaddress beyond column 223, HDMI); EmuCON as
+  VT52 client (needs a scratch kernel with a failing NEWDESK, not driven here); qemu-virt VT52 output (no framebuffer console
+  on that board in the screendump path); keyboard-driven console programs (QEMU raspi4b has no input).

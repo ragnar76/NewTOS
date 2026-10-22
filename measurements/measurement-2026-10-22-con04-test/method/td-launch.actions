@@ -1,0 +1,8 @@
+# TeraDesk: open C: (double-click first HARD DISC), double-click CTEST.NCP at (590,203), park bottom-right afterwards
+7000 parkbr
+7800 move 195 36
+8000 dclick
+8400 parkbr
+9000 move 590 203
+9100 dclick
+9700 parkbr

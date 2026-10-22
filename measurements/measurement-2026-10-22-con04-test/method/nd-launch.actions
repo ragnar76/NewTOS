@@ -1,0 +1,7 @@
+# NEWDESK: open C:\ (double-click DISK C), double-click CTEST.NCP, park bottom-right afterwards
+200 parkbr
+800 move 38 42
+1000 dclick
+1300 parkbr
+1700 move 262 100
+1800 dclick

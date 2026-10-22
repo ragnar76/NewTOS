@@ -1,0 +1,5 @@
+# open the C: window: park bottom-right, move onto DISK C (38,42), double-click
+200 parkbr
+800 move 38 42
+1000 dclick
+1400 parkbr
