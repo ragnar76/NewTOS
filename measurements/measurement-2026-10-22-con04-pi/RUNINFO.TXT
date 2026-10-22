@@ -1,0 +1,76 @@
+CON04 -- real-Pi acceptance program VT52PI.NAP (VT52 console at the native column count), QEMU pre-run
+=======================================================================================================
+
+Date      2026-10-22
+Tree      main @ 5b66f1f3 (code identical to f9fdd32c; the commits after the CON04 Tester run 5ca5fa30 are docs only)
+Who       Developer agent; no hardware, no SD card, no push. No kernel or library change: one new program only.
+Why       TASK/CON04 is open on the real Pi 4 (1920x1080 = 240 columns, vs_curaddress beyond column 223, blink from the
+          timer IRQ). The existing probe sdk/examples/vt52prb.c assumes 80 columns; VT52PI reads the geometry at run time.
+
+PROGRAM
+  Source   sdk/examples/vt52pi.c
+  Build    sdk/bin/newtos-cc -nap -Wall -Wextra -o VT52PI.NAP sdk/examples/vt52pi.c      (method/build.sh; 0 warnings)
+  Binary   VT52PI.NAP  100048 bytes
+           sha256 d7861cfa087eb349f014db80c7f5a3e26a227cf4ca1072d4e41d6d5de5348a44
+           (not committed; built into the session scratchpad, the lead copies it to the card)
+  Type     .NAP (GEM application), started by double-click from the desktop. Reason: test T4 calls the VDI escape
+           vs_curaddress through a workstation handle, and a program gets that handle only the normal way, through the
+           AES (appl_init -> graf_handle -> v_opnvwk). A .NCP in \AUTO runs before the AES and has no handle; a .NCP
+           from the desktop would have to call appl_init anyway. The text screen is entered the GEM way
+           (wind_update(BEG_UPDATE), graf_mouse(M_OFF), v_enter_cur = ESC E ESC e CR) and left with v_exit_cur,
+           graf_mouse(M_ON), wind_update(END_UPDATE), form_dial(FMD_FINISH, whole screen), v_clsvwk, appl_exit.
+           The cursor is made visible with ESC e and blinking with Cursconf(3) (M_CFLASH on, docs/api/xbios/15-cursconf.md);
+           evnt_keybd waits for the key.
+  Output   every byte through Bconout(2) (the VT52 automaton); geometry from vq_chcells; the column ruler and the '#'
+           guides are written sequentially from column 0, so they do not depend on the addressing under test.
+
+QEMU RUN (method/run.sh, method/build.sh, method/mkcard.sh, method/z-vt52pi.inf, method/env.sh)
+  Kernel   cargo xtask build --board rpi4 --release, copied to the scratchpad as kernel8-rpi4.img
+           sha256 851118cb234f701b3c5258938bcd3f16f4e8f3d8e64813aeab4830bbd2e92fdb (scratch only)
+  Card     64 MiB MBR+FAT16 scratch image, C:\VT52PI.NAP + NEWDESK.INF with "#Z 01 C:\VT52PI.NAP@" (autorun at desktop
+           start = the same AES launch path as a double-click, sh_isgem=1); one APFS clone (cp -c) per run, deleted after.
+  QEMU     11.0.2, -M raspi4b -append serial=on; geometry via -global bcm2835-fb.xres/yres (QEMU device option only; the
+           kernel reads it with the VideoCore get-physical tag as on the Pi: serial "[fb] VideoCore display geometry
+           detected: 1920x1080").
+  Runs     fhd   1920x1080 -> vq_chcells cols=240 rows=67 (8x16 font)   screendumps/fhd-t40.png
+           blink 1920x1080, 8 dumps back to back (~0.26 s apart)        screendumps/blink-b1..b8.png, serial/blink-burst-times.txt
+           vga   640x480   -> cols=80 rows=30 (QEMU default)            screendumps/vga-t40.png
+           0 EXC/PANIC in all three serial logs (serial/*.log; the VT52 byte stream is echoed there too).
+
+RESULT (QEMU raspi4b, 240 columns -- the Pi geometry)
+  T1 PASS  row ends "....abcdZ" at col 239 (W X Y Z overwrote the last cell), the '-' row below untouched.
+  T2 PASS  row ends "abcde" at col 235..239, next row starts "WXYZ" at col 0, then '-'.
+  T3 PASS  'Y' at col 223 (ESC Y column byte 0xFF), directly under the '#'.
+  T4 PASS  'V' at col 230, 'L' at col 239 (vs_curaddress 231 / 240, 1-based), each directly under its '#'.
+  T5 PASS  vs_curaddress(17,999) -> 'K' at col 239; vs_curaddress(999,999) -> 'C' at row 66 col 239 (bottom-right cell).
+           vq_curaddress read-back "V=15,231 L=15,240 K=17,240 C=67,240" = the expected line printed below it.
+  T6 PASS  cursor cell (row 21, col 4) black in b2 b3 b6 b7, white in b1 b4 b5 b8 -> ~0.5 s phases (Q5).
+           fhd-t40 caught the white phase; blink-t40 equals fhd-t40 pixel for pixel (no difference at all).
+  vga      80 columns: the program says "(<231 cols: T3/T4 clamp to last col)"; Y, V, L, K all land on col 79 under the
+           '#', read-back "V=15,80 L=15,80 K=17,80 C=30,80" = expected. (V is overwritten by L there -- both clamp to 79.)
+  NOT DRIVEN  the key press and the return to the desktop (QEMU raspi4b has no keyboard input; the IKBD injector needs a
+           scratch kernel and was not used here) -- Pi only.
+  NOTE     at 1920x1080 the screen is 67 full text rows (67 x 16 = 1072); the bottom 8 pixel lines are not part of the
+           text grid and keep what the desktop drew there (a green strip in QEMU). Not a test failure; see report.
+
+WHAT THE USER MUST SEE ON THE PI (double-click C:\...\VT52PI.NAP from the desktop; ideally first program after boot)
+  Line 1   "VT52PI CON04 cols=240 rows=67" (with a 1920x1080 display and the 8x16 font). Under it a ruler: the numbers
+           0 10 20 ... 230 and a mark row  |....+....|  ('|' every 10 columns, '+' at 5).
+  T1  wrap off (initial state, no ESC w sent). The dotted row ENDS in "abcdZ" exactly at the right screen edge.
+           The row below it is all '-' from edge to edge (nothing spilled into it).
+           (If the row below starts with "WXYZ", some earlier program left wrap ON -- reboot and run VT52PI first.)
+  T2  wrap on (ESC v). The dotted row ends in "abcde" at the right edge, the next row begins with "WXYZ" at the left
+           edge, followed by '-'.
+  T3  ESC Y col 223. In the ruler row there is one '#' three columns right of the "220" mark; the 'Y' in the dotted
+           row below sits exactly under that '#'.
+  T4  vs_curaddress col 230 and 239. The ruler row has two '#': one ON the "230" mark, one in the very last column.
+           'V' is exactly under the first, 'L' exactly under the second (last column).
+  T5  clamp. The dotted row ends in 'K' in the last column; a single 'C' sits in the bottom-right corner of the text
+           area (last text row, last column).
+  Read-back  the two lines "vq_curaddress: T4 V=15,231 L=15,240 T5 K=17,240 C=67,240" and
+           "must be: V=15,231 L=15,240 K=17,240 C=67,240" are identical.
+  T6  after "-->" a solid block cursor BLINKS (about 0.5 s on, 0.5 s off) and keeps blinking while you wait.
+  Exit     press any key: the text screen is cleared and the desktop comes back fully redrawn, no cursor block left on
+           it, mouse pointer visible and working.
+  Note     a thin strip (8 pixel lines) at the very bottom below the last text row may keep desktop colour -- the screen
+           height 1080 is not a multiple of 16; ignore it for the tests.
