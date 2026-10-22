@@ -35,3 +35,28 @@ Anwendung (Anwender 2026-10-18 bestaetigt).
 
 EmuCON als eigenes EL0-Programm (ADR-026-Muster wie NEWDESK), Befehlssatz
 1:1 nach `references/emutos/cli/`. Nicht in der Kernel-Konsole nachruesten.
+
+## Spec und Anwenderentscheide 2026-10-22
+
+Spec: `docs/api/emucon/` (`e4454ea0`). Anwender folgt den Empfehlungen zu
+D1–D10:
+
+- D1 `kernel/src/shell.rs` entfaellt, EmuCON ersetzt sie; „No desktop …“ nur
+  noch seriell. Rueckfall bei defektem NEWDESK bleibt als Beigabe (derselbe
+  Blob), ist aber nicht der Grund fuer EmuCON — Anwender: eine Notfallkonsole
+  allein lohnt kaum, EmuCON als Werkzeug (*Execute EmuCON*, spaeter Esc beim
+  Boot) schon.
+- D2 `bench`/`init`/`run`/`ver`/`quit` entfallen (`bench` ggf. als eigenes `.NCP`).
+- D3 Voraussetzung: VT52-Parser → [CON04](CON04.md), vor EmuCON.
+- D4 Bildschirmgroesse in Zeichen ueber eine neue `Ssystem`-Unterfunktion
+  (wie `S_NEWTOS_KVERSION`); Line-A-artiger Block erst, wenn Ports ihn brauchen.
+- D5 `mode con res=` ablehnen wie das Falcon-Profil.
+- D6 Endungssuche `.NAP/.NCP/.NTP` (ADR-018).
+- D7 1:1, ausser Datenverlust und Ueberlaeufen: diese berichtigen und in
+  COMPATIBILITY benennen; vorher in Hatari am echten EmuTOS nachstellen.
+- D8 Bibliothek + schmales Programm wie NEWDESK.
+- D9 Banner „Welcome to EmuCON2 version …“ mit NewTOS-Version.
+- D10 Esc beim Boot: spaeter, eigenes Ticket.
+
+Nebenbefund: `Sversion` liefert `0x3000` (`tos-api/src/gemdos/version.rs:14`),
+`docs/api/gemdos/version/30-sversion.md` nennt `0x2000` — klaeren.
