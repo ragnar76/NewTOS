@@ -124,6 +124,23 @@ pub const fn wait_mutex() -> u64 {
     CLASS_MUTEX << WAIT_CLASS_SHIFT
 }
 
+/// `WAIT_QNQ(writer)` class tag: the `appl_write` that AES identity `writer`
+/// parked on a full queue has been serviced (A116). Woken by the read that
+/// made room — `aqueue`'s complementary service of `p_qnq`
+/// (`aes/gemqueue.c:108-118`), `crate::aes::pd::after_read`.
+const CLASS_QNQ: u64 = 6;
+
+/// The `WAIT_QNQ(writer)` wake key (A116): sleep until the parked
+/// `appl_write` of AES identity `writer` has been copied into its target's
+/// queue by a read of that queue. EmuTOS parks the writer's `EVB` on the
+/// target's `p_qnq` (`evinsert`, `aes/gemqueue.c:120-124`) and a later
+/// successful read services it with `doq` + `azombie(e, 1)` (`:108-118`); the
+/// key carries the **writer**, so only the one write that was serviced wakes.
+#[inline]
+pub const fn wait_qnq(writer: usize) -> u64 {
+    (CLASS_QNQ << WAIT_CLASS_SHIFT) | (writer as u64 & WAIT_ARG_MASK)
+}
+
 /// Bit position of the AES identity within a [`wait_multi`] argument.
 const MULTI_IDX_SHIFT: u32 = 8;
 /// Mask of the event bits within a [`wait_multi`] argument.
@@ -590,7 +607,8 @@ pub enum SleepOutcome {
 /// [`switch_to_kernel`], which `apply_switch` turns into the kernel-park
 /// restore.
 ///
-/// `cond` is built with [`wait_input`]/[`wait_mesg`]/[`wait_timer`].
+/// `cond` is built with [`wait_input`]/[`wait_mesg`]/[`wait_timer`]/
+/// [`wait_multi`]/[`wait_mutex`]/[`wait_qnq`].
 pub fn sleep(cond: u64) -> SleepOutcome {
     let cur = running_slot();
     // KEYS02 (O1): bytes for this process's `kbdvec` hook are waiting. They

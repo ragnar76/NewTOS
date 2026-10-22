@@ -1,0 +1,15 @@
+== C:/
+ Volume in drive : is A116C      
+ Volume Serial Number is 46DE-1721
+Directory for ::/
+
+A116W    NAP      9400 2026-10-22  15:55 
+A116ACC  NAC      8360 2026-10-22  15:55 
+NEWDESK  INF       394 2026-10-22  15:55 
+        3 files              18 154 bytes
+                         66 889 728 bytes free
+
+== C:/SUB
+mdir: File "::/SUB" not found
+== C:/TMP
+mdir: File "::/TMP" not found

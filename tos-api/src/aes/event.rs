@@ -754,7 +754,13 @@ pub fn evnt_multi(pb: &Aespb) -> Option<sched::Switch> {
                     // Pop the FRONT of the FIFO (EmuTOS `ap_rdwr(MU_RDMSG)`
                     // →`doq` dequeue, `gemqueue.c:76-81`); a single pending
                     // message is just the 1-element case.
+                    let had = src.queue.bytes();
                     if let Some(msg) = src.queue.pop() {
+                        // `ev_mesag` → `ap_rdwr(MU_MESAG, rlr, 16, …)`
+                        // (`gemevlib.c:116`): the read services a parked
+                        // writer unless it took the fast path (A116).
+                        // SAFETY: single trap path; `idx`'s own queue.
+                        unsafe { pd::after_read(idx, &mut src.queue, 2 * pd::MSG_WORDS, had) };
                         if pbuff != 0 {
                             // Checked just above; written in the caller's space.
                             for (i, &w) in msg.iter().enumerate() {
@@ -940,7 +946,12 @@ pub fn evnt_mesag(pb: &Aespb) -> Option<sched::Switch> {
         }
         // Pop the FRONT of the FIFO (EmuTOS `ap_rdwr(MU_RDMSG)`→`doq` dequeue,
         // `gemqueue.c:76-81`).
+        let had = src.queue.bytes();
         if let Some(msg) = src.queue.pop() {
+            // `ap_rdwr(MU_MESAG, rlr, 16, …)` (`gemevlib.c:116`): the read
+            // services a parked writer unless it took the fast path (A116).
+            // SAFETY: single trap path; `idx`'s own queue.
+            unsafe { pd::after_read(idx, &mut src.queue, 2 * pd::MSG_WORDS, had) };
             if dest != 0 {
                 // Checked just above; written in the caller's space.
                 for (i, &w) in msg.iter().enumerate() {

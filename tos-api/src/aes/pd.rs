@@ -79,10 +79,10 @@ pub const QUEUE_SIZE: usize = 128;
 pub const MAX_MSG_WORDS: usize = QUEUE_SIZE / 2;
 /// Maximum number of messages the FIFO holds at once, kept at the original
 /// `QUEUE_SIZE / 16 = 8` (enough for one `WM_REDRAW` per open window before the
-/// event loop drains them). Unlike EmuTOS's single 128-byte byte-queue, each of
-/// these slots can independently hold a full [`MAX_MSG_WORDS`]-WORD message, so
-/// the FIFO over-provisions (8 × `QUEUE_SIZE` B) rather than sharing one
-/// 128-byte budget — a memory-for-simplicity trade of the slot model.
+/// event loop drains them). Each slot can hold a full [`MAX_MSG_WORDS`]-WORD
+/// message; what the queue *accepts* is bounded by EmuTOS's shared 128-byte
+/// budget as well ([`MsgQueue::fits`], A116), so the slots only over-provision
+/// storage, not capacity.
 pub const QUEUE_MSGS: usize = QUEUE_SIZE / (MSG_WORDS * 2);
 
 // GEM message types that `doq` coalesces when enqueued — `WM_REDRAW`,
@@ -120,6 +120,23 @@ impl MsgQueue {
     /// is ready when this is `> 0`, EmuTOS `aes/gemqueue.c:99`).
     pub fn pending(&self) -> usize {
         self.count
+    }
+
+    /// Bytes currently queued — EmuTOS's `p_qindex` proper, the byte fill of
+    /// the 128-byte `p_queue` (`aes/struct.h:150-152`).
+    pub fn bytes(&self) -> usize {
+        self.lens[..self.count].iter().map(|&w| 2 * w).sum()
+    }
+
+    /// Would a `words`-WORD message fit — `aqueue`'s write readiness
+    /// `qpb_cnt <= QUEUE_SIZE - p_qindex` (`aes/gemqueue.c:96-97`), tested
+    /// **before** any coalescing (`doq` runs only once `qready` holds,
+    /// `:104-106`). The slot model adds its own bound: at most
+    /// [`QUEUE_MSGS`] messages, reached before the byte bound only by
+    /// messages shorter than the standard 16 bytes.
+    pub fn fits(&self, words: usize) -> bool {
+        let need = 2 * words.min(MAX_MSG_WORDS);
+        self.count < QUEUE_MSGS && need <= QUEUE_SIZE - self.bytes()
     }
 
     /// Peek the standard 16-byte front (oldest) message without removing it.
@@ -166,23 +183,21 @@ impl MsgQueue {
     /// Only standard ([`MSG_WORDS`]-long) messages take part in coalescing — the
     /// coalesced message types are always 16 bytes.
     ///
-    /// Returns `false` when the queue is full. EmuTOS instead **blocks** the
-    /// sender until a read of the target's *own* queue frees room (`aqueue`,
-    /// `aes/gemqueue.c:96-97,120-124`, via `p_qnq`/`evinsert`; drained by the
-    /// complementary service at `:108-118`). NewTOS reports the failure rather
-    /// than overwrite or silently drop an in-queue message — the **sanctioned
-    /// deviation** of `docs/COMPATIBILITY.md` "`appl_write` on a full
-    /// application-message queue returns 0" (A75, 2026-09-20): the cooperative
-    /// kernel has at most one scheduled AES client identity at a time, so no
-    /// second process could ever perform the draining read while a poster
-    /// sleeps, and the sleep/wake substrate has no "queue gained room" wake
-    /// key (only `WAIT_MESG`, the reader's condition). Blocking here would
-    /// hang the one execution context on every full-queue post — kernel-side
-    /// posters (`WM_REDRAW` broadcasts) included. Same-window redraw
-    /// coalescing and the per-loop drain keep the desktop's own posts well
-    /// below capacity (at most `MAX_WINDOWS` distinct-window redraws per
-    /// broadcast); that bounds how *often* the deviation is observed, not
-    /// whether it is one.
+    /// Returns `false` when the message does not fit ([`Self::fits`]: the
+    /// 128-byte budget of `aqueue`'s `qpb_cnt <= QUEUE_SIZE - p_qindex`,
+    /// `aes/gemqueue.c:96-97`, and the slot bound). A coalescing message needs
+    /// no room and is always taken — here, for the kernel-side posters, the
+    /// coalescing comes first; `appl_write` tests [`Self::fits`] itself before
+    /// calling this, in EmuTOS's order (A116).
+    ///
+    /// **Kernel-side posters do not block on a full queue — a named
+    /// deviation.** In EmuTOS every internal poster goes through `ap_sendmsg`
+    /// → `ap_rdwr(MU_SDMSG)` and blocks like `appl_write` (`aqueue`,
+    /// `gemqueue.c:120-124`). NewTOS's posters (`post_msg`: `WM_REDRAW`
+    /// fan-out, the inline Control Manager's `WM_*`/`MN_SELECTED`, `AC_CLOSE`)
+    /// run inline inside whatever AES call caused them and cannot park and
+    /// re-execute that call, so a post into a full queue is dropped
+    /// (`docs/COMPATIBILITY.md` "`appl_write` on a full queue", A75/A116).
     fn enqueue(&mut self, src: &[i16], words: usize) -> bool {
         let words = words.min(MAX_MSG_WORDS);
         if words == MSG_WORDS {
@@ -205,7 +220,7 @@ impl MsgQueue {
                 }
             }
         }
-        if self.count >= QUEUE_MSGS {
+        if !self.fits(words) {
             return false;
         }
         let slot = &mut self.msgs[self.count];
@@ -339,6 +354,12 @@ pub unsafe fn reinit() {
     for slot in t.iter_mut() {
         *slot = Aespd::EMPTY;
     }
+    // …and no write is parked on any of them (`p_qnq` is part of the zeroed
+    // `AESPD`, `aes/struct.h:139`).
+    // SAFETY: as above.
+    let (w, next) = unsafe { writers() };
+    *w = [ParkedWrite::IDLE; NUM_PDS];
+    *next = 0;
 }
 
 /// Address of the AES process-descriptor table — NewTOS's nearest equivalent
@@ -475,6 +496,196 @@ fn wake_mesg_waiter(idx: usize) {
     crate::bdos::process::sched::wake(crate::bdos::process::sched::wait_mesg(idx));
 }
 
+// ─── parked writers: EmuTOS `p_qnq` (A116) ──────────────────────────────────
+//
+// `aqueue` parks a write that does not fit on the target's `p_qnq` list
+// (`aes/gemqueue.c:96-101,120-124`) and the writer sleeps in `mwait`
+// (`aes/gemasync.c:117-127`). A later **successful read of that same queue**
+// services one entry of the list — unconditionally, the head — with `doq` +
+// `azombie(e, 1)` (`:108-118`), so the parked `appl_write` returns 1.
+// `evinsert` links a new `EVB` in at the **head** of the list
+// (`aes/gemasync.c:81-93`) and the service takes the head, so of several
+// parked writers the most recently parked is served first.
+//
+// The list is kept here as one entry per **writer** identity (an identity has
+// at most one call in flight), ordered by a park sequence number. The writer's
+// message is copied in at park time: NewTOS's writer runs in its own address
+// space, and the read that services it runs in the reader's. EmuTOS copies
+// from the writer's buffer at service time; the writer is blocked in between,
+// so only another process scribbling over that buffer could tell the two apart.
+
+/// State of one identity's `appl_write` with respect to `p_qnq`.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum WriteState {
+    /// No write of this identity is parked.
+    Idle,
+    /// Parked on `target`'s full queue (`evinsert(e, &p->p_qnq)`).
+    Parked,
+    /// Serviced by a read (`azombie(e, 1)`); the re-executed call returns 1.
+    Done,
+}
+
+/// One identity's parked `appl_write` — the `EVB` + `QPB` EmuTOS links onto
+/// `p_qnq`.
+#[derive(Clone, Copy)]
+struct ParkedWrite {
+    state: WriteState,
+    /// Identity whose queue the write waits for.
+    target: usize,
+    /// Park order; the largest parked `seq` on a target is the list head.
+    seq: u64,
+    /// Valid WORDs of `msg` (`qpb_cnt / 2`).
+    words: usize,
+    msg: [i16; MAX_MSG_WORDS],
+}
+
+impl ParkedWrite {
+    const IDLE: ParkedWrite = ParkedWrite {
+        state: WriteState::Idle,
+        target: 0,
+        seq: 0,
+        words: 0,
+        msg: [0; MAX_MSG_WORDS],
+    };
+}
+
+/// The parked writes, one per writer identity, and the next park sequence.
+struct Writers(UnsafeCell<([ParkedWrite; NUM_PDS], u64)>);
+// SAFETY: accessed only from the single-CPU, IRQ-off GEM-trap path.
+unsafe impl Sync for Writers {}
+static WRITERS: Writers = Writers(UnsafeCell::new(([ParkedWrite::IDLE; NUM_PDS], 0)));
+
+/// Borrow the parked-write table.
+///
+/// # Safety
+/// Single trap path (no re-entrancy).
+#[allow(clippy::mut_from_ref)]
+unsafe fn writers() -> &'static mut ([ParkedWrite; NUM_PDS], u64) {
+    // SAFETY: see `Writers`' Sync impl.
+    unsafe { &mut *WRITERS.0.get() }
+}
+
+/// Park identity `writer`'s write of the first `words` WORDs of `src` on
+/// `target`'s full queue — `e->e_parm = lm; evinsert(e, &p->p_qnq);`
+/// (`aes/gemqueue.c:120-124`). The caller then sleeps on
+/// [`sched::wait_qnq`](crate::bdos::process::sched::wait_qnq)`(writer)`.
+///
+/// # Safety
+/// Single trap path.
+pub unsafe fn park_write(writer: usize, target: usize, src: &[i16], words: usize) {
+    // SAFETY: caller upholds the single-trap-path invariant.
+    let (tab, next) = unsafe { writers() };
+    let Some(w) = tab.get_mut(writer) else { return };
+    let words = words.min(MAX_MSG_WORDS).min(src.len());
+    *next += 1;
+    w.state = WriteState::Parked;
+    w.target = target;
+    w.seq = *next;
+    w.words = words;
+    w.msg = [0; MAX_MSG_WORDS];
+    w.msg[..words].copy_from_slice(&src[..words]);
+}
+
+/// `true` while identity `writer` has an `appl_write` in flight on `p_qnq` —
+/// parked, or serviced and not yet collected by [`take_write_done`]. Its
+/// re-executed call (S2) must not start a new write.
+///
+/// # Safety
+/// Single trap path.
+pub unsafe fn write_in_flight(writer: usize) -> bool {
+    // SAFETY: caller upholds the single-trap-path invariant.
+    let (tab, _) = unsafe { writers() };
+    tab.get(writer).is_some_and(|w| w.state != WriteState::Idle)
+}
+
+/// Collect a serviced write: `true` (and the entry is idle again) when a read
+/// copied identity `writer`'s parked message into its target's queue —
+/// `azombie(e, 1)`, the `1` `ap_rdwr` then returns (`gemqueue.c:117`).
+///
+/// # Safety
+/// Single trap path.
+pub unsafe fn take_write_done(writer: usize) -> bool {
+    // SAFETY: caller upholds the single-trap-path invariant.
+    let (tab, _) = unsafe { writers() };
+    match tab.get_mut(writer) {
+        Some(w) if w.state == WriteState::Done => {
+            *w = ParkedWrite::IDLE;
+            true
+        }
+        _ => false,
+    }
+}
+
+/// The read side of `aqueue` (`aes/gemqueue.c:104-118`): a read of
+/// `length` bytes from identity `target`'s queue `queue` — which held
+/// `bytes_before` bytes when the read began — has just completed; service the
+/// head of `target`'s `p_qnq`, if any. Every path that reads a queue calls
+/// this once per completed read: `appl_read`, `evnt_mesag`, `evnt_multi`'s
+/// `MU_MESAG`, and the `appl_exit` / `sh_ldapp` drains.
+///
+/// * **`ap_rdwr`'s fast path services nothing.** A 16-byte read from a queue
+///   holding exactly 16 bytes is done by `ap_rdwr` itself, without `aqueue`
+///   (`aes/gemaplib.c:77-82`), so no parked writer is looked at.
+/// * Otherwise the head — the most recently parked writer on `target` — has
+///   its message enqueued (`doq(!isqwrite, …)`, with `doq`'s redraw/arrow
+///   coalescing, `:31-74,116`) and is woken with 1 (`azombie(e, 1)`, `:117`).
+///   EmuTOS does this without re-testing room; a head that still does not fit
+///   (only possible with a message longer than the one just read) would make
+///   `doq` copy past the end of `p_queue` there. NewTOS leaves such a head
+///   parked rather than overrun the queue.
+///
+/// # Safety
+/// Single trap path. `queue` is `target`'s own queue.
+pub unsafe fn after_read(target: usize, queue: &mut MsgQueue, length: usize, bytes_before: usize) {
+    if length == 2 * MSG_WORDS && bytes_before == 2 * MSG_WORDS {
+        return; // `ap_rdwr`'s 16-byte fast path (`gemaplib.c:77-82`)
+    }
+    // SAFETY: caller upholds the single-trap-path invariant.
+    let (tab, _) = unsafe { writers() };
+    let head = tab
+        .iter()
+        .enumerate()
+        .filter(|(_, w)| w.state == WriteState::Parked && w.target == target)
+        .max_by_key(|(_, w)| w.seq)
+        .map(|(i, _)| i);
+    let Some(i) = head else { return };
+    let w = &mut tab[i];
+    if !queue.fits(w.words) {
+        return;
+    }
+    let posted = queue.push_words(&w.msg, w.words);
+    super::trace::msg_post(super::appl::reported_pid(target), &w.msg, w.words, posted);
+    w.state = WriteState::Done;
+    crate::bdos::process::sched::wake(crate::bdos::process::sched::wait_qnq(i));
+    // The serviced write landed in `target`'s queue like any other write.
+    wake_mesg_waiter(target);
+}
+
+/// The parked-write half of a slot's release ([`release`]). The writer
+/// `idx`'s own parked write goes with it, undelivered. Writes parked on
+/// `idx`'s queue are completed with 1 and their messages discarded, as the
+/// release discards the messages already in that queue — **NewTOS-only**:
+/// EmuTOS's descriptors are never released (its accessories never end and the
+/// chain's `D.g_int[0]` outlives every program, `aes/gempd.c:32-35`), so a
+/// parked writer there always has a reader left; here the identity is gone and
+/// nobody would ever read it (`docs/COMPATIBILITY.md`, A116).
+///
+/// # Safety
+/// Single trap / process-release path.
+unsafe fn release_parked_writes(idx: usize) {
+    // SAFETY: caller upholds the single-path invariant.
+    let (tab, _) = unsafe { writers() };
+    if let Some(w) = tab.get_mut(idx) {
+        *w = ParkedWrite::IDLE;
+    }
+    for (i, w) in tab.iter_mut().enumerate() {
+        if w.state == WriteState::Parked && w.target == idx {
+            w.state = WriteState::Done;
+            crate::bdos::process::sched::wake(crate::bdos::process::sched::wait_qnq(i));
+        }
+    }
+}
+
 /// The descriptor of identity `idx`, or `None` for an index outside the
 /// table — the only way a lookup can miss, since every identity has its entry
 /// from boot (EmuTOS `pd_index`, `aes/gempd.c:32-35`). Callers that hold a
@@ -548,9 +759,29 @@ pub unsafe fn find_by_name(name: &[u8; 8]) -> Option<usize> {
 pub unsafe fn close(idx: usize) {
     // SAFETY: single trap path.
     if let Some(slot) = unsafe { by_index(idx) } {
-        slot.queue.clear(); // ap_rdwr(MU_MESAG, rlr, rlr->p_qindex, …)
+        // SAFETY: single trap path.
+        unsafe { drain(idx, &mut slot.queue) }; // ap_rdwr(MU_MESAG, rlr, rlr->p_qindex, …)
         slot.flags &= !AP_OPEN; // rlr->p_flags &= ~AP_OPEN
     }
+}
+
+/// `if (rlr->p_qindex) ap_rdwr(MU_MESAG, rlr, rlr->p_qindex, (WORD *)D.g_valstr);`
+/// (`ap_exit`, `aes/gemaplib.c:256-257`; `sh_ldapp`, `aes/gemshlib.c:655`) —
+/// read every queued byte into a scratch buffer. That is a read like any
+/// other: unless it took `ap_rdwr`'s fast path (exactly one 16-byte message
+/// queued) it services the head of `p_qnq` ([`after_read`]), whose message
+/// then waits in the emptied queue.
+///
+/// # Safety
+/// Single trap path. `queue` is `idx`'s own queue.
+unsafe fn drain(idx: usize, queue: &mut MsgQueue) {
+    let had = queue.bytes();
+    if queue.pending() == 0 {
+        return;
+    }
+    queue.clear();
+    // SAFETY: caller upholds the single-trap-path invariant.
+    unsafe { after_read(idx, queue, had, had) };
 }
 
 /// `sh_ldapp`'s `AP_OPEN` cleanup (`aes/gemshlib.c:650-657`) — the program
@@ -597,7 +828,8 @@ pub unsafe fn close_if_open(idx: usize) {
             // either): the shell loop is about to start the next program and
             // the accessories pick the message up when they next run.
             super::menu::mn_cleanup();
-            slot.queue.clear(); // ap_rdwr(MU_MESAG, rlr, rlr->p_qindex, …)
+            // SAFETY: single trap path.
+            unsafe { drain(idx, &mut slot.queue) }; // ap_rdwr(MU_MESAG, rlr, rlr->p_qindex, …)
             slot.flags &= !AP_OPEN; // rlr->p_flags &= ~AP_OPEN
         }
     }
@@ -629,6 +861,8 @@ pub unsafe fn release(idx: usize) {
         slot.queue.clear();
         slot.flags = 0;
     }
+    // SAFETY: caller upholds the single-path invariant.
+    unsafe { release_parked_writes(idx) };
 }
 
 /// Blank the name of identity `idx` — the slot of a desk accessory that has

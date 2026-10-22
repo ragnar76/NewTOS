@@ -879,7 +879,8 @@ fn crysbind(pb: &Aespb) -> Option<crate::bdos::process::sched::Switch> {
         // `appl_read` blocks on an empty queue like `evnt_mesag` (A75) — it
         // may yield to a peer too; propagate the `Switch`.
         11 => return appl::appl_read(pb),
-        12 => appl::appl_write(pb),
+        // `appl_write` blocks on a full queue until a read makes room (A116).
+        12 => return appl::appl_write(pb),
         13 => appl::appl_find(pb),
         14 => appl::appl_tplay(pb),
         15 => appl::appl_trecord(pb),

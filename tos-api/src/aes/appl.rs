@@ -556,33 +556,44 @@ pub fn appl_yield(pb: &Aespb) -> Option<sched::Switch> {
     None
 }
 
-/// Opcode 12 — `appl_write`: deliver a message into another application's
-/// pipe. `intin[0]` = target id, `intin[1]` = byte length (`AP_LENGTH`),
-/// `addrin[0]` = message buffer. Returns 1 on success, 0 if the target is
-/// unknown (no descriptor reports that pid: 1 aside, anything but 0 and a
-/// loaded accessory's 2, 3, …) or its message queue is full. The message
-/// length is taken from
-/// `AP_LENGTH` (the standard GEM message is 16 bytes / 8 WORDs, the normal
-/// case) and clamped to the FIFO's per-message limit — [`pd::MAX_MSG_WORDS`] =
-/// `QUEUE_SIZE / 2`, matching EmuTOS's 128-byte queue (`ap_rdwr(MU_SDMSG)` →
-/// `doq`, which memcpys `qpb_cnt` bytes, `gemqueue.c:36,85-125`). The bytes are
-/// then appended to the target's FIFO whole.
+/// Opcode 12 — `appl_write`: deliver a message into an application's pipe.
+/// `intin[0]` = target id, `intin[1]` = byte length (`AP_LENGTH`),
+/// `addrin[0]` = message buffer. Returns 1 once the message is in the target's
+/// queue; 0 only for a target no descriptor reports (anything but 0, 1 and a
+/// loaded accessory's 2, 3, …) or a NULL buffer — NewTOS's safety choices
+/// where EmuTOS dereferences NULL. The message length is taken from
+/// `AP_LENGTH` (the standard GEM message is 16 bytes / 8 WORDs) and clamped
+/// to the FIFO's per-message limit — [`pd::MAX_MSG_WORDS`] = `QUEUE_SIZE / 2`,
+/// matching EmuTOS's 128-byte queue (`ap_rdwr(MU_SDMSG)` → `doq`, which
+/// memcpys `qpb_cnt` bytes, `gemqueue.c:36,85-125`).
 ///
-/// **Full queue: 0, not a block — a sanctioned deviation.** EmuTOS parks the
-/// sender (`aqueue`, `gemqueue.c:96-97,120-124`; `mwait`, `gemasync.c:117-127`)
-/// until a read of the target's *own* queue drains it. NewTOS has no "queue
-/// gained room" wake key, and a self-targeted or SCRENMGR-targeted write has
-/// no reader at all — `docs/COMPATIBILITY.md` "`appl_write` on a full
-/// application-message queue returns 0" (A75, 2026-09-20). (The A75 premise
-/// "no second independently-scheduled AES client" no longer holds since
-/// accessories run and are addressable — spec `application.md`, rationale
-/// revised 2026-10-17; blocking on a full *foreign* queue is TASK/A116.)
-pub fn appl_write(pb: &Aespb) {
+/// **A message that does not fit blocks the writer (A116)** — EmuTOS `aqueue`:
+/// write readiness is `qpb_cnt <= QUEUE_SIZE - p_qindex`, tested before any
+/// coalescing (`aes/gemqueue.c:96-97`, [`pd::MsgQueue::fits`]); a write that
+/// is not ready is parked on the target's `p_qnq` (`:120-124`,
+/// [`pd::park_write`]) and the caller sleeps (`mwait`, `aes/gemasync.c:
+/// 117-127`) until a successful read of **that** queue services it (`:108-118`,
+/// [`pd::after_read`]) — then the call returns 1. The target may be another
+/// process (a desk accessory, the chain) or the caller itself: EmuTOS makes no
+/// distinction, and a self-writer on its own full queue waits until some other
+/// process reads that queue (`appl_read` with the writer's id), exactly as
+/// there. The sleep is the S2 restartable block: a yield aborts the call, the
+/// re-executed `svc` finds the write still parked and sleeps again, or finds it
+/// serviced and completes with 1.
+pub fn appl_write(pb: &Aespb) -> Option<sched::Switch> {
+    let me = current_identity();
+    // The re-executed call of a parked write: collect the service or go on
+    // waiting. Nothing of the call is read again — the message was taken at
+    // park time.
+    // SAFETY: single trap path.
+    if unsafe { pd::write_in_flight(me) } {
+        return wait_parked_write(pb, me);
+    }
     let len_bytes = pb.intin(1).max(0) as usize;
     let buf = pb.addrin(0);
     if buf == 0 {
         pb.set_ret(0);
-        return;
+        return None;
     }
     // The target arrives as a reported pid (`fpdnm(NULL, AP_RWID)`,
     // `gemsuper.c:102-105`). 0 is `D.g_int[0]`, the chain's one queue, whoever
@@ -590,8 +601,9 @@ pub fn appl_write(pb: &Aespb) {
     // the Screen Manager: in
     // EmuTOS the write lands in `ctl_pd`'s queue and succeeds, and `ctlmgr`
     // reads it on its next turn (`ev_multi(… | MU_MESAG)`, `gemctrl.c:448-481`)
-    // — no application ever sees it. NewTOS has no queue there; the write
-    // succeeds and the message goes nowhere. (What `ctlmgr` does with a
+    // — no application ever sees it. NewTOS has no queue there, so nothing can
+    // fill and nothing blocks; the write succeeds and the message goes nowhere.
+    // (What `ctlmgr` does with a
     // `WM_REDRAW` it reads — `hctl_msg` → `w_redraw_desktop`, `:380-384` — has
     // no spec entry yet and is not reproduced here.) Any other value names
     // no descriptor within `totpds` (`num_accs + 2`, `geminit.c:819`): 0 —
@@ -599,11 +611,11 @@ pub fn appl_write(pb: &Aespb) {
     // (spec "Pid assignment, accessories, and a failed load" point 4).
     if pb.intin(0) == SCRENMGR_PID {
         pb.set_ret(1);
-        return;
+        return None;
     }
     let Some(target) = identity_of(pb.intin(0)) else {
         pb.set_ret(0);
-        return;
+        return None;
     };
     // AP_LENGTH is a byte count (EmuTOS `qpb_cnt`); GEM messages are WORD-based,
     // so read whole WORDs, capped at the per-message FIFO limit.
@@ -614,17 +626,44 @@ pub fn appl_write(pb: &Aespb) {
     for (i, slot) in msg.iter_mut().take(words).enumerate() {
         match pb.space().get_u16(buf + 2 * i as u64) {
             Ok(w) => *slot = w as i16,
-            Err(_) => return,
+            Err(_) => return None,
         }
     }
-    // Enqueue into the target's FIFO via the centralized poster: it appends the
-    // message (with the standard redraw/arrow coalescing) AND wakes a peer
-    // blocked in `evnt_mesag`/`evnt_multi`/`appl_read` on the target's FIFO
-    // (WAITING → READY, design §5.2) — no longer bypassing `pd::post_msg`'s
-    // wake. Returns 0 if the queue is full: the sanctioned deviation named
-    // above (`docs/COMPATIBILITY.md`, A75; EmuTOS blocks the sender).
+    // `qready = (qpb_cnt <= QUEUE_SIZE - p_qindex)` (`gemqueue.c:96-97`).
     // SAFETY: single trap path.
-    pb.set_ret(unsafe { pd::post_words(target, &msg, words) } as i16);
+    let ready = unsafe { pd::by_index(target) }.is_some_and(|p| p.queue.fits(words));
+    if ready {
+        // `doq` + `azombie(e, 1)` (`:104-107`) through the centralized poster:
+        // it appends the message (with the standard redraw/arrow coalescing)
+        // AND wakes a reader blocked in `evnt_mesag`/`evnt_multi`/`appl_read`
+        // on the target's FIFO — the service of `p_qdq` (`:108-118`).
+        // SAFETY: single trap path.
+        let posted = unsafe { pd::post_words(target, &msg, words) };
+        debug_assert!(posted, "a message that fits is always queued");
+        pb.set_ret(posted as i16);
+        return None;
+    }
+    // Not ready: `evinsert(e, &p->p_qnq)` (`:120-124`), then `mwait`.
+    // SAFETY: single trap path.
+    unsafe { pd::park_write(me, target, &msg, words) };
+    wait_parked_write(pb, me)
+}
+
+/// The `mwait` of a parked [`appl_write`]: complete with 1 once a read has
+/// serviced identity `me`'s write ([`pd::take_write_done`]), else sleep on
+/// [`sched::wait_qnq`]`(me)` — the key [`pd::after_read`] wakes. A yield is
+/// handed up to the trap handler (S2); the idle exit re-checks.
+fn wait_parked_write(pb: &Aespb, me: usize) -> Option<sched::Switch> {
+    loop {
+        // SAFETY: single trap path.
+        if unsafe { pd::take_write_done(me) } {
+            pb.set_ret(1);
+            return None;
+        }
+        if let sched::SleepOutcome::Yield(sw) = sched::sleep(sched::wait_qnq(me)) {
+            return Some(sw);
+        }
+    }
 }
 
 /// Opcode 11 — `appl_read`: read a message from the calling application's
@@ -689,7 +728,13 @@ pub fn appl_read(pb: &Aespb) -> Option<sched::Switch> {
         // Queue non-empty (`p_qindex > 0`, `gemqueue.c:99`): pop the FRONT of
         // the FIFO into the requested-length window (`doq` dequeue,
         // `gemqueue.c:76-81`) and complete with 1 (`azombie(e, 1)`, `:107`).
+        let had = src.queue.bytes();
         if let Some(n) = src.queue.pop_into(&mut buf[..words]) {
+            // A completed read services the head of this queue's parked
+            // writers (`aqueue`, `gemqueue.c:108-118`) — unless it was
+            // `ap_rdwr`'s 16-byte fast path (`gemaplib.c:77-82`).
+            // SAFETY: single trap path; `src.queue` is `idx`'s own queue.
+            unsafe { pd::after_read(idx, &mut src.queue, len_bytes, had) };
             // `dest` was checked writable for `words` WORDs just above; `n <=
             // words`. Written in the caller's space.
             for (i, &w) in buf.iter().take(n).enumerate() {

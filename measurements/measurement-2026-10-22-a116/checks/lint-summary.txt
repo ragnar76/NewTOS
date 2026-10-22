@@ -1,0 +1,33 @@
+== HEAD 58abf82a (scratch git worktree)
+build qemu-virt exit 0
+build-qemu-virt warnings: 160
+clippy kernel qemu-virt exit 0
+warning: `tos-api` (lib) generated 76 warnings (run `cargo clippy --fix --lib -p tos-api -- ` to apply 6 suggestions)
+warning: `kernel` (lib) generated 125 warnings (run `cargo clippy --fix --lib -p kernel -- ` to apply 30 suggestions)
+clippy newdesk qemu-virt exit 0
+build rpi4 exit 0
+build-rpi4 warnings: 160
+clippy kernel rpi4 exit 0
+warning: `tos-api` (lib) generated 76 warnings (run `cargo clippy --fix --lib -p tos-api -- ` to apply 6 suggestions)
+warning: `kernel` (lib) generated 125 warnings (run `cargo clippy --fix --lib -p kernel -- ` to apply 30 suggestions)
+clippy newdesk rpi4 exit 0
+clippy tos-api host exit 0
+warning: `tos-api` (lib) generated 76 warnings (run `cargo clippy --fix --lib -p tos-api -- ` to apply 6 suggestions)
+DONE
+== working tree (scratch copy, method/mktree.sh wt)
+build qemu-virt exit 0
+build-qemu-virt warnings: 160
+clippy kernel qemu-virt exit 0
+warning: `tos-api` (lib) generated 76 warnings (run `cargo clippy --fix --lib -p tos-api -- ` to apply 6 suggestions)
+warning: `kernel` (lib) generated 125 warnings (run `cargo clippy --fix --lib -p kernel -- ` to apply 30 suggestions)
+clippy newdesk qemu-virt exit 0
+build rpi4 exit 0
+build-rpi4 warnings: 160
+clippy kernel rpi4 exit 0
+warning: `tos-api` (lib) generated 76 warnings (run `cargo clippy --fix --lib -p tos-api -- ` to apply 6 suggestions)
+warning: `kernel` (lib) generated 125 warnings (run `cargo clippy --fix --lib -p kernel -- ` to apply 30 suggestions)
+clippy newdesk rpi4 exit 0
+clippy tos-api host exit 0
+warning: `tos-api` (lib) generated 76 warnings (run `cargo clippy --fix --lib -p tos-api -- ` to apply 6 suggestions)
+DONE
+== per-file clippy warning locations HEAD vs WT (tos-api host, kernel rpi4, kernel qemu-virt): identical (diff empty); none in aes/pd.rs, aes/appl.rs, aes/event.rs, bdos/process/sched.rs; aes/mod.rs 54 = 54 (pre-existing)

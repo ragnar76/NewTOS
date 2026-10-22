@@ -561,7 +561,29 @@ also checks the *complementary* wait list and — unconditionally, without
 re-testing readiness — services **one** entry from it (`gemqueue.c:108-118`):
 a successful read (`qready` true) checks `p_qnq` (pending blocked *writes*)
 and, if one is there, does `doq(write)` + `azombie(e, 1)` for it; a
-successful write checks `p_qdq` (pending blocked *reads*) the same way. So:
+successful write checks `p_qdq` (pending blocked *reads*) the same way.
+Three details of that service (A116, 2026-10-22, read from the source):
+
+- **The entry served is the list head, and the head is the most recently
+  parked one.** `evinsert` links a new `EVB` in *front* of the current first
+  entry (`aes/gemasync.c:81-93`: `e->e_link = p; q->e_link = e` with `q` the
+  list root), and the service takes `*ppe`, the first entry
+  (`gemqueue.c:108-111`). Several writers parked on one queue are therefore
+  served **last-in, first-out**, one per successful read.
+- **`ap_rdwr`'s fast path services nobody.** A 16-byte read from a queue that
+  holds exactly 16 bytes is completed by `ap_rdwr` itself (`gemaplib.c:77-82`)
+  without entering `aqueue`, so `p_qnq` is not looked at. With standard
+  16-byte writers this cannot strand anyone (a parked 16-byte writer implies a
+  full 128-byte queue); a writer of more than 112 bytes parked behind one
+  16-byte message stays parked after that message is read, although the queue
+  is then empty — until a later read takes the slow path.
+- **The service does not re-test room.** `doq(!isqwrite, …)` copies the head
+  writer's `qpb_cnt` bytes whether or not they fit (`gemqueue.c:116`); with
+  mixed message sizes a head longer than the message just read would be
+  copied past the end of `p_queue[QUEUE_SIZE]` (`aes/struct.h:152`) —
+  undefined behaviour, not a contract.
+
+So:
 
 - **A blocked `appl_read` is woken only by a subsequent successful write into
   the *same* queue** — `appl_write`/`ap_sendmsg`, or any of EmuTOS's own
@@ -584,21 +606,23 @@ successful write checks `p_qdq` (pending blocked *reads*) the same way. So:
 **Consequence — a genuine EmuTOS self-deadlock, not a NewTOS artifact.** If a
 process writes to its *own* id (`appl_write(id = its own ap_id, …)`, legal —
 edge case 7 above) while its own queue already holds 8 messages, the write
-blocks (`gemqueue.c:120-124`) and parks the caller in `dsptch()`. Because
-nothing in EmuTOS's source ever reads a queue other than its owner's own, and
-the owner *is* the blocked caller, no code path can ever perform the read
-that would wake it — the process hangs forever. This is reachable only
-through a self-targeted `appl_write` at depth ≥ 8; it is a property of
-EmuTOS's own message pipe, confirmed by reading every internal reader above,
-not inferred.
+blocks (`gemqueue.c:120-124`) and parks the caller in `dsptch()`. `aqueue`
+makes no exception for a self-targeted write. Because no *internal* EmuTOS
+reader ever reads a queue other than its owner's own, and the owner *is* the
+blocked caller, only another **application** reading that queue by id
+(`appl_read(the writer's id, …)`, the raw `APPL_READ` arm, `gemsuper.c:
+101-105`) can wake it; without one the process hangs forever. This is
+reachable only through a self-targeted `appl_write` at depth ≥ 8; it is a
+property of EmuTOS's own message pipe, confirmed by reading every internal
+reader above, not inferred.
 
 For a write to a **different** process's queue, EmuTOS's block is safe under
 its own cooperative multi-process AES: `dsptch()` hands the CPU to other
 runnable `AESPD`s (the Screen Manager `ctlmgr`, desk accessories), and the
 target process eventually runs its own event loop, calls `evnt_mesag`, and —
-as the side effect described above — drains the blocked write. See the
-"NewTOS implementation notes" below for why this half does not carry over
-today.
+as the side effect described above — drains the blocked write. NewTOS
+reproduces both halves since A116 (2026-10-22); see the "NewTOS
+implementation notes" below for the mapping and what still differs.
 
 **What `appl_write` returns.** There is no EmuTOS code path that returns `0`
 for `appl_write`: `ap_rdwr`'s only return statements are the fast path's
@@ -680,38 +704,45 @@ that EmuTOS's `appl_write` has no error return to check for in the common
 > not only from EmuTOS. Fixing it is a `tos-api` code change — Developer
 > work, not this analysis.
 >
-> **`appl_write` (12) keeps its full-queue `0` return — rationale revised
-> 2026-10-17 (A113 review).** EmuTOS's write-block is only safe because a
-> *different*, independently-scheduled process eventually reads the full target
-> queue (established above: every EmuTOS read targets `rlr`, never a foreign
-> id). The A75 text claimed NewTOS has "at most **one** genuinely-scheduled AES
-> client identity" (`appl::identity_of`, `appl.rs:220-234`). **That premise no
-> longer holds for the cross-process case:** since SYSACC/ACC02-ACC05 (accepted
-> on the Pi) desk accessories run as cooperatively scheduled AES clients with
-> their own queue and their own `evnt_mesag`/`evnt_multi` wait loop, i.e.
-> exactly the "other process that eventually reads its own queue" EmuTOS relies
-> on; a writer blocked on an accessory's full queue *could* be drained. What is
-> still true as of this writing (read, not re-verified exhaustively): the
-> sleep/wake substrate has `CLASS_INPUT`, `CLASS_MESG`, `CLASS_TIMER`,
-> `CLASS_MULTI` (`sched.rs:45-121`) and no wake-class for "a queue gained
-> room"; and a chain member writing to its **own** queue (pid 0 from the chain,
-> or any self-targeted write) has no second reader — EmuTOS hangs there
-> too. `SCRENMGR_PID` remains a stamp, not a schedulable identity (H02);
-> EmuTOS's `ctlmgr` *does* read its own queue (`ev_multi` with `MU_MESAG` under
-> `CONF_WITH_3D_OBJECTS`, `gemctrl.c:445-448`, `hctl_msg` at `:480-483`), so a
-> write to pid 1 is drainable there but has no reader in NewTOS. The deviation
-> therefore stays defensible for self- and SCRENMGR-targeted writes, but
-> "no candidate could ever perform the draining read" is no longer a correct
-> statement of the whole case.
+> **`appl_write` (12) blocks on a full queue (A116, 2026-10-22).** User
+> decision 2026-10-22 (`TASK/A116.md`): as EmuTOS. The A75 return-`0` and its
+> rationale ("at most one genuinely-scheduled AES client"; revised once on
+> 2026-10-17 when desk accessories ran as scheduled AES clients) are
+> withdrawn. The mapping (`tos-api/src/aes/appl.rs` `appl_write`,
+> `tos-api/src/aes/pd.rs` "parked writers"):
 >
-> The `pd.rs:160-167` comment's own justification — "a full
-> queue is unreachable in the desktop's actual usage" — is asserted, not
-> measured (already flagged as unproven by the 2026-07-22 audit,
-> `docs/analysis/aes-audit/p1-appl-pd-dispatch.md` AUD-P1-006); it narrows
-> how *often* the deviation is observed, not whether it is one. **This is
-> the named contract deviation** — see
-> [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md) "`appl_write` on a full
-> queue returns 0".
+> - **Readiness** is `aqueue`'s byte rule `qpb_cnt <= QUEUE_SIZE - p_qindex`,
+>   tested before any coalescing (`MsgQueue::fits`). NewTOS's queue is a slot
+>   FIFO of at most 8 messages; for messages shorter than 16 bytes that slot
+>   bound is reached before the byte bound (the slot model's own limit, not
+>   part of A116).
+> - **Park.** A write that is not ready is recorded for the writer's identity
+>   with its target, its message and a park sequence (`pd::park_write`, the
+>   `evinsert(e, &p_qnq)` of `gemqueue.c:120-124`); the writer sleeps on
+>   `sched::wait_qnq(writer)` (`mwait`). A yield aborts the trap (S2); the
+>   re-executed `appl_write` finds the write still in flight and sleeps again.
+>   The message is copied at park time rather than at service time —
+>   NewTOS's writer and reader live in different address spaces, and the
+>   writer is blocked in between.
+> - **Service.** Every completed read of a queue — `appl_read`, `evnt_mesag`,
+>   `evnt_multi`'s `MU_MESAG`, the `appl_exit` and `sh_ldapp` drains
+>   (`pd::close`/`close_if_open`) — calls `pd::after_read`: unless the read was
+>   `ap_rdwr`'s 16-from-16 fast path, the most recently parked writer on that
+>   queue has its message enqueued (with `doq`'s coalescing) and is woken; its
+>   call returns 1. A head that still does not fit (EmuTOS's overrun case) is
+>   left parked.
+> - **Self-writes are not special**, as in EmuTOS: a write to the caller's own
+>   full queue parks until another process reads that queue.
+> - **pid 1 (`SCRENMGR`) never blocks**: NewTOS has no Screen Manager queue;
+>   the write returns 1 at once and the message goes nowhere (as before).
+>   EmuTOS's `ctlmgr` reads its queue on every pass (`ev_multi(… | MU_MESAG)`
+>   under `CONF_WITH_3D_OBJECTS`, `gemctrl.c:445-448`, `hctl_msg` `:480-483`),
+>   so a writer there waits at most for its next turn and also gets 1.
+>
+> What still differs is named in [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md)
+> "Kernel-side AES message posts into a full queue are dropped" — the
+> kernel-side posters, which in EmuTOS block through `ap_sendmsg` too, and
+> the NewTOS-only release of a writer whose target identity ends.
 
 ## `appl_find` (13)
 
@@ -1117,14 +1148,15 @@ returns are pid / 0 / 1 / -1 only.
 - **The message pipe** maps onto NewTOS's process/IPC model; the 16-byte
   standard message is what `evnt_mesag` delivers — the two are designed
   together (see [`event.md`](./event.md)).
-- **`appl_read`/`appl_write` blocking (A75, 2026-09-20).** Full contract
-  (readiness conditions, who wakes whom, the self-targeted-write deadlock
-  EmuTOS itself has) and the NewTOS gap analysis are under "Blocking
-  behaviour (A75)" above, not repeated here. Short version: `appl_read`
-  should reuse the sleep/wake substrate `evnt_mesag` already has (fixable,
-  not yet done); `appl_write`'s full-queue `0` return is a named
-  [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md) deviation, not a bug —
-  NewTOS has no second schedulable AES client to ever drain the target queue.
+- **`appl_read`/`appl_write` blocking (A75, 2026-09-20; A116, 2026-10-22).**
+  Full contract (readiness conditions, who wakes whom, LIFO service, the fast
+  path, the self-targeted-write deadlock EmuTOS itself has) and the NewTOS
+  mapping are under "Blocking behaviour (A75)" above, not repeated here.
+  Short version: `appl_read` blocks on an empty queue on the sleep/wake
+  substrate `evnt_mesag` uses; `appl_write` blocks on a full queue until a
+  read of that queue services it (A116). The remaining difference — kernel-side
+  posters drop instead of blocking — is named in
+  [`docs/COMPATIBILITY.md`](../../COMPATIBILITY.md).
 - **`global[]` is an application-supplied array** (in the app's memory) — a
   **user pointer**; apply the same boundary handling as other AES `addr*`
   pointers (see [`_dispatcher.md`](./_dispatcher.md) §NewTOS notes). Its

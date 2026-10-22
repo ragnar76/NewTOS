@@ -1,0 +1,43 @@
+measurement-2026-10-22-a116 -- Developer evidence for TASK/A116: appl_write on a full queue blocks the writer until a read of that
+queue makes room (EmuTOS aqueue, references/emutos/aes/gemqueue.c:96-97,108-124; QUEUE_SIZE 128 aes/struct.h:56; evinsert at the
+list head aes/gemasync.c:81-93; ap_rdwr fast path aes/gemaplib.c:77-82). User decision 2026-10-22 (TASK/A116.md).
+Base HEAD 58abf82a; "wt" = the uncommitted working tree (tos-api aes/appl.rs, aes/pd.rs, aes/event.rs, aes/mod.rs,
+bdos/process/sched.rs; tests; sdk/examples/a116w.c + a116acc.c; docs). Nothing committed, stashed or checked out in the shared tree.
+No hardware, no card writes. Scratch: session scratchpad .../scratchpad/a116reg (method/env.sh), trees + clones deleted afterwards.
+
+RESULT IN ONE LINE: probe shows the EmuTOS contract on raspi4b (9th write to a full foreign / own queue blocks, returns 1 after the
+reader's read; HEAD returns 0 at once); desktop series HEAD vs wt 47/47 identical (memprot on and strict), APITEST 105/0/9 both.
+
+WHAT / HOW
+ Machine: QEMU -M raspi4b -append "serial=on [memprot=...]" headless, release rpi4 kernels (SOURCE_DATE_EPOCH fixed), one QEMU at a time,
+   per-run APFS clone (cp -c) of one base card, clone deleted after each run, fsck_msdos -n of every clone (method/run.sh, copied from
+   measurement-2026-10-21-gh1-reg/method with env.sh/mktree.sh adapted; diag-only scripts of that run left out).
+ Kernels (checks/binaries.sha256): kernel8-{head,wt}-plain (no injector), kernel8-{head,wt}A (injector arms as gh1-reg:
+   desktop=nd.script, up:DESKTOP=td.script, up:QED=qed.script, up:HYP_VIEW=hv.script; method/build-armed.sh).
+ Cards (checks/cards.sha256): probe (method/mkprobe.sh: C:\A116W.NAP via #Z, C:\A116ACC.NAC), and the gh1-reg base cards gh1/td/qed/hv/std/api
+   reused unchanged (APFS clones of measurement-2026-10-21-gh1-reg's scratch cards; same card for both sides).
+
+RESULTS
+ 1 Host tests (checks/cargo-test-*.log): new tos-api/tests/aes_a116_appl_write_blocks.rs 8 cases: 8/8 FAIL on HEAD (copied into a HEAD
+   worktree), 8/8 pass on wt. tos-api/tests/aes_appl_read_blocks.rs case (c) rewritten from "full -> 0" to "full -> parks, read releases".
+   cargo test --no-fail-fast -p tos-api: wt 152 binaries 1410 passed 0 failed 1 ignored; HEAD 151 binaries 1401 passed 1 failed 1 ignored
+   (the HEAD failure is vdi_reference case_0167 vq_curaddress, passes 3/3 on rerun on HEAD -> test-order flake, unrelated).
+ 2 Build + clippy both boards HEAD vs wt (checks/lint-summary.txt): build exit 0, 160 warnings each; clippy kernel qemu-virt/rpi4
+   tos-api 76 / kernel 125 both sides, per-file locations identical; clippy tos-api host 76 = 76; newdesk 0.
+ 3 Probe (serial/probe-<side>-<mode>-serial.log, lines "A116W:"/"A116ACC:", numbered per process; the interleaving is the evidence):
+   wt (on/off/strict/verify identical order): P1 msgs 1-8 -> 1; "msg 9 begin"; accessory "reading 9", reads msg 1; THEN
+   "P1 write acc msg 9 returned 9 -> 1"; accessory reads 2..9 in order (9 last). P2 self-write: msgs 1-8 -> 1, "msg 9 begin",
+   accessory appl_read(0) gets self msg 1 (33), THEN "P2 write self msg 9 returned -> 1", program's evnt_mesag gets 34..41 (2..9).
+   head (all modes): "msg 9 returned -> 0" at once in both phases (and START2 -> 0, the accessory queue still full).
+   0 EXC/PANIC, fsck rc 0 everywhere. probe-*-end.png differ head/wt only by timing (on HEAD the program ends while the accessory is
+   still in its deaf phase, so its console lines are printed over the desktop) -- not compared as regression.
+ 4 Desktop series (checks/series-*.txt, checks/compare-*.txt): memprot on: 47 compared, 47 identical; memprot strict: 47/47 identical
+   (NEWDESK menus/dialogs/window ops/SYSACC, TeraDesk window/Desk menu/SYSACC popup, QED new/type/menu/alert/quit, HypView load/
+   fsel/scroll/close). 0 EXC/PANIC, fsck rc 0 in every run. Serial logs head vs wt differ only in kernel size and the number of
+   injector feed lines logged after the last mark (QEMU quit timing).
+ 5 std card (tools/make-sd-image.sh card, 2 accessories) plain boot to "[desk] desktop up": std-head-desktop vs std-wt-desktop 0 px.
+ 6 APITEST (C:\AUTO\APITEST.NCP, plain kernels): head 105/0/9, wt 105/0/9 (serial/api-*-serial.log, serial/api-*-APITEST.LOG).
+ Not done: real Pi 4; memprot off/verify for the desktop series (probe ran in all four); an application that really fills a queue
+   in normal use (none known; TeraDesk AV broadcast va.c:498 would be the candidate).
+
+FILES: method/ (scripts), serial/, screendumps/, checks/ (tests, lint, series, compares, sha256 manifests).
