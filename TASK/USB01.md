@@ -47,4 +47,11 @@ Status: **OFFEN** · Prioritaet: **P1** · Typ: Treiberluecke + offene Defekte �
 3. **Ursache belegen, dann Fix-Vorschlag** (Report-Protokoll-Parser,
    Defekte 1, 2, 4) — vorlegen, nicht direkt bauen (Regel 5).
 
+## Stand 2026-10-23
+
+Schritt 1 erledigt: `docs/api/usb/hid-mouse-protocols.md` (`29c3aa50`), Fix-Liste F0–F9 dort.
+Anwender-Freigabe 2026-10-23: **F1** (Befehlsring mit Link-TRB), **F2**
+(`bInterfaceClass == 3` vor Protokoll 1/2), **F8** (Slot-Budget/stille Abbrueche
+loggen) bauen. Diagnoseweg, F3–F7 noch offen.
+
 [Gemeinsame Regeln](README.md) gelten.
