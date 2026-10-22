@@ -25,6 +25,33 @@ Inversschrift usw. zeigt Zeichensalat. EmuCON braucht `ESC E e D C K l v w b c`
 3. Tests: Hosttest je Folge; QEMU-Sonde mit Screendump; Vergleich gegen
    Hatari-Falcon (EmuTOS) mit derselben Ausgabe.
 
+## Entscheidungen (Anwender, 2026-10-22)
+
+Spec: `docs/api/bios/_vt52.md` (`1d48ce72`), §13.
+
+Grundsatz: programm-sichtbares Verhalten 1:1 EmuTOS. Abweichung nur, wo belegt
+ist, dass die EmuTOS-Eigenheit ein Artefakt der alten Plattform ist (Quelle
+Datei:Zeile + Gegenprobe Hatari) und die moderne Loesung nachweislich besser
+ist; jede solche Abweichung in `docs/COMPATIBILITY.md`.
+
+* **D1** `ESC b/c`: Register → Stift → Workstation-Palette; ohne Workstation
+  Falcon-Standardpalette. Wie EmuTOS.
+* **D2** sichtbarer Cursor als Zellinversion, `ESC e/f`, `disab_cnt`. Wie EmuTOS.
+* **D3** Wrap Anfangswert aus; BS nur links, HT klemmt, LF behaelt Spalte,
+  VT/FF wie LF. Wie EmuTOS. Kernel-eigene Ausgaben mit nacktem `\n` auf
+  `\r\n` umstellen.
+* **D4** BEL wertet `conterm&4` aus, Ton entfaellt (kein Audiogeraet).
+* **D5** Handle 5 eigener roher Pfad ohne Automat.
+* **Q5** Blinkperiode feste 0,5 s ueber den 200-Hz-Zaehler (EmuTOS: 30 VBL =
+  0,43-0,6 s je Maschine, also Geraeteparameter). Abweichung dokumentieren.
+* **Q3** Randzelle bei Revers: erst Hatari-Falcon-Gegenprobe (`ESC p` +
+  `ESC K`/`ESC o` an gerader/ungerader Spalte). Bestaetigt sich die Eigenheit:
+  einheitlich mit Hintergrund loeschen (Ursache Bitplane-Paarung
+  `conout.c:586-596`), in COMPATIBILITY mit Beleg.
+* **Q6** `vs_curaddress` setzt die Position direkt mit Klemmen (EmuTOS-Umweg
+  ueber Byte-`ESC Y` erreicht keine Spalte > 223; NewTOS hat bis 240). Die
+  Stromfolge `ESC Y` bleibt Byte-kodiert. Abweichung dokumentieren.
+
 Voraussetzung fuer [CON03](CON03.md).
 
 [Gemeinsame Regeln](README.md) gelten.
