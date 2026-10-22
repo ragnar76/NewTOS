@@ -1,0 +1,50 @@
+# USB01 — USB-Maus: nur Boot-Protokoll, Steckkombinationen, Diagnosewerkzeug
+
+Status: **OFFEN** · Prioritaet: **P1** · Typ: Treiberluecke + offene Defekte — Anwender 2026-10-22 („die Maus ist wichtig“)
+
+## Sachverhalt
+
+* **Ein Protokoll.** `kernel/src/drivers/usb/mod.rs:139-152` dekodiert nur
+  HID-Boot-Berichte (`bInterfaceProtocol` 1 = Tastatur, 2 = Maus,
+  `hid.rs`). Maeuse, die nur das Report-Protokoll sprechen, mit Report-IDs
+  senden (Funkempfaenger, Verbundgeraete), 16-Bit-Deltas haben oder absolute
+  Zeiger liefern (Tablets, KVM, QEMU `usb-tablet`), bleiben stumm oder
+  werden falsch gelesen. Vergleich: Circle parst den HID-Report-Deskriptor
+  (`references/circle/lib/usb/usbmouse.cpp:28-70`), FreeMiNT hat getrennte
+  Treiber `mouse`, `mouse-boot`, `tablet` (`references/freemint/sys/usb/src.km/udd/hid/`).
+  Anwender: „bei Maeusen gibt es verschiedene Protokolle und ich denke wir
+  unterstuetzen nur ein Protokoll“.
+* **Steckkombination** (seit 2026-09-04, `docs/STATUS.md` Recent Decisions
+  2026-09-09): Maus und Tastatur liefen auf der Pi nur in einer Kombination.
+  Damals vier Defekte beim Lesen belegt, keiner repariert: (1) `wait_transfer`
+  nimmt das erste Transfer-Event ohne Slot/Endpoint-Pruefung, (2)
+  `poll_interrupt` ordnet nur ueber die Slot-ID zu, ohne Completion-Code und
+  Endpoint, (3) alles ausser Protokoll 1 wurde Maus — inzwischen teilweise
+  behoben (`mod.rs:145-152`), (4) Hub-Port-Reset Einzelschuss 60 ms statt
+  FreeMiNTs 5 × 150 ms. Stand heute ungeprueft
+  (`docs/analysis/inventory-2026-10-08.md:62,198`).
+* **Instrument vorhanden:** `--features usb-diag` schreibt den Bootlog nach
+  `C:\USBDIAG.LOG` (`kernel/src/bootlog.rs`), aber nur waehrend des Boots.
+
+## Auftrag
+
+1. **Analyse (Rechercheur, nur lesen):** Treiber gegen Circle und FreeMiNT,
+   Ergebnis als Spec-Ergaenzung unter `docs/api/usb/`:
+   - welche Protokolle/Geraeteklassen es gibt (Boot, Report mit Deskriptor,
+     Report-IDs, Verbundgeraete mit mehreren Interfaces, absolute Zeiger)
+     und wie Circle und FreeMiNT sie erkennen und dekodieren;
+   - Zustand der Defekte 1–4 im heutigen Code;
+   - Hotplug: was passiert beim Umstecken nach dem Boot.
+2. **Diagnosewerkzeug** (Anwenderwunsch): ein Programm, das zu jedem
+   angeschlossenen Geraet die Informationen ausliest und in eine Datei auf
+   `C:` schreibt — Geraete-, Konfigurations-, Interface-, Endpoint- und
+   HID-Report-Deskriptor (roh, hex), Port/Hub-Weg, Geschwindigkeit, das
+   gewaehlte Protokoll und einige rohe Berichte bei Bewegung/Klick. Der
+   Weg (EL0-Programm ueber eine neue Kernel-Schnittstelle oder Ausbau von
+   `usb-diag`) wird in Schritt 1 vorgeschlagen und vom Anwender gewaehlt.
+   Zweck: der Anwender steckt verschiedene Maeuse an, die Dateien belegen,
+   was jede Maus spricht.
+3. **Ursache belegen, dann Fix-Vorschlag** (Report-Protokoll-Parser,
+   Defekte 1, 2, 4) — vorlegen, nicht direkt bauen (Regel 5).
+
+[Gemeinsame Regeln](README.md) gelten.
