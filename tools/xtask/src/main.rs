@@ -60,6 +60,12 @@ mod kernel_clock_tags;
 #[cfg(test)]
 #[path = "../../../kernel/src/drivers/usb/xhci/ring.rs"]
 mod kernel_xhci_ring;
+/// USB01 F2/F8 — the configuration-descriptor scan (HID boot interface
+/// selection by class/subclass/protocol, skipped interfaces). Pure, compiled
+/// here by path like `kernel_bootargs`.
+#[cfg(test)]
+#[path = "../../../kernel/src/drivers/usb/config_desc.rs"]
+mod kernel_usb_config_desc;
 
 /// DESK43 U5a (guard G3) — the desktop's integer constants against a
 /// checked-in snapshot of EmuTOS' `#define`s.

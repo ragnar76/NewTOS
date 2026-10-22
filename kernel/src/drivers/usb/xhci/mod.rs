@@ -222,22 +222,8 @@ pub struct DeviceInfo {
     pub pid: u16,
 }
 
-/// A HID boot device's configuration, as parsed from its config descriptor.
-#[derive(Clone, Copy)]
-pub struct HidInfo {
-    /// `bConfigurationValue` for SET_CONFIGURATION.
-    pub config_value: u8,
-    /// The HID interface number.
-    pub iface: u8,
-    /// `bInterfaceProtocol`: 1 = keyboard, 2 = mouse.
-    pub protocol: u8,
-    /// Interrupt-IN endpoint address (bit 7 = IN, low 4 = number).
-    pub ep_addr: u8,
-    /// Endpoint max packet size.
-    pub ep_max: u16,
-    /// Endpoint polling interval (`bInterval`).
-    pub interval: u8,
-}
+pub use super::config_desc::HidInfo;
+use super::config_desc;
 
 /// The fields of a USB hub class descriptor (`0x29`, USB 2.0 §11.23.2.1) the
 /// hub driver acts on.
@@ -1240,10 +1226,13 @@ impl Xhci {
     }
 
     /// Read the configuration descriptor and find the first HID boot
-    /// interrupt-IN endpoint (keyboard/mouse). `None` if not a HID boot device.
+    /// keyboard/mouse interface (class 3, subclass 1, protocol 1/2) with an
+    /// interrupt-IN endpoint. `None` if the device has none — it is then not
+    /// an input device; each `None` path logs why.
     pub fn read_config(&mut self, di: usize) -> Option<HidInfo> {
         // Read the 9-byte config header first for wTotalLength.
         if !self.get_descriptor(di, 2, 0, 9) {
+            kprintln!("[usb] slot {}: configuration header read failed", self.hid[di].slot);
             return None;
         }
         // SAFETY: single-CPU; DEV is ours.
@@ -1262,22 +1251,19 @@ impl Xhci {
             );
         }
         if !self.get_descriptor(di, 2, 0, total) {
+            kprintln!(
+                "[usb] slot {}: configuration descriptor read ({} bytes) failed",
+                self.hid[di].slot,
+                total
+            );
             return None;
         }
         // SAFETY: single-CPU; DEV is ours. Take the field ref, then slice.
         let buf = unsafe { &(*(&raw const DEV))[di].buf };
         let b = &buf[..total as usize];
-        let config_value = b[5];
-        let mut iface = 0u8;
-        let mut protocol = 0u8;
         // Diagnostic build only: the whole configuration, before we pick from
-        // it. `read_config` takes the FIRST interrupt-IN endpoint and pairs it
-        // with the most recent interface descriptor, and checks neither
-        // `bInterfaceClass` (3 = HID) nor `bInterfaceSubClass` (1 = boot). On a
-        // composite device — a keyboard with a second consumer-control
-        // interface, or a receiver carrying keyboard *and* mouse under one
-        // address — that choice is not obviously the right one, and the only
-        // way to judge it is to see what was on offer.
+        // it — every descriptor, so a composite device's other interfaces and
+        // class-specific descriptors are visible too.
         #[cfg(feature = "usb-diag")]
         {
             kprintln!("[usb] config descriptor, {} bytes, all descriptors:", total);
@@ -1306,45 +1292,47 @@ impl Xhci {
                 j += dl;
             }
         }
-        let mut i = 0usize;
-        while i + 2 <= b.len() {
-            let dlen = b[i] as usize;
-            let dtype = b[i + 1];
-            if dlen == 0 || i + dlen > b.len() {
-                break;
-            }
-            match dtype {
-                4 => {
-                    // Interface descriptor: class 3 = HID; protocol 1/2.
-                    iface = b[i + 2];
-                    protocol = b[i + 7];
-                }
-                5 => {
-                    // Endpoint descriptor: interrupt (attr&3==3) + IN (bit 7).
-                    let addr = b[i + 2];
-                    let attr = b[i + 3];
-                    if attr & 0x3 == 3 && addr & 0x80 != 0 {
-                        let ep_max = u16::from_le_bytes([b[i + 4], b[i + 5]]);
-                        let interval = b[i + 6];
-                        kprintln!(
-                            "[usb] HID iface {} protocol {} → int-IN ep {:#04x} max {} interval {}",
-                            iface, protocol, addr, ep_max, interval
-                        );
-                        return Some(HidInfo {
-                            config_value,
-                            iface,
-                            protocol,
-                            ep_addr: addr,
-                            ep_max,
-                            interval,
-                        });
-                    }
-                }
-                _ => {}
-            }
-            i += dlen;
+        // USB01 F2: only a HID (class 3) boot-subclass (1) keyboard/mouse
+        // interface is an input device (HID 1.11 §4.1–§4.3); see
+        // `config_desc`. Every interface not taken gets one log line (F8).
+        let slot = self.hid[di].slot;
+        let scan = config_desc::scan(b, |sk| {
+            kprintln!(
+                "[usb] slot {} iface {} alt {} (class {} subclass {} protocol {}) not used: {}",
+                slot,
+                sk.number,
+                sk.alt,
+                sk.class,
+                sk.subclass,
+                sk.protocol,
+                config_desc::reason_text(sk.reason)
+            );
+        });
+        if let Some(at) = scan.stopped_at {
+            kprintln!(
+                "[usb] slot {}: configuration descriptor malformed or cut at byte {} of {}; \
+                 rest not parsed",
+                slot,
+                at,
+                total
+            );
         }
-        None
+        match scan.hid {
+            Some(h) => {
+                kprintln!(
+                    "[usb] HID iface {} protocol {} → int-IN ep {:#04x} max {} interval {}",
+                    h.iface, h.protocol, h.ep_addr, h.ep_max, h.interval
+                );
+                Some(h)
+            }
+            None => {
+                kprintln!(
+                    "[usb] slot {}: no HID boot keyboard/mouse interface — not an input device",
+                    slot
+                );
+                None
+            }
+        }
     }
 
     /// Read the configuration descriptor and return its `bConfigurationValue`

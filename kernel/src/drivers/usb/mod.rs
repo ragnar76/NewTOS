@@ -30,6 +30,7 @@
 mod pcie;
 #[cfg(feature = "board-rpi4")]
 mod pcie_rpi4;
+pub mod config_desc;
 pub mod hid;
 pub mod xhci;
 
