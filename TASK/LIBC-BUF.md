@@ -1,6 +1,6 @@
 # LIBC-BUF — erster `printf` auf ungepuffertes stdout legt nur 1 KiB Puffer an
 
-Status: **OFFEN** · Prioritaet: **P3** · Typ: SDK / libc — Nebenfund LIBC-FSTAT (2026-10-17)
+Status: **ERLEDIGT 2026-10-22** (QEMU, `41ba8f96`; Sonde LBUF rot/gruen, `measurements/measurement-2026-10-22-libc-buf/`; Pi offen) · Prioritaet: **P3** · Typ: SDK / libc — Nebenfund LIBC-FSTAT (2026-10-17)
 
 Beobachtet in der FSTATP-Sonde: vor der ersten Ausgabe ist
 `stdout->__bufsize` 32 KiB; der erste `printf` auf den noch ungepufferten
