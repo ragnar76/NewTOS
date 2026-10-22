@@ -55,6 +55,11 @@ mod kernel_emmc_xfer;
 #[cfg(test)]
 #[path = "../../../kernel/src/drivers/bcm2711/clock_tags.rs"]
 mod kernel_clock_tags;
+/// USB01 F1 — the xHCI producer ring (Link TRB + Toggle Cycle, PCS flip on
+/// wrap). Pure, compiled here by path like `kernel_bootargs`.
+#[cfg(test)]
+#[path = "../../../kernel/src/drivers/usb/xhci/ring.rs"]
+mod kernel_xhci_ring;
 
 /// DESK43 U5a (guard G3) — the desktop's integer constants against a
 /// checked-in snapshot of EmuTOS' `#define`s.

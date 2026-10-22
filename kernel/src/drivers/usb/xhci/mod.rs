@@ -20,6 +20,8 @@ use crate::arch::aarch64::mmu::va_to_pa;
 use crate::drivers::mmio_va;
 use crate::kprintln;
 
+mod ring;
+
 /// PCIe DMA bus offset. The controller reaches system RAM through the host
 /// bridge's inbound window, whose PCIe-bus base is **not** 0 on the real Pi-4
 /// (the `dma-ranges` `pcie_addr`, e.g. `0x4_0000_0000`). So a controller-
@@ -265,30 +267,16 @@ fn ep0_max_packet(speed: u8) -> u16 {
     }
 }
 
-/// Push a TRB onto a producer ring: set the producer cycle bit, and on
-/// reaching the last slot write a Link TRB back to the ring base (Toggle
-/// Cycle) so the ring is circular.
-fn ring_push(ring: &mut [Trb], enq: &mut usize, cycle: &mut bool, mut data: [u32; 4]) {
+/// Push a TRB onto a producer ring — the Command Ring and every Transfer
+/// Ring: stamp the producer cycle bit, and on reaching the last slot write a
+/// Link TRB back to the ring base (Toggle Cycle) and flip the producer cycle
+/// state, so the ring is circular (xHCI 1.2 §4.9.2, §4.9.3, §4.11.5.1; the
+/// index/cycle logic and its tests are in [`ring`]). Returns the index the TRB
+/// was written to.
+fn ring_push(ring: &mut [Trb], enq: &mut usize, cycle: &mut bool, data: [u32; 4]) -> usize {
     let len = ring.len();
-    if *cycle {
-        data[3] |= 1;
-    } else {
-        data[3] &= !1;
-    }
-    ring[*enq] = Trb(data);
-    *enq += 1;
-    if *enq == len - 1 {
-        let base = dma_addr(ring.as_ptr() as u64);
-        let mut link = [base as u32, (base >> 32) as u32, 0, (6u32 << 10) | (1 << 1)];
-        if *cycle {
-            link[3] |= 1;
-        } else {
-            link[3] &= !1;
-        }
-        ring[len - 1] = Trb(link);
-        *enq = 0;
-        *cycle = !*cycle;
-    }
+    let base = dma_addr(ring.as_ptr() as u64);
+    ring::push(enq, cycle, len, base, data, |i, t| ring[i] = Trb(t))
 }
 
 // ── DMA ordering barriers (real Pi-4: PCIe DMA is not cache-coherent) ─────
@@ -800,24 +788,20 @@ impl Xhci {
     /// Enqueue a command TRB, ring the command doorbell, and wait for its
     /// Command Completion event. Returns the completion (slot id + code).
     ///
-    /// D2 issues only a handful of commands, far fewer than `CMD_RING_LEN`,
-    /// so the ring does not wrap during enumeration — a Link TRB / wrap is a
-    /// later refinement.
-    fn command(&mut self, mut data: [u32; 4]) -> Option<event::CommandCompletion> {
+    /// The Command Ring is a single 16-TRB segment closed by a Link TRB with
+    /// Toggle Cycle, exactly like the transfer rings ([`ring_push`]; xHCI 1.2
+    /// §4.9.3: command-ring management is "identical to Transfer Rings", the
+    /// producer "toggling the Cycle bit each pass through the Command Ring").
+    /// Before USB01 F1 the producer jumped from index 14 back to 0 with
+    /// neither a Link TRB nor a cycle toggle; the controller stopped at the
+    /// empty slot 15 and command #16 always timed out
+    /// (`measurements/measurement-2026-10-23-usb01-f1f2f8/`).
+    fn command(&mut self, data: [u32; 4]) -> Option<event::CommandCompletion> {
         // SAFETY: single-CPU; DMA is ours.
         let dma = unsafe { &mut *(&raw mut DMA) };
-        if self.cmd_cycle {
-            data[3] |= 1;
-        } else {
-            data[3] &= !1;
-        }
         self.cmd_count += 1;
-        let cmd_index = self.cmd_enq;
-        dma.cmd_ring.0[self.cmd_enq] = Trb(data);
-        self.cmd_enq += 1;
-        if self.cmd_enq >= CMD_RING_LEN - 1 {
-            self.cmd_enq = 0;
-        }
+        let cmd_index =
+            ring_push(&mut dma.cmd_ring.0, &mut self.cmd_enq, &mut self.cmd_cycle, data);
         // Ring doorbell 0 (the command ring).
         self.dma_clean();
         self.regs.doorbell.update_volatile_at(0, |d| {
