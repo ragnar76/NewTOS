@@ -1,6 +1,6 @@
 # DESK39 — `inf_file_folder` benennt nicht selbst um und zaehlt Ordner nicht
 
-Status: **OFFEN** · Prioritaet: **P3** · Typ: Funktionsluecken — Nebenbefunde DESK38
+Status: **ERLEDIGT 2026-09-25** (`f7c61f86`, ADFFINFO-Neubau: `STRENAME`-Retry-Schleife und `dos_chmod`-Rueckschreiben in `inf_file_folder`, `count_ffs` fuer Ordner — `programs/desktop/src/inf.rs`; nachgetragen 2026-10-22) · Prioritaet: **P3** · Typ: Funktionsluecken — Nebenbefunde DESK38
 
 Abhaengigkeiten: [DESK38](DESK38.md) (erledigt)
 
