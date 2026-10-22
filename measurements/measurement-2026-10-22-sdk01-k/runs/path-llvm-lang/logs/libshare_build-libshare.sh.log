@@ -1,0 +1,13 @@
+  overlay: calloc.c
+  overlay: malloc.c
+  overlay: sbrk.c
+clang : Apple clang version 21.0.0 (clang-2100.3.34.2)
+ar    : /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/651de586-7dd7-487b-9e92-c8525c58f508/scratchpad/k/fakellvm/llvm-ar
+
+compiled OK=7  FAILED=0  (files with warnings: 0)
+
+compiled mintlib/posix_memalign.c with -D__malloc=malloc (addition, see header)
+
+archived -> /Volumes/Daten/Development/PiRusTOS/sdk/libshare/libshare.a (18734 bytes)
+defined symbols: 27  external references: 18 (build/external.txt: libc/libm/other-library symbols the archive needs)
+exported: __ind_lst_free __ind_lst_malloc __lst_free __lst_malloc_addr __lst_malloc_size __memalign __posix_memalign __sbrk_has_been_called _mallocChunkSize _malloczero aligned_alloc calloc chdir free libshare_createshm libshare_deleteshm libshare_dummy libshare_exit libshare_getshm libshare_init libshare_mchunk_free_list malloc memalign posix_memalign realloc sbrk static_mblock 

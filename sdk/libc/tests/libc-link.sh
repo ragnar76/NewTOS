@@ -11,7 +11,7 @@
 #     (unix/ucontext.c, stdlib/dtest.c, tz/date.c, tz/tzinit.c, syscall/*).
 #  3. No archive member references the host generator's yyin/yyparse.
 #
-# Nothing is run; host-independent (clang's aarch64 target + rust-lld).
+# Nothing is run; host-independent (clang's aarch64 target + ld.lld or rust-lld, sdk/toolchain.sh).
 # Exit status: number of failed checks; 77 = skipped (libc.a not built).
 # LIBC_A=<archive> checks another archive (red run against an older libc.a).
 set -uo pipefail
@@ -26,15 +26,14 @@ LIBA="${LIBC_A:-$LIBC/libc.a}"
   echo "libc-link: skipped -- libc.a or mintlib tree missing; run build-libc.sh"
   exit 77
 }
-. "$SDK/toolchain.sh"   # rustc asked from inside sdk/, whatever the cwd (SDK01 I)
-BIN="$(newtos_rust_bindir)"
-LLD="$BIN/rust-lld"; NM="$BIN/llvm-nm"
-[ -x "$LLD" ] && [ -x "$NM" ] || { echo "libc-link: skipped -- rust-lld/llvm-nm missing"; exit 77; }
+. "$SDK/toolchain.sh"   # LLVM tools: PATH / LLVM packages first, pinned Rust sysroot as fallback (SDK01 I, K)
+LLD="$(newtos_tool ld.lld)"; NM="$(newtos_tool llvm-nm)"
+[ -x "$LLD" ] && [ -x "$NM" ] || { echo "libc-link: skipped -- ld.lld/llvm-nm missing"; exit 77; }
 W="$(mktemp -d)"; trap 'rm -rf "$W"' EXIT
 CF=(-target aarch64-unknown-none-elf -ffreestanding -fPIE -nostdinc -fno-builtin
     -I"$SDK/include" -I"$TOP/include" -I"$TOP/mintlib" -isystem "$("$CLANG" -print-resource-dir)/include")
 "$CLANG" "${CF[@]}" -c "$LIBC/crt0.S" -o "$W/crt0.o" || { echo "libc-link: crt0 did not build"; exit 1; }
-lnk() { "$LLD" -flavor gnu -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z max-page-size=0x1000 \
+lnk() { newtos_lld -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z max-page-size=0x1000 \
           --build-id=none "$W/crt0.o" "$@" "$LIBA" -o "$W/a.elf" 2> "$W/err"; }
 
 fail=0; n=0

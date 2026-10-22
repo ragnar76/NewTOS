@@ -36,19 +36,49 @@ since TASK/PORT10 the overlay `sdk/libc/overlay/include/stdint.h` makes
 (`sdk/libc/tests/lp64-limits.sh`). See
 [05-abi-pitfalls.md](05-abi-pitfalls.md#b7-mintlibs-stdinth-gives-a-32-bit-uintptr_t-on-our-lp64-build).
 
-## Linker and binutils: the Rust toolchain's LLVM
+## Linker and binutils: LLVM's, from the packages or from Rust
 
-The library and app scripts take `rust-lld`, `llvm-ar`, `llvm-readobj`,
-`llvm-nm` and `llvm-objdump` from the **pinned Rust nightly's** sysroot:
+The library and app scripts, `sdk/build.sh` and `sdk/bin/newtos-cc` link with
+`ld.lld` and use `llvm-ar`, `llvm-nm`, `llvm-readobj`, `llvm-objdump` and
+`llvm-size`. All of them resolve each tool through one file,
+`sdk/toolchain.sh` (TASK/SDK01 I, K):
 
 ```sh
-SYSROOT="$(rustc --print sysroot 2>/dev/null)"
-BIN="$SYSROOT/lib/rustlib/$(rustc -vV | sed -n 's/host: //p')/bin"
-AR="${AR:-$BIN/llvm-ar}"
-LLD="${LLD:-$BIN/rust-lld}"
+. "$SDK/toolchain.sh"
+AR="${AR:-$(newtos_tool llvm-ar)}"
+LLD="${LLD:-$(newtos_tool ld.lld)}"
+NM="$(newtos_tool llvm-nm)"
+…
+newtos_lld -T "$SDK/newtos.ld" -pie …      # "$LLD" (+ -flavor gnu for rust-lld)
 ```
-(`sdk/libc/build-libc.sh:91-94`; identical in the gemlib/cflib/qed/teradesk/
-coremark scripts.) The pin is `rust-toolchain.toml`:
+(e.g. `sdk/apps/build-qed.sh`; the same lines in every script.)
+
+`newtos_tool <name>` searches, per tool, and stops at the first hit:
+
+| # | Where | Notes |
+|---|---|---|
+| 1 | `NEWTOS_LLD`, `NEWTOS_AR`, `NEWTOS_NM`, `NEWTOS_READOBJ`, `NEWTOS_OBJDUMP`, `NEWTOS_SIZE` (`llvm-<x>` → `NEWTOS_<X>`) | an explicit file; the scripts' older `LLD=` / `AR=` overrides still come before it |
+| 2 | `$NEWTOS_LLVM_BIN/<name>` | any LLVM `bin/` directory |
+| 3 | `PATH` | Debian/Ubuntu/Fedora packages `lld` + `llvm` |
+| 4 | the directory `${CLANG:-clang}` really lives in (symlinks followed) | e.g. Debian's `/usr/lib/llvm-<N>/bin`, or a keg-only Homebrew clang given as `CLANG=…` |
+| 5 | `<prefix>/opt/llvm/bin`, `<prefix>/opt/lld/bin` for `$HOMEBREW_PREFIX`, `/opt/homebrew`, `/usr/local`, `/home/linuxbrew/.linuxbrew` | Homebrew's `llvm` is keg-only, not on `PATH` |
+| 6 | `/usr/lib/llvm-*/bin`, highest version first | apt.llvm.org / Debian layout |
+| 7 | the pinned Rust nightly's sysroot, `rustc` asked from inside `sdk/` | `rust-lld` for `ld.lld`, `llvm-*` from `llvm-tools-preview` |
+
+`NEWTOS_TOOLCHAIN=auto` (default) is steps 1–7, `llvm` steps 1–6 (never
+Rust), `rust` steps 1 and 7 (the behaviour before SDK01 K). When no step
+finds the tool, `newtos_tool` prints which packages to install
+(`sudo apt install clang lld llvm`, `sudo dnf install clang lld llvm`,
+`brew install llvm lld`) and the script stops. `sdk/bin/newtos-cc --toolchain`
+prints what every tool resolves to.
+
+**`-flavor gnu`.** `rust-lld` is lld's generic driver and needs
+`-flavor gnu`; `ld.lld` is the GNU flavour by its name. `newtos_lld` (and
+`newtos-cc`) add the flag only for `rust-lld`/`lld`. Measured with the Rust
+nightly's `gcc-ld/ld.lld` wrapper: `ld.lld -flavor gnu --version` →
+`rust-lld: error: unknown argument '-flavor'`.
+
+The Rust fallback is the pinned nightly of `rust-toolchain.toml`:
 
 ```toml
 channel = "nightly-2026-04-15"
@@ -56,8 +86,8 @@ components = ["rust-src", "rustfmt", "clippy", "llvm-tools-preview"]
 targets = ["aarch64-unknown-none-softfloat"]
 ```
 
-`llvm-tools-preview` is what puts `rust-lld` & co. into that `bin/`
-directory. Measured:
+`llvm-tools-preview` is what puts `rust-lld` & co. into
+`<sysroot>/lib/rustlib/<host>/bin`. Measured:
 
 ```
 $ rustc -vV
@@ -68,14 +98,16 @@ $ $BIN/rust-lld -flavor gnu --version
 LLD 22.1.2 (…) (compatible with GNU linkers)
 ```
 
-`sdk/build.sh` (the freestanding builder) is the exception: it searches
-`ld.lld` on `PATH`, then `rust-lld` on `PATH`, then the sysroot, then
-`~/.cargo/bin/rust-lld` (`sdk/build.sh:39-50`). On this host `ld.lld` is
-not on `PATH` but `rust-lld` is (`~/.cargo/bin/rust-lld`, the rustup proxy),
-so the second branch fires — the script printed `lld : rust-lld -flavor gnu`.
-Note that this proxy resolves to the *default* toolchain's `rust-lld`, not
-necessarily the pinned nightly's; the library/app scripts avoid the question
-by taking the sysroot copy directly.
+A rustup proxy on `PATH` (`~/.cargo/bin/rust-lld`, `rust-ar`, …) is never
+used: it resolves the toolchain by the caller's directory, so outside the
+checkout it would be the *default* toolchain's, not the pinned one.
+
+Measured on this Mac (2026-10-22,
+`measurements/measurement-2026-10-22-sdk01-k/RUNINFO.TXT`): the Rust
+fallback and an `ld.lld`/`llvm-*` directory on `PATH` with no `rustc`
+reachable produced byte-identical archives and programs — both were the same
+LLD 22.1.2, so this proves the resolution, not a different lld release.
+Homebrew's and the Linux distributions' packages are not yet tested.
 
 ## Other host tools the scripts call
 
@@ -98,8 +130,9 @@ by taking the sysroot copy directly.
   which is also what `cargo xtask run --sd` looks for when no path is given
   (`tools/xtask/src/main.rs:414-421`).
 * **Linux is not described and has not been tried.** The library build
-  scripts may well run there (they use the Rust sysroot's `rust-lld`, `tar`,
-  `make`, an `md5`/`md5sum` switch and `shasum`), but nobody has run them on
+  scripts may well run there (they use `ld.lld`/`llvm-*` from the `lld` and
+  `llvm` packages or the Rust sysroot, `tar`, `make`, an `md5`/`md5sum`
+  switch and `shasum`), but nobody has run them on
   Linux, and the image tool is macOS-only (see above). A Linux path (and a
   step-by-step install guide for any host: `xcode-select --install`, `rustup`
   inside the checkout, …) is planned (TASK/SDK01 packages C and G); it does

@@ -1,0 +1,948 @@
+extracting pristine windom-1.21.3 from windom-1.21.3.zip (sha256 verified)…
+applying zView's zview-windom-1.21.3.patch (sha256 verified)…
+  overlay: src/av_init.c
+  overlay: src/debug_windom.c
+  overlay: src/vq_tos.c
+  overlay: src/objc_str3d.c
+  overlay: src/cicon.c
+  overlay: src/cookieptr.c
+  overlay: src/set_cookie.c
+  overlay: src/evnt_windom.c
+  overlay: src/new_cookie.c
+  overlay: src/shel_write.c
+clang : Apple clang version 21.0.0 (clang-2100.3.34.2)
+ar    : /Users/ingouhlemann/.rustup/toolchains/nightly-2026-04-15-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/llvm-ar
+
+WinDom sources (files.mak KERNEL): 198
+  warnings in src/wind_get.c:
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wind_get.c:122:4: warning: misleading indentation; statement is not part of the previous 'else' [-Wmisleading-indentation]
+        122 |                         if( *w == 0 && *h == 0) {
+            |                         ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wind_get.c:120:3: note: previous statement is here
+        120 |                 else
+            |                 ^
+      1 warning generated.
+  warnings in src/objc_dup.c:
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/objc_dup.c:136:21: warning: incompatible pointer to integer conversion assigning to 'long' from 'char *' [-Wint-conversion]
+        136 |                                         wparm->wp_spec = mem_adr;
+            |                                                        ^ ~~~~~~~
+      1 warning generated.
+  warnings in src/objc_string.c:
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/objc_string.c:81:39: warning: incompatible pointer to integer conversion assigning to 'long' from 'char *' [-Wint-conversion]
+         81 |                                 ((W_PARM*)user->ub_parm)->wp_spec = put;
+            |                                                                   ^ ~~~
+      1 warning generated.
+  warnings in src/xrsrc.c:
+      In file included from /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/xrsrc.c:37:
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wsystem.rsh:1264:4: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+       1264 | { {RS0_MMASK, RS0_MDATA, "\0\000", 0x1000|'\0',
+            |    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |    {
+       1265 |    14,  21,   0,   0,  16,   8,   5,   1,   6,   8, &rs_cicon[0]},
+            |    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                                                   }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wsystem.rsh:1266:4: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+       1266 |   {RS1_MMASK, RS1_MDATA, "\0\000", 0x1000|'\0',
+            |    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |    {
+       1267 |    14,  21,   0,   0,  16,   8,   5,   1,   6,   8, &rs_cicon[2]},
+            |    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                                                   }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wsystem.rsh:1268:4: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+       1268 |   {RS2_MMASK, RS2_MDATA, "\0\000", 0x1000|'\0',
+            |    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |    {
+       1269 |    14,  21,   0,   0,  16,   8,   5,   1,   6,   8, &rs_cicon[4]},
+            |    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                                                   }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wsystem.rsh:1270:4: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+       1270 |   {RS3_MMASK, RS3_MDATA, "\0\000", 0x1000|'\0',
+            |    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |    {
+       1271 |    14,  21,   0,   0,  16,   8,   5,   1,   6,   8, &rs_cicon[5]},
+            |    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                                                   }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wsystem.rsh:1272:4: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+       1272 |   {RS4_MMASK, RS4_MDATA, "\0\000", 0x1000|'\0',
+            |    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |    {
+       1273 |    14,  21,   0,   0,  16,  16,   5,   5,   6,   8, &rs_cicon[6]},
+            |    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                                                   }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wsystem.rsh:1274:4: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+       1274 |   {RS5_MMASK, RS5_MDATA, "\0\000", 0x1000|'\0',
+            |    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |    {
+       1275 |    14,  21,   0,   0,  16,  16,   5,   5,   6,   8, &rs_cicon[8]},
+            |    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                                                   }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wsystem.rsh:1276:4: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+       1276 |   {RS6_MMASK, RS6_MDATA, "\0\000", 0x1000|'\0',
+            |    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |    {
+       1277 |    14,  21,   0,   0,  16,  16,   5,   5,   6,   8, &rs_cicon[10]},
+            |    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                                                   }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wsystem.rsh:1278:4: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+       1278 |   {RS7_MMASK, RS7_MDATA, "\0\000", 0x1000|'\0',
+            |    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |    {
+       1279 |    14,  21,   0,   0,  16,  16,   5,   5,   6,   8, &rs_cicon[11]},
+            |    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                                                   }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wsystem.rsh:1280:4: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+       1280 |   {RS8_MMASK, RS8_MDATA, "\0\000", 0x1000|'\0',
+            |    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |    {
+       1281 |     5,   7,   0,   0,  16,  16,   5,   4,   6,   8, &rs_cicon[12]},
+            |     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                                                   }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wsystem.rsh:1282:4: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+       1282 |   {RS9_MMASK, RS9_MDATA, "\0\000", 0x1000|'\0',
+            |    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |    {
+       1283 |     5,   2,   0,   0,  16,   8,   3,   0,   6,   8, &rs_cicon[14]},
+            |     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                                                   }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wsystem.rsh:1284:4: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+       1284 |   {RS10_MMASK, RS10_MDATA, "\0\000", 0x1000|'\0',
+            |    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |    {
+       1285 |     5,   7,   0,   0,  16,  16,   5,   4,   6,   8, &rs_cicon[16]},
+            |     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                                                   }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wsystem.rsh:1286:4: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+       1286 |   {RS11_MMASK, RS11_MDATA, "\0\000", 0x1000|'\0',
+            |    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |    {
+       1287 |     5,   2,   0,   0,  16,   8,   3,   0,   6,   8, &rs_cicon[17]},
+            |     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                                                   }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wsystem.rsh:1288:4: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+       1288 |   {RS12_MMASK, RS12_MDATA, "\0\000", 0x1000|'\0',
+            |    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |    {
+       1289 |    14,  21,   0,   0,  16,  16,   5,   5,   6,   8, &rs_cicon[18]},
+            |    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                                                   }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wsystem.rsh:1290:4: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+       1290 |   {RS13_MMASK, RS13_MDATA, "\0\000", 0x1000|'\0',
+            |    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |    {
+       1291 |    14,  21,   0,   0,  16,  16,   5,   5,   6,   8, &rs_cicon[20]},
+            |    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                                                   }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wsystem.rsh:1292:4: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+       1292 |   {RS14_MMASK, RS14_MDATA, "\0\000", 0x1000|'\0',
+            |    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |    {
+       1293 |     8,   2,   0,   0,  16,   8,   5,   5,   6,   8, &rs_cicon[22]},
+            |     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                                                   }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wsystem.rsh:1294:4: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+       1294 |   {RS15_MMASK, RS15_MDATA, "\0\000", 0x1000|'\0',
+            |    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |    {
+       1295 |    14,  21,   0,   0,  16,  16,   5,   5,   6,   8, &rs_cicon[24]},
+            |    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                                                   }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wsystem.rsh:1296:4: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+       1296 |   {RS16_MMASK, RS16_MDATA, "\0\000", 0x1000|'\0',
+            |    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |    {
+       1297 |    14,  21,   0,   0,  16,  16,   5,   5,   6,   8, &rs_cicon[25]},
+            |    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                                                   }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wsystem.rsh:1298:4: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+       1298 |   {RS17_MMASK, RS17_MDATA, "\0\000", 0x1000|'\0',
+            |    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |    {
+       1299 |     8,   2,   0,   0,  16,   8,   5,   5,   6,   8, &rs_cicon[26]},
+            |     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                                                   }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wsystem.rsh:1300:4: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+       1300 |   {RS18_MMASK, RS18_MDATA, "\0\000", 0x1000|'\0',
+            |    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |    {
+       1301 |    14,  21,   0,   0,  16,   8,   5,   5,   6,   8, &rs_cicon[27]},
+            |    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                                                   }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wsystem.rsh:1302:4: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+       1302 |   {RS19_MMASK, RS19_MDATA, "\0\000", 0x1000|'\0',
+            |    ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |    {
+       1303 |    14,  21,   0,   0,  16,   8,   5,   5,   6,   8, &rs_cicon[29]}
+            |    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                                                   }
+      20 warnings generated.
+  warnings in src/fsel.c:
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fsel.c:482:16: warning: incompatible pointer types assigning to 'char *(*)[]' from 'char **' [-Wincompatible-pointer-types]
+        482 |                         slct->ext               = pmask;
+            |                                                 ^ ~~~~~
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fsel.c:484:17: warning: incompatible pointer types assigning to 'char *(*)[]' from 'char **' [-Wincompatible-pointer-types]
+        484 |                         slct->paths     = ppath;
+            |                                         ^ ~~~~~
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fsel.c:128:12: warning: unused function 'slct_extpath' [-Wunused-function]
+        128 | static int slct_extpath(int ext_num, char *(*ext)[], int path_num, char *(*paths)[]) {
+            |            ^~~~~~~~~~~~
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fsel.c:162:12: warning: unused function 'slct_morenames' [-Wunused-function]
+        162 | static int slct_morenames(int mode, int num, void *ptr)
+            |            ^~~~~~~~~~~~~~
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fsel.c:200:12: warning: unused function 'slct_first' [-Wunused-function]
+        200 | static int slct_first(DTA *mydta, int attr)
+            |            ^~~~~~~~~~
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fsel.c:223:12: warning: unused function 'slct_next' [-Wunused-function]
+        223 | static int slct_next(DTA *mydta) {
+            |            ^~~~~~~~~
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fsel.c:245:12: warning: unused function 'slct_release' [-Wunused-function]
+        245 | static int slct_release(void) {
+            |            ^~~~~~~~~~~~
+      7 warnings generated.
+  warnings in src/data.c:
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/data.c:135:6: warning: no previous prototype for function 'DataTrace' [-Wmissing-prototypes]
+        135 | void DataTrace( WINDOW *win) {
+            |      ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/data.c:135:1: note: declare 'static' if the function is not intended to be used outside of this translation unit
+        135 | void DataTrace( WINDOW *win) {
+            | ^
+            | static 
+      1 warning generated.
+  warnings in src/conf_read.c:
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/conf_read.c:182:30: warning: declaration shadows a local variable [-Wshadow]
+        182 |         if( fp == NULL &&  Dsetdrv( Dgetdrv()) & 0x4)    /* C: */
+            |                                     ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/libc/mintlib/include/mint/osbind.h:440:15: note: expanded from macro 'Dgetdrv'
+        440 |        (short)trap_1_w((short)(0x19))
+            |               ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/libc/mintlib/include/mint/osbind.h:311:22: note: expanded from macro 'trap_1_w'
+        311 | #define trap_1_w(n)             __newtos_trap0(1, (n))
+            |                                 ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/libc/mintlib/include/mint/osbind.h:171:16: note: expanded from macro '__newtos_trap0'
+        171 |         register long __r8 __asm__("x8") = (long)(fn);                  \
+            |                       ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/conf_read.c:182:21: note: previous declaration is here
+        182 |         if( fp == NULL &&  Dsetdrv( Dgetdrv()) & 0x4)    /* C: */
+            |                            ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/libc/mintlib/include/mint/osbind.h:430:14: note: expanded from macro 'Dsetdrv'
+        430 |        (long)trap_1_ww((short)(0x0E),(short)(d))
+            |              ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/libc/mintlib/include/mint/osbind.h:312:26: note: expanded from macro 'trap_1_ww'
+        312 | #define trap_1_ww(n, a)         __newtos_trap1(1, (n), (short)(a))
+            |                                 ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/libc/mintlib/include/mint/osbind.h:183:16: note: expanded from macro '__newtos_trap1'
+        183 |         register long __r8 __asm__("x8") = (long)(fn);                  \
+            |                       ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/conf_read.c:182:30: warning: declaration shadows a local variable [-Wshadow]
+        182 |         if( fp == NULL &&  Dsetdrv( Dgetdrv()) & 0x4)    /* C: */
+            |                                     ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/libc/mintlib/include/mint/osbind.h:440:15: note: expanded from macro 'Dgetdrv'
+        440 |        (short)trap_1_w((short)(0x19))
+            |               ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/libc/mintlib/include/mint/osbind.h:311:22: note: expanded from macro 'trap_1_w'
+        311 | #define trap_1_w(n)             __newtos_trap0(1, (n))
+            |                                 ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/libc/mintlib/include/mint/osbind.h:172:16: note: expanded from macro '__newtos_trap0'
+        172 |         register long __retvalue __asm__("x0");                         \
+            |                       ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/conf_read.c:182:21: note: previous declaration is here
+        182 |         if( fp == NULL &&  Dsetdrv( Dgetdrv()) & 0x4)    /* C: */
+            |                            ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/libc/mintlib/include/mint/osbind.h:430:14: note: expanded from macro 'Dsetdrv'
+        430 |        (long)trap_1_ww((short)(0x0E),(short)(d))
+            |              ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/libc/mintlib/include/mint/osbind.h:312:26: note: expanded from macro 'trap_1_ww'
+        312 | #define trap_1_ww(n, a)         __newtos_trap1(1, (n), (short)(a))
+            |                                 ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/libc/mintlib/include/mint/osbind.h:184:16: note: expanded from macro '__newtos_trap1'
+        184 |         register long __retvalue __asm__("x0") = (a0);                  \
+            |                       ^
+      2 warnings generated.
+  warnings in src/font_sel.c:
+      In file included from /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/font_sel.c:35:
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.rsh:29:3: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+         29 | { "__",
+            |   ^~~~~
+            |   {
+         30 |   " __ pts",
+            |   ~~~~~~~~~~
+         31 |   "99",
+            |   ~~~~~
+         32 |   IBM  , 0, TE_CNTR , 0x1180, 0, -1, 3, 8,
+            |   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                                          }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.rsh:33:3: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+         33 |   "123456",
+            |   ^~~~~~~~~
+            |   {
+         34 |   "Id: ______",
+            |   ~~~~~~~~~~~~~
+         35 |   "999999",
+            |   ~~~~~~~~~
+         36 |   SMALL, 0, TE_CNTR , 0x1100, 0, -1, 7, 11
+            |   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                                           }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.rsh:43:20: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+         43 |   FLAGS10, DRAW3D, (LONG)0x00001100L,
+            |                    ^~~~~~~~~~~~~~~~~
+            |                    {                }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.rsh:42:9: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+         42 |         -1, FONT_DRAW       , IDFONT          , G_BOX             ,   /* Object 0  */
+            |         ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |         {
+         43 |   FLAGS10, DRAW3D, (LONG)0x00001100L,
+            |   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+         44 |   0x0000, 0x0000, 0x0024, 0x0011,
+            |   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                                 }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.rsh:46:17: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+         46 |   NONE, NORMAL, (LONG)0x00FF1101L,
+            |                 ^~~~~~~~~~~~~~~~~
+            |                 {                }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.rsh:45:3: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+         45 |   FONT_OK         , FONT_USER       , FONT_USER       , G_BOX             ,   /* Object 1 FONT_DRAW */
+            |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |   {
+         46 |   NONE, NORMAL, (LONG)0x00FF1101L,
+            |   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+         47 |   0x0002, 0x0001, 0x0020, 0x0803,
+            |   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                                 }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.h:33:26: note: expanded from macro 'FONT_OK'
+         33 | #define FONT_OK          3   /* BUTTON dans l'arbre FONTSEL */
+            |                          ^
+      In file included from /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/font_sel.c:35:
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.rsh:49:17: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+         49 |   NONE, NORMAL, (LONG)0x00FF1141L,
+            |                 ^~~~~~~~~~~~~~~~~
+            |                 {                }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.rsh:48:3: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+         48 |   FONT_DRAW       ,       -1,       -1, G_IBOX            ,   /* Object 2 FONT_USER */
+            |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |   {
+         49 |   NONE, NORMAL, (LONG)0x00FF1141L,
+            |   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+         50 |   0x0000, 0x0000, 0x0020, 0x0803,
+            |   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                                 }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.h:31:26: note: expanded from macro 'FONT_DRAW'
+         31 | #define FONT_DRAW        1   /* BOX dans l'arbre FONTSEL */
+            |                          ^
+      In file included from /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/font_sel.c:35:
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.rsh:52:51: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+         52 |   SELECTABLE|DEFAULT|EXIT|FLAGS9|FLAGS10, NORMAL, (LONG)"OK",
+            |                                                   ^~~~~~~~~~
+            |                                                   {         }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.rsh:51:3: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+         51 |   FONT_CANCEL     ,       -1,       -1, G_BUTTON          ,   /* Object 3 FONT_OK */
+            |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |   {
+         52 |   SELECTABLE|DEFAULT|EXIT|FLAGS9|FLAGS10, NORMAL, (LONG)"OK",
+            |   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+         53 |   0x000D, 0x000F, 0x0008, 0x0001,
+            |   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                                 }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.h:34:26: note: expanded from macro 'FONT_CANCEL'
+         34 | #define FONT_CANCEL      4   /* BUTTON dans l'arbre FONTSEL */
+            |                          ^
+      In file included from /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/font_sel.c:35:
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.rsh:55:51: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+         55 |   SELECTABLE|EXIT|FLAGS9|FLAGS10|FLAGS11, NORMAL, (LONG)"Cancel",
+            |                                                   ^~~~~~~~~~~~~~
+            |                                                   {             }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.rsh:54:10: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+         54 |          5,       -1,       -1, G_BUTTON          |0x1F00,   /* Object 4 FONT_CANCEL */
+            |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |          {
+         55 |   SELECTABLE|EXIT|FLAGS9|FLAGS10|FLAGS11, NORMAL, (LONG)"Cancel",
+            |   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+         56 |   0x0402, 0x000F, 0x0008, 0x0001,
+            |   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                                 }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.rsh:58:17: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+         58 |   NONE, NORMAL, (LONG)0x00001101L,
+            |                 ^~~~~~~~~~~~~~~~~
+            |                 {                }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.rsh:57:3: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+         57 |   FONT_SIZE       , FONT_DN         , FONT_BACK       , G_IBOX            ,   /* Object 5  */
+            |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |   {
+         58 |   NONE, NORMAL, (LONG)0x00001101L,
+            |   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+         59 |   0x0002, 0x0006, 0x0420, 0x0008,
+            |   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                                 }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.h:46:26: note: expanded from macro 'FONT_SIZE'
+         46 | #define FONT_SIZE        17  /* FBOXTEXT dans l'arbre FONTSEL */
+            |                          ^
+      In file included from /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/font_sel.c:35:
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.rsh:61:33: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+         61 |   SELECTABLE|TOUCHEXIT, DRAW3D, (LONG) ((LONG)'\002' << 24)|0x00FE1100L,
+            |                                 ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                                 {                                      }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.rsh:60:3: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+         60 |   FONT_UP         ,       -1,       -1, G_BOXCHAR         |0x0F00,   /* Object 6 FONT_DN */
+            |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |   {
+         61 |   SELECTABLE|TOUCHEXIT, DRAW3D, (LONG) ((LONG)'\002' << 24)|0x00FE1100L,
+            |   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+         62 |   0x011E, 0x0104, 0x0002, 0x0F03,
+            |   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                                 }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.h:36:26: note: expanded from macro 'FONT_UP'
+         36 | #define FONT_UP          7   /* BOXCHAR dans l'arbre FONTSEL */
+            |                          ^
+      In file included from /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/font_sel.c:35:
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.rsh:64:33: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+         64 |   SELECTABLE|TOUCHEXIT, DRAW3D, (LONG) ((LONG)'\001' << 24)|0x00FE1100L,
+            |                                 ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                                 {                                      }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.rsh:63:3: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+         63 |   FONT_BACK       ,       -1,       -1, G_BOXCHAR         |0x0F00,   /* Object 7 FONT_UP */
+            |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |   {
+         64 |   SELECTABLE|TOUCHEXIT, DRAW3D, (LONG) ((LONG)'\001' << 24)|0x00FE1100L,
+            |   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+         65 |   0x011E, 0x0000, 0x0002, 0x0004,
+            |   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                                 }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.h:37:26: note: expanded from macro 'FONT_BACK'
+         37 | #define FONT_BACK        8   /* BOX dans l'arbre FONTSEL */
+            |                          ^
+      In file included from /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/font_sel.c:35:
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.rsh:67:17: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+         67 |   NONE, NORMAL, (LONG)0x00FF1101L,
+            |                 ^~~~~~~~~~~~~~~~~
+            |                 {                }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.rsh:66:10: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+         66 |          5, FONT1           , FONT8           , G_BOX             ,   /* Object 8 FONT_BACK */
+            |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |          {
+         67 |   NONE, NORMAL, (LONG)0x00FF1101L,
+            |   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+         68 |   0x0000, 0x0000, 0x001E, 0x0008,
+            |   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                                 }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.rsh:70:22: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+         70 |   TOUCHEXIT, NORMAL, (LONG)"Font Name 1                   ",
+            |                      ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                      {                                     }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.rsh:69:3: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+         69 |   FONT2           ,       -1,       -1, G_STRING          ,   /* Object 9 FONT1 */
+            |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |   {
+         70 |   TOUCHEXIT, NORMAL, (LONG)"Font Name 1                   ",
+            |   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+         71 |   0x0000, 0x0000, 0x001E, 0x0001,
+            |   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                                 }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.h:39:26: note: expanded from macro 'FONT2'
+         39 | #define FONT2            10  /* STRING dans l'arbre FONTSEL */
+            |                          ^
+      In file included from /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/font_sel.c:35:
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.rsh:73:22: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+         73 |   TOUCHEXIT, NORMAL, (LONG)"Font Name 2                   ",
+            |                      ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                      {                                     }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.rsh:72:3: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+         72 |   FONT3           ,       -1,       -1, G_STRING          ,   /* Object 10 FONT2 */
+            |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |   {
+         73 |   TOUCHEXIT, NORMAL, (LONG)"Font Name 2                   ",
+            |   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+         74 |   0x0000, 0x0001, 0x001E, 0x0001,
+            |   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                                 }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.h:40:26: note: expanded from macro 'FONT3'
+         40 | #define FONT3            11  /* STRING dans l'arbre FONTSEL */
+            |                          ^
+      In file included from /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/font_sel.c:35:
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.rsh:76:22: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+         76 |   TOUCHEXIT, NORMAL, (LONG)"Font Name 3                   ",
+            |                      ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                      {                                     }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.rsh:75:3: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+         75 |   FONT4           ,       -1,       -1, G_STRING          ,   /* Object 11 FONT3 */
+            |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |   {
+         76 |   TOUCHEXIT, NORMAL, (LONG)"Font Name 3                   ",
+            |   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+         77 |   0x0000, 0x0002, 0x001E, 0x0001,
+            |   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                                 }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.h:41:26: note: expanded from macro 'FONT4'
+         41 | #define FONT4            12  /* STRING dans l'arbre FONTSEL */
+            |                          ^
+      In file included from /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/font_sel.c:35:
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.rsh:79:22: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+         79 |   TOUCHEXIT, NORMAL, (LONG)"Font Name 4                   ",
+            |                      ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                      {                                     }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.rsh:78:3: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+         78 |   FONT5           ,       -1,       -1, G_STRING          ,   /* Object 12 FONT4 */
+            |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |   {
+         79 |   TOUCHEXIT, NORMAL, (LONG)"Font Name 4                   ",
+            |   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+         80 |   0x0000, 0x0003, 0x001E, 0x0001,
+            |   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                                 }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.h:42:26: note: expanded from macro 'FONT5'
+         42 | #define FONT5            13  /* STRING dans l'arbre FONTSEL */
+            |                          ^
+      In file included from /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/font_sel.c:35:
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.rsh:82:22: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+         82 |   TOUCHEXIT, NORMAL, (LONG)"Font Name 5                   ",
+            |                      ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                      {                                     }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.rsh:81:3: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+         81 |   FONT6           ,       -1,       -1, G_STRING          ,   /* Object 13 FONT5 */
+            |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |   {
+         82 |   TOUCHEXIT, NORMAL, (LONG)"Font Name 5                   ",
+            |   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+         83 |   0x0000, 0x0004, 0x001E, 0x0001,
+            |   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                                 }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.h:43:26: note: expanded from macro 'FONT6'
+         43 | #define FONT6            14  /* STRING dans l'arbre FONTSEL */
+            |                          ^
+      In file included from /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/font_sel.c:35:
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.rsh:85:22: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+         85 |   TOUCHEXIT, NORMAL, (LONG)"Font Name 6                   ",
+            |                      ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                      {                                     }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.rsh:84:3: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+         84 |   FONT7           ,       -1,       -1, G_STRING          ,   /* Object 14 FONT6 */
+            |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |   {
+         85 |   TOUCHEXIT, NORMAL, (LONG)"Font Name 6                   ",
+            |   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+         86 |   0x0000, 0x0005, 0x001E, 0x0001,
+            |   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                                 }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.h:44:26: note: expanded from macro 'FONT7'
+         44 | #define FONT7            15  /* STRING dans l'arbre FONTSEL */
+            |                          ^
+      In file included from /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/font_sel.c:35:
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.rsh:88:22: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+         88 |   TOUCHEXIT, NORMAL, (LONG)"Font Name 7                   ",
+            |                      ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                      {                                     }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.rsh:87:3: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+         87 |   FONT8           ,       -1,       -1, G_STRING          ,   /* Object 15 FONT7 */
+            |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |   {
+         88 |   TOUCHEXIT, NORMAL, (LONG)"Font Name 7                   ",
+            |   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+         89 |   0x0000, 0x0006, 0x001E, 0x0001,
+            |   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                                 }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.h:45:26: note: expanded from macro 'FONT8'
+         45 | #define FONT8            16  /* STRING dans l'arbre FONTSEL */
+            |                          ^
+      In file included from /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/font_sel.c:35:
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.rsh:91:22: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+         91 |   TOUCHEXIT, NORMAL, (LONG)"Font Name 8                   ",
+            |                      ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                      {                                     }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.rsh:90:3: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+         90 |   FONT_BACK       ,       -1,       -1, G_STRING          ,   /* Object 16 FONT8 */
+            |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |   {
+         91 |   TOUCHEXIT, NORMAL, (LONG)"Font Name 8                   ",
+            |   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+         92 |   0x0000, 0x0007, 0x001E, 0x0001,
+            |   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                                 }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.h:37:26: note: expanded from macro 'FONT_BACK'
+         37 | #define FONT_BACK        8   /* BOX dans l'arbre FONTSEL */
+            |                          ^
+      In file included from /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/font_sel.c:35:
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.rsh:94:21: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+         94 |   EDITABLE, NORMAL, (LONG)&rs_tedinfo[0],
+            |                     ^~~~~~~~~~~~~~~~~~~~
+            |                     {                   }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.rsh:93:3: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+         93 |   IDFONT          ,       -1,       -1, G_FBOXTEXT        ,   /* Object 17 FONT_SIZE */
+            |   ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |   {
+         94 |   EDITABLE, NORMAL, (LONG)&rs_tedinfo[0],
+            |   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+         95 |   0x0419, 0x000F, 0x0008, 0x0001,
+            |   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                                 }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.h:47:26: note: expanded from macro 'IDFONT'
+         47 | #define IDFONT           18  /* FTEXT dans l'arbre FONTSEL */
+            |                          ^
+      In file included from /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/font_sel.c:35:
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.rsh:97:19: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+         97 |   LASTOB, NORMAL, (LONG)&rs_tedinfo[1],
+            |                   ^~~~~~~~~~~~~~~~~~~~
+            |                   {                   }
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/fontsel.rsh:96:10: warning: suggest braces around initialization of subobject [-Wmissing-braces]
+         96 |          0,       -1,       -1, G_FTEXT           ,   /* Object 18 IDFONT */
+            |          ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |          {
+         97 |   LASTOB, NORMAL, (LONG)&rs_tedinfo[1],
+            |   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+         98 |   0x0002, 0x0005, 0x0407, 0x0600
+            |   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+            |                                 }
+      40 warnings generated.
+  warnings in src/userdef.c:
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:153:57: warning: declaration shadows a variable in the global scope [-Wshadow]
+        153 | static void my_v_ftext( int handle, int x, int y, char *str) {
+            |                                                         ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:122:13: note: previous declaration is here
+        122 | static char str[128];
+            |             ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:168:57: warning: declaration shadows a variable in the global scope [-Wshadow]
+        168 | static void my_v_gtext (int handle, int x, int y, char *str) {
+            |                                                         ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:122:13: note: previous declaration is here
+        122 | static char str[128];
+            |             ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:181:46: warning: declaration shadows a variable in the global scope [-Wshadow]
+        181 | static void my_vqt_extent (int handle, char *str, INT16 extent[]) {
+            |                                              ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:122:13: note: previous declaration is here
+        122 | static char str[128];
+            |             ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:265:25: warning: declaration shadows a variable in the global scope [-Wshadow]
+        265 | int set_attrib( ATTRIB *attrib) {
+            |                         ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:120:14: note: previous declaration is here
+        120 | static INT16 attrib[10];        /* utilis<82> par vqt_attributes() */
+            |              ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:266:15: warning: declaration shadows a variable in the global scope [-Wshadow]
+        266 |         static INT16 dum;
+            |                      ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:119:23: note: previous declaration is here
+        119 | static INT16 tab[12], dum;      /* utilis<82> par v_plines() */
+            |                       ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:265:5: warning: no previous prototype for function 'set_attrib' [-Wmissing-prototypes]
+        265 | int set_attrib( ATTRIB *attrib) {
+            |     ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:265:1: note: declare 'static' if the function is not intended to be used outside of this translation unit
+        265 | int set_attrib( ATTRIB *attrib) {
+            | ^
+            | static 
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:712:42: warning: declaration shadows a variable in the global scope [-Wshadow]
+        712 | static void set_attrib_xtedinfo( ATTRIB *attrib, int smallsize, TEDINFO *tedinfo, INT16 *hchar, INT16 *hcell) {
+            |                                          ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:120:14: note: previous declaration is here
+        120 | static INT16 attrib[10];        /* utilis<82> par vqt_attributes() */
+            |              ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:731:14: warning: no previous prototype for function 'ub_multiligne' [-Wmissing-prototypes]
+        731 | WORD __CDECL ub_multiligne( PARMBLK *pblk) {
+            |              ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:731:1: note: declare 'static' if the function is not intended to be used outside of this translation unit
+        731 | WORD __CDECL ub_multiligne( PARMBLK *pblk) {
+            | ^
+            | static 
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wportab.h:59:15: note: expanded from macro 'WORD'
+         59 | #define WORD    INT16
+            |                 ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wportab.h:54:16: note: expanded from macro 'INT16'
+         54 | # define INT16 short
+            |                ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:867:14: warning: no previous prototype for function 'ub_boxtext3d' [-Wmissing-prototypes]
+        867 | WORD __CDECL ub_boxtext3d( PARMBLK *pblk) {
+            |              ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:867:1: note: declare 'static' if the function is not intended to be used outside of this translation unit
+        867 | WORD __CDECL ub_boxtext3d( PARMBLK *pblk) {
+            | ^
+            | static 
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wportab.h:59:15: note: expanded from macro 'WORD'
+         59 | #define WORD    INT16
+            |                 ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wportab.h:54:16: note: expanded from macro 'INT16'
+         54 | # define INT16 short
+            |                ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:950:13: warning: variable 'x1' set but not used [-Wunused-but-set-variable]
+        950 |         static int x1,y1,x2,y2;
+            |                    ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:950:16: warning: variable 'y1' set but not used [-Wunused-but-set-variable]
+        950 |         static int x1,y1,x2,y2;
+            |                       ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:950:19: warning: variable 'x2' set but not used [-Wunused-but-set-variable]
+        950 |         static int x1,y1,x2,y2;
+            |                          ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:950:22: warning: variable 'y2' set but not used [-Wunused-but-set-variable]
+        950 |         static int x1,y1,x2,y2;
+            |                             ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:1012:14: warning: no previous prototype for function 'ub_ibox3d' [-Wmissing-prototypes]
+       1012 | WORD __CDECL ub_ibox3d( PARMBLK *pblk) {
+            |              ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:1012:1: note: declare 'static' if the function is not intended to be used outside of this translation unit
+       1012 | WORD __CDECL ub_ibox3d( PARMBLK *pblk) {
+            | ^
+            | static 
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wportab.h:59:15: note: expanded from macro 'WORD'
+         59 | #define WORD    INT16
+            |                 ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wportab.h:54:16: note: expanded from macro 'INT16'
+         54 | # define INT16 short
+            |                ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:1060:19: warning: variable 'x2' set but not used [-Wunused-but-set-variable]
+       1060 |         static int x1,y1,x2,y2;
+            |                          ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:1060:22: warning: variable 'y2' set but not used [-Wunused-but-set-variable]
+       1060 |         static int x1,y1,x2,y2;
+            |                             ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:1057:14: warning: no previous prototype for function 'ub_but3d' [-Wmissing-prototypes]
+       1057 | WORD __CDECL ub_but3d( PARMBLK *pblk) {
+            |              ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:1057:1: note: declare 'static' if the function is not intended to be used outside of this translation unit
+       1057 | WORD __CDECL ub_but3d( PARMBLK *pblk) {
+            | ^
+            | static 
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wportab.h:59:15: note: expanded from macro 'WORD'
+         59 | #define WORD    INT16
+            |                 ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wportab.h:54:16: note: expanded from macro 'INT16'
+         54 | # define INT16 short
+            |                ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:1127:14: warning: no previous prototype for function 'ub_button' [-Wmissing-prototypes]
+       1127 | WORD __CDECL ub_button( PARMBLK *pblk) {
+            |              ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:1127:1: note: declare 'static' if the function is not intended to be used outside of this translation unit
+       1127 | WORD __CDECL ub_button( PARMBLK *pblk) {
+            | ^
+            | static 
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wportab.h:59:15: note: expanded from macro 'WORD'
+         59 | #define WORD    INT16
+            |                 ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wportab.h:54:16: note: expanded from macro 'INT16'
+         54 | # define INT16 short
+            |                ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:1212:14: warning: no previous prototype for function 'ub_onglet' [-Wmissing-prototypes]
+       1212 | WORD __CDECL ub_onglet( PARMBLK *pblk) {
+            |              ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:1212:1: note: declare 'static' if the function is not intended to be used outside of this translation unit
+       1212 | WORD __CDECL ub_onglet( PARMBLK *pblk) {
+            | ^
+            | static 
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wportab.h:59:15: note: expanded from macro 'WORD'
+         59 | #define WORD    INT16
+            |                 ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wportab.h:54:16: note: expanded from macro 'INT16'
+         54 | # define INT16 short
+            |                ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:1312:14: warning: no previous prototype for function 'ub_boxcircle' [-Wmissing-prototypes]
+       1312 | WORD __CDECL ub_boxcircle( PARMBLK *pblk) {
+            |              ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:1312:1: note: declare 'static' if the function is not intended to be used outside of this translation unit
+       1312 | WORD __CDECL ub_boxcircle( PARMBLK *pblk) {
+            | ^
+            | static 
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wportab.h:59:15: note: expanded from macro 'WORD'
+         59 | #define WORD    INT16
+            |                 ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wportab.h:54:16: note: expanded from macro 'INT16'
+         54 | # define INT16 short
+            |                ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:1337:14: warning: no previous prototype for function 'ub_but3D' [-Wmissing-prototypes]
+       1337 | WORD __CDECL ub_but3D( PARMBLK *pblk) {
+            |              ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:1337:1: note: declare 'static' if the function is not intended to be used outside of this translation unit
+       1337 | WORD __CDECL ub_but3D( PARMBLK *pblk) {
+            | ^
+            | static 
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wportab.h:59:15: note: expanded from macro 'WORD'
+         59 | #define WORD    INT16
+            |                 ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wportab.h:54:16: note: expanded from macro 'INT16'
+         54 | # define INT16 short
+            |                ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:1355:14: warning: no previous prototype for function 'ub_boxtitle' [-Wmissing-prototypes]
+       1355 | WORD __CDECL ub_boxtitle(PARMBLK* pblk) {
+            |              ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:1355:1: note: declare 'static' if the function is not intended to be used outside of this translation unit
+       1355 | WORD __CDECL ub_boxtitle(PARMBLK* pblk) {
+            | ^
+            | static 
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wportab.h:59:15: note: expanded from macro 'WORD'
+         59 | #define WORD    INT16
+            |                 ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wportab.h:54:16: note: expanded from macro 'INT16'
+         54 | # define INT16 short
+            |                ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:1401:14: warning: no previous prototype for function 'ub_ulinetext' [-Wmissing-prototypes]
+       1401 | WORD __CDECL ub_ulinetext( PARMBLK *pblk) {
+            |              ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:1401:1: note: declare 'static' if the function is not intended to be used outside of this translation unit
+       1401 | WORD __CDECL ub_ulinetext( PARMBLK *pblk) {
+            | ^
+            | static 
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wportab.h:59:15: note: expanded from macro 'WORD'
+         59 | #define WORD    INT16
+            |                 ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wportab.h:54:16: note: expanded from macro 'INT16'
+         54 | # define INT16 short
+            |                ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:1447:14: warning: no previous prototype for function 'ub_popuptext' [-Wmissing-prototypes]
+       1447 | WORD __CDECL ub_popuptext( PARMBLK *pblk) {
+            |              ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:1447:1: note: declare 'static' if the function is not intended to be used outside of this translation unit
+       1447 | WORD __CDECL ub_popuptext( PARMBLK *pblk) {
+            | ^
+            | static 
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wportab.h:59:15: note: expanded from macro 'WORD'
+         59 | #define WORD    INT16
+            |                 ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wportab.h:54:16: note: expanded from macro 'INT16'
+         54 | # define INT16 short
+            |                ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:1528:15: warning: declaration shadows a variable in the global scope [-Wshadow]
+       1528 |         static GRECT r1, r2;
+            |                      ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:123:14: note: previous declaration is here
+        123 | static GRECT r1, r2;            /* pour user_draw */
+            |              ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:1528:19: warning: declaration shadows a variable in the global scope [-Wshadow]
+       1528 |         static GRECT r1, r2;
+            |                          ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:123:18: note: previous declaration is here
+        123 | static GRECT r1, r2;            /* pour user_draw */
+            |                  ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:1521:14: warning: no previous prototype for function 'ub_mntitle' [-Wmissing-prototypes]
+       1521 | WORD __CDECL ub_mntitle( PARMBLK *pblk) {
+            |              ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:1521:1: note: declare 'static' if the function is not intended to be used outside of this translation unit
+       1521 | WORD __CDECL ub_mntitle( PARMBLK *pblk) {
+            | ^
+            | static 
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wportab.h:59:15: note: expanded from macro 'WORD'
+         59 | #define WORD    INT16
+            |                 ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wportab.h:54:16: note: expanded from macro 'INT16'
+         54 | # define INT16 short
+            |                ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:1719:14: warning: no previous prototype for function 'ub_dialmover' [-Wmissing-prototypes]
+       1719 | WORD __CDECL ub_dialmover( PARMBLK* pblk) {
+            |              ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:1719:1: note: declare 'static' if the function is not intended to be used outside of this translation unit
+       1719 | WORD __CDECL ub_dialmover( PARMBLK* pblk) {
+            | ^
+            | static 
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wportab.h:59:15: note: expanded from macro 'WORD'
+         59 | #define WORD    INT16
+            |                 ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wportab.h:54:16: note: expanded from macro 'INT16'
+         54 | # define INT16 short
+            |                ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:1784:14: warning: no previous prototype for function 'ub_editable' [-Wmissing-prototypes]
+       1784 | WORD __CDECL ub_editable( PARMBLK *pblk) {
+            |              ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:1784:1: note: declare 'static' if the function is not intended to be used outside of this translation unit
+       1784 | WORD __CDECL ub_editable( PARMBLK *pblk) {
+            | ^
+            | static 
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wportab.h:59:15: note: expanded from macro 'WORD'
+         59 | #define WORD    INT16
+            |                 ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/wportab.h:54:16: note: expanded from macro 'INT16'
+         54 | # define INT16 short
+            |                ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/userdef.c:249:12: warning: unused function 'let_them_fly_color' [-Wunused-function]
+        249 | static int let_them_fly_color( void) {
+            |            ^~~~~~~~~~~~~~~~~~
+      30 warnings generated.
+  warnings in src/cicon.c:
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/cicon.c:228:31: warning: incompatible function pointer types assigning to 'short (*)(PARMBLK *)' (aka 'short (*)(struct parm_block *)') from 'int (PARMBLK *)' (aka 'int (struct parm_block *)') [-Wincompatible-function-pointer-types]
+        228 |         fix->obblk[nub].ublk.ub_code = xdraw_cicon;
+            |                                      ^ ~~~~~~~~~~~
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/cicon.c:300:14: warning: comparison of array 'fix->farbtbl2' not equal to a null pointer is always true [-Wtautological-pointer-compare]
+        300 |                                 if (fix->farbtbl2 != NULL && xpixelbytes)
+            |                                     ~~~~~^~~~~~~~    ~~~~
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/cicon.c:320:14: warning: comparison of array 'fix->farbtbl2' not equal to a null pointer is always true [-Wtautological-pointer-compare]
+        320 |                 {       if (fix->farbtbl2 != NULL && xpixelbytes)
+            |                             ~~~~~^~~~~~~~    ~~~~
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/cicon.c:583:13: warning: a function definition without a prototype is deprecated in all versions of C and is not supported in C23 [-Wdeprecated-non-prototype]
+        583 | static void std_to_byte (col_data, len, old_planes, farbtbl2, s)
+            |             ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/cicon.c:586:7: warning: promoted type 'int' of K&R function parameter is not compatible with the parameter type 'short' declared in a previous prototype [-Wknr-promoted-parameter]
+        586 | WORD  old_planes;
+            |       ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/cicon.c:112:60: note: previous declaration is here
+        112 | static void std_to_byte  ( UWORD *col_data, LONG len, WORD old_planes, ULONG *farbtbl2, MFDB *s);
+            |                                                            ^
+      5 warnings generated.
+  warnings in src/vqt_xname2.c:
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/vqt_xname2.c:45:4: warning: call to undeclared function 'strcpy'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+         45 |                         strcpy( name, listfontid[index].name);
+            |                         ^
+      1 warning generated.
+  warnings in src/font_name2id.c:
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/font_name2id.c:40:8: warning: call to undeclared function 'strcmp'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+         40 |                 if( !strcmp(buf, name))
+            |                      ^
+      1 warning generated.
+  warnings in src/bubble_call.c:
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/bubble_call.c:56:3: warning: call to undeclared function 'strcpy'; ISO C99 and later do not support implicit function declarations [-Wimplicit-function-declaration]
+         56 |                 strcpy( app.pipe, help);
+            |                 ^
+      1 warning generated.
+  warnings in src/av_init.c:
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/av_init.c:78:8: warning: declaration shadows a local variable [-Wshadow]
+         78 |                 char name[9];
+            |                      ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/av_init.c:62:11: note: previous declaration is here
+         62 |         char *p, name[9];
+            |                  ^
+      1 warning generated.
+  warnings in src/popup.c:
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/popup.c:89:32: warning: declaration shadows a variable in the global scope [-Wshadow]
+         89 |                                                   int extype, XUSERBLK * uo) {
+            |                                                                          ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/popup.c:80:17: note: previous declaration is here
+         80 | static XUSERBLK uo[4];
+            |                 ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/popup.c:90:23: warning: incompatible pointer to integer conversion assigning to 'long' from 'W_PARM *' [-Wint-conversion]
+         90 |         uo -> user . ub_parm = & ( uo -> w_parm );
+            |                              ^ ~~~~~~~~~~~~~~~~~~
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/popup.c:98:60: warning: declaration shadows a variable in the global scope [-Wshadow]
+         98 | static void uo_set_box( OBJECT *tree, int index, XUSERBLK *uo) {
+            |                                                            ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/popup.c:80:17: note: previous declaration is here
+         80 | static XUSERBLK uo[4];
+            |                 ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/popup.c:104:64: warning: declaration shadows a variable in the global scope [-Wshadow]
+        104 | static void uo_set_boxchar( OBJECT *tree, int index, XUSERBLK *uo) {
+            |                                                                ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/popup.c:80:17: note: previous declaration is here
+         80 | static XUSERBLK uo[4];
+            |                 ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/popup.c:655:11: warning: declaration shadows a local variable [-Wshadow]
+        655 |                                 INT16 x, y;
+            |                                       ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/popup.c:327:8: note: previous declaration is here
+        327 |         INT16 x = _x ;
+            |               ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/popup.c:655:14: warning: declaration shadows a local variable [-Wshadow]
+        655 |                                 INT16 x, y;
+            |                                          ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/popup.c:328:8: note: previous declaration is here
+        328 |         INT16 y = _y ;
+            |               ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/popup.c:657:13: warning: declaration shadows a local variable [-Wshadow]
+        657 |                                 EVNTvar save;
+            |                                         ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/popup.c:330:10: note: previous declaration is here
+        330 |         EVNTvar save;
+            |                 ^
+      7 warnings generated.
+  warnings in src/vq_xaaes.c:
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/vq_xaaes.c:35:5: warning: no previous prototype for function 'vq_xaaes' [-Wmissing-prototypes]
+         35 | int vq_xaaes( void) {
+            |     ^
+      /Volumes/Daten/Development/PiRusTOS/sdk/windom/windom-1.21.3/src/vq_xaaes.c:35:1: note: declare 'static' if the function is not intended to be used outside of this translation unit
+         35 | int vq_xaaes( void) {
+            | ^
+            | static 
+      1 warning generated.
+compiled OK=198  FAILED=0  (files with warnings: 16)
+
+archived -> /Volumes/Daten/Development/PiRusTOS/sdk/windom/libwindom1.a (550668 bytes)
+defined symbols: 305  external references: 151 (build/external.txt: libc/libm/other-library symbols the archive needs)

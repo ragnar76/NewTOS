@@ -85,12 +85,11 @@ MINT="$LIBC/mintlib/include"
 CLANG="${CLANG:-clang}"
 command -v "$CLANG" >/dev/null 2>&1 || { echo "error: clang not found" >&2; exit 1; }
 RES="$($CLANG -print-resource-dir)/include"
-. "$SDK/toolchain.sh"   # rustc asked from inside sdk/, whatever the cwd (SDK01 I)
-BIN="$(newtos_rust_bindir)"
-AR="${AR:-$BIN/llvm-ar}"
-LLD="${LLD:-$BIN/rust-lld}"
-READOBJ="$BIN/llvm-readobj"
-OBJDUMP="$BIN/llvm-objdump"
+. "$SDK/toolchain.sh"   # LLVM tools: PATH / LLVM packages first, pinned Rust sysroot as fallback (SDK01 I, K)
+AR="${AR:-$(newtos_tool llvm-ar)}"
+LLD="${LLD:-$(newtos_tool ld.lld)}"
+READOBJ="$(newtos_tool llvm-readobj)"
+OBJDUMP="$(newtos_tool llvm-objdump)"
 for t in "$AR" "$LLD"; do
     [ -x "$t" ] || { echo "error: missing LLVM tool: $t" >&2; exit 1; }
 done
@@ -166,7 +165,7 @@ fi
 # libc's memset/_ctype/__assert_fail); wrap in a group so any residual
 # back-reference between the archives still resolves.
 rm -f "$OUT"
-"$LLD" -flavor gnu -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 \
+newtos_lld -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 \
     --build-id=none --why-extract="$BUILD/why.txt" \
     "$BUILD/crt0.o" "$OBJ"/*.o \
     --start-group "$CF/cflib.a" "$GEM/gemlib.a" "$LIBM/libm.a" "$LIBC/libc.a" --end-group \
@@ -181,7 +180,7 @@ if [ $lr -eq 0 ]; then
     # Count real undefined references. (llvm-nm -u excludes the mandatory ELF
     # null symbol at index 0, which readobj would otherwise report as
     # "Undefined".)
-    NM="$BIN/llvm-nm"
+    NM="$(newtos_tool llvm-nm)"
     u=$("$NM" -u "$OUT" 2>/dev/null | grep -c . || true)
     echo "undefined symbols in the final image (goal 0): $u"
 

@@ -22,7 +22,13 @@ tried.
 Throughout, `$SDK` is the absolute path of `sdk/`, `$RES` is
 `$(clang -print-resource-dir)/include`, `$BIN` is the Rust sysroot's
 LLVM `bin/` directory and `$MINT` is `$SDK/libc/mintlib/include` — exactly the
-variables the build scripts define (`sdk/apps/gemtest/build-gemtest.sh:25-54`).
+variables the build scripts defined when these transcripts were recorded
+(`sdk/apps/gemtest/build-gemtest.sh:25-54`). *Since TASK/SDK01 K* the scripts
+take `ld.lld` and `llvm-*` from the LLVM packages first and the Rust sysroot
+only as fallback ([02](02-prerequisites.md#linker-and-binutils-llvms-from-the-packages-or-from-rust));
+with the packages, write `ld.lld` where the transcripts below say
+`"$BIN/rust-lld" -flavor gnu` or `rust-lld -flavor gnu` — same arguments,
+no `-flavor`.
 
 ## Step 1 — Hello World, freestanding (`sdk/build.sh`)
 

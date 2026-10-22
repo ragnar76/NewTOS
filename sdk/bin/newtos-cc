@@ -15,12 +15,15 @@
 #            mintlib, the libm adapters, clang's freestanding headers last)
 #   crt0     sdk/libc/crt0.S (libc programs), assembled with
 #            -DNEWTOS_PRGFLAGS=<value> when -prgflags / -prot is given
-#   link     rust-lld -flavor gnu (or ld.lld) -T sdk/newtos.ld -pie
+#   link     ld.lld (or rust-lld -flavor gnu) -T sdk/newtos.ld -pie
 #                  --no-dynamic-linker -z text -z max-page-size=0x1000
 #                  --build-id=none crt0.o <objects>
 #                  --start-group <archives> <compiler-rt builtins> --end-group
 #            (the builtins archive sdk/compiler-rt/libclang_rt.builtins.a
-#            last and always, unless -bare -- TASK/SDK01 E)
+#            last and always, unless -bare -- TASK/SDK01 E); the linker
+#            comes from sdk/toolchain.sh: ld.lld from PATH / the LLVM
+#            packages first, the pinned Rust nightly's rust-lld only as
+#            fallback (TASK/SDK01 K)
 #
 # The output ELF is the program itself; .NCP/.NTP/.NAP/.NAC/.NLD only name
 # how the desktop starts it (docs/sdk/01-overview.md).
@@ -77,13 +80,17 @@ program options:
   -o FILE       output (default: first source's name + kind extension)
   -c / -S / -E  compile / assembly / preprocess only, as cc does
   -v            print every command before it runs
+  --toolchain   print which clang, linker and LLVM tools would be used, exit
   -Wl,a,b       pass a,b to the linker
   any other -option goes to clang when compiling (-O*, -g, -W*, -f*, -D, -I,
   -U, -include, -isystem, -std=, -MMD, -MF ...); .o/.a files go to the link.
 
-environment: CLANG (default clang), LLD (default: the Rust toolchain's
-rust-lld, else ld.lld / rust-lld from PATH), NEWTOS_SDK (default: the sdk/
-directory this script lives in).
+environment: CLANG (default clang); LLD or NEWTOS_LLD (the linker; default:
+ld.lld from NEWTOS_LLVM_BIN, PATH, clang's directory, Homebrew's llvm/lld,
+/usr/lib/llvm-*/bin, else the pinned Rust nightly's rust-lld);
+NEWTOS_TOOLCHAIN (auto | llvm = never Rust | rust = Rust sysroot only);
+NEWTOS_SDK (default: the sdk/ directory this script lives in).
+Details: sdk/toolchain.sh, docs/sdk/02-prerequisites.md.
 EOF
 }
 
@@ -97,7 +104,7 @@ run() {                         # run <command string>
 }
 
 # --- arguments ----------------------------------------------------------------
-KIND=""; BARE=0; MODE=link; OUT=""
+KIND=""; BARE=0; MODE=link; OUT=""; PRINT_TC=0
 PRGFLAGS_V=""; PROT=""
 UCFLAGS=""                      # user compile flags (quoted words)
 ULDFLAGS=""                     # user linker flags (quoted words)
@@ -134,6 +141,7 @@ while [ $# -gt 0 ]; do
   a=$1; shift
   case $a in
     -h|--help)  usage; exit 0 ;;
+    --toolchain) PRINT_TC=1 ;;
     -ncp|-ntp|-nap|-nac|-nld) setkind "${a#-}" ;;
     -bare)      BARE=1 ;;
     -prgflags)  needarg $(($# + 1)) "$a"; PRGFLAGS_V=$1; shift ;;
@@ -166,7 +174,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-[ "$NSRC" -gt 0 ] || [ -n "$LINKIN" ] || { usage >&2; exit 1; }
+[ "$NSRC" -gt 0 ] || [ -n "$LINKIN" ] || [ "$PRINT_TC" = 1 ] || { usage >&2; exit 1; }
 
 # kind from the output name when not given
 if [ -z "$KIND" ] && [ "$MODE" = link ] && [ -n "$OUT" ]; then
@@ -228,22 +236,31 @@ command -v "$CLANG" >/dev/null 2>&1 || die "clang not found (install LLVM clang,
 RES="$("$CLANG" -print-resource-dir 2>/dev/null)/include"
 [ -f "$RES/stddef.h" ] || die "clang's freestanding headers not found ($RES)"
 
+# ld.lld / llvm-* resolution shared with the build scripts (TASK/SDK01 K).
+# LLD keeps its old meaning (an explicit linker); NEWTOS_LLD is the same.
+NEWTOS_TC_SDK=$SDK
+. "$SDK/toolchain.sh" || die "cannot read $SDK/toolchain.sh"
 find_lld() {
   if [ -n "${LLD:-}" ]; then printf '%s' "$LLD"; return 0; fi
-  # asked from inside the SDK, so a rust-toolchain.toml above it (the
-  # repository's pinned nightly) is the one used, whatever the caller's cwd
-  if command -v rustc >/dev/null 2>&1; then
-    _sr=$(cd "$SDK" && rustc --print sysroot 2>/dev/null)
-    _host=$(cd "$SDK" && rustc -vV 2>/dev/null | sed -n 's/^host: //p')
-    if [ -n "$_sr" ] && [ -x "$_sr/lib/rustlib/$_host/bin/rust-lld" ]; then
-      printf '%s' "$_sr/lib/rustlib/$_host/bin/rust-lld"; return 0
-    fi
-  fi
-  for _c in ld.lld rust-lld; do
-    if command -v "$_c" >/dev/null 2>&1; then command -v "$_c"; return 0; fi
-  done
-  return 1
+  newtos_tool ld.lld
 }
+
+if [ "$PRINT_TC" = 1 ]; then
+  printf 'clang         %s (%s)\n' "$(command -v "$CLANG")" "$("$CLANG" --version 2>/dev/null | head -1)"
+  _rc=0
+  if _l=$(find_lld); then
+    printf 'linker        %s%s (%s)\n' "$_l" \
+      "$(_f=$(newtos_lld_flavor "$_l"); [ -n "$_f" ] && printf ' %s' "$_f")" \
+      "$("$_l" $(newtos_lld_flavor "$_l") --version 2>/dev/null | head -1)"
+  else
+    printf 'linker        (not found)\n'; _rc=1
+  fi
+  for _t in llvm-ar llvm-nm llvm-readobj llvm-objdump; do
+    _p=$(newtos_tool "$_t" 2>/dev/null) && printf '%-13s %s\n' "$_t" "$_p" || printf '%-13s (not found)\n' "$_t"
+  done
+  printf 'mode          NEWTOS_TOOLCHAIN=%s\n' "${NEWTOS_TOOLCHAIN:-auto}"
+  exit $_rc
+fi
 
 # --- library table: archive, header dirs, build script ----------------------------
 # first directory matching <glob> that contains <marker>
@@ -361,11 +378,8 @@ if [ "$MODE" != link ]; then
 fi
 
 # --- link mode ----------------------------------------------------------------------------
-LLDP=$(find_lld) || die "no ELF linker found: install the Rust toolchain (rust-lld) or LLVM lld (ld.lld), or set LLD"
-case $(basename -- "$LLDP") in
-  rust-lld*) LLDCMD="$(quote "$LLDP") -flavor gnu" ;;
-  *)         LLDCMD="$(quote "$LLDP")" ;;
-esac
+LLDP=$(find_lld) || die "no ELF linker found (see above)"
+LLDCMD="$(quote "$LLDP") $(newtos_lld_flavor "$LLDP")"
 
 ARCHIVES=""
 if [ "$BARE" = 0 ]; then

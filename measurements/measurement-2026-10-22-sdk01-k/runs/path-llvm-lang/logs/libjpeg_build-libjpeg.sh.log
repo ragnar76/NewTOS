@@ -1,0 +1,8 @@
+  overlay: jconfig.h
+clang : Apple clang version 21.0.0 (clang-2100.3.34.2)
+ar    : /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/651de586-7dd7-487b-9e92-c8525c58f508/scratchpad/k/fakellvm/llvm-ar
+
+compiled OK=46  FAILED=0  (files with warnings: 0)
+
+archived -> /Volumes/Daten/Development/PiRusTOS/sdk/libjpeg/libjpeg.a (313652 bytes)
+defined symbols: 169  external references: 14 (build/external.txt: libc/libm/other-library symbols the archive needs)

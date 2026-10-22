@@ -1,0 +1,7 @@
+clang : Apple clang version 21.0.0 (clang-2100.3.34.2)
+ar    : /Users/ingouhlemann/.rustup/toolchains/nightly-2026-04-15-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/llvm-ar
+
+compiled OK=15  FAILED=0  (files with warnings: 0)
+
+archived -> /Volumes/Daten/Development/PiRusTOS/sdk/zlib/libz.a (119702 bytes)
+defined symbols: 113  external references: 17 (build/external.txt: libc/libm/other-library symbols the archive needs)

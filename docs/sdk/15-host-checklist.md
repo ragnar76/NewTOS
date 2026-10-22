@@ -53,10 +53,10 @@ Simplest: copy the whole repo folder from the Mac mini (rsync without
 | B1 | Xcode Command Line Tools: `clang`, `cc`, `make`, `patch` | `clang --version; make --version \| head -1; patch --version \| head -1` | Apple clang 21.0.0; GNU Make 3.81 | every C build |
 | B2 | clang resource headers | `ls "$(clang -print-resource-dir)/include/stdarg.h"` | file exists | freestanding headers |
 | B3 | rustup | `rustup --version` | any | Rust toolchain |
-| B4 | pinned nightly from `rust-toolchain.toml` | `rustc -vV` (run **inside** the repo) | `rustc 1.97.0-nightly (a5c825cd8 2026-04-14)`, `LLVM version: 22.1.2`, `host: aarch64-apple-darwin` | kernel + linker for apps |
-| B5 | toolchain components | `rustup component list --installed` (inside repo) | includes `rust-src`, `rustfmt`, `clippy`, `llvm-tools` | `rust-lld`, `llvm-ar` for the SDK |
+| B4 | pinned nightly from `rust-toolchain.toml` | `rustc -vV` (run **inside** the repo) | `rustc 1.97.0-nightly (a5c825cd8 2026-04-14)`, `LLVM version: 22.1.2`, `host: aarch64-apple-darwin` | kernel; linker for apps only as fallback (SDK01 K) |
+| B5 | toolchain components | `rustup component list --installed` (inside repo) | includes `rust-src`, `rustfmt`, `clippy`, `llvm-tools` | `rust-lld`, `llvm-ar` for the SDK when B17 is absent |
 | B6 | target | `rustup target list --installed` (inside repo) | includes `aarch64-unknown-none-softfloat` | kernel |
-| B7 | `rust-lld` in the sysroot | `ls "$(rustc --print sysroot)/lib/rustlib/aarch64-apple-darwin/bin/"` | contains `rust-lld`, `llvm-ar`, `llvm-nm`, `llvm-objdump`, `llvm-readobj` | linking every app |
+| B7 | `rust-lld` in the sysroot | `ls "$(rustc --print sysroot)/lib/rustlib/aarch64-apple-darwin/bin/"` | contains `rust-lld`, `llvm-ar`, `llvm-nm`, `llvm-objdump`, `llvm-readobj` | linking apps when B17 is absent |
 | B8 | `python3` | `python3 --version` | 3.14.x | `mkrsc.py`, sample generators, `make-sd-image.sh` |
 | B9 | Pillow | `python3 -c "import PIL; print(PIL.__version__)"` | 12.3.0 | `sdk/zview/samples/gen-samples.py`, `sdk/examples/libtest/gen-data.py` |
 | B10 | `xz` | `xz --version \| head -1` | XZ Utils 5.8.3 | unpacking the pinned `.tar.xz` sources |
@@ -65,7 +65,8 @@ Simplest: copy the whole repo folder from the Mac mini (rsync without
 | B13 | macOS disk tools | `which hdiutil diskutil newfs_msdos dot_clean mdutil` | all found | `tools/make-sd-image.sh` (macOS only) |
 | B14 | m68k cross GCC (**optional**) | `/opt/cross-mint/bin/m68k-atari-mint-gcc --version \| head -1` | `m68k-atari-mint-gcc (MiNT 20230908) 7.5.0` | only `build-doom-m68k.sh`, `build-gemlib-m68k.sh` (Doom for a real Atari) |
 | B15 | Hatari (**optional**) | `which hatari` | found | TT/Falcon reference runs (`tools/hatari-qed.sh`) |
-| B16 | Homebrew (if used to install B10/B12) | `brew --version` | any | installing missing tools |
+| B16 | Homebrew (if used to install B10/B12/B17) | `brew --version` | any | installing missing tools |
+| B17 | LLVM `lld` + `llvm` (**optional** while B4/B5 exist) | `sdk/bin/newtos-cc --toolchain` | `linker … ld.lld`, `llvm-ar …` paths outside the Rust sysroot; on the reference host (no Homebrew llvm/lld) all point into the Rust sysroot | linking/archiving apps without Rust (TASK/SDK01 K); `brew install llvm lld` |
 
 ## C. Proof builds (run in this order; each must succeed)
 
@@ -86,7 +87,7 @@ move it out afterwards (CLAUDE.md: nothing new in the root).
 
 ## D. Report format
 
-1. Table of A1–A11 and B1–B16 with found value and verdict.
+1. Table of A1–A11 and B1–B17 with found value and verdict.
 2. Results of section C, one line each.
 3. List of what is MISSING, split into "copy from the Mac mini" (section A)
    and "install" (section B, with the install command the owner would run,

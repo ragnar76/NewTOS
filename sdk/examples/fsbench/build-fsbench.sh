@@ -27,9 +27,9 @@ lib_ensure libc || exit 1
 MINT="$SDK/libc/mintlib/include"
 CLANG="${CLANG:-clang}"
 RES="$($CLANG -print-resource-dir)/include"
-. "$SDK/toolchain.sh"   # rustc asked from inside sdk/, whatever the cwd (SDK01 I)
-BIN="$(newtos_rust_bindir)"
-LLD="${LLD:-$BIN/rust-lld}"
+. "$SDK/toolchain.sh"   # LLVM tools: PATH / LLVM packages first, pinned Rust sysroot as fallback (SDK01 I, K)
+LLD="${LLD:-$(newtos_tool ld.lld)}"
+NM="$(newtos_tool llvm-nm)"
 
 CFLAGS=(-target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2
         -fPIE -fno-builtin -nostdinc -funsigned-char -D__NEWTOS__
@@ -39,8 +39,8 @@ CFLAGS=(-target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2
     -c "$SDK/examples/fsbench.c" -o "$OBJ/fsbench.o"
 "$CLANG" -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 -fPIE -fno-builtin -nostdinc \
     -I"$SDK/include" -I"$MINT" -c "$SDK/libc/crt0.S" -o "$OBJ/crt0.o"
-"$LLD" -flavor gnu -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 \
+newtos_lld -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 \
     --build-id=none "$OBJ/crt0.o" "$OBJ/fsbench.o" "$SDK/libc/libc.a" -o "$OUT"
 
 echo "FSBENCH.NCP -> $OUT ($(wc -c < "$OUT" | tr -d ' ') bytes)"
-echo "  undefined symbols (goal 0): $("$BIN/llvm-nm" -u "$OUT" 2>/dev/null | grep -c . || true)"
+echo "  undefined symbols (goal 0): $("$NM" -u "$OUT" 2>/dev/null | grep -c . || true)"

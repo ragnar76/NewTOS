@@ -127,11 +127,10 @@ vl_extract "$ZD/z-tools-$VER.tar.xz" "$SUMS" "$TOP" "z-tools-$VER" "${ZVIEW_REFR
 CLANG="${CLANG:-clang}"
 command -v "$CLANG" >/dev/null 2>&1 || { echo "error: clang not found" >&2; exit 1; }
 RES="$($CLANG -print-resource-dir)/include"
-. "$SDK/toolchain.sh"   # rustc asked from inside sdk/, whatever the cwd (SDK01 I)
-BIN="$(newtos_rust_bindir)"
-LLD="${LLD:-$BIN/rust-lld}"
-NM="$BIN/llvm-nm"
-READOBJ="$BIN/llvm-readobj"
+. "$SDK/toolchain.sh"   # LLVM tools: PATH / LLVM packages first, pinned Rust sysroot as fallback (SDK01 I, K)
+LLD="${LLD:-$(newtos_tool ld.lld)}"
+NM="$(newtos_tool llvm-nm)"
+READOBJ="$(newtos_tool llvm-readobj)"
 for t in "$LLD" "$NM" "$READOBJ"; do
   [ -x "$t" ] || { echo "error: missing LLVM tool: $t" >&2; exit 1; }
 done
@@ -205,7 +204,7 @@ zv_link() { # zv_link <module|program> <out> <map> <archives...> -- <objs...>
   local arch=() objs=()
   while [ "$1" != "--" ]; do arch+=("$1"); shift; done; shift
   objs=("$@")
-  if ! "$LLD" -flavor gnu -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 \
+  if ! newtos_lld -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 \
       --build-id=none "$OBJ/crt0.o" "${objs[@]}" --start-group "${arch[@]}" --end-group \
       -Map="$map" -o "$out" 2>"$out.err"; then
     echo "error: link of $(basename "$out") failed:" >&2; sed 's/^/    /' "$out.err" >&2; exit 1

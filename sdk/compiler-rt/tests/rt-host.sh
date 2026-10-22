@@ -40,10 +40,10 @@ MINT="$SDK/libc/mintlib/include"
 for f in "$SDK/compiler-rt/build/srcs.txt" "$SDK/libm/build/srcs.txt" "$SDK/libm/build/srcs-ld.txt" "$CRT_TOP/lib/builtins" "$OL_TOP/src" "$MINT"; do
   [ -e "$f" ] || { echo "skip: $f missing (run the library's build script)"; exit 77; }
 done
-. "$SDK/toolchain.sh"
-BIN="$(newtos_rust_bindir)"
-NM="$BIN/llvm-nm"; AR="$BIN/llvm-ar"; LLD="$BIN/rust-lld"
-for t in "$NM" "$AR" "$LLD"; do [ -x "$t" ] || { echo "skip: $t missing"; exit 77; }; done
+. "$SDK/toolchain.sh"   # LLVM tools: PATH / LLVM packages first, pinned Rust sysroot as fallback (SDK01 I, K)
+NM="$(newtos_tool llvm-nm)"; AR="$(newtos_tool llvm-ar)"; LLD="$(newtos_tool ld.lld)"
+OBJDUMP="$(newtos_tool llvm-objdump)"
+for t in "$NM" "$AR" "$LLD" "$OBJDUMP"; do [ -x "$t" ] || { echo "skip: $t missing"; exit 77; }; done
 RES="$("$CLANG" -print-resource-dir)/include"
 
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/rt-host.XXXXXX") || exit 1
@@ -107,7 +107,7 @@ done < "$SDK/libm/build/srcs.txt"
 n_ship=$(( $(ls "$WORK/ship/crt" | grep -c '\.o$') + $(ls "$WORK/ship/libm" | grep -c '\.o$') ))
 echo "2  rebuild parity: $nsame of $n_ship shipped members byte-identical, $ndiff differ"
 [ "$ndiff" -eq 0 ] && [ "$nsame" -eq "$n_ship" ] || fail=1
-n18=$("$BIN/llvm-objdump" -d "$WORK"/x18/crt/*.o "$WORK"/x18/libm/*.o | grep -E '^ +[0-9a-f]+:' | grep -cE '\b[xw]18\b')
+n18=$("$OBJDUMP" -d "$WORK"/x18/crt/*.o "$WORK"/x18/libm/*.o | grep -E '^ +[0-9a-f]+:' | grep -cE '\b[xw]18\b')
 [ "$n18" -eq 0 ] || { echo "FAIL: the -ffixed-x18 rebuild still uses x18 ($n18 instructions)"; fail=1; }
 "$AR" cr "$WORK/x18-builtins.a" "$WORK"/x18/crt/*.o && "$AR" cr "$WORK/x18-libm.a" "$WORK"/x18/libm/*.o || exit 1
 ar cr "$WORK/olh.a" "$WORK"/olh/*.o 2>/dev/null || "$AR" cr "$WORK/olh.a" "$WORK"/olh/*.o || exit 1
@@ -119,10 +119,10 @@ grep -q 'ALIGN(0x4000)' "$WORK/host.ld" || { echo "FAIL: could not derive host.l
 "$SDK/bin/newtos-cc" -c "$SDK/libc/crt0.S" -o "$WORK/crt0.o" || exit 1
 # libc.a: the libm members' memset/_ctype/__assert_fail and crt0's runtime;
 # none of it runs on the host. Its __extenddftf2 has no x18 (checked below).
-"$LLD" -flavor gnu -T "$WORK/host.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 --build-id=none \
+newtos_lld -T "$WORK/host.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 --build-id=none \
   "$WORK/crt0.o" "$WORK/rt-elf.o" --start-group "$WORK/x18-libm.a" "$SDK/libc/libc.a" "$WORK/x18-builtins.a" --end-group \
   -o "$WORK/RT-x18.elf" || { echo "FAIL: x18 test program does not link"; exit 1; }
-n18s=$("$BIN/llvm-objdump" -d "$WORK/RT-x18.elf" --disassemble-symbols=__extenddftf2 | grep -E '^ +[0-9a-f]+:' | grep -cE '\b[xw]18\b')
+n18s=$("$OBJDUMP" -d "$WORK/RT-x18.elf" --disassemble-symbols=__extenddftf2 | grep -E '^ +[0-9a-f]+:' | grep -cE '\b[xw]18\b')
 [ "$n18s" -eq 0 ] || { echo "FAIL: libc's __extenddftf2 uses x18"; fail=1; }
 echo "3  -ffixed-x18 rebuild: 0 x18 instructions expected, found $n18; test program linked with host.ld"
 

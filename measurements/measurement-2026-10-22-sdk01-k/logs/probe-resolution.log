@@ -1,0 +1,173 @@
+=== 1 default env (rustup on PATH, no LLVM packages): Rust fallback
+clang         /usr/bin/clang (Apple clang version 21.0.0 (clang-2100.3.34.2))
+linker        /Users/ingouhlemann/.rustup/toolchains/nightly-2026-04-15-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/rust-lld -flavor gnu (LLD 22.1.2 (https://github.com/rust-lang/llvm-project.git 1cb4e3833c1919c2e6fb579a23ac0e2b22587b7e) (compatible with GNU linkers))
+llvm-ar       /Users/ingouhlemann/.rustup/toolchains/nightly-2026-04-15-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/llvm-ar
+llvm-nm       /Users/ingouhlemann/.rustup/toolchains/nightly-2026-04-15-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/llvm-nm
+llvm-readobj  /Users/ingouhlemann/.rustup/toolchains/nightly-2026-04-15-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/llvm-readobj
+llvm-objdump  /Users/ingouhlemann/.rustup/toolchains/nightly-2026-04-15-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/llvm-objdump
+mode          NEWTOS_TOOLCHAIN=auto
+--- rc=0
+=== 2 no Rust, no LLVM anywhere: error message (newtos-cc)
+clang         /usr/bin/clang (Apple clang version 21.0.0 (clang-2100.3.34.2))
+error: LLVM tool 'ld.lld' not found (NEWTOS_TOOLCHAIN=auto).
+  Install LLVM's linker and tools, then run the command again:
+    Debian/Ubuntu: sudo apt install clang lld llvm
+    Fedora:        sudo dnf install clang lld llvm
+    macOS:         brew install llvm lld
+  or the pinned Rust nightly with llvm-tools-preview (rustup; kernel developers have it).
+  Elsewhere: NEWTOS_LLVM_BIN=<directory>, or NEWTOS_LLD=<file>.
+  (sdk/toolchain.sh, docs/sdk/02-prerequisites.md)
+linker        (not found)
+llvm-ar       (not found)
+llvm-nm       (not found)
+llvm-readobj  (not found)
+llvm-objdump  (not found)
+mode          NEWTOS_TOOLCHAIN=auto
+--- rc=1
+=== 3 no Rust, no LLVM: error message (build-libc.sh)
+error: LLVM tool 'llvm-ar' not found (NEWTOS_TOOLCHAIN=auto).
+  Install LLVM's linker and tools, then run the command again:
+    Debian/Ubuntu: sudo apt install clang lld llvm
+    Fedora:        sudo dnf install clang lld llvm
+    macOS:         brew install llvm lld
+  or the pinned Rust nightly with llvm-tools-preview (rustup; kernel developers have it).
+  Elsewhere: NEWTOS_LLVM_BIN=<directory>, or NEWTOS_AR=<file>.
+  (sdk/toolchain.sh, docs/sdk/02-prerequisites.md)
+error: LLVM tool 'ld.lld' not found (NEWTOS_TOOLCHAIN=auto).
+  Install LLVM's linker and tools, then run the command again:
+    Debian/Ubuntu: sudo apt install clang lld llvm
+    Fedora:        sudo dnf install clang lld llvm
+    macOS:         brew install llvm lld
+  or the pinned Rust nightly with llvm-tools-preview (rustup; kernel developers have it).
+  Elsewhere: NEWTOS_LLVM_BIN=<directory>, or NEWTOS_LLD=<file>.
+  (sdk/toolchain.sh, docs/sdk/02-prerequisites.md)
+error: LLVM tool 'llvm-readobj' not found (NEWTOS_TOOLCHAIN=auto).
+  Install LLVM's linker and tools, then run the command again:
+    Debian/Ubuntu: sudo apt install clang lld llvm
+    Fedora:        sudo dnf install clang lld llvm
+    macOS:         brew install llvm lld
+  or the pinned Rust nightly with llvm-tools-preview (rustup; kernel developers have it).
+  Elsewhere: NEWTOS_LLVM_BIN=<directory>, or NEWTOS_READOBJ=<file>.
+  (sdk/toolchain.sh, docs/sdk/02-prerequisites.md)
+error: missing LLVM tool: 
+--- rc=1
+=== 4 LLVM dir on PATH, no Rust
+clang         /usr/bin/clang (Apple clang version 21.0.0 (clang-2100.3.34.2))
+linker        $K/fakellvm/ld.lld (LLD 22.1.2 (https://github.com/rust-lang/llvm-project.git 1cb4e3833c1919c2e6fb579a23ac0e2b22587b7e) (compatible with GNU linkers))
+llvm-ar       $K/fakellvm/llvm-ar
+llvm-nm       $K/fakellvm/llvm-nm
+llvm-readobj  $K/fakellvm/llvm-readobj
+llvm-objdump  $K/fakellvm/llvm-objdump
+mode          NEWTOS_TOOLCHAIN=auto
+--- rc=0
+=== 5 NEWTOS_TOOLCHAIN=rust with LLVM on PATH: Rust only
+clang         /usr/bin/clang (Apple clang version 21.0.0 (clang-2100.3.34.2))
+linker        /Users/ingouhlemann/.rustup/toolchains/nightly-2026-04-15-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/rust-lld -flavor gnu (LLD 22.1.2 (https://github.com/rust-lang/llvm-project.git 1cb4e3833c1919c2e6fb579a23ac0e2b22587b7e) (compatible with GNU linkers))
+llvm-ar       /Users/ingouhlemann/.rustup/toolchains/nightly-2026-04-15-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/llvm-ar
+llvm-nm       /Users/ingouhlemann/.rustup/toolchains/nightly-2026-04-15-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/llvm-nm
+llvm-readobj  /Users/ingouhlemann/.rustup/toolchains/nightly-2026-04-15-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/llvm-readobj
+llvm-objdump  /Users/ingouhlemann/.rustup/toolchains/nightly-2026-04-15-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/llvm-objdump
+mode          NEWTOS_TOOLCHAIN=rust
+--- rc=0
+=== 6 NEWTOS_TOOLCHAIN=llvm with rustup on PATH, no LLVM: error, no Rust
+clang         /usr/bin/clang (Apple clang version 21.0.0 (clang-2100.3.34.2))
+error: LLVM tool 'ld.lld' not found (NEWTOS_TOOLCHAIN=llvm).
+  Install LLVM's linker and tools, then run the command again:
+    Debian/Ubuntu: sudo apt install clang lld llvm
+    Fedora:        sudo dnf install clang lld llvm
+    macOS:         brew install llvm lld
+  Elsewhere: NEWTOS_LLVM_BIN=<directory>, or NEWTOS_LLD=<file>.
+  (sdk/toolchain.sh, docs/sdk/02-prerequisites.md)
+linker        (not found)
+llvm-ar       (not found)
+llvm-nm       (not found)
+llvm-readobj  (not found)
+llvm-objdump  (not found)
+mode          NEWTOS_TOOLCHAIN=llvm
+--- rc=1
+=== 7 NEWTOS_LLVM_BIN=<dir>, no Rust
+clang         /usr/bin/clang (Apple clang version 21.0.0 (clang-2100.3.34.2))
+linker        $K/llvmkeg/bin/ld.lld (LLD 22.1.2 (https://github.com/rust-lang/llvm-project.git 1cb4e3833c1919c2e6fb579a23ac0e2b22587b7e) (compatible with GNU linkers))
+llvm-ar       $K/llvmkeg/bin/llvm-ar
+llvm-nm       $K/llvmkeg/bin/llvm-nm
+llvm-readobj  $K/llvmkeg/bin/llvm-readobj
+llvm-objdump  $K/llvmkeg/bin/llvm-objdump
+mode          NEWTOS_TOOLCHAIN=auto
+--- rc=0
+=== 8 clang's own directory (CLANG via a symlink into a keg-like bin/), no Rust
+clang         $K/linkdir/clang (Apple clang version 21.0.0 (clang-2100.3.34.2))
+linker        $K/llvmkeg/bin/ld.lld (LLD 22.1.2 (https://github.com/rust-lang/llvm-project.git 1cb4e3833c1919c2e6fb579a23ac0e2b22587b7e) (compatible with GNU linkers))
+llvm-ar       $K/llvmkeg/bin/llvm-ar
+llvm-nm       $K/llvmkeg/bin/llvm-nm
+llvm-readobj  $K/llvmkeg/bin/llvm-readobj
+llvm-objdump  $K/llvmkeg/bin/llvm-objdump
+mode          NEWTOS_TOOLCHAIN=auto
+--- rc=0
+=== 9 NEWTOS_LLD explicit file wins over PATH
+clang         /usr/bin/clang (Apple clang version 21.0.0 (clang-2100.3.34.2))
+linker        $K/llvmkeg/bin/ld.lld (LLD 22.1.2 (https://github.com/rust-lang/llvm-project.git 1cb4e3833c1919c2e6fb579a23ac0e2b22587b7e) (compatible with GNU linkers))
+llvm-ar       $K/fakellvm/llvm-ar
+llvm-nm       $K/fakellvm/llvm-nm
+llvm-readobj  $K/fakellvm/llvm-readobj
+llvm-objdump  $K/fakellvm/llvm-objdump
+mode          NEWTOS_TOOLCHAIN=auto
+--- rc=0
+=== 10 NEWTOS_TOOLCHAIN=bogus
+clang         /usr/bin/clang (Apple clang version 21.0.0 (clang-2100.3.34.2))
+error: NEWTOS_TOOLCHAIN=bogus (expected auto, llvm or rust; sdk/toolchain.sh)
+linker        (not found)
+llvm-ar       (not found)
+llvm-nm       (not found)
+llvm-readobj  (not found)
+llvm-objdump  (not found)
+mode          NEWTOS_TOOLCHAIN=bogus
+--- rc=1
+=== 11 NEWTOS_AR pointing nowhere
+clang         /usr/bin/clang (Apple clang version 21.0.0 (clang-2100.3.34.2))
+linker        /Users/ingouhlemann/.rustup/toolchains/nightly-2026-04-15-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/rust-lld -flavor gnu (LLD 22.1.2 (https://github.com/rust-lang/llvm-project.git 1cb4e3833c1919c2e6fb579a23ac0e2b22587b7e) (compatible with GNU linkers))
+llvm-ar       (not found)
+llvm-nm       /Users/ingouhlemann/.rustup/toolchains/nightly-2026-04-15-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/llvm-nm
+llvm-readobj  /Users/ingouhlemann/.rustup/toolchains/nightly-2026-04-15-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/llvm-readobj
+llvm-objdump  /Users/ingouhlemann/.rustup/toolchains/nightly-2026-04-15-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/llvm-objdump
+mode          NEWTOS_TOOLCHAIN=auto
+--- rc=0
+=== 12 newtos-cc under dash, LLVM on PATH, no Rust: link a libc program
++ 'clang' -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 -fPIE -fno-builtin -nostdinc -D__NEWTOS__ -Wno-macro-redefined  '-I/Volumes/Daten/Development/PiRusTOS/sdk/include' '-I/Volumes/Daten/Development/PiRusTOS/sdk/libc/mintlib/include' -c '/Volumes/Daten/Development/PiRusTOS/sdk/libc/crt0.S' -o '$K/tmpdir/newtos-cc.QwwZLY/crt0.o'
++ 'clang' -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 -fPIE -fno-builtin -nostdinc -D__NEWTOS__ -Wno-macro-redefined   '-I/Volumes/Daten/Development/PiRusTOS/sdk/libc/mintlib/include' '-I/Volumes/Daten/Development/PiRusTOS/sdk/libm/include' '-I/Volumes/Daten/Development/PiRusTOS/sdk/libm/openlibm-0.8.8/include' -isystem '/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/lib/clang/21/include' -c '/Volumes/Daten/Development/PiRusTOS/sdk/examples/mathtst.c' -o '$K/tmpdir/newtos-cc.QwwZLY/1-mathtst.o'
++ '$K/fakellvm/ld.lld'  -T '/Volumes/Daten/Development/PiRusTOS/sdk/newtos.ld' -pie --no-dynamic-linker -z text -z max-page-size=0x1000 --build-id=none   '$K/tmpdir/newtos-cc.QwwZLY/crt0.o' '$K/tmpdir/newtos-cc.QwwZLY/1-mathtst.o' --start-group '/Volumes/Daten/Development/PiRusTOS/sdk/libm/libm.a' '/Volumes/Daten/Development/PiRusTOS/sdk/libc/libc.a' '/Volumes/Daten/Development/PiRusTOS/sdk/compiler-rt/libclang_rt.builtins.a' --end-group -o '$K/tmpdir/MATHD.NCP'
+newtos-cc: wrote $K/tmpdir/MATHD.NCP (110488 bytes)
+--- rc=0
+=== 12b sha256 dash/ld.lld vs baseline MATHTST.NCP
+cac6196e725b75de7f65c75d59ed735c6c72d74a21088ba9bf8c137d4cd9b058
+cac6196e725b75de7f65c75d59ed735c6c72d74a21088ba9bf8c137d4cd9b058
+=== 13 sdk/build.sh, LLVM on PATH, no Rust (prints lld path, no -flavor)
+clang : Apple clang version 21.0.0 (clang-2100.3.34.2)
+lld   : $K/fakellvm/ld.lld
+
++ clang -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 -fno-stack-protector -fPIE -fno-builtin -Wall -Wextra -I/Volumes/Daten/Development/PiRusTOS/sdk/include  -c /Volumes/Daten/Development/PiRusTOS/sdk/crt0.S -o crt0.o
++ clang -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 -fno-stack-protector -fPIE -fno-builtin -Wall -Wextra -I/Volumes/Daten/Development/PiRusTOS/sdk/include -c /Volumes/Daten/Development/PiRusTOS/sdk/examples/hello.c -o app.o
++ $K/fakellvm/ld.lld -T /Volumes/Daten/Development/PiRusTOS/sdk/newtos.ld -pie --no-dynamic-linker -z text -z max-page-size=0x1000 --build-id=none crt0.o app.o -o $K/tmpdir/HELLOB.NCP
+
+wrote $K/tmpdir/HELLOB.NCP (5968 bytes)
+--- rc=0
+=== 14 old-style LLD=<rust-lld> override in a script still gets -flavor gnu
+FSBENCH.NCP -> /Volumes/Daten/Development/PiRusTOS/sdk/examples/fsbench/build/FSBENCH.NCP (160328 bytes)
+  undefined symbols (goal 0): 0
+--- rc=0
+=== rustc trap invocations (expected: none file)
+rustc --print sysroot (cwd /Volumes/Daten/Development/PiRusTOS/sdk)
+rustc -vV (cwd /Volumes/Daten/Development/PiRusTOS/sdk)
+rustc --print sysroot (cwd /Volumes/Daten/Development/PiRusTOS/sdk)
+rustc -vV (cwd /Volumes/Daten/Development/PiRusTOS/sdk)
+rustc --print sysroot (cwd /Volumes/Daten/Development/PiRusTOS/sdk)
+rustc -vV (cwd /Volumes/Daten/Development/PiRusTOS/sdk)
+rustc --print sysroot (cwd /Volumes/Daten/Development/PiRusTOS/sdk)
+rustc -vV (cwd /Volumes/Daten/Development/PiRusTOS/sdk)
+rustc --print sysroot (cwd /Volumes/Daten/Development/PiRusTOS/sdk)
+rustc -vV (cwd /Volumes/Daten/Development/PiRusTOS/sdk)
+rustc --print sysroot (cwd /Volumes/Daten/Development/PiRusTOS/sdk)
+rustc -vV (cwd /Volumes/Daten/Development/PiRusTOS/sdk)
+rustc --print sysroot (cwd /Volumes/Daten/Development/PiRusTOS/sdk)
+rustc -vV (cwd /Volumes/Daten/Development/PiRusTOS/sdk)
+rustc --print sysroot (cwd /Volumes/Daten/Development/PiRusTOS/sdk)
+rustc -vV (cwd /Volumes/Daten/Development/PiRusTOS/sdk)

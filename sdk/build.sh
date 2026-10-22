@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 #
 # build.sh -- compile + link a NewTOS Stage-1 native program (`.NCP`) with
-# clang and LLVM lld (rust-lld). No host libc, no CRT: freestanding AArch64.
+# clang and LLVM lld (ld.lld, or rust-lld as fallback). No host libc, no CRT:
+# freestanding AArch64.
 #
 # Pipeline:
 #   1. clang -c crt0.S                -> crt0.o
 #   2. clang -c examples/<name>.c     -> <name>.o     (with -Iinclude)
-#   3. rust-lld -flavor gnu -T newtos.ld crt0.o <name>.o -> <OUT>
+#   3. ld.lld (or rust-lld -flavor gnu) -T newtos.ld crt0.o <name>.o -> <OUT>
 #
 # The output ELF is the .NCP itself (the loader parses ELF directly; no
 # flat-binary objcopy step, unlike the kernel image).
@@ -42,25 +43,14 @@ CFLAGS=(-target "$TARGET" -ffreestanding -nostdlib -O2
 CLANG="${CLANG:-clang}"
 command -v "$CLANG" >/dev/null 2>&1 || { echo "error: clang not found" >&2; exit 1; }
 
-# --- locate an LLVM ELF linker (rust-lld ships with the Rust toolchain) ---
-# The pinned toolchain's sysroot is asked from inside sdk/ (sdk/toolchain.sh,
-# SDK01 I) and comes BEFORE a `rust-lld` on PATH: that one is normally the
-# rustup proxy (~/.cargo/bin), which picks the toolchain by the caller's cwd --
-# outside the checkout the default one, or none. Inside the checkout both name
-# the same binary.
+# --- locate the LLVM ELF linker ---
+# sdk/toolchain.sh (SDK01 I, K): NEWTOS_LLD, NEWTOS_LLVM_BIN, ld.lld on PATH,
+# clang's directory, Homebrew's keg-only llvm/lld, /usr/lib/llvm-*/bin, and
+# only then the pinned Rust nightly's rust-lld (asked from inside sdk/, so
+# rust-toolchain.toml decides whatever the caller's cwd). newtos_lld adds
+# -flavor gnu for rust-lld.
 . "$SDK_DIR/toolchain.sh"
-find_lld() {
-    if command -v ld.lld >/dev/null 2>&1; then echo "ld.lld"; return; fi
-    local sysroot; sysroot="$(newtos_rust_sysroot || true)"
-    if [ -n "$sysroot" ]; then
-        local cand; cand="$(find "$sysroot"/lib/rustlib -name rust-lld 2>/dev/null | head -1)"
-        [ -n "$cand" ] && { echo "$cand -flavor gnu"; return; }
-    fi
-    if command -v rust-lld >/dev/null 2>&1; then echo "rust-lld -flavor gnu"; return; fi
-    [ -x "$HOME/.cargo/bin/rust-lld" ] && { echo "$HOME/.cargo/bin/rust-lld -flavor gnu"; return; }
-    return 1
-}
-LLD="$(find_lld)" || { echo "error: no lld/rust-lld found" >&2; exit 1; }
+LLD="${LLD:-$(newtos_tool ld.lld)}" || exit 1
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -81,9 +71,9 @@ echo "+ $CLANG ${CFLAGS[*]} -c $SRC -o app.o"
 
 # 3. link (position-independent ET_DYN, linked at 0x1000 via newtos.ld; the
 #    loader applies its R_AARCH64_RELATIVE relocations -- ARCH03 stage 0d)
-echo "+ $LLD -T $SDK_DIR/newtos.ld -pie --no-dynamic-linker -z text -z max-page-size=0x1000 --build-id=none crt0.o app.o -o $OUT"
-# shellcheck disable=SC2086
-$LLD -T "$SDK_DIR/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 --build-id=none \
+LLD_FLAVOR="$(newtos_lld_flavor "$LLD")"
+echo "+ $LLD ${LLD_FLAVOR:+$LLD_FLAVOR }-T $SDK_DIR/newtos.ld -pie --no-dynamic-linker -z text -z max-page-size=0x1000 --build-id=none crt0.o app.o -o $OUT"
+newtos_lld -T "$SDK_DIR/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 --build-id=none \
      "$WORK/crt0.o" "$WORK/app.o" -o "$OUT"
 
 echo

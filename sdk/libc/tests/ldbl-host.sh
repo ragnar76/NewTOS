@@ -43,9 +43,8 @@ CMDS="$SDK/libc/build/compile-commands.txt"
 for f in "$CMDS" "$SDK/compiler-rt/build/srcs.txt" "$CRT_TOP/lib/builtins" "$OL_TOP/src" "$MINT"; do
   [ -e "$f" ] || { echo "skip: $f missing (run the library's build script)"; exit 77; }
 done
-. "$SDK/toolchain.sh"
-BIN="$(newtos_rust_bindir)"
-NM="$BIN/llvm-nm"; AR="$BIN/llvm-ar"; LLD="$BIN/rust-lld"; OBJDUMP="$BIN/llvm-objdump"
+. "$SDK/toolchain.sh"   # LLVM tools: PATH / LLVM packages first, pinned Rust sysroot as fallback (SDK01 I, K)
+NM="$(newtos_tool llvm-nm)"; AR="$(newtos_tool llvm-ar)"; LLD="$(newtos_tool ld.lld)"; OBJDUMP="$(newtos_tool llvm-objdump)"
 for t in "$NM" "$AR" "$LLD" "$OBJDUMP"; do [ -x "$t" ] || { echo "skip: $t missing"; exit 77; }; done
 RES="$("$CLANG" -print-resource-dir)/include"
 
@@ -108,7 +107,7 @@ sed 's/^\(    \)\.init_array : {/\1. = ALIGN(0x4000);\
 \1.init_array : {/' "$SDK/newtos.ld" > "$WORK/host.ld"
 grep -q 'ALIGN(0x4000)' "$WORK/host.ld" || { echo "FAIL: could not derive host.ld from newtos.ld"; exit 1; }
 "$SDK/bin/newtos-cc" -c "$SDK/libc/crt0.S" -o "$WORK/crt0.o" || exit 1
-"$LLD" -flavor gnu -T "$WORK/host.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 --build-id=none \
+newtos_lld -T "$WORK/host.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 --build-id=none \
   "$WORK/crt0.o" "$WORK/elf.o" "$WORK"/x18/*.o -o "$WORK/LDBL-x18.elf" ||
   { echo "FAIL: x18 test program does not link from the rebuilt members alone"; exit 1; }
 echo "3  -ffixed-x18 rebuild of the $nmem members: $n18 x18 instructions; test program linked with host.ld"

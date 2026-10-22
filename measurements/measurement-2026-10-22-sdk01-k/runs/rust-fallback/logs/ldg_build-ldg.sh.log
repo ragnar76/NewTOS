@@ -1,0 +1,9 @@
+clang : Apple clang version 21.0.0 (clang-2100.3.34.2)
+ar    : /Users/ingouhlemann/.rustup/toolchains/nightly-2026-04-15-aarch64-apple-darwin/lib/rustlib/aarch64-apple-darwin/bin/llvm-ar
+
+  overlay: src/devel/ldgutil.c (from sdk/ldg/overlay/)
+  overlay: src/devel/ldgload.c (from sdk/ldg/overlay/)
+compiled OK=4  FAILED=0  (files with warnings: 0)
+archived -> /Volumes/Daten/Development/PiRusTOS/sdk/ldg/libldg.a (10228 bytes)
+exported symbols: _ldg_adr_regctx _ldg_nb_regctx ldg_Calloc ldg_close ldg_cookie ldg_cpush ldg_error ldg_find ldg_Free ldg_getpath ldg_init ldg_libpath ldg_load ldg_Malloc ldg_open ldg_Realloc ldg_unload ldg_version set_error 
+

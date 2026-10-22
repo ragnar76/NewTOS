@@ -82,11 +82,10 @@ done
 CLANG="${CLANG:-clang}"
 command -v "$CLANG" >/dev/null 2>&1 || { echo "error: clang not found" >&2; exit 1; }
 RES="$($CLANG -print-resource-dir)/include"
-. "$SDK/toolchain.sh"   # rustc asked from inside sdk/, whatever the cwd (SDK01 I)
-BIN="$(newtos_rust_bindir)"
-LLD="${LLD:-$BIN/rust-lld}"
-NM="$BIN/llvm-nm"
-READOBJ="$BIN/llvm-readobj"
+. "$SDK/toolchain.sh"   # LLVM tools: PATH / LLVM packages first, pinned Rust sysroot as fallback (SDK01 I, K)
+LLD="${LLD:-$(newtos_tool ld.lld)}"
+NM="$(newtos_tool llvm-nm)"
+READOBJ="$(newtos_tool llvm-readobj)"
 [ -x "$LLD" ] || { echo "error: missing LLVM tool: $LLD" >&2; exit 1; }
 
 CFLAGS=(-target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2
@@ -119,7 +118,7 @@ link() { # link <module|client> <out> <objs...>
   local share=() map="$BUILD/link-$(basename "$out").map"
   # A module links libshare.a first in the group (see the header).
   [ "$kind" = module ] && share=("$SDK/libshare/libshare.a")
-  if ! "$LLD" -flavor gnu -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 \
+  if ! newtos_lld -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 \
       --build-id=none "$OBJ/crt0.o" "$@" \
       --start-group ${share[@]+"${share[@]}"} "$WD/libwindom1.a" "$LDGDIR/libldg.a" "$GEM/gemlib.a" "$LIBM/libm.a" "$LIBC/libc.a" --end-group \
       -Map="$map" -o "$out" 2>"$BUILD/link-$(basename "$out").err"; then

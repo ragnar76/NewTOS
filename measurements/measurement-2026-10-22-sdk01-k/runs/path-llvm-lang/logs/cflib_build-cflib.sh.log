@@ -1,0 +1,20 @@
+clang : Apple clang version 21.0.0 (clang-2100.3.34.2)
+ar    : /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/651de586-7dd7-487b-9e92-c8525c58f508/scratchpad/k/fakellvm/llvm-ar
+lld   : /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/651de586-7dd7-487b-9e92-c8525c58f508/scratchpad/k/fakellvm/ld.lld
+
+COBJS manifest: 129 files
+compiled OK=129  skipped=0  (of 129)
+failures match cflib/expected-failures.txt: 0 today, 0 recorded, 0 new
+archived -> /Volumes/Daten/Development/PiRusTOS/sdk/cflib/cflib.a (259208 bytes)
+
+LINK OK -> /Volumes/Daten/Development/PiRusTOS/sdk/cflib/build/cftest.NCP (208760 bytes)
+  Type: SharedObject (0x3)
+  Machine: EM_AARCH64 (0xB7)
+  Entry: 0x1000
+
+GEM trap sites (svc #2) reachable from the linked cflib program:
+        6d4c: d4000041     	svc	#0x2
+    0000000000006dac <aes>:
+        6db4: d4000041     	svc	#0x2
+    0000000000007e98 <vdi>:
+        7ea0: d4000041     	svc	#0x2

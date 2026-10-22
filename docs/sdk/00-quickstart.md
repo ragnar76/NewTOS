@@ -15,6 +15,12 @@ home, and a `PATH` of only `/usr/bin:/bin:/usr/sbin:/sbin` plus rustup's
 steps additionally used Homebrew's `qemu` (11.0.2) and `mtools` (4.0.49).
 **Linux commands are untested** (marked so); the scripts are written to run
 there, but nobody has done it yet. Windows is not covered.
+*Since TASK/SDK01 K (2026-10-22)* Rust is no longer needed for the SDK: the
+scripts take `ld.lld`, `llvm-ar` & co. from the LLVM packages and fall back
+to the Rust toolchain only when those are absent (§1.2). On the Mac this was
+checked with the Rust fallback and with an LLVM directory on `PATH` and no
+Rust at all; Homebrew's own `llvm`/`lld` packages were **not** installed for
+that check, and Linux remains untested.
 
 The other chapters ([README](README.md)) explain the details; this page links
 to them where you need them.
@@ -25,13 +31,19 @@ to them where you need them.
 
 ### 1.1 Host tools
 
-**macOS** — the Xcode Command Line Tools are enough for the SDK: they provide
-`clang`, `make`, `git`, `patch`, `tar` (reads `.tar.xz` itself) and
-`python3`.
+**macOS** — the Xcode Command Line Tools provide `clang`, `make`, `git`,
+`patch`, `tar` (reads `.tar.xz` itself) and `python3`; the ELF linker and
+the LLVM archiver come from Homebrew's `lld` and `llvm` (Apple ships
+neither):
 
 ```sh
 xcode-select --install          # skip if `clang --version` already works
+brew install llvm lld           # ld.lld, llvm-ar, llvm-nm, ... (untested, see §1.2)
 ```
+
+Homebrew's `llvm` is *keg-only*: it is not put on `PATH`, and it does not
+need to be — the SDK looks in `$(brew --prefix)/opt/llvm/bin` and
+`…/opt/lld/bin` by itself (§1.2). Apple's `clang` stays the compiler.
 
 Only for running programs in QEMU (step 4b) you also need:
 
@@ -42,16 +54,19 @@ brew install qemu mtools        # Homebrew: https://brew.sh
 **Linux, Debian/Ubuntu (untested):**
 
 ```sh
-sudo apt install git curl clang make patch xz-utils python3 build-essential
+sudo apt install git curl clang lld llvm make patch xz-utils python3 build-essential
 sudo apt install qemu-system-arm mtools        # only for step 4b
 ```
 
 **Linux, Fedora (untested):**
 
 ```sh
-sudo dnf install git curl clang make patch xz python3 gcc
+sudo dnf install git curl clang lld llvm make patch xz python3 gcc
 sudo dnf install qemu-system-aarch64 mtools    # only for step 4b
 ```
+
+`lld` gives `ld.lld`, `llvm` gives `llvm-ar`, `llvm-nm`, `llvm-readobj`,
+`llvm-objdump` — the linker and tools the SDK uses (§1.2).
 
 `build-essential` (Fedora: `gcc`) gives the host `cc` that
 `sdk/run-host-tests.sh` uses.
@@ -65,9 +80,8 @@ normally include the AArch64 back end. Check it with:
 clang -print-targets | grep aarch64            # expect a line "aarch64 - AArch64 (little endian)"
 ```
 
-The linker is **not** the system's but `rust-lld` from the Rust toolchain
-(next step), which rustup installs on x86_64 hosts as well; libc and the
-runtime are built by the SDK itself from the sources in the repository.
+The linker is LLVM's `ld.lld`, not the system's `ld`; libc and the runtime
+are built by the SDK itself from the sources in the repository.
 
 Which `clang` version is the minimum is not known: the SDK was only ever
 built with Apple clang 21.0.0. If your distribution's `clang` is old (e.g.
@@ -75,23 +89,64 @@ clang 14 on Debian 12 / LMDE 6) and something fails, a newer one comes from
 the LLVM project's own packages, <https://apt.llvm.org>. Please report what
 worked or failed (issue on GitHub, with the error message).
 
-### 1.2 Rust (for its linker and LLVM tools)
+### 1.2 Linker and LLVM tools — Rust is optional
 
-The SDK links with `rust-lld` and archives with `llvm-ar` from the Rust
-nightly that `rust-toolchain.toml` pins (`nightly-2026-04-15`, with the
-`llvm-tools-preview` component). Install `rustup`, the same way on macOS and
-Linux:
+The SDK links with `ld.lld` and archives with `llvm-ar`; it also calls
+`llvm-nm`, `llvm-readobj`, `llvm-objdump` and `llvm-size`. Every script and
+`newtos-cc` finds them through `sdk/toolchain.sh`, per tool, in this order
+(TASK/SDK01 K):
+
+1. `NEWTOS_LLD`, `NEWTOS_AR`, `NEWTOS_NM`, `NEWTOS_READOBJ`,
+   `NEWTOS_OBJDUMP`, `NEWTOS_SIZE` — an explicit file (the older `LLD` and
+   `AR` still work too);
+2. the directory `NEWTOS_LLVM_BIN`, if set;
+3. `PATH` (`ld.lld`, `llvm-ar`, … — the distribution packages);
+4. the directory `clang` really lives in, symlinks followed (on Debian
+   e.g. `/usr/lib/llvm-14/bin`);
+5. Homebrew's `opt/llvm/bin` and `opt/lld/bin` under `$HOMEBREW_PREFIX`,
+   `/opt/homebrew`, `/usr/local`, `/home/linuxbrew/.linuxbrew`;
+6. `/usr/lib/llvm-*/bin`, highest version first (apt.llvm.org's layout);
+7. only then the Rust nightly that `rust-toolchain.toml` pins
+   (`nightly-2026-04-15` with `llvm-tools-preview`): its `rust-lld` and
+   `llvm-*`.
+
+`NEWTOS_TOOLCHAIN=llvm` never uses Rust, `NEWTOS_TOOLCHAIN=rust` uses only
+the Rust nightly (the SDK's behaviour before SDK01 K). To see what will be
+used:
+
+```sh
+sdk/bin/newtos-cc --toolchain
+```
+
+If nothing is found, the build stops with a message that names the packages
+to install (`sudo apt install clang lld llvm`, `brew install llvm lld`, …).
+
+**Rust is needed only for kernel work** (building NewTOS itself, `cargo
+xtask`), or as the fallback when you cannot install LLVM's `lld`/`llvm`.
+Then install `rustup`, the same way on macOS and Linux:
 
 ```sh
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 . "$HOME/.cargo/env"            # or open a new terminal
 ```
 
+What was compared (measurement
+`measurements/measurement-2026-10-22-sdk01-k/RUNINFO.TXT`): on the Mac all
+13 SDK archives and 51 program files (QED, TeraDesk, HypView, zView with
+its codecs, Doom, the templates, …) built once through the Rust fallback
+and once with `ld.lld`/`llvm-*` from a `PATH` directory and no `rustc`
+reachable came out byte-identical, because both runs used the same LLD
+22.1.2. A different lld release (Homebrew's, Debian's) was not compared yet.
+Byte comparisons between machines also need the same locale: the archive
+member order follows `sort`, so `libc.a` & co. differ between
+`LANG=de_DE.UTF-8` and the C locale (same members, other order).
+
 ### 1.3 The repository
 
 ```sh
 git clone --depth 1 https://github.com/tuxie01/NewTOS.git
 cd NewTOS
+# only with Rust (kernel work, or the fallback of §1.2):
 rustup toolchain install        # installs the pinned nightly + components from rust-toolchain.toml
 rustc -vV                       # expect: rustc 1.97.0-nightly (a5c825cd8 2026-04-14)
 ```
@@ -101,10 +156,9 @@ toolchain download 2 min 12 s. Without `--depth 1` the clone carries the full
 history.
 
 The SDK scripts can be started from any directory, by absolute or relative
-path. `rustup` chooses the toolchain by the current directory, so every
-script (and `sdk/bin/newtos-cc`) asks `rustc` for the pinned nightly's
-`rust-lld`/`llvm-*` tools from inside the SDK directory (`sdk/toolchain.sh`),
-not from wherever it was started.
+path. When they fall back to Rust, they ask `rustc` from inside the SDK
+directory (`sdk/toolchain.sh`): `rustup` chooses the toolchain by the current
+directory, so that is the pinned nightly whatever directory you started in.
 
 Everything the SDK libraries are built from is **in the repository** as the
 unchanged upstream archives: mintlib, gemlib, cflib, OpenLibm, LDG,
@@ -379,8 +433,8 @@ There is no m68k emulator yet: an Atari program runs on NewTOS only if it is
 The repository holds the build scripts and patch files for QED (text editor)
 and TeraDesk (desktop); the upstream sources are fetched separately, at the
 commits the ports were made against. They are also the best **first test of
-a new toolchain** (on Linux especially): if both build, clang, `rust-lld` and
-the SDK libraries work together. Run the commands inside the NewTOS checkout
+a new toolchain** (on Linux especially): if both build, clang, `ld.lld` (or
+the fallback `rust-lld`) and the SDK libraries work together. Run the commands inside the NewTOS checkout
 (step 1.3):
 
 ```sh
@@ -453,7 +507,8 @@ failed for that library; run the script the message names. After you change
 anything under `sdk/`, rebuild the library yourself — `newtos-cc` does not
 notice an out-of-date archive ([16](16-newtos-cc.md)).
 
-**2. `rust-lld: error: undefined symbol: …`.**
+**2. `ld.lld: error: undefined symbol: …`** (`rust-lld: error: …` with the
+Rust fallback).
 Either a library option is missing (`-lm` for `<math.h>` functions, `-lcflib`,
 …), or the function is one of those the ported libraries do not provide:
 the list is [07 §11](07-mintlib-limits.md#11-functions-that-do-not-link-measured-per-symbol-tasksdk01-a)
@@ -477,6 +532,17 @@ that TOS defines with 32-bit fields, a pointer split into two 16-bit words.
 its symptom. `-Wint-conversion` is an error by default in current clang;
 fix the code rather than silencing it — on LP64 the conversion really loses
 the upper half of the pointer.
+The most common runtime case is the **cookie jar**: code that walks `$5A0`
+as an array of 32-bit `long` pairs reads garbage on LP64 and crashes. Use
+`Getcookie` (`Ssystem`) instead, or read the jar exactly as
+[05 B2](05-abi-pitfalls.md#b2-the-cookie-jar-at-5a0) describes.
+
+**5. `error: LLVM tool 'ld.lld' not found (NEWTOS_TOOLCHAIN=auto).`**
+(or `'llvm-ar'`, `'llvm-nm'`, …), followed by the install lines.
+Neither LLVM's `lld`/`llvm` packages nor the Rust fallback were found
+(§1.2). Install the packages the message names; if your LLVM lives
+somewhere else, point `NEWTOS_LLVM_BIN` at its `bin/` directory.
+`sdk/bin/newtos-cc --toolchain` shows what each tool resolves to.
 
 **Also common:** the card does not boot — it must be MBR + FAT16 ≤ 2 GB
 (release `README.TXT`). Files called `._NAME.NAP` on the card — macOS

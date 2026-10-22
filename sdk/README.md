@@ -1,7 +1,9 @@
 # NewTOS native C SDK
 
-Builds native AArch64 programs for NewTOS with **clang + rust-lld**
-(`aarch64-unknown-none-elf`) on top of ported Atari C libraries — the core
+Builds native AArch64 programs for NewTOS with **clang + LLVM lld**
+(`ld.lld` from the LLVM packages, or the pinned Rust nightly's `rust-lld` as
+fallback — `toolchain.sh`; `aarch64-unknown-none-elf`) on top of ported
+Atari C libraries — the core
 three are mintlib-0.60.1, gemlib-0.44.0 and cflib (pinned commit `ce57817`);
 OpenLibm, LDG, libshare, WinDom and five codec libraries come on top —
 following ADR-019 ("port real Atari C libraries, don't reimplement",
@@ -29,7 +31,7 @@ Pi 4. This file is only a map of the directory.
 | `bin/newtos-cc` | compiler wrapper (POSIX sh): one command compiles and links a program with the flags, crt0, libraries and linker script the scripts use; `--help` ([16](../docs/sdk/16-newtos-cc.md)) |
 | `mk/newtos.mk` | Makefile include: `PROG`/`KIND`/`SRCS`/`LIBS`/`RSC` → `make`, `make card DEST=…`, `make clean` |
 | `templates/` | `gem-hello/` (window + alert, clean exit) and `console-hello/`, each a `hello.c` + `Makefile` using `mk/newtos.mk`; `tests/newtos-cc-host.sh` (run by `run-host-tests.sh`) |
-| `build.sh` | freestanding `.NCP` builder (no libc): `clang -c crt0.S + source`, `rust-lld -T newtos.ld` |
+| `build.sh` | freestanding `.NCP` builder (no libc): `clang -c crt0.S + source`, `ld.lld -T newtos.ld` |
 | `crt0.S` | startup for freestanding programs: basepage from `x0`, `SP = p_hitpa`, `bl main`, `Pterm` |
 | `newtos.ld` | linker script for **every** native program, a position-independent executable (`ET_DYN`, `-fPIE` + `-pie --no-dynamic-linker -z text`; the loader applies its `R_AARCH64_RELATIVE` relocations, ARCH03 0d): two `PT_LOAD`s from `0x1000` — `text` (R-X: `.text`+dynamic metadata+`.rodata` → `p_tbase/p_tlen`) and `data` (RW-: `.dynamic`+`.got`+`.data` + `.bss` tail → `p_dbase/p_dlen`, `p_bbase/p_blen`) plus `PT_DYNAMIC`, `_start` first, `__bss_start`/`__bss_end`/`_end` exported |
 | `include/newtos.h` | clean-room inline-asm trap helpers + `Cconws`/`Cconin`/`Pterm`/`Pterm0` |

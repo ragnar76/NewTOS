@@ -12,9 +12,10 @@ Tick each line; every line points at the section that explains it.
       double` in printf/scanf/`strtold` and the `…l` libm functions since
       SDK01 J
       → [07 §3–4](07-mintlib-limits.md#3-mintlib-assembly-that-is-never-assembled)
-- [ ] Toolchain present: `clang`, the pinned Rust nightly with
-      `llvm-tools-preview` (`rust-lld`, `llvm-ar`, …), `make`, `python3`
-      → [02](02-prerequisites.md)
+- [ ] Toolchain present: `clang`, LLVM's `lld` + `llvm` packages
+      (`ld.lld`, `llvm-ar`, …; or, as fallback, the pinned Rust nightly with
+      `llvm-tools-preview`), `make`, `python3` — `sdk/bin/newtos-cc
+      --toolchain` shows what is used → [02](02-prerequisites.md)
 - [ ] `sdk/libc/build-libc.sh`, `sdk/gemlib/build-gemlib.sh`,
       `sdk/cflib/build-cflib.sh`, `sdk/libm/build-libm.sh` run clean:
       `failures match expected-failures.txt`
@@ -33,7 +34,8 @@ Tick each line; every line points at the section that explains it.
       `sdk/apps/build-<app>.sh`, either on `newtos-cc` (model:
       `build-hypview.sh`, TASK/SDK01 H) or copied from `build-qed.sh`
       (cflib app) / `build-teradesk.sh` (header overlays, own dialog lib),
-      which call clang and `rust-lld` directly and keep `lib_ensure`, the
+      which call clang and the linker (`newtos_lld`, `sdk/toolchain.sh`)
+      directly and keep `lib_ensure`, the
       shared flag set, `-D__NEWTOS__`, `--start-group` link. Either way: any
       failing file stops the build → [04](04-porting-anatomy.md)
 - [ ] Output name decided: `.NAP` (GEM), `.NCP` (console), `.NTP` (takes a

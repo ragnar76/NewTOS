@@ -79,12 +79,11 @@ MINT="$LIBC/mintlib/include"
 CLANG="${CLANG:-clang}"
 command -v "$CLANG" >/dev/null 2>&1 || { echo "error: clang not found" >&2; exit 1; }
 RES="$($CLANG -print-resource-dir)/include"
-. "$SDK/toolchain.sh"   # rustc asked from inside sdk/, whatever the cwd (SDK01 I)
-BIN="$(newtos_rust_bindir)"
-AR="${AR:-$BIN/llvm-ar}"
-LLD="${LLD:-$BIN/rust-lld}"
-READOBJ="$BIN/llvm-readobj"
-NM="$BIN/llvm-nm"
+. "$SDK/toolchain.sh"   # LLVM tools: PATH / LLVM packages first, pinned Rust sysroot as fallback (SDK01 I, K)
+AR="${AR:-$(newtos_tool llvm-ar)}"
+LLD="${LLD:-$(newtos_tool ld.lld)}"
+READOBJ="$(newtos_tool llvm-readobj)"
+NM="$(newtos_tool llvm-nm)"
 for t in "$AR" "$LLD"; do
     [ -x "$t" ] || { echo "error: missing LLVM tool: $t" >&2; exit 1; }
 done
@@ -179,7 +178,7 @@ fi
 # memset/_ctype/__assert_fail); wrap in a group so any residual
 # back-reference between the archives still resolves.
 rm -f "$OUT"
-"$LLD" -flavor gnu -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 \
+newtos_lld -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 \
     --build-id=none --why-extract="$BUILD/why.txt" \
     "$BUILD/crt0.o" "$OBJ"/*.o \
     --start-group "$GEM/gemlib.a" "$LIBM/libm.a" "$LIBC/libc.a" --end-group \

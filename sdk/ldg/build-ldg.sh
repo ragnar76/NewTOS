@@ -85,10 +85,9 @@ fi
 CLANG="${CLANG:-clang}"
 command -v "$CLANG" >/dev/null 2>&1 || { echo "error: clang not found" >&2; exit 1; }
 RES="$($CLANG -print-resource-dir)/include"
-. "$SDK/toolchain.sh"   # rustc asked from inside sdk/, whatever the cwd (SDK01 I)
-BIN="$(newtos_rust_bindir)"
-AR="${AR:-$BIN/llvm-ar}"
-NM="$BIN/llvm-nm"
+. "$SDK/toolchain.sh"   # LLVM tools: PATH / LLVM packages first, pinned Rust sysroot as fallback (SDK01 I, K)
+AR="${AR:-$(newtos_tool llvm-ar)}"
+NM="$(newtos_tool llvm-nm)"
 [ -x "$AR" ] || { echo "error: missing LLVM tool: $AR" >&2; exit 1; }
 
 # --- flags -------------------------------------------------------------------

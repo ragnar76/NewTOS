@@ -1,0 +1,117 @@
+# member order, libwindom1.a: C locale (env -i, no LANG) vs LANG=de_DE.UTF-8
+68d67
+< src_frame_set.o
+69a69
+> src_frame_set.o
+# libc.a
+38d37
+< gmp__mpn-mul.o
+40a40
+> gmp__mpn-mul.o
+75d74
+< mintlib__ident.o
+77a77
+> mintlib__ident.o
+133d132
+< mintlib__ttyname.o
+134a134
+> mintlib__ttyname.o
+147d146
+< misc__efgcvt.o
+148a148
+> misc__efgcvt.o
+155d154
+< misc__hsearch.o
+156a156
+> misc__hsearch.o
+162d161
+< misc__mntent.o
+163a163
+> misc__mntent.o
+165d164
+< misc__qefgcvt.o
+166a166
+> misc__qefgcvt.o
+199a200
+> posix__getopt_init.o
+202d202
+< posix__getopt_init.o
+231d230
+< pwdgrp__fgetpwent.o
+232a232
+> pwdgrp__fgetpwent.o
+237d236
+< pwdgrp__getpwent.o
+239c238
+< pwdgrp__getpwnam.o
+---
+> pwdgrp__getpwent.o
+241c240
+< pwdgrp__getpwuid.o
+---
+> pwdgrp__getpwnam.o
+242a242
+> pwdgrp__getpwuid.o
+316,317d315
+< stdio__printf-prs.o
+< stdio__printf.o
+320a319,320
+> stdio__printf-prs.o
+> stdio__printf.o
+337d336
+< stdio__stdio-globals.o
+338a338
+> stdio__stdio-globals.o
+343d342
+< stdio__tmpnam.o
+344a344
+> stdio__tmpnam.o
+367a368
+> stdlib__drand48_r.o
+370,371d370
+< stdlib__drand48_r.o
+< stdlib__erand48.o
+372a372
+> stdlib__erand48.o
+375d374
+< stdlib__jrand48.o
+376a376
+> stdlib__jrand48.o
+379d378
+< stdlib__lcong48.o
+381c380
+< stdlib__lrand48.o
+---
+> stdlib__lcong48.o
+383c382
+< stdlib__mrand48.o
+---
+> stdlib__lrand48.o
+384a384
+> stdlib__mrand48.o
+386d385
+< stdlib__nrand48.o
+387a387
+> stdlib__nrand48.o
+389d388
+< stdlib__rand.o
+390a390
+> stdlib__rand.o
+393d392
+< stdlib__seed48.o
+395c394
+< stdlib__srand48.o
+---
+> stdlib__seed48.o
+396a396
+> stdlib__srand48.o
+447d446
+< string__strerror.o
+448a448
+> string__strerror.o
+468d467
+< string__strtok.o
+469a469
+> string__strtok.o
+# same member SET (sorted lists):
+identical-sets

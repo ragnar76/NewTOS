@@ -51,10 +51,10 @@ vl_toolchain() {
   CLANG="${CLANG:-clang}"
   command -v "$CLANG" >/dev/null 2>&1 || { echo "error: clang not found" >&2; return 1; }
   RES="$($CLANG -print-resource-dir)/include"
-  local bin
-  bin="$(newtos_rust_bindir)"    # sdk/toolchain.sh: independent of the cwd (SDK01 I)
-  AR="${AR:-$bin/llvm-ar}"
-  NM="$bin/llvm-nm"
+  # sdk/toolchain.sh: PATH / LLVM packages first, pinned Rust sysroot as
+  # fallback, independent of the cwd (SDK01 I, K)
+  AR="${AR:-$(newtos_tool llvm-ar)}"
+  NM="$(newtos_tool llvm-nm)"
   [ -x "$AR" ] || { echo "error: missing LLVM tool: $AR" >&2; return 1; }
   [ -x "$NM" ] || { echo "error: missing LLVM tool: $NM" >&2; return 1; }
   echo "clang : $($CLANG --version | head -1)"

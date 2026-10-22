@@ -53,10 +53,11 @@ An LDG module is built **exactly like a program** — PIE, `sdk/libc/crt0.S`,
 2026-10-06 in `docs/MEMORY.md`; `.LDG` stays reserved for m68k modules and the
 later emulator). Its `main()` calls `ldg_init(&descriptor)` and returns.
 
-The link line `build-ldg-demo.sh` uses for `ex_lib`:
+The link line `build-ldg-demo.sh` uses for `ex_lib` (`ld.lld`, or
+`rust-lld -flavor gnu` with the Rust fallback — `sdk/toolchain.sh`):
 
 ```sh
-rust-lld -flavor gnu -T sdk/newtos.ld -pie --no-dynamic-linker -z text \
+ld.lld -T sdk/newtos.ld -pie --no-dynamic-linker -z text \
     -z max-page-size=0x1000 --build-id=none crt0.o ex_lib.o \
     --start-group sdk/libshare/libshare.a sdk/ldg/libldg.a sdk/gemlib/gemlib.a \
                   sdk/libm/libm.a sdk/libc/libc.a --end-group \

@@ -1,0 +1,91 @@
+measurement-2026-10-22-sdk01-k -- TASK/SDK01 package K: Rust out of the C path
+==============================================================================
+
+WHAT
+  sdk/toolchain.sh resolves ld.lld / llvm-ar / llvm-nm / llvm-readobj /
+  llvm-objdump / llvm-size per tool: NEWTOS_<TOOL> -> NEWTOS_LLVM_BIN -> PATH
+  -> clang's real directory -> Homebrew opt/llvm, opt/lld -> /usr/lib/llvm-*
+  -> pinned Rust nightly (rust-lld, llvm-tools-preview) as the last fallback.
+  NEWTOS_TOOLCHAIN=auto|llvm|rust. newtos_lld adds -flavor gnu only for
+  rust-lld/lld. All SDK build scripts, sdk/build.sh, sdk/vendor-lib.sh, the
+  three host tests that link (rt-host, ldbl-host, libc-link) and
+  sdk/bin/newtos-cc (new: --toolchain) use it. Kernel path (cargo xtask)
+  untouched.
+
+HOST
+  Apple Silicon Mac, macOS 27, Apple clang 21.0.0 (clang-2100.3.34.2),
+  Rust nightly-2026-04-15 (LLD 22.1.2). NOT installed: Homebrew llvm, lld;
+  no container runtime (docker/podman/colima/lima all absent).
+
+METHOD  (method/)
+  build-all.sh <label>   deletes the 13 SDK archives, runs 27 build scripts
+                         (libc gemlib cflib libm compiler-rt ldg zlib libpng
+                         libjpeg giflib libexif windom libshare qed teradesk
+                         hypview zview coremark doom gemtest chaintest present
+                         apitest fsbench libtest ldg-client ldg-demo), sdk/build.sh,
+                         newtos-cc -bare / -lm, both templates via newtos.mk,
+                         started from OUTSIDE the checkout; sha256 of every
+                         produced .a/.NCP/.NAP/.NLD (64 files: 13 archives,
+                         51 program files).
+  probe-resolution.sh    14 lookup-order / error-path cases.
+  conv.pl                the mechanical script edit ($BIN/... -> newtos_tool,
+                         "$LLD" -flavor gnu -> newtos_lld).
+  "LLVM on PATH" was simulated: scratch dir fakellvm/ with ld.lld -> the
+  pinned toolchain's rust-lld binary (lld picks the GNU flavour from argv[0],
+  as a distribution's ld.lld symlink does) and llvm-* -> the sysroot's tools.
+  "No Rust": env -i, PATH=<rustc trap>:/usr/bin:/bin:/usr/sbin:/sbin:fakellvm
+  -- no ~/.cargo/bin; rustc/rustup on PATH are trap scripts that log every
+  call and fail.
+
+RUNS  (runs/<label>/results.txt + sha256.txt)
+  baseline2       tree BEFORE the change (HEAD 2f0a21be), default env.
+                  (A first baseline run differed only by a harness bug:
+                  newtos-cc without -bare on examples/hello.c.)
+  rust-fallback   after the change, default env (no ld.lld on PATH -> Rust).
+  path-llvm       after the change, env -i (NO LANG) + fakellvm + rustc trap.
+  path-llvm-lang  same as path-llvm plus LANG=de_DE.UTF-8.
+  All 32 steps rc=0 in every run.
+
+RESULTS
+  rust-fallback  vs baseline2: 64/64 sha256 identical.
+  path-llvm-lang vs baseline2: 64/64 sha256 identical; rustc trap log empty
+                 (no rustc/rustup call at all); every script used
+                 fakellvm/llvm-ar ("ar : .../fakellvm/llvm-ar", 15x in logs).
+  path-llvm      vs baseline2: 51 of 64 differ. Cause: the locale, not the
+                 toolchain. libc.a/gemlib.a/libm.a/libwindom1.a member ORDER
+                 follows sort(1)'s collation (C vs de_DE.UTF-8); same member
+                 set (logs/locale-member-order.diff), every program linked
+                 against them moves accordingly. With LANG restored: identical.
+  Selected sha256 (baseline2 = rust-fallback = path-llvm-lang):
+    QED.NAP       bad3a4bbd9f3fbfac496b514302cb282f70779bcb1b1dfe2e54d41543f3d3265
+    DESKTOP.NAP   447d488b2ecf16e47f7e0ba506f782e264838d2c501f7189afc24d7f158aca08
+    HYP_VIEW.NAP  200a7d781bdad4dcb88f3066d16e290d8b059519f87375b8cf71c71a478ac6a9
+    ZVIEW.NAP     6ff287cd7ed90a760f2454e57dd1a8f5adc315998e578e1c495f21c53578a5d2
+    libc.a        aa9a79777b9310db01b339089f7b2549d6063239c63494a581cb9005de0c9c0a
+    MATHTST.NCP   cac6196e725b75de7f65c75d59ed735c6c72d74a21088ba9bf8c137d4cd9b058
+                  (also produced by newtos-cc under dash with ld.lld, probe 12b)
+  probe-resolution (logs/probe-resolution.log): all 14 cases as designed --
+    default -> Rust fallback; no tools -> the install message, rc=1;
+    NEWTOS_TOOLCHAIN=rust ignores PATH; =llvm never Rust; NEWTOS_LLVM_BIN;
+    clang's real dir via a symlinked CLANG; NEWTOS_LLD wins; bogus mode and a
+    missing NEWTOS_AR are rejected; dash; sdk/build.sh prints ld.lld without
+    -flavor; old-style LLD=<rust-lld> still gets -flavor gnu. The rustc-trap
+    calls in the log come from cases 2/3 (nothing found -> fallback tried).
+  sdk/run-host-tests.sh: default env 26 passed / 0 failed / 0 skipped;
+    no-Rust env (with /opt/homebrew/bin for python3 >= 3.11) 26/0/0.
+    (With /usr/bin/python3 3.9.6 first, ldbl-host FAILS: its oracle calls
+    sys.set_int_max_str_digits -- Python >= 3.11; unrelated to K.)
+  cargo xtask build --board qemu-virt: rc=0; --board rpi4: rc=0; kernel
+    warnings 94 each (unchanged code path; logs/xtask-build-tail.log).
+
+WHAT THIS DOES NOT SHOW
+  * Acceptance 1 proper -- a DIFFERENT lld release (Homebrew's / Debian's)
+    vs rust-lld: not run, Homebrew llvm/lld are not installed. The runs above
+    prove the resolution and the -flavor handling with the same LLD 22.1.2.
+  * Acceptance 2 -- Linux x86_64 / Debian 12 clang-14 + lld-14: not run, no
+    container runtime on this Mac.
+  * Acceptance 3 with real Homebrew packages: simulated only (see METHOD).
+  * Nothing ran on NewTOS (QEMU or Pi); outputs are byte-identical to the
+    pre-change builds, which the Tester verifies as usual.
+  * Steps 5/6 of the lookup (Homebrew opt dirs, /usr/lib/llvm-*) were not
+    exercised: neither exists on this host.

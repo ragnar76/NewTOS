@@ -116,11 +116,11 @@ MINT="$LIBC/mintlib/include"
 CLANG="${CLANG:-clang}"
 command -v "$CLANG" >/dev/null 2>&1 || { echo "error: clang not found" >&2; exit 1; }
 RES="$($CLANG -print-resource-dir)/include"
-. "$SDK/toolchain.sh"   # rustc asked from inside sdk/, whatever the cwd (SDK01 I)
-BIN="$(newtos_rust_bindir)"
-LLD="${LLD:-$BIN/rust-lld}"
-NM="$BIN/llvm-nm"
-SIZE="$BIN/llvm-size"
+. "$SDK/toolchain.sh"   # LLVM tools: PATH / LLVM packages first, pinned Rust sysroot as fallback (SDK01 I, K)
+LLD="${LLD:-$(newtos_tool ld.lld)}"
+NM="$(newtos_tool llvm-nm)"
+SIZE="$(newtos_tool llvm-size)"
+OBJDUMP="$(newtos_tool llvm-objdump)"
 [ -x "$LLD" ] || { echo "error: missing LLVM tool: $LLD" >&2; exit 1; }
 
 echo "clang : $($CLANG --version | head -1)"
@@ -180,11 +180,11 @@ if "$CLANG" "${CFLAGS[@]}" -mgeneral-regs-only -Wall -Wextra "${PLAT_INCS[@]}" \
         -c "$PORT/doomgeneric_gem_kbdvec.c" -o "$OBJ/doomgeneric_gem_kbdvec.o" 2>"$e"; then
     ok=$((ok+1))
     if [ -s "$e" ]; then echo "kbdvec hook warnings:"; sed 's/^/    /' "$e"; fi
-    fpsimd=$("$BIN/llvm-objdump" -d --no-show-raw-insn "$OBJ/doomgeneric_gem_kbdvec.o" \
+    fpsimd=$("$OBJDUMP" -d --no-show-raw-insn "$OBJ/doomgeneric_gem_kbdvec.o" \
         | grep -E '^[[:space:]]+[0-9a-f]+:' | grep -cE '[[:space:],\[]([vqdsbh][0-9]+|fpcr|fpsr)\b' || true)
     if [ "$fpsimd" -ne 0 ]; then
         echo "STOP: the kbdvec hook uses FP/SIMD registers ($fpsimd instructions):"
-        "$BIN/llvm-objdump" -d "$OBJ/doomgeneric_gem_kbdvec.o" | sed 's/^/    /'
+        "$OBJDUMP" -d "$OBJ/doomgeneric_gem_kbdvec.o" | sed 's/^/    /'
         exit 1
     fi
     echo "kbdvec hook: -mgeneral-regs-only, objdump: 0 FP/SIMD register uses"
@@ -205,7 +205,7 @@ fi
 # --- CRT + link ---------------------------------------------------------------
 "$CLANG" "${CFLAGS[@]}" -I"$SDK/include" -I"$MINT" -c "$LIBC/crt0.S" -o "$BUILD/crt0.o" || exit 1
 rm -f "$OUT"
-"$LLD" -flavor gnu -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 \
+newtos_lld -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 \
     --build-id=none --why-extract="$BUILD/why.txt" \
     "$BUILD/crt0.o" "$OBJ"/*.o \
     --start-group "$GEM/gemlib.a" "$LIBM/libm.a" "$LIBC/libc.a" --end-group \

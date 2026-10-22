@@ -36,11 +36,10 @@ done
 CLANG="${CLANG:-clang}"
 command -v "$CLANG" >/dev/null 2>&1 || { echo "error: clang not found" >&2; exit 1; }
 RES="$($CLANG -print-resource-dir)/include"
-. "$SDK/toolchain.sh"   # rustc asked from inside sdk/, whatever the cwd (SDK01 I)
-BIN="$(newtos_rust_bindir)"
-LLD="${LLD:-$BIN/rust-lld}"
-NM="$BIN/llvm-nm"
-READOBJ="$BIN/llvm-readobj"
+. "$SDK/toolchain.sh"   # LLVM tools: PATH / LLVM packages first, pinned Rust sysroot as fallback (SDK01 I, K)
+LLD="${LLD:-$(newtos_tool ld.lld)}"
+NM="$(newtos_tool llvm-nm)"
+READOBJ="$(newtos_tool llvm-readobj)"
 [ -x "$LLD" ] || { echo "error: missing LLVM tool: $LLD" >&2; exit 1; }
 
 # The app flag set (build-libtest.sh / build-chaintest.sh).
@@ -59,7 +58,7 @@ if [ -s "$BUILD/present.err" ]; then echo "  warnings in present.c:"; sed 's/^/ 
 "$CLANG" -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 -fPIE -fno-builtin -nostdinc \
     -I"$SDK/include" -I"$MINT" -c "$SDK/libc/crt0.S" -o "$BUILD/crt0.o" || exit 1
 
-if ! "$LLD" -flavor gnu -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 \
+if ! newtos_lld -T "$SDK/newtos.ld" -pie --no-dynamic-linker -z text -z max-page-size=0x1000 \
     --build-id=none "$BUILD/crt0.o" "$BUILD/present.o" \
     --start-group "$SDK/gemlib/gemlib.a" "$SDK/libpng/libpng.a" "$SDK/zlib/libz.a" \
                   "$SDK/libm/libm.a" "$SDK/libc/libc.a" --end-group \

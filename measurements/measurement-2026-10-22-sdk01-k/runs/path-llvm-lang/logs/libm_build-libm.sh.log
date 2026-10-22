@@ -1,0 +1,14 @@
+clang : Apple clang version 21.0.0 (clang-2100.3.34.2)
+ar    : /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/651de586-7dd7-487b-9e92-c8525c58f508/scratchpad/k/fakellvm/llvm-ar
+lld   : /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/651de586-7dd7-487b-9e92-c8525c58f508/scratchpad/k/fakellvm/ld.lld
+
+compiled OK=256  skipped=0  (of 256)
+failures match libm/expected-failures.txt: 0 today, 0 recorded, 0 new
+archived -> /Volumes/Daten/Development/PiRusTOS/sdk/libm/libm.a (688030 bytes)
+defined symbols: 403  dangling references: 25 (build/dangling.txt)
+
+LINK OK -> /Volumes/Daten/Development/PiRusTOS/sdk/libm/build/mathtst.NCP (110488 bytes)
+  Type: SharedObject (0x3)
+  Machine: EM_AARCH64 (0xB7)
+  Entry: 0x1000
+undefined symbols in the final image (goal 0): 0

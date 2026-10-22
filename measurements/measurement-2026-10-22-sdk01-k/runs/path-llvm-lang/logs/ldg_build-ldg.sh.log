@@ -1,0 +1,9 @@
+clang : Apple clang version 21.0.0 (clang-2100.3.34.2)
+ar    : /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/651de586-7dd7-487b-9e92-c8525c58f508/scratchpad/k/fakellvm/llvm-ar
+
+  overlay: src/devel/ldgutil.c (from sdk/ldg/overlay/)
+  overlay: src/devel/ldgload.c (from sdk/ldg/overlay/)
+compiled OK=4  FAILED=0  (files with warnings: 0)
+archived -> /Volumes/Daten/Development/PiRusTOS/sdk/ldg/libldg.a (10228 bytes)
+exported symbols: _ldg_adr_regctx _ldg_nb_regctx ldg_Calloc ldg_close ldg_cookie ldg_cpush ldg_error ldg_find ldg_Free ldg_getpath ldg_init ldg_libpath ldg_load ldg_Malloc ldg_open ldg_Realloc ldg_unload ldg_version set_error 
+

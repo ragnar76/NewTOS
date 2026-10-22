@@ -37,7 +37,7 @@ command):
 |------|---------|
 | compile | `clang -target aarch64-unknown-none-elf -ffreestanding -nostdlib -O2 -fPIE -fno-builtin -nostdinc -D__NEWTOS__ -Wno-macro-redefined` + your flags + `-I` of the selected libraries + `-I sdk/libc/mintlib/include` + (with `-lm`) `-I sdk/libm/include -I sdk/libm/openlibm-*/include` + `-isystem <clang resource dir>/include` |
 | crt0 | `sdk/libc/crt0.S`, assembled per link; with `-prgflags`/`-prot` as `-DNEWTOS_PRGFLAGS=<value>` |
-| link | `rust-lld -flavor gnu -T sdk/newtos.ld -pie --no-dynamic-linker -z text -z max-page-size=0x1000 --build-id=none crt0.o <objects> --start-group <archives> sdk/compiler-rt/libclang_rt.builtins.a --end-group` |
+| link | `ld.lld` (or `rust-lld -flavor gnu`, the Rust fallback) `-T sdk/newtos.ld -pie --no-dynamic-linker -z text -z max-page-size=0x1000 --build-id=none crt0.o <objects> --start-group <archives> sdk/compiler-rt/libclang_rt.builtins.a --end-group` |
 
 Your flags come after the defaults, so `-Os` replaces `-O2`; your `-I`
 directories are searched before the SDK's. The include order (libraries above
@@ -118,13 +118,19 @@ while the kernel runs with memory protection (`memprot=on`, the default, or
 
 `-c`, `-S`, `-E` stop after compiling / assembly / preprocessing, as `cc`
 does. `-Wl,a,b` passes `a` and `b` to the linker (e.g. `-Wl,-Map=prog.map`).
-`-v` prints each command. Every other option goes to clang when compiling
-(`-O*`, `-g`, `-W*`, `-f*`, `-D`, `-U`, `-I`, `-include`, `-isystem`, `-std=`,
-`-MMD`, `-MF` …). Environment: `CLANG` (default `clang`), `LLD` (default: the
-`rust-lld` of the Rust toolchain that `rustc` reports **when asked from inside
-the SDK directory** — inside this repository the nightly pinned in
-`rust-toolchain.toml`, whatever directory you build in — else `ld.lld`, then
-`rust-lld` from `PATH`), `NEWTOS_SDK`.
+`-v` prints each command. `--toolchain` prints which clang, linker and
+LLVM tools would be used, and exits. Every other option goes to clang when
+compiling (`-O*`, `-g`, `-W*`, `-f*`, `-D`, `-U`, `-I`, `-include`,
+`-isystem`, `-std=`, `-MMD`, `-MF` …). Environment: `CLANG` (default
+`clang`); `LLD` or `NEWTOS_LLD` (an explicit linker); otherwise the linker
+comes from `sdk/toolchain.sh` (TASK/SDK01 K): `ld.lld` from
+`NEWTOS_LLVM_BIN`, `PATH`, clang's own directory, Homebrew's keg-only
+`llvm`/`lld`, `/usr/lib/llvm-*/bin`, and only then the `rust-lld` of the
+Rust nightly that `rustc` reports **when asked from inside the SDK
+directory** (the one pinned in `rust-toolchain.toml`, whatever directory you
+build in); `NEWTOS_TOOLCHAIN` (`auto`, `llvm` = never Rust, `rust` = only
+Rust); `NEWTOS_SDK`. Order and messages:
+[02 §Linker and binutils](02-prerequisites.md#linker-and-binutils-llvms-from-the-packages-or-from-rust).
 
 ### Examples
 
@@ -213,8 +219,8 @@ with `rc=0` and the desktop came up.
 * **Linux.** Not run on Linux. The wrapper and the host test are written for
   POSIX `sh` and were run with macOS `/bin/sh` and with `dash`; `newtos.mk`
   uses only GNU make 3.81 features; `make card` uses `cp` there (`cp -X`
-  only on macOS). The toolchain lookup (`clang`, `rustc`'s `rust-lld` or
-  `ld.lld`) and the library build scripts themselves (bash, `md5`/`md5sum`
+  only on macOS). The toolchain lookup (`clang`, `ld.lld` from the packages
+  or the Rust fallback's `rust-lld`) and the library build scripts themselves (bash, `md5`/`md5sum`
   …) have not been tried on Linux, and the SD-image tool is macOS-only
   (TASK/SDK01 package G).
 * **`.NAC` and `.NTP` built with the wrapper** link, but were not started;
@@ -223,5 +229,8 @@ with `rc=0` and the desktop came up.
 * **A real Pi 4.** Nothing of this chapter ran on hardware; interactive use of
   the GEM template (mouse on the close box, moving the window) is
   hardware-only — in QEMU only the keys sent by the scratch injector were.
-* **`ld.lld` instead of `rust-lld`** was not tried; byte identity with the
-  scripts holds for the same `rust-lld`.
+* **A different lld release.** Since TASK/SDK01 K `ld.lld` from `PATH` is
+  preferred; on the Mac it was tried only as the same LLD 22.1.2 under the
+  name `ld.lld` (byte-identical output,
+  `measurements/measurement-2026-10-22-sdk01-k/RUNINFO.TXT`). Homebrew's or
+  a distribution's lld was not compared.
