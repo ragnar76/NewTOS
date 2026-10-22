@@ -62,7 +62,7 @@
 //!   back to a kernel-heap copy per save — the pre-A57 behaviour — and
 //!   `WF_SCREEN` answers FALSE (`docs/COMPATIBILITY.md`, A54).
 
-use core::sync::atomic::{AtomicI16, AtomicU32, AtomicU64, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicI16, AtomicU32, AtomicU64, AtomicUsize, Ordering};
 
 use tos_types::{Long, MX_PREFTTRAM, MX_STRAM};
 
@@ -86,6 +86,7 @@ pub fn gl_handle() -> i16 {
 // `vdi/vdi_main.c` jump table).
 const OPEN_WORKSTATION: i16 = 1;
 const CLOSE_WORKSTATION: i16 = 2;
+const ESCAPE_FUNCTION: i16 = 5;
 const SET_CHAR_HEIGHT: i16 = 12;
 const SET_LINE_TYPE: i16 = 15;
 const SET_LINE_WIDTH: i16 = 16;
@@ -124,6 +125,11 @@ impl Gsx {
         self.contrl[1] = n;
         self.contrl[3] = m;
         self.contrl[6] = gl_handle();
+        self.trap();
+    }
+
+    /// `gsx2()`: the VDI trap on the arrays as they stand.
+    fn trap(&mut self) {
         let block: [u64; 5] = [
             self.contrl.as_mut_ptr() as u64,
             self.intin.as_mut_ptr() as u64,
@@ -135,6 +141,16 @@ impl Gsx {
         // fields of `self` and outlive the call; every VDI handler bounds
         // its accesses by the counts this block carries (≤ 57/12 words out).
         let _flip_y = unsafe { crate::vdi::dispatch(block.as_ptr() as u64, crate::bdos::process::Abi::Lp64) };
+    }
+
+    /// `contrl[5] = sub; gsx_0code(code)` (`gemgsxif.c:305-306,311-312`):
+    /// a sub-function opcode with no inputs.
+    fn ncode_sub(&mut self, code: i16, sub: i16) {
+        self.contrl = [0; 12];
+        self.contrl[0] = code;
+        self.contrl[5] = sub;
+        self.contrl[6] = gl_handle();
+        self.trap();
     }
 
     /// `gsx_1code(code, value)` (`gemgsxif.c:151-155`).
@@ -194,6 +210,7 @@ pub fn gsx_init() {
     g.intin[10] = 2; // device coordinate space
     g.ncode(OPEN_WORKSTATION, 0, 11);
     GL_HANDLE.store(g.contrl[6], Ordering::Relaxed);
+    GL_GRAPHIC.store(true, Ordering::Relaxed); // `gsx_wsopen` (`:186`)
     let ws_chminh = g.ptsout[1]; // gl_ws.ws_chminh = SIZ_TAB[1]
 
     // gsx_start: the two text-height calls (`gemgraf.c:405-410`)
@@ -217,6 +234,26 @@ pub fn gsx_init() {
 /// does, and the next session's [`gsx_init`] opens it again.
 pub fn gsx_wsclose() {
     Gsx::new().ncode(CLOSE_WORKSTATION, 0, 0);
+}
+
+/// EmuTOS `gl_graphic` (`gemgsxif.c:84`): whether the screen is in graphics
+/// mode. `gsx_wsopen` sets it (`:186`), [`gsx_graphic`] switches it.
+static GL_GRAPHIC: AtomicBool = AtomicBool::new(false);
+
+/// `gsx_graphic(tographic)` (`gemgsxif.c:298-318`), called by `sh_tographic`
+/// / `sh_toalpha` (`gemshlib.c:234,259`): on a change, the VDI escape
+/// `v_exit_cur` (`CONTRL[5] = 2`: home, text cursor off, clear) going to
+/// graphics, `v_enter_cur` (`CONTRL[5] = 3`: clear, text cursor on, CR)
+/// going to alpha mode — on `gl_handle`, so the VT52 console is the one the
+/// character program then writes to (CON04). The `gsx_setmb` half
+/// (`:307,313`) has no counterpart: the VDI mouse feed calls the AES
+/// handlers directly (see [`gsx_init`]).
+pub fn gsx_graphic(tographic: bool) {
+    if GL_GRAPHIC.swap(tographic, Ordering::Relaxed) == tographic {
+        return;
+    }
+    let mut g = Gsx::new();
+    g.ncode_sub(ESCAPE_FUNCTION, if tographic { 2 } else { 3 });
 }
 
 // ── the screen-save buffer ────────────────────────────────────────────────

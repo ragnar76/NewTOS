@@ -29,8 +29,6 @@
 //!
 //! [`RasterBackend`]: crate::vdi::backend::RasterBackend
 
-use core::sync::atomic::{AtomicU8, Ordering};
-
 use crate::bdos::process::{self, usermem};
 use crate::host;
 use crate::trap::TrapArgs;
@@ -370,43 +368,20 @@ fn apply_to_clut(index: u16, word: u16) {
 }
 
 // ── Cursconf (VT52 text-cursor config) ───────────────────────────────────
-//
-// `v_stat_0` flags (EmuTOS `vt52.h`): the cursor visible / flash-enable
-// bits. NewTOS' GUI-oriented framebuffer console has no *blinking* text
-// caret, so hide/show/flash track their state without a visible cursor —
-// but the blink-rate get/set are honoured (a real, usable value), so this
-// is a thin state model, not a stub.
-const M_CFLASH: u8 = 0x02;
-const M_CVIS: u8 = 0x10;
-/// `v_stat_0` cursor bits; default = visible + flashing (EmuTOS).
-static V_STAT_0: AtomicU8 = AtomicU8::new(M_CVIS | M_CFLASH);
-/// `v_period` — cursor blink period in VBLs (EmuTOS default 30).
-static V_PERIOD: AtomicU8 = AtomicU8::new(30);
 
-/// `Cursconf` (0x15) — configure the VT52 text cursor (EmuTOS `cursconf`):
-/// `function` 0 hide, 1 show, 2 disable flash, 3 enable flash, 4 set the
-/// blink period (`operand` low byte, VBLs), 5 return the period; ≥ 6 no-op.
+/// `Cursconf` (0x15) — configure the VT52 text cursor (EmuTOS `cursconf`,
+/// `bios/vt52.c:893-914`): `function` 0 hide (`cursor_off`), 1 show
+/// (`cursor_on`), 2 clear `M_CFLASH` (steady), 3 set `M_CFLASH` (blinking),
+/// 4 set the blink period (`operand` low byte), 5 return the period; any
+/// other value is a no-op. Only subfunction 5 returns a value, all others 0.
+/// The state is the alpha console's (`crate::vdi::alpha_cursconf`), the
+/// same one `ESC e`/`ESC f` drive; without a screen the state still
+/// changes and nothing is drawn.
 pub fn cursconf(args: &TrapArgs) -> i64 {
     let function = args.arg_i16(0);
     let operand = args.arg_i16(1);
-    match function {
-        0 => {
-            V_STAT_0.fetch_and(!M_CVIS, Ordering::Relaxed);
-        }
-        1 => {
-            V_STAT_0.fetch_or(M_CVIS, Ordering::Relaxed);
-        }
-        2 => {
-            V_STAT_0.fetch_and(!M_CFLASH, Ordering::Relaxed);
-        }
-        3 => {
-            V_STAT_0.fetch_or(M_CFLASH, Ordering::Relaxed);
-        }
-        4 => V_PERIOD.store(operand as u8, Ordering::Relaxed),
-        5 => return V_PERIOD.load(Ordering::Relaxed) as i64,
-        _ => {}
-    }
-    0
+    let backend = crate::host::host().and_then(|h| h.raster());
+    i64::from(crate::vdi::alpha_cursconf(backend, function, operand))
 }
 
 /// 16-entry ST palette shadow (0x0RGB, 3 bits per gun).

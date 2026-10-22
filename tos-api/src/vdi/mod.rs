@@ -27,14 +27,18 @@ mod contour;
 /// beyond EmuTOS, `docs/api/vdi/eddi-vq_scrninfo.md`.
 pub mod eddi;
 mod escape;
-/// The machine's one **alpha (text) screen**: the cursor, reverse-video flag
-/// and cell rendering that the VDI escape sub-functions *and* the BIOS
-/// `Bconout(2, …)` console share. EmuTOS keeps that state in the BIOS VT-52
-/// console and lets the escapes write to it through `Bconout`/`Crawio`
-/// (`vdi/vdi_esc.c:29-42`); NewTOS keeps it here and lets the kernel's
-/// console adapter (`kernel::fbcon`) write to it, which is the same single
-/// state with the call direction inverted.
-pub use escape::{clear_home as alpha_clear_home, conout as alpha_conout};
+/// The machine's one **alpha (text) screen**: the VT52 console the VDI
+/// escape sub-functions *and* the BIOS `Bconout(2, …)`/`Bconout(5, …)`
+/// devices share (`docs/api/bios/_vt52.md`). EmuTOS keeps that state in the
+/// BIOS VT52 console and lets the escapes write to it through
+/// `Bconout`/`Crawio` (`vdi/vdi_esc.c:29-42`); NewTOS keeps it here and lets
+/// the kernel's console adapter (`kernel::fbcon`) write to it, which is the
+/// same single state with the call direction inverted.
+pub use escape::{
+    blink as alpha_blink, clear_home as alpha_clear_home, conout as alpha_conout,
+    cursconf as alpha_cursconf, cursor_cell as alpha_cursor, init as alpha_init,
+    rawout as alpha_rawout,
+};
 mod fill_patterns;
 pub mod font;
 mod font_data;
@@ -445,7 +449,7 @@ pub unsafe fn dispatch_in(vdipb_ptr: u64, abi: Abi, space: Space) -> i16 {
         // v_clswk (2) closes ALL virtual workstations and leaves the
         // physical one open (AUD-V1-001); v_clsvwk (101) closes a single
         // virtual workstation, with a physical-handle guard (AUD-V1-002).
-        2 => workstation::v_clswk(),
+        2 => workstation::v_clswk(backend),
         101 => workstation::v_clsvwk(handle),
         3 => workstation::v_clrwk(backend),
 

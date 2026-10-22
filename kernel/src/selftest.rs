@@ -60,6 +60,9 @@ pub fn run_phase02_self_test() {
             got_byte = true;
             cconout(byte as u8);
             if byte == b'\r' as i32 || byte == b'\n' as i32 {
+                // The VT52 console's LF keeps the column (CON04): end the
+                // echoed line with CR LF.
+                cconout(b'\r');
                 cconout(b'\n');
                 break;
             }

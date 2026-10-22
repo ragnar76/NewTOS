@@ -1,268 +1,839 @@
-//! VDI `v_escape` (opcode 5) — the VT52-style **alpha** (text-mode)
-//! cursor controls and a few inquiries. Spec: `docs/api/vdi/_escape.md`.
-//! The sub-function is in `CONTRL[5]`; `> 19` is a no-op.
+//! The machine's one **alpha (text) screen** — the VT52 console behind
+//! `Bconout(2, …)`, the raw console behind `Bconout(5, …)` — and the VDI
+//! `v_escape` (opcode 5) sub-functions that drive it.
 //!
-//! NewTOS drives the alpha layer directly over the [`RasterBackend`] using
-//! the 8×16 system [`font`], with a cursor row/column and a reverse-video
-//! flag.
+//! Specs: `docs/api/bios/_vt52.md` (the console: state, escape automaton,
+//! every sequence, cursor, Handle 2 vs 5, decisions D1–D5/Q3/Q5/Q6),
+//! `docs/api/vdi/_escape.md` (`v_escape`), `docs/api/xbios/15-cursconf.md`.
+//! EmuTOS: `bios/vt52.c`, `bios/conout.c`, `vdi/vdi_esc.c`.
 //!
-//! **This layer is the machine's one alpha screen.** In EmuTOS every alpha
-//! escape is a write to the *single* BIOS VT-52 console: `bios_conws` is
-//! literally `while (*s) Bconout(2, *s++)` and `v_curtext` feeds each
-//! character to `Crawio` (`vdi_esc.c:29-42,83,95,205`), so the alpha cursor,
-//! the reverse-video flag, the scroll and the screen the escapes touch are
-//! the same ones BIOS/GEMDOS console output touches. NewTOS keeps that
-//! single state — here — and the kernel's framebuffer console
-//! (`kernel::fbcon`, the `Bconout(2, …)` device) renders *through* it via
-//! [`conout`]. Only the direction is inverted relative to EmuTOS (there the
-//! escapes call the console; here both call this layer), because the cell
-//! rendering lives in the VDI crate.
+//! **One state, as in EmuTOS.** Every alpha escape of EmuTOS' VDI is a write
+//! to the single BIOS VT52 console (`bios_conws` = `while (*s)
+//! Bconout(2, *s++)`, `vdi_esc.c:39-43`; `v_curtext` → `Crawio`), so the
+//! cursor, the colours, the reverse/wrap flags and the screen the escapes
+//! touch are the ones console output touches. NewTOS keeps that single state
+//! here — the cell rendering lives in the VDI crate — and the kernel's
+//! console adapter (`kernel::fbcon`, the `Bconout(2)` device) writes into it
+//! through [`conout`]; `Bconout(5)` reaches [`rawout`] directly
+//! (`bios::chardev`).
 //!
-//! The remaining, deliberate sub-deviation: the alpha cursor is **logical
-//! only** (position tracking); no visible block cursor is drawn, so EmuTOS'
-//! VT-52 cursor hide/show sequences (`ESC f`/`ESC e`, emitted by
-//! `v_exit_cur`/`v_enter_cur`) have no rendered counterpart.
+//! **Rendering** follows EmuTOS' Falcon 16-bit path (`TRUECOLOR_MODE`,
+//! `conout.c:137-180,297-331,542-575`): a cell is eight 16-bit screen words
+//! per glyph row, written and read through the backend's row interface;
+//! the cursor is the cell's bitwise complement (`neg_cell`). Colours are
+//! hardware registers (`v_col_fg`/`v_col_bg`, 0..15) resolved through the
+//! physical workstation's pseudo-palette, or `falcon_default_palette` while
+//! no workstation has been opened (decision D1).
+//!
+//! **Deliberate deviations** (`docs/COMPATIBILITY.md`, CON04): the
+//! reverse-video border cell of `ESC K`/`ESC o`/`ESC d`/`ESC J` (Q3), the
+//! blink clock (Q5), `vs_curaddress` without the byte detour (Q6), and BEL
+//! without a sound (D4).
 
-use core::sync::atomic::{AtomicBool, AtomicI16, Ordering};
+use core::cell::UnsafeCell;
+use core::sync::atomic::{AtomicBool, Ordering};
 
-use super::backend::{ClipRect, RasterBackend, Rect, WriteMode};
-use super::{font, mouse, Vdipb};
+use super::backend::{ClipRect, RasterBackend, Rect};
+use super::{font, mouse, vwk, Vdipb};
 
-// Alpha colours (Atari style: black text on white).
-const FG: u8 = 1;
-const BG: u8 = 0;
+// ── v_stat_0 (EmuTOS `bios/conout.h:17-30`) ─────────────────────────────
 
-static CUR_X: AtomicI16 = AtomicI16::new(0); // column (0-based)
-static CUR_Y: AtomicI16 = AtomicI16::new(0); // row (0-based)
-static REVERSE: AtomicBool = AtomicBool::new(false);
+/// Cursor flashes (1) / is steady (0).
+const M_CFLASH: u8 = 0x01;
+/// Blink phase: the cursor cell is currently inverted.
+const M_CSTATE: u8 = 0x02;
+/// Cursor visible; also the semaphore against the blink interrupt.
+const M_CVIS: u8 = 0x04;
+/// End of line: wrap (1) / overwrite the last cell (0).
+const M_CEOL: u8 = 0x08;
+/// Reverse video on.
+const M_REVID: u8 = 0x10;
+/// A position saved by `ESC j` is present.
+const M_SVPOS: u8 = 0x20;
 
-fn cols(backend: &dyn RasterBackend) -> i16 {
-    backend.width() as i16 / font::CELL_W
+/// `conterm` bit 2: the console bell is enabled (`vt52.c:216`).
+const CONTERM_BELL: u8 = 0x04;
+
+/// The escape character.
+const ESC: u8 = 0x1b;
+
+/// EmuTOS `falcon_default_palette` (`bios/conout.c:31-34`): the 16-bit
+/// screen word of hardware register `n`, used while no workstation has been
+/// opened (`conout.c:169-170`, `blank_out16` `:557`).
+const FALCON_DEFAULT_PALETTE: [u16; 16] = [
+    0xffdf, 0xf800, 0x07c0, 0xffc0, 0x001f, 0xf81f, 0x07df, 0xbdd7, //
+    0x8c51, 0xa800, 0x0540, 0xad40, 0x0015, 0xa815, 0x0555, 0x0000,
+];
+
+/// EmuTOS `REV_MAP_COL` for registers 0..15 on a 256-pen device
+/// (`vdi/vdi_col.c:28-29,736-747`: `MAP_COL_ROM` with `MAP_COL[1] = 255`
+/// and `MAP_COL[255] = 15`, inverted). EmuTOS' pseudo-palette is indexed by
+/// hardware register; NewTOS folds `MAP_COL` and indexes it by pen
+/// (`vwk::VwkExt`), so the word EmuTOS reads at `palette[r]`
+/// (`conout.c:162-166`) is at `palette[REV_MAP_COL[r]]` here.
+const REV_MAP_COL: [u8; 16] = [0, 2, 3, 6, 4, 7, 5, 8, 9, 10, 11, 14, 12, 15, 13, 255];
+
+/// Blink ticks of the 200 Hz counter per `v_period` unit. EmuTOS counts
+/// `v_period` in VBLs (`blink()` once per VBL, `vectors.S:355`) and calls the
+/// default 30 "0.5 second blink rate (@ 60Hz vblank)" (`vt52.c:933`); NewTOS
+/// has no VBL and fixes the unit at 1/60 s on the 200 Hz counter, so the
+/// default is exactly 0.5 s on every board (decision Q5).
+const TICKS_PER_PERIOD_NUM: u32 = 10;
+const TICKS_PER_PERIOD_DEN: u32 = 3;
+
+/// The automaton's state — EmuTOS `con_state` (sysvar `0x4a8`), a function
+/// pointer there (`vt52.c:142-160`).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum ConState {
+    /// `normal_ascii` (`vt52.c:166-201`).
+    Normal,
+    /// `esc_ch1` (`:242-255`).
+    Esc,
+    /// `get_row` (`:260-265`).
+    Row,
+    /// `get_column` (`:270-286`).
+    Column,
+    /// `get_fg_col` (`:292-303`).
+    FgCol,
+    /// `get_bg_col` (`:309-320`).
+    BgCol,
 }
-fn rows(backend: &dyn RasterBackend) -> i16 {
-    backend.height() as i16 / font::CELL_H
-}
-fn full_clip(backend: &dyn RasterBackend) -> ClipRect {
-    ClipRect::full(backend.width(), backend.height())
+
+/// The console state (`docs/api/bios/_vt52.md` §1).
+struct Alpha {
+    state: ConState,
+    /// `save_row` (sysvar `0x4ac`).
+    save_row: i16,
+    /// `v_cur_cx`, `v_cur_cy`.
+    cx: i16,
+    cy: i16,
+    /// `v_cel_mx`, `v_cel_my` — from the backend geometry at every entry.
+    mx: i16,
+    my: i16,
+    /// `v_stat_0`.
+    stat: u8,
+    /// `disab_cnt` (a `WORD`).
+    disab_cnt: i16,
+    /// `sav_cur_x`, `sav_cur_y`.
+    sav_x: i16,
+    sav_y: i16,
+    /// `v_col_fg`, `v_col_bg` — hardware registers, `ch & 0x0f`.
+    fg: u8,
+    bg: u8,
+    /// `v_period` (`Cursconf` 4/5).
+    period: u8,
+    /// `_hz_200` value at which the blink timer runs out (EmuTOS `v_cur_tim`
+    /// counted down per VBL).
+    blink_due: u32,
 }
 
-/// Draw one glyph in the current (possibly reversed) colours at the cell.
-fn put_cell(backend: &dyn RasterBackend, col: i16, row: i16, code: u16) {
-    let (x, y) = (col * font::CELL_W, row * font::CELL_H);
-    let clip = full_clip(backend);
-    let (fg, bg) = if REVERSE.load(Ordering::Relaxed) { (BG, FG) } else { (FG, BG) };
-    backend.fill_rect(x, y, font::CELL_W, font::CELL_H, bg, clip);
-    // The cell background is painted above, so the glyph blits transparently.
-    backend.draw_glyph(x, y, font::glyph(code), fg, WriteMode::Transparent, clip);
-}
-
-/// Clear the whole alpha screen and home the cursor — the effect shared by
-/// EmuTOS' `v_exit_cur` (`\033H\033f\033E`) and `v_enter_cur`
-/// (`\033E\033e\015`), both of which clear-and-home via VT-52 `ESC E`
-/// (`vdi_esc.c:81,93`). Reverse video is **not** reset: neither sequence
-/// sends `ESC q`.
-fn clear_and_home(backend: &dyn RasterBackend) {
-    backend.fill_rect(
-        0,
-        0,
-        backend.width() as i16,
-        backend.height() as i16,
-        BG,
-        full_clip(backend),
-    );
-    CUR_X.store(0, Ordering::Relaxed);
-    CUR_Y.store(0, Ordering::Relaxed);
-}
-
-/// Scroll the whole alpha text area up by one cell row — the EmuTOS VT-52
-/// console behaviour when `v_curtext` output runs past the bottom of the
-/// screen (`vdi_esc.c:196`, `crawio` → BIOS conout, which scrolls). The top
-/// row is lost; the freed bottom row is cleared to the background. `mx`/`my`
-/// are the maximum (0-based) column/row.
-fn scroll_up(backend: &dyn RasterBackend, mx: i16, my: i16) {
-    let clip = full_clip(backend);
-    // Move rows 1..=my up onto rows 0..=my-1. op 3 = `S` (replace/copy);
-    // `copy_rect` picks a non-corrupting direction for the overlap.
-    let src = Rect {
-        x: 0,
-        y: font::CELL_H,
-        w: (mx + 1) * font::CELL_W,
-        h: my * font::CELL_H,
+impl Alpha {
+    /// The state `vt52_init` leaves (`vt52.c:921-953`) — also the power-up
+    /// value, so nothing is lost if output arrives before [`init`].
+    const INIT: Alpha = Alpha {
+        state: ConState::Normal,
+        save_row: 0,
+        cx: 0,
+        cy: 0,
+        mx: 0,
+        my: 0,
+        stat: M_CFLASH,
+        disab_cnt: 1,
+        sav_x: 0,
+        sav_y: 0,
+        fg: 15,
+        bg: 0,
+        period: 30,
+        blink_due: 0,
     };
-    backend.copy_rect(src, 0, 0, 3, clip);
-    // Clear the freed bottom row.
-    erase_cells(backend, my, 0, mx);
 }
 
-/// Erase a run of cells on `row` from `col0` to `col1` (inclusive).
-fn erase_cells(backend: &dyn RasterBackend, row: i16, col0: i16, col1: i16) {
-    if col0 > col1 {
-        return;
+struct AlphaCell(UnsafeCell<Alpha>);
+// SAFETY: access is serialised by `BUSY` (see `Guard`).
+unsafe impl Sync for AlphaCell {}
+
+static ALPHA: AlphaCell = AlphaCell(UnsafeCell::new(Alpha::INIT));
+
+/// Held while any console operation runs. The blink, which the kernel calls
+/// from the timer interrupt, only *tries* to take it and skips the tick when
+/// the console is busy — the role of EmuTOS' `M_CVIS` semaphore
+/// (`conout.h:21-25`).
+static BUSY: AtomicBool = AtomicBool::new(false);
+
+/// Exclusive access to the console state for one operation, with the
+/// backend (`None` = no screen: the state still changes, nothing is drawn).
+struct Con<'a> {
+    st: &'static mut Alpha,
+    b: Option<&'a dyn RasterBackend>,
+}
+
+impl Drop for Con<'_> {
+    fn drop(&mut self) {
+        BUSY.store(false, Ordering::Release);
     }
-    let clip = full_clip(backend);
-    backend.fill_rect(
-        col0 * font::CELL_W,
-        row * font::CELL_H,
-        (col1 - col0 + 1) * font::CELL_W,
-        font::CELL_H,
-        BG,
-        clip,
-    );
 }
 
-/// Clear the alpha screen and home the cursor from **outside** the escape
-/// dispatcher — the `ESC E` (`\033E`) both `v_exit_cur` and `v_enter_cur`
-/// send to the console (`vdi_esc.c:83,95`), which is also what closing and
-/// re-opening the workstation leaves behind. The kernel calls this when it
-/// hands the screen to the character console.
-pub fn clear_home(backend: &dyn RasterBackend) {
-    clear_and_home(backend);
+/// Take the console. Single CPU: a caller never finds it held except from a
+/// second host thread (host tests), so this waits.
+fn lock(b: Option<&dyn RasterBackend>) -> Con<'_> {
+    while BUSY
+        .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
+        .is_err()
+    {
+        core::hint::spin_loop();
+    }
+    con(b)
 }
 
-/// Write one character to the alpha screen — the VT-52 console output
-/// EmuTOS reaches with `Bconout(2, ch)` (`vdi_esc.c:39-42`, `bios/conout.c`).
-///
-/// This is the *same* cursor, reverse-video flag and screen the escape
-/// sub-functions above drive, which is the point: a `v_enter_cur` that
-/// clears and homes is followed by console output starting at the home
-/// position, exactly as on TOS. The kernel's `Bconout(2, …)` device
-/// (`kernel::fbcon`) is a thin adapter onto this function.
-///
-/// Handled controls: `CR` (column 0), `LF` (next line, scrolling at the
-/// bottom), `BS` (back one cell and erase it) and `TAB` (next multiple of
-/// eight columns). Codes `0x20..=0xFF` print; other control codes are
-/// ignored — NewTOS' VT-52 console does not parse `ESC` sequences from the
-/// character stream (the escapes arrive through `v_escape` instead).
+/// Take the console if it is free (interrupt context).
+fn try_lock(b: Option<&dyn RasterBackend>) -> Option<Con<'_>> {
+    BUSY.compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+        .ok()
+        .map(|_| con(b))
+}
+
+fn con(b: Option<&dyn RasterBackend>) -> Con<'_> {
+    // SAFETY: `BUSY` is held; nobody else touches `ALPHA` until `Con` drops.
+    let st = unsafe { &mut *ALPHA.0.get() };
+    if let Some(b) = b {
+        // `font_set_default` (`bios/font.c:72-88`): last column/row of the
+        // 8×16 cell grid.
+        st.mx = (b.width() as i16 / font::CELL_W - 1).max(0);
+        st.my = (b.height() as i16 / font::CELL_H - 1).max(0);
+        st.cx = st.cx.min(st.mx);
+        st.cy = st.cy.min(st.my);
+    }
+    Con { st, b }
+}
+
+fn hz_200() -> u32 {
+    crate::bios::tick::hz_200()
+}
+
+impl Con<'_> {
+    // ── colours and cells ────────────────────────────────────────────────
+
+    /// The 16-bit screen word of hardware register `reg` (D1): the physical
+    /// workstation's pseudo-palette once it has been opened
+    /// (`phys_work.ext->palette[reg]`, `conout.c:162-166`), else
+    /// `falcon_default_palette` (`:169-170`).
+    fn word(&self, reg: u8) -> u16 {
+        let reg = reg & 0x0f;
+        // SAFETY: single trap path, as for the rest of the VDI state.
+        let phys_open = unsafe { vwk::resolve(vwk::PHYS_HANDLE) }.is_some();
+        if phys_open {
+            // SAFETY: as above.
+            if let Some(ext) = unsafe { vwk::ext(vwk::PHYS_HANDLE) } {
+                return ext.palette[REV_MAP_COL[reg as usize] as usize];
+            }
+        }
+        FALCON_DEFAULT_PALETTE[reg as usize]
+    }
+
+    fn flush_cells(&self, x0: i16, y0: i16, x1: i16, y1: i16) {
+        if let Some(b) = self.b {
+            b.flush_rect(
+                x0 * font::CELL_W,
+                y0 * font::CELL_H,
+                (x1 + 1) * font::CELL_W - 1,
+                (y1 + 1) * font::CELL_H - 1,
+            );
+        }
+    }
+
+    /// `cell_xfer` (`conout.c:137-180,202-279`): the glyph of `ch` in the
+    /// foreground on the background, swapped under reverse video
+    /// (`:150-156,221-228`); the whole cell is replaced.
+    fn cell_xfer(&self, x: i16, y: i16, ch: u8) {
+        let Some(b) = self.b else { return };
+        let (mut fg, mut bg) = (self.word(self.st.fg), self.word(self.st.bg));
+        if self.st.stat & M_REVID != 0 {
+            core::mem::swap(&mut fg, &mut bg);
+        }
+        let glyph = font::glyph(ch as u16);
+        let (px, py) = (x * font::CELL_W, y * font::CELL_H);
+        for (row, &bits) in glyph.iter().enumerate() {
+            let mut line = [bg; 8];
+            for (i, w) in line.iter_mut().enumerate() {
+                if bits & (0x80 >> i) != 0 {
+                    *w = fg;
+                }
+            }
+            b.write_row_rgb565(px, py + row as i16, &line);
+        }
+        self.flush_cells(x, y, x, y);
+    }
+
+    /// `neg_cell` (`conout.c:297-331`): complement every screen word of the
+    /// cell — the cursor. A second call restores the cell.
+    fn neg_cell(&self, x: i16, y: i16) {
+        let Some(b) = self.b else { return };
+        let (px, py) = (x * font::CELL_W, y * font::CELL_H);
+        for row in 0..font::CELL_H {
+            let mut line = [0u16; 8];
+            b.read_row_rgb565(px, py + row, &mut line);
+            for w in line.iter_mut() {
+                *w = !*w;
+            }
+            b.write_row_rgb565(px, py + row, &line);
+        }
+        self.flush_cells(x, y, x, y);
+    }
+
+    /// `blank_out` (`conout.c:598-684`, `blank_out16` `:542-575`): fill the
+    /// cell rectangle `(x0,y0)..=(x1,y1)` with the background register —
+    /// never the reverse-video foreground (`:611`).
+    fn blank_out(&self, x0: i16, y0: i16, x1: i16, y1: i16) {
+        let Some(b) = self.b else { return };
+        if x0 > x1 || y0 > y1 {
+            return;
+        }
+        let word = self.word(self.st.bg);
+        let line = [word; 64];
+        let (px0, px1) = (x0 * font::CELL_W, (x1 + 1) * font::CELL_W);
+        for py in (y0 * font::CELL_H)..((y1 + 1) * font::CELL_H) {
+            let mut x = px0;
+            while x < px1 {
+                let n = ((px1 - x) as usize).min(line.len());
+                b.write_row_rgb565(x, py, &line[..n]);
+                x += n as i16;
+            }
+        }
+        self.flush_cells(x0, y0, x1, y1);
+    }
+
+    /// `scroll_up(top)` (`conout.c:706-725`): rows `top+1..=my` move up one
+    /// row, the bottom row is blanked. The cursor is not moved.
+    fn scroll_up(&self, top: i16) {
+        let (mx, my) = (self.st.mx, self.st.my);
+        if let Some(b) = self.b {
+            if top < my {
+                let src = Rect {
+                    x: 0,
+                    y: (top + 1) * font::CELL_H,
+                    w: (mx + 1) * font::CELL_W,
+                    h: (my - top) * font::CELL_H,
+                };
+                b.copy_rect(src, 0, top * font::CELL_H, 3, ClipRect::full(b.width(), b.height()));
+            }
+        }
+        self.blank_out(0, my, mx, my);
+    }
+
+    /// `scroll_down(start)` (`conout.c:733-752`): rows `start..my-1` move
+    /// down one row (the bottom row falls out), row `start` is blanked.
+    fn scroll_down(&self, start: i16) {
+        let (mx, my) = (self.st.mx, self.st.my);
+        if let Some(b) = self.b {
+            if start < my {
+                let src = Rect {
+                    x: 0,
+                    y: start * font::CELL_H,
+                    w: (mx + 1) * font::CELL_W,
+                    h: (my - start) * font::CELL_H,
+                };
+                b.copy_rect(src, 0, (start + 1) * font::CELL_H, 3, ClipRect::full(b.width(), b.height()));
+            }
+        }
+        self.blank_out(0, start, mx, start);
+    }
+
+    // ── cursor (`conout.c:416-470`, `vt52.c:612-688,849-873`) ─────────────
+
+    fn reload_blink(&mut self) {
+        let period = if self.st.period == 0 { 256 } else { u32::from(self.st.period) };
+        self.st.blink_due = hz_200().wrapping_add(period * TICKS_PER_PERIOD_NUM / TICKS_PER_PERIOD_DEN);
+    }
+
+    /// `move_cursor(x, y)` (`conout.c:416-470`): clamp, move, and carry a
+    /// visible cursor along.
+    fn move_cursor(&mut self, x: i16, y: i16) {
+        let x = x.clamp(0, self.st.mx);
+        let y = y.clamp(0, self.st.my);
+        let (ox, oy) = (self.st.cx, self.st.cy);
+        self.st.cx = x;
+        self.st.cy = y;
+        if self.st.stat & M_CVIS == 0 {
+            return;
+        }
+        if self.st.stat & M_CFLASH != 0 && self.st.stat & M_CSTATE == 0 {
+            // Blinking and currently off: show it at the new place.
+            self.neg_cell(x, y);
+            self.st.stat |= M_CSTATE;
+            self.reload_blink();
+            return;
+        }
+        self.neg_cell(ox, oy);
+        self.neg_cell(x, y);
+        self.reload_blink();
+    }
+
+    /// `do_cnt_esce` (`vt52.c:612-624`).
+    fn do_cnt_esce(&mut self) {
+        self.neg_cell(self.st.cx, self.st.cy);
+        self.st.stat |= M_CVIS;
+        if self.st.stat & M_CFLASH != 0 {
+            self.st.stat |= M_CSTATE;
+            self.reload_blink();
+        }
+    }
+
+    /// `cursor_on` (`vt52.c:630-643`) — `ESC e`, `Cursconf(1)`: forced.
+    fn cursor_on(&mut self) {
+        if self.st.disab_cnt == 0 {
+            return;
+        }
+        self.st.disab_cnt = 0;
+        self.do_cnt_esce();
+    }
+
+    /// `cursor_on_cnt` (`vt52.c:649-658`) — counted.
+    fn cursor_on_cnt(&mut self) {
+        if self.st.disab_cnt == 0 {
+            return;
+        }
+        self.st.disab_cnt = self.st.disab_cnt.wrapping_sub(1);
+        if self.st.disab_cnt == 0 {
+            self.do_cnt_esce();
+        }
+    }
+
+    /// `cursor_off` (`vt52.c:664-688`) — `ESC f`, `Cursconf(0)`, and the
+    /// bracket of every internal operation.
+    fn cursor_off(&mut self) {
+        self.st.disab_cnt = self.st.disab_cnt.wrapping_add(1);
+        if self.st.stat & M_CVIS == 0 {
+            return;
+        }
+        self.st.stat &= !M_CVIS;
+        if self.st.stat & M_CFLASH == 0 {
+            self.neg_cell(self.st.cx, self.st.cy);
+        } else if self.st.stat & M_CSTATE != 0 {
+            self.st.stat &= !M_CSTATE;
+            self.neg_cell(self.st.cx, self.st.cy);
+        }
+    }
+
+    /// `blink` (`vt52.c:849-873`), run against the 200 Hz counter (Q5).
+    fn blink(&mut self) {
+        if self.st.stat & M_CVIS == 0 || self.st.stat & M_CFLASH == 0 {
+            return;
+        }
+        if (hz_200().wrapping_sub(self.st.blink_due) as i32) < 0 {
+            return;
+        }
+        self.reload_blink();
+        self.st.stat ^= M_CSTATE;
+        self.neg_cell(self.st.cx, self.st.cy);
+    }
+
+    // ── output ───────────────────────────────────────────────────────────
+
+    /// `ascii_out` (`conout.c:482-532`): the glyph at the cursor, then
+    /// advance — overwrite the last cell without `M_CEOL`, else CR+LF with a
+    /// scroll at the bottom. The 8×16 system font covers 0..255
+    /// (`fnt_st_8x16.c:278-279`), so every byte has a glyph.
+    fn ascii_out(&mut self, ch: u8) {
+        let visible = self.st.stat & M_CVIS != 0;
+        if visible {
+            self.st.stat &= !M_CVIS;
+        }
+        self.cell_xfer(self.st.cx, self.st.cy, ch);
+        if self.st.cx == self.st.mx {
+            if self.st.stat & M_CEOL != 0 {
+                self.st.cx = 0;
+                if self.st.cy < self.st.my {
+                    self.st.cy += 1;
+                } else {
+                    self.scroll_up(0);
+                }
+            }
+        } else {
+            self.st.cx += 1;
+        }
+        if visible {
+            self.neg_cell(self.st.cx, self.st.cy);
+            self.st.stat |= M_CSTATE | M_CVIS;
+            if self.st.stat & M_CFLASH != 0 {
+                self.reload_blink();
+            }
+        }
+    }
+
+    /// `cputc` (`vt52.c:142-160`): one byte through the automaton.
+    fn cputc(&mut self, ch: u8) {
+        match self.st.state {
+            ConState::Normal => self.normal_ascii(ch),
+            ConState::Esc => self.esc_ch1(ch),
+            ConState::Row => {
+                // `get_row`: any byte, no check (`:263`).
+                self.st.save_row = i16::from(ch) - 32;
+                self.st.state = ConState::Column;
+            }
+            ConState::Column => {
+                // `get_column` (`:278-285`); `move_cursor` clamps.
+                let row = self.st.save_row;
+                self.move_cursor(i16::from(ch) - 32, row);
+                self.st.state = ConState::Normal;
+            }
+            ConState::FgCol => {
+                self.st.fg = ch & 0x0f; // `:301`
+                self.st.state = ConState::Normal;
+            }
+            ConState::BgCol => {
+                self.st.bg = ch & 0x0f; // `:318`
+                self.st.state = ConState::Normal;
+            }
+        }
+    }
+
+    /// `normal_ascii` (`vt52.c:166-201`) with `cntl_tab` (`:128-136`).
+    fn normal_ascii(&mut self, ch: u8) {
+        match ch {
+            0x20..=0xff => self.ascii_out(ch),
+            ESC => self.st.state = ConState::Esc,
+            0x07 => do_bell(),
+            0x08 => self.cursor_left(), // `do_backspace` = `cursor_left_impl`
+            0x09 => {
+                // `do_tab` (`:233-236`): next multiple of 8, clamped.
+                let x = (self.st.cx & !7) + 8;
+                let y = self.st.cy;
+                self.move_cursor(x, y);
+            }
+            0x0a..=0x0c => self.ascii_lf(), // LF, VT, FF
+            0x0d => {
+                let y = self.st.cy;
+                self.move_cursor(0, y); // `ascii_cr` (`:821-825`)
+            }
+            _ => {} // 0..6, 14..26, 28..31: discarded (`:200`)
+        }
+    }
+
+    /// `esc_ch1` (`vt52.c:242-255`): back to `normal_ascii` first; an
+    /// unknown byte is swallowed.
+    fn esc_ch1(&mut self, ch: u8) {
+        self.st.state = ConState::Normal;
+        match ch {
+            // `cursor_up`/`cursor_down`/`cursor_right` (`:359-404`): one
+            // cell, nothing at the edge (no scroll, no wrap).
+            b'A' if self.st.cy != 0 => {
+                let (x, y) = (self.st.cx, self.st.cy - 1);
+                self.move_cursor(x, y);
+            }
+            b'B' if self.st.cy != self.st.my => {
+                let (x, y) = (self.st.cx, self.st.cy + 1);
+                self.move_cursor(x, y);
+            }
+            b'C' if self.st.cx != self.st.mx => {
+                let (x, y) = (self.st.cx + 1, self.st.cy);
+                self.move_cursor(x, y);
+            }
+            b'D' => self.cursor_left(),
+            b'E' => self.clear_and_home(),
+            b'H' => self.move_cursor(0, 0),
+            b'I' => self.reverse_linefeed(),
+            b'J' => self.erase_to_eos(),
+            b'K' => self.erase_to_eol(),
+            b'L' => self.insert_line(),
+            b'M' => self.delete_line(),
+            b'Y' => self.st.state = ConState::Row,
+            b'b' => self.st.state = ConState::FgCol,
+            b'c' => self.st.state = ConState::BgCol,
+            b'd' => self.erase_from_home(),
+            b'e' => self.cursor_on(),
+            b'f' => self.cursor_off(),
+            b'j' => {
+                // `save_cursor_pos` (`:694-706`)
+                self.st.stat |= M_SVPOS;
+                self.st.sav_x = self.st.cx;
+                self.st.sav_y = self.st.cy;
+            }
+            b'k' => {
+                // `restore_cursor_pos` (`:712-725`)
+                let (x, y) = if self.st.stat & M_SVPOS != 0 {
+                    (self.st.sav_x, self.st.sav_y)
+                } else {
+                    (0, 0)
+                };
+                self.move_cursor(x, y);
+                self.st.stat &= !M_SVPOS;
+            }
+            b'l' => {
+                // `erase_line` (`:733-743`)
+                self.cursor_off();
+                let (mx, y) = (self.st.mx, self.st.cy);
+                self.blank_out(0, y, mx, y);
+                self.move_cursor(0, y);
+                self.cursor_on_cnt();
+            }
+            b'o' => self.erase_from_bol(),
+            b'p' => self.st.stat |= M_REVID,
+            b'q' => self.st.stat &= !M_REVID,
+            b'v' => self.st.stat |= M_CEOL,
+            b'w' => self.st.stat &= !M_CEOL,
+            // `nop` table entries (F, G, g, h, i, m, n, r..u), A/B/C at the
+            // edge, and every byte outside 'A'..'M' / 'b'..'w': no effect.
+            _ => {}
+        }
+    }
+
+    /// `cursor_left_impl` (`vt52.c:410-414`) — `ESC D` and BS.
+    fn cursor_left(&mut self) {
+        if self.st.cx != 0 {
+            let (x, y) = (self.st.cx - 1, self.st.cy);
+            self.move_cursor(x, y);
+        }
+    }
+
+    /// `ascii_lf` (`vt52.c:831-841`): down one row, the column stays; at the
+    /// bottom the screen scrolls.
+    fn ascii_lf(&mut self) {
+        if self.st.cy != self.st.my {
+            let (x, y) = (self.st.cx, self.st.cy + 1);
+            self.move_cursor(x, y);
+        } else {
+            self.cursor_off();
+            self.scroll_up(0);
+            self.cursor_on_cnt();
+        }
+    }
+
+    /// `clear_and_home` (`vt52.c:338-353`) — `ESC E`.
+    fn clear_and_home(&mut self) {
+        self.cursor_off();
+        self.move_cursor(0, 0);
+        let (mx, my) = (self.st.mx, self.st.my);
+        self.blank_out(0, 0, mx, my);
+        self.cursor_on_cnt();
+    }
+
+    /// `reverse_linefeed` (`vt52.c:545-556`) — `ESC I`.
+    fn reverse_linefeed(&mut self) {
+        if self.st.cy != 0 {
+            let (x, y) = (self.st.cx, self.st.cy - 1);
+            self.move_cursor(x, y);
+        } else {
+            let savex = self.st.cx;
+            self.insert_line();
+            self.move_cursor(savex, 0);
+        }
+    }
+
+    /// `insert_line` (`vt52.c:562-571`) — `ESC L`.
+    fn insert_line(&mut self) {
+        self.cursor_off();
+        self.scroll_down(self.st.cy);
+        let y = self.st.cy;
+        self.move_cursor(0, y);
+        self.cursor_on_cnt();
+    }
+
+    /// `delete_line` (`vt52.c:577-586`) — `ESC M`.
+    fn delete_line(&mut self) {
+        self.cursor_off();
+        self.scroll_up(self.st.cy);
+        let y = self.st.cy;
+        self.move_cursor(0, y);
+        self.cursor_on_cnt();
+    }
+
+    /// `erase_to_eol_impl` (`vt52.c:471-500`) — `ESC K`, and the first half
+    /// of `ESC J`. EmuTOS clears the cell at an odd column (or the last one)
+    /// with `ascii_out(' ')`, which paints it in the *foreground* under
+    /// reverse video, because `blank_out` needs an even start column on
+    /// interleaved bit-planes (`conout.c:586-596`). NewTOS blanks the whole
+    /// run with the background (decision Q3, `docs/COMPATIBILITY.md`).
+    fn erase_to_eol(&mut self) {
+        self.cursor_off();
+        let (x, y, mx) = (self.st.cx, self.st.cy, self.st.mx);
+        self.blank_out(x, y, mx, y);
+        self.move_cursor(x, y);
+        self.cursor_on_cnt();
+    }
+
+    /// `erase_to_eos` (`vt52.c:451-465`) — `ESC J`.
+    fn erase_to_eos(&mut self) {
+        self.erase_to_eol();
+        if self.st.cy != self.st.my {
+            let (mx, my, y) = (self.st.mx, self.st.my, self.st.cy);
+            self.blank_out(0, y + 1, mx, my);
+        }
+    }
+
+    /// `erase_from_bol_impl` (`vt52.c:752-775`) — `ESC o`, and the first
+    /// half of `ESC d`: column 0 through the cursor cell, inclusive. Same
+    /// border-cell decision as [`Self::erase_to_eol`] (Q3).
+    fn erase_from_bol(&mut self) {
+        self.cursor_off();
+        let (x, y) = (self.st.cx, self.st.cy);
+        self.blank_out(0, y, x, y);
+        self.move_cursor(x, y);
+        self.cursor_on_cnt();
+    }
+
+    /// `erase_from_home` (`vt52.c:592-606`) — `ESC d`.
+    fn erase_from_home(&mut self) {
+        self.erase_from_bol();
+        if self.st.cy != 0 {
+            let (mx, y) = (self.st.mx, self.st.cy);
+            self.blank_out(0, 0, mx, y - 1);
+        }
+    }
+
+    fn puts(&mut self, s: &[u8]) {
+        for &c in s {
+            self.cputc(c);
+        }
+    }
+}
+
+/// `do_bell` (`vt52.c:213-218`): `if (conterm & 4) bell()`. The byte is
+/// consumed and draws nothing either way.
+fn do_bell() {
+    if crate::bios::chardev::current_conterm() & CONTERM_BELL != 0 {
+        bell();
+    }
+}
+
+/// EmuTOS `bell()` (`bios/sound.c:251-254`) calls `bell_hook`, whose default
+/// `do_bell` plays the bell sound only with a YM2149 (`:256-261`). NewTOS
+/// has no audio device and no `bell_hook` system variable, so there is
+/// nothing to sound — the documented absence of the device (decision D4,
+/// `docs/COMPATIBILITY.md`), the same result as EmuTOS without
+/// `CONF_WITH_YM2149`.
+fn bell() {}
+
+// ── public entry points ────────────────────────────────────────────────
+
+/// `vt52_init` (`vt52.c:921-953`): reset the console — cursor home and
+/// hidden (`disab_cnt = 1`), blinking, no wrap, normal video, no saved
+/// position, foreground register 15 (the ≥ 4-plane and truecolor case,
+/// `:938-948`), background 0, period 30 — and clear the screen. The kernel
+/// calls it once the framebuffer is up, where EmuTOS' `bios_init` does
+/// (`bios/bios.c:341`).
+pub fn init(backend: &dyn RasterBackend) {
+    let mut c = lock(Some(backend));
+    let (mx, my) = (c.st.mx, c.st.my);
+    *c.st = Alpha::INIT;
+    c.st.mx = mx;
+    c.st.my = my;
+    c.reload_blink();
+    c.clear_and_home();
+}
+
+/// `Bconout(2, ch)` — `cputc(LOBYTE(ch))` (`bios/chardev.c:91-95`,
+/// `vt52.c:142-160`): one byte through the VT52 automaton. The kernel's
+/// `Bconout(2)` device (`kernel::fbcon`) is a thin adapter onto this.
 pub fn conout(backend: &dyn RasterBackend, ch: u8) {
-    let (mx, my) = (cols(backend) - 1, rows(backend) - 1);
-    match ch {
-        b'\r' => CUR_X.store(0, Ordering::Relaxed),
-        b'\n' => newline(backend, mx, my),
-        0x08 => {
-            // Backspace: step back and erase the cell.
-            let x = CUR_X.load(Ordering::Relaxed);
-            if x > 0 {
-                CUR_X.store(x - 1, Ordering::Relaxed);
-                erase_cells(backend, CUR_Y.load(Ordering::Relaxed), x - 1, x - 1);
-            }
-        }
-        0x09 => {
-            // Tab to the next multiple of eight columns.
-            let n = ((CUR_X.load(Ordering::Relaxed) & !7) + 8).min(mx + 1);
-            CUR_X.store(n, Ordering::Relaxed);
-            if n > mx {
-                newline(backend, mx, my);
-            }
-        }
-        0x20..=0xFF => {
-            let (x, y) = (CUR_X.load(Ordering::Relaxed), CUR_Y.load(Ordering::Relaxed));
-            put_cell(backend, x, y, ch as u16);
-            if x + 1 > mx {
-                newline(backend, mx, my);
-            } else {
-                CUR_X.store(x + 1, Ordering::Relaxed);
-            }
-        }
-        _ => {} // other control characters: ignored
+    lock(Some(backend)).cputc(ch);
+}
+
+/// `Bconout(5, ch)` — `ascii_out(LOBYTE(ch))` (`bios/chardev.c:97-106`):
+/// the glyph of every byte, no automaton, and the automaton's state (a
+/// half-received `ESC` sequence of Handle 2) is left alone (decision D5).
+pub fn rawout(backend: &dyn RasterBackend, ch: u8) {
+    lock(Some(backend)).ascii_out(ch);
+}
+
+/// `ESC E` from outside the byte stream — clear the screen and home the
+/// cursor (`clear_and_home`, `vt52.c:338-353`). The kernel's own console
+/// (`cls`, the EmuCON stand-in) uses it.
+pub fn clear_home(backend: &dyn RasterBackend) {
+    lock(Some(backend)).clear_and_home();
+}
+
+/// One blink step — EmuTOS runs `blink()` in every VBL
+/// (`bios/vectors.S:355`); the kernel calls this from its 200 Hz timer
+/// interrupt. Skipped while a console operation is in progress.
+pub fn blink(backend: &dyn RasterBackend) {
+    if let Some(mut c) = try_lock(Some(backend)) {
+        c.blink();
     }
 }
 
-/// Column 0 of the next line, scrolling the alpha screen when the cursor
-/// would leave the last row.
-fn newline(backend: &dyn RasterBackend, mx: i16, my: i16) {
-    CUR_X.store(0, Ordering::Relaxed);
-    let y = CUR_Y.load(Ordering::Relaxed) + 1;
-    if y > my {
-        scroll_up(backend, mx, my);
-        CUR_Y.store(my, Ordering::Relaxed);
-    } else {
-        CUR_Y.store(y, Ordering::Relaxed);
+/// `Cursconf(function, operand)` (`vt52.c:893-914`): 0 `cursor_off`,
+/// 1 `cursor_on`, 2 clear `M_CFLASH`, 3 set `M_CFLASH`, 4 `v_period =
+/// LOBYTE(operand)`, 5 return `v_period`; every other value returns 0.
+///
+/// EmuTOS' `blink()` flashes only with `M_CFLASH` **set** (`:856`,
+/// `conout.h:17`), so subfunction 2 makes the cursor steady and 3 makes it
+/// blink — the code's behaviour, whatever its comments say.
+pub fn cursconf(backend: Option<&dyn RasterBackend>, function: i16, operand: i16) -> i16 {
+    let mut c = lock(backend);
+    match function {
+        0 => c.cursor_off(),
+        1 => c.cursor_on(),
+        2 => c.st.stat &= !M_CFLASH,
+        3 => c.st.stat |= M_CFLASH,
+        4 => c.st.period = operand as u8,
+        5 => return i16::from(c.st.period),
+        _ => {}
     }
+    0
+}
+
+/// `esc_init` (`vdi_esc.c:356-359`) = `escfn2`, run by `v_opnwk`
+/// (`vdi_control.c:564`): home, hide the cursor, clear.
+pub fn esc_init(backend: &dyn RasterBackend) {
+    lock(Some(backend)).puts(b"\x1bH\x1bf\x1bE");
+}
+
+/// `esc_exit` (`vdi_esc.c:365-368`) = `escfn3`, run by `v_clswk`
+/// (`vdi_control.c:589`): clear, show the cursor, CR.
+pub fn esc_exit(backend: &dyn RasterBackend) {
+    lock(Some(backend)).puts(b"\x1bE\x1be\r");
 }
 
 /// Opcode 5 — `v_escape`: dispatch on `CONTRL[5]`.
+///
+/// The alpha sub-functions write their VT52 strings into the console
+/// automaton (`bios_conws`, `vdi_esc.c:39-43`), so a half-received sequence
+/// interacts with them exactly as on EmuTOS — which is why `v_exit_cur`
+/// starts with `ESC H` (`vdi_esc.c:74-84`).
 pub fn v_escape(pb: &Vdipb, backend: &dyn RasterBackend) {
-    let (mx, my) = (cols(backend) - 1, rows(backend) - 1); // max col/row
     match pb.contrl(5) {
         1 => {
-            // vq_chcells: rows, columns
-            pb.set_intout(0, my + 1);
-            pb.set_intout(1, mx + 1);
+            // vq_chcells (`escfn1`, `:63-68`): rows, columns.
+            let c = lock(Some(backend));
+            pb.set_intout(0, c.st.my + 1);
+            pb.set_intout(1, c.st.mx + 1);
             pb.set_contrl(4, 2);
         }
-        2 => {
-            // v_exit_cur: EmuTOS `escfn2` sends `\033H\033f\033E` = home, hide
-            // alpha cursor, clear-and-home (`vdi_esc.c:81`). Net rendered
-            // effect: clear the text area + home the cursor. The cursor-hide
-            // (`ESC f`) has no counterpart — the private alpha layer draws no
-            // visible block cursor (see module docs, AUD-V3-011).
-            clear_and_home(backend);
-        }
-        3 => {
-            // v_enter_cur: EmuTOS `escfn3` sends `\033E\033e\015` = clear-and-
-            // home, show alpha cursor, CR (`vdi_esc.c:93`). There is **no**
-            // `ESC q`, so reverse video is preserved (AUD-V3-012). Net rendered
-            // effect: clear the text area + home; the cursor-show (`ESC e`) and
-            // the CR (redundant after home) have no counterpart here.
-            clear_and_home(backend);
-        }
-        4 => fetch_update(&CUR_Y, |y| (y - 1).max(0)),          // up
-        5 => fetch_update(&CUR_Y, |y| (y + 1).min(my)),         // down
-        6 => fetch_update(&CUR_X, |x| (x + 1).min(mx)),         // right
-        7 => fetch_update(&CUR_X, |x| (x - 1).max(0)),          // left
-        8 => {
-            CUR_X.store(0, Ordering::Relaxed); // home
-            CUR_Y.store(0, Ordering::Relaxed);
-        }
-        9 => {
-            // v_eeos: erase cursor → end of screen.
-            let (cx, cy) = (CUR_X.load(Ordering::Relaxed), CUR_Y.load(Ordering::Relaxed));
-            erase_cells(backend, cy, cx, mx);
-            for r in (cy + 1)..=my {
-                erase_cells(backend, r, 0, mx);
-            }
-        }
-        10 => {
-            // v_eeol: erase cursor → end of line.
-            let (cx, cy) = (CUR_X.load(Ordering::Relaxed), CUR_Y.load(Ordering::Relaxed));
-            erase_cells(backend, cy, cx, mx);
-        }
+        2 => lock(Some(backend)).puts(b"\x1bH\x1bf\x1bE"), // v_exit_cur (`:83`)
+        3 => lock(Some(backend)).puts(b"\x1bE\x1be\r"),    // v_enter_cur (`:95`)
+        4 => lock(Some(backend)).puts(b"\x1bA"),           // v_curup
+        5 => lock(Some(backend)).puts(b"\x1bB"),           // v_curdown
+        6 => lock(Some(backend)).puts(b"\x1bC"),           // v_curright
+        7 => lock(Some(backend)).puts(b"\x1bD"),           // v_curleft
+        8 => lock(Some(backend)).puts(b"\x1bH"),           // v_curhome
+        9 => lock(Some(backend)).puts(b"\x1bJ"),           // v_eeos
+        10 => lock(Some(backend)).puts(b"\x1bK"),          // v_eeol
         11 => {
-            // vs_curaddress: INTIN[0]=row, INTIN[1]=col (1-based).
-            CUR_Y.store((pb.intin(0) - 1).clamp(0, my), Ordering::Relaxed);
-            CUR_X.store((pb.intin(1) - 1).clamp(0, mx), Ordering::Relaxed);
+            // vs_curaddress: INTIN[0] = row, INTIN[1] = column, 1-based. EmuTOS
+            // sends `ESC Y` with the values cut to bytes (`:177-182`), which
+            // cannot reach a column beyond 223; NewTOS sets the position
+            // directly through `move_cursor`'s clamp (decision Q6).
+            let row = (i32::from(pb.intin(0)) - 1).clamp(i16::MIN.into(), i16::MAX.into()) as i16;
+            let col = (i32::from(pb.intin(1)) - 1).clamp(i16::MIN.into(), i16::MAX.into()) as i16;
+            lock(Some(backend)).move_cursor(col, row);
         }
         12 => {
-            // v_curtext: output CONTRL[3] chars at the cursor. EmuTOS
-            // `escfn12` feeds each char to `crawio` → the VT-52 console, which
-            // scrolls the screen up once output passes the bottom line
-            // (`vdi_esc.c:196`). We reproduce that scroll here (AUD-V3-005).
-            let n = pb.contrl(3).max(0);
-            for i in 0..n as usize {
-                let mut x = CUR_X.load(Ordering::Relaxed);
-                let mut y = CUR_Y.load(Ordering::Relaxed);
-                put_cell(backend, x, y, pb.intin(i) as u16);
-                x += 1;
-                if x > mx {
-                    x = 0;
-                    y += 1;
-                    if y > my {
-                        // Past the bottom line: scroll up and stay on the last
-                        // (now cleared) row instead of overwriting it.
-                        scroll_up(backend, mx, my);
-                        y = my;
-                    }
-                }
-                CUR_X.store(x, Ordering::Relaxed);
-                CUR_Y.store(y, Ordering::Relaxed);
+            // v_curtext (`escfn12`, `:196-207`): every character through
+            // `Crawio` — GEMDOS raw output to stdout's device, i.e. the VT52
+            // automaton when stdout is the console, including `Crawio`'s
+            // `0x00FF` read sentinel (`docs/api/vdi/_escape.md`, D-083).
+            let n = pb.contrl(3).max(0) as usize;
+            for i in 0..n {
+                crate::gemdos::console::rawio(pb.intin(i) as u16);
             }
         }
-        13 => REVERSE.store(true, Ordering::Relaxed),  // v_rvon
-        14 => REVERSE.store(false, Ordering::Relaxed), // v_rvoff
+        13 => lock(Some(backend)).puts(b"\x1bp"), // v_rvon
+        14 => lock(Some(backend)).puts(b"\x1bq"), // v_rvoff
         15 => {
-            // vq_curaddress: row, column (1-based).
-            pb.set_intout(0, CUR_Y.load(Ordering::Relaxed) + 1);
-            pb.set_intout(1, CUR_X.load(Ordering::Relaxed) + 1);
+            // vq_curaddress (`escfn15`, `:231-236`): row, column (1-based).
+            let c = lock(Some(backend));
+            pb.set_intout(0, c.st.cy + 1);
+            pb.set_intout(1, c.st.cx + 1);
             pb.set_contrl(4, 2);
         }
         16 => {
@@ -289,8 +860,9 @@ pub fn v_escape(pb: &Vdipb, backend: &dyn RasterBackend) {
     }
 }
 
-/// Read-modify-write a cursor coordinate.
-fn fetch_update(cell: &AtomicI16, f: impl Fn(i16) -> i16) {
-    let v = cell.load(Ordering::Relaxed);
-    cell.store(f(v), Ordering::Relaxed);
+/// Test support: the console's cursor position, `(column, row)`.
+#[doc(hidden)]
+pub fn cursor_cell() -> (i16, i16) {
+    let c = lock(None);
+    (c.st.cx, c.st.cy)
 }

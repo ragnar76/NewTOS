@@ -278,9 +278,10 @@ fn have_graphics() -> bool {
 /// have stepped on, open the graphics workstation, set the initial clip
 /// rectangle, allocate screen space, start the mouse and show the hourglass.
 ///
-/// On NewTOS the "workstation" is the framebuffer the VDI draws into and it is
-/// never closed, so `gsx_graphic(TRUE)` has no counterpart to perform.
-/// `gsx_malloc()` (:236) has one: the AES menu/alert screen buffer
+/// `gsx_graphic(TRUE)` (:234) switches the VT52 console out of the way —
+/// `v_exit_cur`, text cursor off — when the screen was in alpha mode
+/// ([`tos_api::aes::gsxif::gsx_graphic`]). `gsx_malloc()` (:236) has a
+/// counterpart too: the AES menu/alert screen buffer
 /// ([`tos_api::aes::gsxif`]), taken from the BDOS pool the first time this
 /// runs — before the first GEM program, so the block is kernel-owned and
 /// survives every `Pterm` — and kept: `sh_toalpha` does **not** free it
@@ -297,6 +298,7 @@ fn have_graphics() -> bool {
 /// in, so a program that prints here paints over the GEM screen, on TOS as on
 /// NewTOS. See [`crate::fbcon`].
 fn sh_tographic() {
+    tos_api::aes::gsxif::gsx_graphic(true); // `gsx_graphic(TRUE)` (:234)
     ratinit(); // `ratinit()` (:236)
     // `gsx_malloc()` (:236) — once; a later pass finds the buffer in place.
     let had_buffer = tos_api::aes::gsxif::gsx_mret().is_some();
@@ -319,7 +321,8 @@ fn sh_tographic() {
 /// handler, turn the mouse off, free screen space, close the workstation.
 ///
 /// The observable half here is the arrow shape, the mouse going away
-/// (`ratexit`) and the VT52 text console taking the screen.
+/// (`ratexit`) and the VT52 text console taking the screen: `gsx_graphic
+/// (FALSE)` (:259) is the VDI `v_enter_cur` — clear, home, text cursor on.
 fn sh_toalpha() {
     if let Some(b) = tos_api::host::host().and_then(|h| h.raster()) {
         // `set_mouse_to_arrow()` (:248) — AES preset shape 0.
@@ -327,7 +330,7 @@ fn sh_toalpha() {
         // `ratexit()` (:256) — `gsx_moff()`, hide the cursor.
         tos_api::vdi::mouse::hide(b);
     }
-    crate::fbcon::clear_and_home();
+    tos_api::aes::gsxif::gsx_graphic(false); // `gsx_graphic(FALSE)` (:259)
 }
 
 /// `ratinit` (`aes/gemgsxif.c:205-209`) — `gsx_1code(SHOW_CUR, 0); gl_moff = 0;`

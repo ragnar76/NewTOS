@@ -580,7 +580,18 @@ pub fn cprnout(args: &TrapArgs) -> Long {
 /// the write goes nowhere.
 pub fn crawio(args: &TrapArgs) -> Long {
     let w = args.arg_u16(0);
-    let h = host_or_eundev!();
+    let _ = host_or_eundev!();
+    rawio(w)
+}
+
+/// The body of [`crawio`] — EmuTOS `xrawio(parm)` (`bdos/console.c:437-451`)
+/// for an in-kernel caller: VDI `v_curtext` writes each character through
+/// `Crawio` (`vdi/vdi_esc.c:201-206`). Without a host it does nothing and
+/// answers `0`.
+pub(crate) fn rawio(w: u16) -> Long {
+    let Some(h) = host() else {
+        return 0;
+    };
     if w == 0x00FF {
         // `constat(i) ? getch(i) : 0` (`bdos/console.c:445-449`): a key in
         // the BDOS typeahead first, else the device's own input — the whole

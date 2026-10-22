@@ -497,7 +497,13 @@ pub struct TestHost {
 }
 
 impl Host for TestHost {
-    fn console_write_byte(&self, _byte: u8) {}
+    /// The kernel's `Bconout(2)` device (`kernel::fbcon`): the VT52 console
+    /// on this screen. `v_curtext` reaches it through `Crawio`
+    /// (`vdi/vdi_esc.c:201-206`, CON04), so its cursor moves here as on the
+    /// reference machine.
+    fn console_write_byte(&self, byte: u8) {
+        tos_api::vdi::alpha_conout(&self.raster, byte);
+    }
     fn raster(&self) -> Option<&dyn RasterBackend> {
         Some(&self.raster)
     }

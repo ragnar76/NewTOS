@@ -221,6 +221,9 @@ pub extern "C" fn rust_irq_handler(frame: &mut crate::arch::aarch64::exceptions:
 
     if tick {
         crate::host_env::irq_input_pump(frame.spsr);
+        // The VT52 text cursor's blink (EmuTOS: `blink()` per VBL,
+        // `bios/vectors.S:355`); a no-op unless a flashing cursor is shown.
+        crate::fbcon::blink_tick();
     }
 }
 

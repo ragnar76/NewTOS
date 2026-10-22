@@ -66,7 +66,7 @@
 
 #![allow(clippy::too_many_arguments, unused_variables)]
 
-use std::sync::atomic::{AtomicU16, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU16, Ordering};
 use std::sync::{Mutex, Once};
 
 use tos_api::bdos::process::Abi;
@@ -91,6 +91,16 @@ struct Profile {
 }
 
 static PROFILE: Profile = Profile { width: AtomicU16::new(TT.0), height: AtomicU16::new(TT.1) };
+
+/// Set while the fixture runs `gsx_init`: its `v_opnwk` clears the VT52
+/// console (`esc_init`, `vdi_control.c:564`, CON04), the one drawing the
+/// fixture itself does — screen words through the row interface and their
+/// flush. Every other moment still panics on any drawing.
+static CONSOLE_SETUP: AtomicBool = AtomicBool::new(false);
+
+fn console_setup() -> bool {
+    CONSOLE_SETUP.load(Ordering::Relaxed)
+}
 
 impl RasterBackend for Profile {
     fn width(&self) -> u16 {
@@ -120,9 +130,15 @@ impl RasterBackend for Profile {
         panic!("unexpected pixel conversion")
     }
     fn device_to_rgb565(&self, p: u32) -> u16 {
+        if console_setup() {
+            return p as u16;
+        }
         panic!("unexpected pixel conversion")
     }
     fn rgb565_to_device(&self, p: u16) -> u32 {
+        if console_setup() {
+            return p as u32;
+        }
         panic!("unexpected pixel conversion")
     }
     fn read_pixel(&self, x: i16, y: i16) -> Pel {
@@ -168,12 +184,21 @@ impl RasterBackend for Profile {
         panic!("unexpected drawing")
     }
     fn get_device_pixel(&self, x: i16, y: i16) -> u32 {
+        if console_setup() {
+            return 0;
+        }
         panic!("unexpected pixel read")
     }
     fn put_device_pixel(&self, x: i16, y: i16, p: u32) {
+        if console_setup() {
+            return;
+        }
         panic!("unexpected drawing")
     }
     fn flush_rect(&self, x: i16, y: i16, xx: i16, yy: i16) {
+        if console_setup() {
+            return;
+        }
         panic!("unexpected flush")
     }
 }
@@ -324,7 +349,9 @@ fn start_at(w: u16, h: u16) -> (Desk, i16) {
     PROFILE.height.store(h, Ordering::Relaxed);
     // The session's workstation open (`gsx_init`, `geminit.c:675`), whose
     // handle `graf_handle` reports — on the screen just switched to.
+    CONSOLE_SETUP.store(true, Ordering::Relaxed);
     tos_api::aes::gsxif::gsx_init();
+    CONSOLE_SETUP.store(false, Ordering::Relaxed);
     tos_api::aes::window::wm_init();
 
     let hbox = gl_hbox();

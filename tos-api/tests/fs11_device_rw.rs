@@ -925,7 +925,10 @@ fn bios_absent_profile() {
     assert_eq!(bios(BCOSTAT, 5, 0), 0, "Bcostat(5) char_dummy");
     assert_eq!(bios(BCONOUT, 2, b'c' as u64), 1);
     assert_eq!(bios(BCONOUT, 5, b'r' as u64), 1);
-    assert_eq!(host.take_output(), b"cr");
+    // Raw CON is the screen's `ascii_out`, not the console device: it does
+    // not pass the VT52 console output (`docs/api/bios/_vt52.md` §9, CON04
+    // decision D5).
+    assert_eq!(host.take_output(), b"c");
     assert_eq!(bios(BCONSTAT, 2, 0), 0);
     host.type_keys(b"m");
     assert_eq!(bios(BCONSTAT, 2, 0), -1, "Bconstat(2)");

@@ -175,9 +175,15 @@ impl CharDevice for Console {
 }
 
 /// Raw-CON (device 5): screen output without VT52 (`bconout5` →
-/// `ascii_out`, `bios/chardev.c:43-45`); its input and output-status slots
+/// `ascii_out`, `bios/chardev.c:97-106`); its input and output-status slots
 /// are `char_dummy` (`bconin_init[5]`, `bcostat_init[5]`), so status and
 /// input are `0` — `Bconout(5)` writes and returns `1`, `Bcostat(5)` is `0`.
+///
+/// The byte goes straight to the alpha screen's `ascii_out`
+/// ([`crate::vdi::alpha_rawout`]): every byte is a glyph, no escape
+/// automaton runs and its state is left as it is (`docs/api/bios/_vt52.md`
+/// §9, decision D5). Like EmuTOS' `bconout5` (without
+/// `CONF_SERIAL_CONSOLE`) it is not mirrored to the serial line.
 struct RawConsole;
 
 impl CharDevice for RawConsole {
@@ -188,7 +194,15 @@ impl CharDevice for RawConsole {
         0
     }
     fn bconout(&self, byte: u8) -> Long {
-        Console.bconout(byte)
+        match host::host() {
+            Some(h) => {
+                if let Some(b) = h.raster() {
+                    crate::vdi::alpha_rawout(b, byte);
+                }
+                1
+            }
+            None => 0,
+        }
     }
     fn bcostat(&self) -> Long {
         0

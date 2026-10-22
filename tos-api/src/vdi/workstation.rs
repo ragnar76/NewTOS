@@ -351,6 +351,9 @@ pub fn v_opnwk(pb: &Vdipb, backend: &dyn RasterBackend) {
     let handle = vwk.handle;
     init_wk(vwk, pb, backend);
     super::input::reset_input_modes();
+    // `esc_init(vwk)` (`vdi_control.c:564`) — "enter graphics mode": the
+    // alpha console's `escfn2` (home, cursor off, clear), CON04.
+    super::escape::esc_init(backend);
     pb.set_contrl(6, handle);
 }
 
@@ -362,14 +365,16 @@ pub fn v_opnwk(pb: &Vdipb, backend: &dyn RasterBackend) {
 /// aliased opcode 2 onto `v_clsvwk` and so closed the *physical* screen
 /// device on the standard standalone-GEM call (AUD-V1-001).
 ///
-/// The timer / mouse / VT52-alpha teardown (`timer_exit` /
-/// `vdimouse_exit` / `esc_exit`) that EmuTOS also runs here is out of this
-/// package's scope — the mouse/input (VW6) and escape (VW5) audits own it
-/// — and NewTOS does not model line-A's `CUR_WORK` (documented acceptable
-/// deviation AUD-V1-010).
-pub fn v_clswk() {
+/// Last, `esc_exit(vwk)` (`vdi_control.c:589`) — "back to console mode":
+/// the alpha console's `escfn3` (clear, cursor on, CR), CON04. The timer /
+/// mouse teardown (`timer_exit` / `vdimouse_exit`) that EmuTOS also runs
+/// here is out of this package's scope — the mouse/input (VW6) audit owns
+/// it — and NewTOS does not model line-A's `CUR_WORK` (documented
+/// acceptable deviation AUD-V1-010).
+pub fn v_clswk(backend: &dyn RasterBackend) {
     // SAFETY: single trap path.
     unsafe { vwk::close_all_virtual() };
+    super::escape::esc_exit(backend);
 }
 
 /// Opcode 101 — `v_clsvwk`: close a single virtual workstation. EmuTOS

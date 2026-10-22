@@ -124,8 +124,9 @@ pub fn test_sweep_pending(slot: usize) -> bool {
 /// (`gl_changerez`/`gl_nextrez`), reported, and never handed to a mode
 /// switch. `gsx_wsclear()` (`:795`) has already happened by the time we get
 /// here — `sh_main`'s own tail runs `sh_toalpha()` (`gemshlib.c:733`), which
-/// clears the screen and homes the cursor, EmuTOS's `\033f\033E`
-/// (`geminit.c:763`).
+/// clears the screen and homes the cursor (`v_enter_cur`), and the next
+/// session's `gsx_init` → `v_opnwk` → `esc_init` hides the text cursor and
+/// clears again: the screen EmuTOS's `\033f\033E` (`geminit.c:763`) leaves.
 ///
 /// What is **not** reset, and why:
 ///

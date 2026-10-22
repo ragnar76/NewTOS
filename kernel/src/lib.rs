@@ -475,10 +475,12 @@ extern "C" fn kernel_main_rust(dtb_phys: usize, entry_el: u64) -> ! {
     // welcome screen become boot flags, read by `run_auto_folder` below.
     launch::set_bootflags_from_shiftbits(shiftbits);
 
-    // Give the character console a clean screen with the cursor homed, so the
-    // boot / AUTO-program console output (Cconws) starts at the top left —
+    // `vt52_init` (EmuTOS `bios_init`, `bios/bios.c:341`): reset the VT52
+    // console and clear it, so the boot / AUTO-program console output
+    // (Cconws) starts at the top left with EmuTOS' initial console state —
+    // text cursor hidden, no line wrap (`docs/api/bios/_vt52.md` §1).
     // EmuTOS shows its AUTO programs on the console before the GUI.
-    fbcon::clear_and_home();
+    fbcon::init();
 
     // The PDs EmuTOS's `run` is while kernel code is on the stack
     // (TASK/PPARENT, TASK/PROC03, `tos_api::bdos::process::standin`):

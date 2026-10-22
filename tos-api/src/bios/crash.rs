@@ -301,10 +301,13 @@ pub struct CrashReport<'a> {
 /// goes to the screen only, `kprint.c:581-585`). Lines end in `\n`; the
 /// console writer adds the `\r` (EmuTOS `cprintf_outc`, `kprint.c:53-60`).
 pub fn write_report<W: fmt::Write>(w: &mut W, r: &CrashReport<'_>) -> fmt::Result {
-    // `cprintf("\033f\033v\n\n")` (`kprint.c:312`): the escapes hide the
-    // cursor and enable line wrap — not escapes this console parses — then
-    // two blank lines.
-    w.write_str("\n\n")?;
+    // `cprintf("\033f\033v\n\n")` (`kprint.c:312`): hide the cursor, turn
+    // line wrap on, two blank lines. `dopanic` also clears `M_CEOL` around
+    // the register dump and restores it after (`kprint.c:525-526,562-563`);
+    // the dump lines here are 75 columns wide and never reach the last
+    // column of the console (80 columns at 640×480, more on larger
+    // screens), so that bracket has nothing to change.
+    w.write_str("\x1bf\x1bv\n\n")?;
     match r.kind.message() {
         Some(m) => writeln!(w, "Panic: {m}")?,
         None => writeln!(w, "Panic: Exception class 0x{:02x}", esr_ec(r.esr))?,
@@ -473,7 +476,8 @@ mod tests {
         };
         let s = render(&r);
         let lines: std::vec::Vec<&str> = s.lines().collect();
-        assert_eq!(lines[0], "");
+        // `cprintf("\033f\033v\n\n")` (`kprint.c:312`): cursor off, wrap on.
+        assert_eq!(lines[0], "\x1bf\x1bv");
         assert_eq!(lines[1], "");
         assert_eq!(lines[2], "Panic: Bus Error");
         assert_eq!(lines[3], "esr=92000046");
