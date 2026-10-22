@@ -1,6 +1,6 @@
 # RST01 — Neustart: Warm- und Kaltstart, Ctrl+Alt+Del
 
-Status: **ERLEDIGT** 2026-10-17 (QEMU, `f63c39c1`; echte Pi offen) — [Quittung](RST01-STATUS-DONE.MD) · Prioritaet: **P2** · Typ: fehlende Funktion — Anwender 2026-10-17
+Status: **ERLEDIGT** 2026-10-17 (QEMU, `f63c39c1`; Pi abgenommen 2026-10-18, `docs/HW-TEST-LOG.md`) — [Quittung](RST01-STATUS-DONE.MD) · Prioritaet: **P2** · Typ: fehlende Funktion — Anwender 2026-10-17
 
 ## Anlass
 

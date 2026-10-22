@@ -1,6 +1,6 @@
 # ARCH02 — `Pexec`-Eltern verlieren ihre FP/SIMD-Register
 
-Status: **ERLEDIGT** (2026-10-17, QEMU; Pi-Lauf offen) · Prioritaet: **P2** · Typ: Belegter Defekt / Architektur — Nebenbefund ACC03
+Status: **ERLEDIGT** (2026-10-17, QEMU; Pi abgenommen 2026-10-17, `docs/HW-TEST-LOG.md`) · Prioritaet: **P2** · Typ: Belegter Defekt / Architektur — Nebenbefund ACC03
 
 Abhaengigkeiten: [ACC03](ACC03.md) (erledigt)
 

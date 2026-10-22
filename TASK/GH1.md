@@ -56,7 +56,7 @@ F1 echter `wind_update`-Mutex (Wartende parken, FIFO-Uebergabe; Control
 Manager haelt die Sperre als `ctl_pd` bis zum Loslassen, auch beim Druck,
 der ein Drop-down ueber dem Top-Fenster abbricht — `aes/gemctrl.c:81-102`),
 F2 `post_button` nur an den Maus-Besitzer, F3 BEG/END_UPDATE in NEWDESK.
-F4 nicht umgesetzt. Specs vorher korrigiert (`window-graphics.md`,
+F4 nicht umgesetzt, jetzt [A119](A119.md). Specs vorher korrigiert (`window-graphics.md`,
 `event.md`, `accessories.md`, `menu.md`).
 
 Belege: `measurements/measurement-2026-10-21-gh1/` (Umsetzung),
