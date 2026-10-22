@@ -1,6 +1,6 @@
 # GH1 — Popup im System-Info-Accessory: Fenster dahinter zeichnet sich ueber den Dialog
 
-Status: **ERLEDIGT (QEMU) 2026-10-21** (`7b295ab3`; echte Pi offen) · Prioritaet: **P2** · Typ: Fehler — GitHub-Issue #1 (ragnar76, 2026-10-19), echte Pi 4, NewTOS 0.6 (`f7cb0fd9`)
+Status: **ERLEDIGT (QEMU) 2026-10-21** (`7b295ab3`; Pi abgenommen 2026-10-22, `docs/HW-TEST-LOG.md`) · Prioritaet: **P2** · Typ: Fehler — GitHub-Issue #1 (ragnar76, 2026-10-19), echte Pi 4, NewTOS 0.6 (`f7cb0fd9`)
 
 ## Meldung
 
@@ -69,7 +69,7 @@ Gewollt (EmuTOS): ein Klick, der ein Drop-down abbricht, kommt nicht mehr
 als MU_BUTTON bei der Anwendung an.
 
 Offen:
-- Echte Pi 4 (Bild des Melders, 1920x1080; QED-Menue mit echter Maus).
+- ~~Echte Pi 4~~ abgenommen 2026-10-22 (Anwender-Kurztest, `docs/HW-TEST-LOG.md`).
 - Benannte Restabweichungen (in der Spec): `wm_open`/`wm_close`/`wm_set`/
   `w_redraw_desktop`, `graf_rubberbox`/`graf_dragbox`, `ap_exit` und `fsel`
   nehmen die Sperre nicht; `fm_error` aus der Shell-Schleife kann nicht
