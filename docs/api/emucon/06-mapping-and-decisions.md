@@ -120,7 +120,7 @@ Befund, keine Entscheidung:
 EmuCON sendet 10 Escape-Folgen (05 §3), NewTOS-`Bconout(2)` versteht sie nicht
 (`tos-api/src/vdi/escape.rs:128-136,166`). Optionen:
 
-* (a) **Vollstaendiger VT52-Parser** nach `bios/vt52.c` (`CONF_WITH_VT52`,
+* (a) **Vollstaendiger VT52-Parser** nach `bios/vt52.c` (unbedingt kompiliert, kein `CONF_WITH_VT52` — siehe `docs/api/bios/_vt52.md`;
   Spezifikation `docs/api/bios/03-bconout.md:230`). Schaltet EmuCON **und**
   jedes andere TOS-Textprogramm frei (mintlib-Programme senden `ESC E`
   u. a.). Aufwand: Zustandsmaschine in `alpha_conout` + Cursor-/Farb-/

@@ -227,7 +227,7 @@ boot-guard `0L`.
 
 ## Configuration / version notes
 
-- `CONF_WITH_VT52`: handle-2 escape parsing.
+- ~~`CONF_WITH_VT52`~~ — **Korrektur (CON04, 2026-10-22):** dieses Makro gibt es in EmuTOS nicht (keine Fundstelle in `references/emutos`). Der VT52-Parser (`bios/vt52.c`) ist unbedingt kompiliert. Vollstaendige Spec des Automaten, aller Folgen und des Handle-2/5-Unterschieds: [`_vt52.md`](_vt52.md).
 - `CONF_SERIAL_CONSOLE`: `bconout5` also writes handle 1.
 - `CONF_WITH_PRINTER_PORT`: handle 0 active (else `0L`).
 - `BCONMAP_AVAILABLE`: handles ≥ 6 via remap table.

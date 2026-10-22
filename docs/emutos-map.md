@@ -279,7 +279,6 @@ surface or implementation. Affecting the TOS API:
 | `CONF_WITH_PRINTER_PORT`   | XBIOS 0x21 (`Setprt`) + parport bcon* paths        |
 | `CONF_SERIAL_CONSOLE`      | redirects bconout5 to serial                       |
 | `CONF_SERIAL_CONSOLE_ANSI` | enables ANSI escape pre-processing on serial out   |
-| `CONF_WITH_VT52`           | VT52 escape parsing in screen path                 |
 | `BCONMAP_AVAILABLE`        | XBIOS 0x2C (`Bconmap`) availability                |
 | `CONF_ATARI_HARDWARE`      | gates the bulk of XBIOS hardware paths             |
 

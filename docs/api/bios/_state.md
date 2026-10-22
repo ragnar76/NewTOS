@@ -252,8 +252,9 @@ calls never return error codes, only `0`/`-1`.)
 
 ## 9. VT52 console state (`bios/conout.c`, `lineavars`)
 
-The screen handler (handle 2) keeps cursor position (`v_cur_xy`), cursor cell
-offset (`v_cur_of`), VT52 escape-parser state (`escape_state`, `escape_x/y`),
+The screen handler (handle 2) keeps cursor position (`v_cur_cx`/`v_cur_cy`), cursor cell
+offset (`v_cur_of`), VT52 escape-parser state (`con_state` @ `0x4a8`, `save_row` @ `0x4ac`;
+corrected CON04 2026-10-22, full spec: [`_vt52.md`](_vt52.md)),
 and fg/bg colour (Line-A vars). Applications read these directly; the full
 layout is part of the Line-A block (`docs/api/_line-a.md`). Contract:
 observable VT52 *behaviour*; the byte layout is preserved for m68k binaries.
