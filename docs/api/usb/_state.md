@@ -26,7 +26,7 @@
 | Hub | `hub.c` | [`hub.md`](hub.md) | ✅ |
 | HID keyboard → scancode → IKBD | `udd/hid/keyboard/usb_keyboard.c` | [`hid-keyboard.md`](hid-keyboard.md) | ✅ |
 | HID mouse → relative IKBD packet | `udd/hid/mouse-boot/usb_mouse.c` | [`hid-mouse.md`](hid-mouse.md) | ✅ |
-| HID report-descriptor parser | `udd/hid/hid-common/hidparse.c` | — | ⏸ deferred (we use HID **boot protocol**; only needed for non-boot devices later) |
+| HID report-descriptor parser | `udd/hid/hid-common/hidparse.c`, `hid.c` | [`hid-mouse-protocols.md`](hid-mouse-protocols.md) (analysis, USB01) | ⏸ not built — boot protocol only; USB01 shows report-only / composite / absolute mice need it (§1.2, fix F4) |
 
 **D0 status: complete for the boot-protocol HID scope.** The upper stack is
 specified; the integration point is `ikbd::feed` (synthesise IKBD bytes — both

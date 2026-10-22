@@ -5,6 +5,10 @@
 > boot-mouse reports become **IKBD relative-mouse packets** fed into the same
 > decoder the desktop cursor already uses. Spec group: [`_state.md`](_state.md).
 
+> **Scope note (USB01, 2026-10-22):** this file covers the *boot* mouse only.
+> Report-only, composite and absolute mice, the status of the 2026-09-09
+> defects and hotplug are analysed in [`hid-mouse-protocols.md`](hid-mouse-protocols.md).
+
 ## Boot mouse report (USB HID boot protocol)
 
 Boot protocol → fixed 3–4 byte report (request the boot protocol so no HID
