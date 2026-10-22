@@ -1330,6 +1330,29 @@ vfprintf (FILE *s, const CHAR_T *format, va_list ap)
   /* Sanity check of arguments.  */
   ARGCHECK (s, format);
 
+#ifndef USE_IN_LIBIO
+  /* NewTOS (TASK/LIBC-BUF): a fully buffered stream that has been "seen"
+     (so ARGCHECK did not prime it) but has no buffer yet is not unbuffered,
+     it just has not allocated its buffer.  The redirected stdout is such a
+     stream: mintlib/main.c:195-198 calls setvbuf (stdout, NULL, _IOFBF, 0)
+     "to make stdout fully buffered", which setvbuf.c:63-67 rejects (size 0
+     -> EINVAL) after clearing __linebuf (:48), and init_stream_mode's
+     fileno() (fileno.c:32 -> stdio_init.c:77) marks it seen with __bufsize
+     = st_blksize (32 KiB for a file, FS08 part 4) but no buffer.
+     buffered_vfprintf below would print it through a BUFSIZ stack buffer,
+     write it at once and leave __bufsize 0, so the buffer the next
+     putc/fwrite allocates (internals.c init_stream) is BUFSIZ = 1 KiB.
+     Give such a stream its buffer of __bufsize first, exactly as ARGCHECK
+     does for a stream not seen yet.  Streams that are unbuffered by request
+     (__userbuf, e.g. stderr) and line-buffered streams (the console stdout,
+     whose printf must not be held back) take the upstream path unchanged.  */
+  if (UNBUFFERED_P (s) && !s->__userbuf && !s->__linebuf)
+    {
+      if (__flshfp (s, EOF) == EOF)
+	return -1;
+    }
+#endif
+
   if (UNBUFFERED_P (s))
     /* Use a helper function which will allocate a local temporary buffer
        for the stream and then call us again.  */

@@ -1,0 +1,71 @@
+measurement-2026-10-22-libc-buf -- TASK/LIBC-BUF (user decision 2026-10-22 "Fix einbauen"): a redirected stdout keeps its 32 KiB stdio
+buffer (FS08 part 4 rule) after the first printf instead of falling to 1 KiB. Developer evidence; the Tester's verdict is separate.
+
+Base HEAD db752bcf (main), tree clean at start. Changed in the shared tree (uncommitted): sdk/libc/overlay/stdio/vfprintf.c,
+sdk/libc/build-libc.sh (overlay list comment), docs/sdk/07-mintlib-limits.md. Rebuilt build artifacts (gitignored): sdk/libc/libc.a
+(aa9a7977 -> 20554bf3), sdk/apps/{qed,teradesk,hypview}/build outputs. Host macOS, QEMU -M raspi4b -append serial=on only, no SD card, no Pi.
+Scratch: session scratchpad .../scratchpad/lb (kernel tree, cards, probe binaries) -- deleted at the end. SOURCE_DATE_EPOCH=1792627200.
+
+RESULT: red (probe linked against the previous libc.a) reproduces the ticket: redirected stdout 0x8000 -> 0 after the first printf -> 0x400
+after the next putchar; LBUF: FAIL 2. green (libc.a with the overlay): 0x8000 with a buffer from the first printf on, 9 bytes held, still
+0x8000 after 34010 bytes; file content exact; console stdout lines identical red/green; LBUF: PASS. APITEST 105/0/9 = baseline.
+
+1 MECHANISM (read in the pristine mintlib-0.60.1 tarball, sdk/libc/mintlib-0.60.1.tar.xz; same code on FreeMiNT and plain TOS)
+  a. stdout is statically initialised with __bufsize 0, __seen 0, no buffer (stdio/stdio-globals.c:50-69).
+  b. mintlib/main.c:191-193 setvbuf(stdin/stdout/stderr, NULL, mode, 0); for stdout _IOLBF: setvbuf.c:48 clears __linebuf etc., :61 sets
+     __linebuf = 1, :63-67 size 0 -> EINVAL, no buffer. main.c:195-198 "If redirected, make stdout fully buffered": setvbuf(stdout, NULL,
+     _IOFBF, 0) -> :48 clears __linebuf again, :63-67 EINVAL again. So the upstream intent never takes effect; what remains is "not line
+     buffered, no buffer".
+  c. main.c:202 init_stream_mode(stdout) -> :52 fileno() -> fileno.c:32 __stdio_check_funcs -> internals.c:41 __stdio_init_stream ->
+     stdio_init.c:77 __bufsize = st_blksize (32768 for a handle Fforce'd to a file since LIBC-FSTAT, 1024 for the console), __seen = 1.
+  d. First printf -> vfprintf: ARGCHECK primes only an unseen stream (vfprintf.c:180-184 __flshfp -> init_stream allocates __bufsize);
+     stdout is seen, __buffer NULL -> UNBUFFERED_P (:187, :1326) -> buffered_vfprintf (:2239-2258): local char buf[BUFSIZ], printed,
+     fflush'ed (= written now), then __buffer = NULL and __bufsize = 0 (:2255).
+  e. Next putc/fwrite -> internals.c init_stream:63-64 __bufsize == 0 -> BUFSIZ (1024) -> malloc 1 KiB.
+  The fopen case is unaffected because a fresh fopen stream is unseen (ARGCHECK path, d). Same class: a fopen stream whose first call is
+  fileno() (probe F2) -- seen, no buffer -> 1 KiB, reproduced in red.
+  Console stdout: same path (0x400 -> 0 -> 0x400), but line buffered; its printf without a buffer is written at once.
+
+2 CHANGE (sdk/libc/overlay/stdio/vfprintf.c, checks/vfprintf-overlay-vs-pristine.diff; the overlay already carried the LP64 SET_IS_LONGLONG fix)
+  In vfprintf, after ARGCHECK, !USE_IN_LIBIO only:
+      if (UNBUFFERED_P (s) && !s->__userbuf && !s->__linebuf) { if (__flshfp (s, EOF) == EOF) return -1; }
+  = what ARGCHECK already does for an unseen stream: init_stream allocates the __bufsize buffer, then the normal path prints into it.
+  Excluded and unchanged: __userbuf (unbuffered by request: stderr, setvbuf _IONBF, or init_stream's own malloc-failure fallback) and
+  __linebuf (the console stdout -- interactive output is not held back). If the allocation fails, init_stream sets __userbuf and the stream
+  takes buffered_vfprintf as before. build-libc.sh: 627 compiled / 5 skipped = expected-failures.txt; vfprintf/vfwprintf .err files empty
+  (0 warnings), checks/build-libc.log.
+
+3 QEMU PROBE LBUF (method/lbuf.c, method/build-lbuf.sh; -Wall -Wextra clean), kernel = method/build-kernel.sh (git archive db752bcf, rpi4
+  release; the change is SDK-only), card = method/mkcard.sh + lb.inf, C:\AUTO\LBUF.NCP, one base card per binary, per-run APFS clone
+  (method/regress/run.sh, FSCK=1 CARDLS=1), clone deleted after the run. Reporting via Bconout(2): Cconws follows a redirected handle 1.
+  Parent spawns itself: kid "c" (console), kid "o" with handle 1 Fforce'd to C:\LBO.TXT; then F1/F2/F3 in the parent.
+                                                red (libc aa9a7977)                    green (libc 20554bf3)
+    o before printf      bufsize/buffer/linebuf 0x8000/0/0                             0x8000/0/0
+    o after 1st printf   bufsize/buffer/pending 0x0/0/0         FAIL                   0x8000/1/9            ok
+    o after putchar                             0x400/1/1       FAIL                   0x8000/1/10           ok
+    o after 2000 printf                         0x400/1/0x154   FAIL                   0x8000/1/0x4ea        ok
+    o stderr after fprintf  buffer 0, userbuf 1                 ok                     same                  ok
+    PAR LBO.TXT          36011 bytes = kid output, CRLF         ok                     same                  ok
+    c (console)          0x400/0/linebuf 1 -> printf: no buffer, text before next line -> putchar CR LF: 0x400 line buffer ->
+                         2nd printf held (28 pending): IDENTICAL red/green (grep LBUF[c]|<c diff = 0)
+    F1 fopen+fprintf     0x8000/1/3  ok                                                same                  ok
+    F2 fopen+fileno+fprintf  0x0/0/0  FAIL                                             0x8000/1/3            ok
+    F3 setvbuf _IONBF    buffer 0 userbuf 1  ok                                        same                  ok
+    verdict              LBUF: FAIL 0x2 (kid o rc 3 + F2)                              LBUF: PASS
+  serial/lbuf-red.log, serial/lbuf-green.log (0 EXC/PANIC), fsck rc=0 both (serial/lbuf-*-fsck.txt), listings serial/lbuf-*-card.txt.
+  Parent Fclose after Fforce(1,-1) = 0xffffffbf (-65) in both: known shared-OFD second close (noted in measurement-2026-10-17-libc-fstat).
+  Write count: red writes 1 KiB per flush (plus one write for the first printf); green holds up to 32 KiB (the flush leaves 0x4ea pending).
+
+4 REGRESSION
+  APITEST: sdk/apps/apitest/build-apitest.sh -> APITEST.NCP byte-identical before/after (96ae4de5; it links no vfprintf,
+  checks/vfprintf-linked.txt). Run C:\AUTO\APITEST.NCP (serial/api-after.log): TOTAL 105/0/9; [OK]/[FAIL]/[SKIP] + TOTAL lines identical to
+  measurement-2026-10-21-gh1-reg/serial/api-wt-serial.log (checks/apitest-verdict-diff-vs-gh1-reg.txt, 0 lines). fsck rc=0.
+  Apps (sdk/apps/build-{qed,teradesk,hypview}.sh): rc 0 each; checks/apps-{before,after}.sha256: QED.NAP and HYP_VIEW.NAP changed (both link
+  vfprintf), DESKTOP.NAP byte-identical (no vfprintf). Warnings: TeraDesk its one pre-existing resource line, HypView 11 clang warnings in
+  its own upstream sources (dl_*.c, hyp/*.c, init.c), none in libc; QED 0. Not run in QEMU here (Tester).
+  SDK host tests (sdk/run-host-tests.sh): 26 passed, 0 failed, 0 skipped (checks/sdk-host-tests.txt), libtest-host (printf reference) PASS.
+  No host harness for this path: mintlib's stdio does not build on the host without the whole stdio/printf member set; the QEMU probe with
+  its red control is the test.
+
+Binaries and cards: checks/binaries.sha256 (not kept). NOT RUN: real Pi 4; QED/HypView/TeraDesk behaviour in QEMU; a program that mixes
+printf with Cconws/Fwrite(1) on a redirected stdout (ordering now follows full buffering, as main.c:195-198 intends).

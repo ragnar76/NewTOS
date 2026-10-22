@@ -1,0 +1,4 @@
+QED.NAP: T vfprintf 1
+DESKTOP.NAP: T vfprintf 0
+HYP_VIEW.NAP: T vfprintf 1
+APITEST-after.NCP: T vfprintf 0

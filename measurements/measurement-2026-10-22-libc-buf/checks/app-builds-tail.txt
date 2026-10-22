@@ -1,0 +1,20 @@
+qed:   Entry: 0x1000
+qed: 
+qed: undefined symbols in the final image (goal 0): 0
+qed: converted /Volumes/Daten/Development/PiRusTOS/sdk/apps/qed/src/qed.rsc -> /Volumes/Daten/Development/PiRusTOS/sdk/apps/qed/build/qed.rsc: 32 trees, 682 objects, 118 tedinfo, 7 bitblk, 1 iconblk, 0 ciconblk, 0 cicon, 44 frstr, 0 frimg (41378 bytes, RSHDR vrsn 0) [LP64/32B-OBJECT, NRSC v13]
+qed: resource -> /Volumes/Daten/Development/PiRusTOS/sdk/apps/qed/build/qed.rsc (41378 bytes)
+teradesk: converted /Volumes/Daten/Development/PiRusTOS/sdk/apps/teradesk/desktop.rsc -> /Volumes/Daten/Development/PiRusTOS/sdk/apps/teradesk/build/dist/desktop.rsc: 26 trees, 601 objects, 104 tedinfo, 0 bitblk, 0 iconblk, 0 ciconblk, 0 cicon, 190 frstr, 0 frimg (39278 bytes, RSHDR vrsn 0) [LP64/32B-OBJECT, NRSC v13]
+teradesk: converted /Volumes/Daten/Development/PiRusTOS/sdk/apps/teradesk/icons.rsc -> /Volumes/Daten/Development/PiRusTOS/sdk/apps/teradesk/build/dist/icons.rsc: 1 trees, 39 objects, 0 tedinfo, 0 bitblk, 38 iconblk, 0 frstr, 0 frimg (13284 bytes) [native-RSHDR/LP64 for xrsrc_load]
+teradesk: warning: label buffer at 16682 has no NUL in 12 bytes; terminated
+teradesk: converted /Volumes/Daten/Development/PiRusTOS/sdk/apps/teradesk/cicons.rsc -> /Volumes/Daten/Development/PiRusTOS/sdk/apps/teradesk/build/dist/cicons.rsc: 1 trees, 39 objects, 0 tedinfo, 0 bitblk, 0 iconblk, 38 ciconblk, 38 cicon, 0 frstr, 0 frimg (63650 bytes, RSHDR vrsn 4) [LP64/32B-OBJECT, NRSC v13]
+teradesk: dist -> /Volumes/Daten/Development/PiRusTOS/sdk/apps/teradesk/build/dist (DESKTOP.NAP, desktop.rsc + cicons.rsc NRSC/LP64, icons.rsc native-RSHDR)
+hypview: 1 warning generated.
+hypview: compiled 57 files (3 from sdk/overlays/hypview)
+hypview: -rwxr-xr-x@ 1 ingouhlemann  staff  280144 22 Okt. 15:28 /Volumes/Daten/Development/PiRusTOS/sdk/apps/hypview/build/HYP_VIEW.NAP
+hypview: converted /Volumes/Daten/Development/PiRusTOS/sdk/apps/hypview/hyp_view.rsc -> /Volumes/Daten/Development/PiRusTOS/sdk/apps/hypview/build/hyp_view.rsc: 7 trees, 91 objects, 14 tedinfo, 0 bitblk, 0 iconblk, 15 ciconblk, 29 cicon, 7 frstr, 0 frimg (27747 bytes, RSHDR vrsn 4) [LP64/32B-OBJECT, NRSC v13]
+hypview: -rw-r--r--@ 1 ingouhlemann  staff  27747 22 Okt. 15:28 /Volumes/Daten/Development/PiRusTOS/sdk/apps/hypview/build/hyp_view.rsc
+apitest: 
+apitest: LINK OK -> /private/tmp/claude-501/-Volumes-Daten-Development-PiRusTOS/651de586-7dd7-487b-9e92-c8525c58f508/scratchpad/lb/APITEST-after.NCP (160488 bytes)
+apitest:   Type: SharedObject (0x3)
+apitest:   Machine: EM_AARCH64 (0xB7)
+apitest:   Entry: 0x1000

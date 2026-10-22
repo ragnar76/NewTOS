@@ -57,7 +57,12 @@
 #   - Edits to vendored files live in sdk/libc/overlay/ (applied over the
 #     freshly-extracted mintlib tree by the preamble below):
 #       include/bits/byteswap.h  m68k ror/swap  -> __builtin_bswap32
-#       stdio/vfprintf.c         LP64 is_longlong assignment fix (SET_IS_LONGLONG)
+#       stdio/vfprintf.c         LP64 is_longlong assignment fix (SET_IS_LONGLONG);
+#                                a fully buffered stream that is "seen" but
+#                                has no buffer yet (the redirected stdout)
+#                                gets its st_blksize buffer before the first
+#                                printf instead of buffered_vfprintf's 1 KiB
+#                                path (TASK/LIBC-BUF)
 #       include/mint/{osbind,mintbind,falcon,metados}.h  trap-macro retarget
 #       include/{features,linker}.h  generated config headers
 #       include/setjmp.h         jmp_buf = long[22] on AArch64 (setjmp.S layout)

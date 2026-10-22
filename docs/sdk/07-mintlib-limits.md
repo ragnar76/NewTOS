@@ -87,6 +87,23 @@ before. `stat()` (`__do_stat`, `__quickstat`) still says
 size calls `setvbuf()`. Host-checked by `sdk/libc/tests/fstat-host.sh`
 (through mintlib's own `stdio_init.c`).
 
+**The first `printf` keeps that size (TASK/LIBC-BUF, 2026-10-22, overlay
+`sdk/libc/overlay/stdio/vfprintf.c`).** Upstream, a stream that is already
+initialised but has no buffer yet goes through `buffered_vfprintf`
+(pristine `stdio/vfprintf.c:1326-1329`, `:2237-2258`): a 1-KiB stack buffer, written
+at once, `__bufsize` left 0, so the buffer the next `putc`/`fwrite` allocates
+is `BUFSIZ` = 1 KiB. The redirected `stdout` is such a stream —
+`mintlib/main.c:195-198` wants it fully buffered with `setvbuf(stdout, NULL,
+_IOFBF, 0)`, which `setvbuf.c:63-67` rejects (size 0), and `init_stream_mode`'s
+`fileno()` initialises it with `__bufsize` = 32 KiB but no buffer; so is a
+`fopen` stream whose first call is `fileno()`. The overlay allocates the
+`__bufsize` buffer first, as `ARGCHECK` does for a stream not yet
+initialised. Unchanged: a stream unbuffered by request (`stderr`,
+`setvbuf(_IONBF)`) and a line-buffered one — the console `stdout` still
+writes a `printf` at once while it has no buffer, and is line-buffered with
+1 KiB once a `putc`/`fputs` has given it one. Evidence:
+`measurements/measurement-2026-10-22-libc-buf/RUNINFO.TXT`.
+
 Why: on the real Pi 4 every 1-KiB `fread` on a file became one 1-KiB `Fread`,
 i.e. one SD command: 1.35 MB/s against 11.7 MB/s for one large `Fread`
 (`measurements/measurement-2026-10-07-fs08-pi-after/`). Why 32 KiB and not 64

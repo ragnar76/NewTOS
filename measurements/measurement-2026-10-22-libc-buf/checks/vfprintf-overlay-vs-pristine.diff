@@ -1,0 +1,69 @@
+--- pristine mintlib-0.60.1/stdio/vfprintf.c	2025-03-10 15:42:52
++++ sdk/libc/overlay/stdio/vfprintf.c	2026-10-22 15:23:10
+@@ -223,8 +223,15 @@
+    zero.  */
+ #if defined(LONG_LONG_MAX) && LONG_MAX == LONG_LONG_MAX
+ # define is_longlong 0
++/* LP64 (e.g. AArch64): `long' and `long long' are the same width, so
++   is_longlong is a compile-time constant 0 and must not be assigned to.
++   size_t/ptrdiff_t/intmax_t already fit in a (64-bit) long, so is_long
++   alone selects the correct width; the redundant is_longlong assignment
++   is dropped. */
++# define SET_IS_LONGLONG(x) ((void) 0)
+ #else
+ # define is_longlong is_long_double
++# define SET_IS_LONGLONG(x) (is_longlong = (x))
+ #endif
+ 
+ /* If `long' and `int' is effectively the same type we don't have to
+@@ -1322,6 +1329,29 @@
+ 
+   /* Sanity check of arguments.  */
+   ARGCHECK (s, format);
++
++#ifndef USE_IN_LIBIO
++  /* NewTOS (TASK/LIBC-BUF): a fully buffered stream that has been "seen"
++     (so ARGCHECK did not prime it) but has no buffer yet is not unbuffered,
++     it just has not allocated its buffer.  The redirected stdout is such a
++     stream: mintlib/main.c:195-198 calls setvbuf (stdout, NULL, _IOFBF, 0)
++     "to make stdout fully buffered", which setvbuf.c:63-67 rejects (size 0
++     -> EINVAL) after clearing __linebuf (:48), and init_stream_mode's
++     fileno() (fileno.c:32 -> stdio_init.c:77) marks it seen with __bufsize
++     = st_blksize (32 KiB for a file, FS08 part 4) but no buffer.
++     buffered_vfprintf below would print it through a BUFSIZ stack buffer,
++     write it at once and leave __bufsize 0, so the buffer the next
++     putc/fwrite allocates (internals.c init_stream) is BUFSIZ = 1 KiB.
++     Give such a stream its buffer of __bufsize first, exactly as ARGCHECK
++     does for a stream not seen yet.  Streams that are unbuffered by request
++     (__userbuf, e.g. stderr) and line-buffered streams (the console stdout,
++     whose printf must not be held back) take the upstream path unchanged.  */
++  if (UNBUFFERED_P (s) && !s->__userbuf && !s->__linebuf)
++    {
++      if (__flshfp (s, EOF) == EOF)
++	return -1;
++    }
++#endif
+ 
+   if (UNBUFFERED_P (s))
+     /* Use a helper function which will allocate a local temporary buffer
+@@ -1606,17 +1636,17 @@
+       JUMP (*++f, step4_jumps);
+ 
+     LABEL (mod_size_t):
+-      is_longlong = sizeof (size_t) > sizeof (unsigned long int);
++      SET_IS_LONGLONG (sizeof (size_t) > sizeof (unsigned long int));
+       is_long = sizeof (size_t) > sizeof (unsigned int);
+       JUMP (*++f, step4_jumps);
+ 
+     LABEL (mod_ptrdiff_t):
+-      is_longlong = sizeof (ptrdiff_t) > sizeof (unsigned long int);
++      SET_IS_LONGLONG (sizeof (ptrdiff_t) > sizeof (unsigned long int));
+       is_long = sizeof (ptrdiff_t) > sizeof (unsigned int);
+       JUMP (*++f, step4_jumps);
+ 
+     LABEL (mod_intmax_t):
+-      is_longlong = sizeof (intmax_t) > sizeof (unsigned long int);
++      SET_IS_LONGLONG (sizeof (intmax_t) > sizeof (unsigned long int));
+       is_long = sizeof (intmax_t) > sizeof (unsigned int);
+       JUMP (*++f, step4_jumps);
+ 
