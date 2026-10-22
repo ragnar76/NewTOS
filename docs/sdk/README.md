@@ -59,6 +59,7 @@ by that pass). If a line number does not match, search by the quoted text.
 | [14-present.md](14-present.md) | `PRESENT.NAP`, our own full-screen slide show: slide file format (`SLIDES.TXT`), keys, how it draws (system font read back via `vro_cpyfm`, Scale2x/3x, one RGB565 frame blit, libpng pictures), build + install — TASK/PRESENT01 |
 | [16-newtos-cc.md](16-newtos-cc.md) | The compiler wrapper `sdk/bin/newtos-cc`, the Makefile include `sdk/mk/newtos.mk`, the templates `sdk/templates/{gem-hello,console-hello}`: options, libraries, PRGFLAGS/protection, byte identity with the scripts, what is untested — TASK/SDK01 D |
 | [15-host-checklist.md](15-host-checklist.md) | Checklist for a second Mac: which gitignored files to copy, which tools and versions, proof builds — written to be handed to an agent for verification |
+| [17-linux-test.md](17-linux-test.md) | The Linux test of the Rust-free C path: packages, `sdk/host-report.sh` (builds libraries, host tests, two programs, QED, TeraDesk into one report), expected results against the Mac reference, clang 14 vs. a newer LLVM, what to send back — TASK/SDK01 K |
 
 ## Thirty-second version
 

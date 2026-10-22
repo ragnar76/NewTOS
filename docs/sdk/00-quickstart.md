@@ -87,7 +87,9 @@ Which `clang` version is the minimum is not known: the SDK was only ever
 built with Apple clang 21.0.0. If your distribution's `clang` is old (e.g.
 clang 14 on Debian 12 / LMDE 6) and something fails, a newer one comes from
 the LLVM project's own packages, <https://apt.llvm.org>. Please report what
-worked or failed (issue on GitHub, with the error message).
+worked or failed (issue on GitHub, with the error message). The whole Linux
+check in one script, with the expected results and what to send back:
+[17-linux-test.md](17-linux-test.md).
 
 ### 1.2 Linker and LLVM tools — Rust is optional
 
