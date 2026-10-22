@@ -46,11 +46,34 @@ sudo apt install git curl clang make patch xz-utils python3 build-essential
 sudo apt install qemu-system-arm mtools        # only for step 4b
 ```
 
-`build-essential` gives the host `cc` that `sdk/run-host-tests.sh` uses.
+**Linux, Fedora (untested):**
+
+```sh
+sudo dnf install git curl clang make patch xz python3 gcc
+sudo dnf install qemu-system-aarch64 mtools    # only for step 4b
+```
+
+`build-essential` (Fedora: `gcc`) gives the host `cc` that
+`sdk/run-host-tests.sh` uses.
+
+**No AArch64 cross compiler is needed** — not on an x86_64 PC either, so no
+`aarch64-linux-gnu-gcc`. `clang` is a cross compiler by itself and is used
+purely as one (`-target aarch64-unknown-none-elf`); the distribution packages
+normally include the AArch64 back end. Check it with:
+
+```sh
+clang -print-targets | grep aarch64            # expect a line "aarch64 - AArch64 (little endian)"
+```
+
+The linker is **not** the system's but `rust-lld` from the Rust toolchain
+(next step), which rustup installs on x86_64 hosts as well; libc and the
+runtime are built by the SDK itself from the sources in the repository.
+
 Which `clang` version is the minimum is not known: the SDK was only ever
-built with Apple clang 21.0.0. `clang` is used purely as a cross compiler
-(`-target aarch64-unknown-none-elf`); the linker is **not** the system's but
-`rust-lld` from the Rust toolchain (next step).
+built with Apple clang 21.0.0. If your distribution's `clang` is old (e.g.
+clang 14 on Debian 12 / LMDE 6) and something fails, a newer one comes from
+the LLVM project's own packages, <https://apt.llvm.org>. Please report what
+worked or failed (issue on GitHub, with the error message).
 
 ### 1.2 Rust (for its linker and LLVM tools)
 
@@ -355,7 +378,10 @@ There is no m68k emulator yet: an Atari program runs on NewTOS only if it is
 
 The repository holds the build scripts and patch files for QED (text editor)
 and TeraDesk (desktop); the upstream sources are fetched separately, at the
-commits the ports were made against:
+commits the ports were made against. They are also the best **first test of
+a new toolchain** (on Linux especially): if both build, clang, `rust-lld` and
+the SDK libraries work together. Run the commands inside the NewTOS checkout
+(step 1.3):
 
 ```sh
 git clone https://github.com/freemint/qed.git      sdk/apps/qed
