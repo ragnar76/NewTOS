@@ -1,0 +1,53 @@
+USB01 F1/F2/F8 -- Tester acceptance/regression
+================================================
+
+Date      2026-10-23
+Tested    main @ 7c1f621d (fixes 0a1b80f4 F8, 7e7fbafa F1, 190281c6 F2)
+Baseline  6fc327bf (parent of 0a1b80f4), built in a scratch git worktree, compared run by run
+Who       Tester agent; no hardware, no SD card, no push. Product code untouched.
+
+RESULT
+  1  host tests             PASS  cargo xtask test: 1571 passed / 0 failed / 1 ignored (= developer 1571/0/1);
+                                  sdk/run-host-tests.sh 26 PASS / 0 FAIL / 0 SKIP           checks/cargo-test-xtask.log, sdk-host-tests.log
+  2  fresh builds           PASS  fresh worktrees, own target dirs, SOURCE_DATE_EPOCH=1792152000. qemu-virt dev+release, rpi4 release,
+                                  rpi4 release --features usb-diag: all rc=0. rustc warnings kernel 94 / tos-api 64 on head AND base on every
+                                  build; usb-diag 96 on head AND base (2 x "variable does not need to be mutable" in kernel/src/bootlog.rs,
+                                  untouched by the fixes). clippy kernel 125 / tos-api 76 on both boards, head = base; usb-file lines 44 = 44.
+  3a qemu-virt scenarios    PASS  head vs base, see table below (reproduces the developer's before/after)
+  3b keyboard after fix     PASS  latekbd topology (3 mice, then 4 keyboards behind a hub: keyboards enumerated with commands > 15):
+                                  base: cmd timeouts, no keyboard, Ctrl+Z has no effect (0 differing pixels);
+                                  head: all 8 enumerated, Ctrl+Z opens EmuCON (1014367 px differ), typed "help" echoes. hubkbd (keyboards first):
+                                  works on both (keyboards precede command 16).
+  4  raspi4b regression     PASS  head vs base, release rpi4 kernels, serial=on: APITEST 109/0/5 on both; NEWDESK desktop up (1 drives);
+                                  TeraDesk by #Z; 0 EXC/PANIC; serial logs identical (nd, tera) and screendumps 0 px different (nd, tera).
+                                  USB path inert: "[pcie] RC not present (no response at RC_BASE); USB disabled", no [usb] line.
+  5  usb-diag raspi4b       PASS  C:\USBDIAG.LOG (3717 bytes, 51 lines) written on the card clone and read back with mtools; fsck_msdos rc=0.
+  6  usb-diag kernel left   DONE  see sha256 below
+
+TABLE 3a (qemu-virt dev kernels; mouse = 20 x rel(+10,+6) via QMP, "moved" = 138 differing px = old + new cursor)
+  topology   base 6fc327bf                                             head 7c1f621d
+  default    2 HID configured, mouse moved                             2 devices (2 kbd/mouse), 6 commands, mouse moved
+  hubtree    3 x "enable slot failed" (cmd 16-18), 4 HID, NOT moved     8 devices (7 kbd/mouse), 24 commands, 0 timeouts, moved
+  overfull   4 cmd timeouts, 4 HID, NOT moved                           8 devices, 24 cmds; F8 lines "hub slot 1: ports 8..8 not scanned",
+                                                                        "root port 6: device not enumerated" (MAX_HID); moved
+  mtp        MTP configured as keyboard (ep 0x83, "HID configured:      MTP "not a HID interface (class != 3)", tablet "HID without boot
+             slot 1 ... (keyboard)"), tablet "set_protocol(boot)        subclass: report protocol only", 4 devices (2 kbd/mouse),
+             failed"; 3 HID lines; mouse moved                          10 commands; moved
+  storage    storage not taken; 2 HID; moved                           storage "not a HID interface (class != 3)", 3 devices, 8 cmds; moved
+  EXC/PANIC 0 in every run.
+
+HOW
+  Kernels (SOURCE_DATE_EPOCH=1792152000), method/build-all.sh, not kept in the repo:
+    qemu-virt dev  head cb15aff66ab3e8dbe416638f38312fa676b3d398c5d90075b424889660ad6c9d  base d91cd5a7ea121c42b6948b024bd21ca4cebadf098d31ce4585276cc9795dfcc5
+    rpi4 release   head 77b2efd505031e8e0c2ca55c12d27ab605dcac54cafd2ca3da9dc3092ae720d9  base b21403b95e433c21d067d9a8408872db6f8d9f57820dbb53df7af466bd3b07db
+    rpi4 release usb-diag (head) 86205b81130a925da3daeb77411541f82170a0c66f3bfeba6873bbb64cda72eb
+  qemu-virt: method/run-virt.sh (developer's script + topologies hubkbd, latekbd with device ids) with method/qmp_mouse.py (developer's) and
+    method/qmp_key.py (new: Ctrl+Z = File > Execute EmuCON, then "help"); method/scenarios.sh drives the five topologies.
+    QMP input-send-event "device=<usb id>" aborts QEMU (it names the display device), so keys go to QEMU's default keyboard route.
+  raspi4b: method/run.sh (con04-test copy + CARDGET), cards by method/api-card.sh / mkcard.sh (64 MiB FAT16, label USB01T/A113API,
+    APFS clone per run, deleted after). APITEST.NCP 96ae4de5 PTERMCH.NCP 30fa331e DTACHILD.NCP eaf92b08 (= con04-test hashes).
+  Lint: method/lint.sh (clippy kernel per board, base usb-diag build).
+
+NOT VERIFIED (real Pi 4 only)
+  VL805 following the Link TRB, the two plug combinations of 2026-09-04, interactive keyboard on silicon, USBDIAG.LOG on a real card,
+  usb-diag instrumentation on qemu-virt (no C: there), hotplug.
