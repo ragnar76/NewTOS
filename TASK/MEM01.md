@@ -1,6 +1,6 @@
 # MEM01 — `Mxalloc(-1)` meldet fuer ST-RAM und TT-RAM denselben Wert
 
-Status: **OFFEN** · Prioritaet: **P2** · Typ: Belegter Defekt / Speicherverwaltung — Anwenderbefund am Geraet (2026-09-23)
+Status: **ERLEDIGT 2026-10-22** (behoben mit ARCH03 Stufe 1 `c6280342`, ST/TT getrennt; Hosttest `mem02_mxalloc_modes`, `measurements/measurement-2026-10-17-mem02-tests/`; Anwender 2026-10-22 auf der Pi: TeraDesk-Info zeigt rund 10 MB ST-RAM und rund 730 MB TT-RAM, passend zum Bootschirm minus Belegtes) · Prioritaet: **P2** · Typ: Belegter Defekt / Speicherverwaltung — Anwenderbefund am Geraet (2026-09-23)
 
 Abhaengigkeiten: —
 
