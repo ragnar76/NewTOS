@@ -972,6 +972,18 @@ child's end). Spec `docs/api/gemdos/process/_run-ownership-curdir.md` §6.6,
 `tos-api/tests/proc03_b5_accessory_run.rs`; QEMU probe
 `measurements/measurement-2026-10-19-proc03-b5/`.
 
+**Double-clicking a file no application claims shows nothing; there is no
+built-in file viewer** — user decision, 2026-09-24, confirmed 2026-10-18
+(*"es macht Sinn, eine App als Betrachter zu haben, damit ist man etwas
+flexibler"*). The reference build has `CONF_WITH_SHOW_FILE` = 1
+(`references/emutos/include/config.h:1838-1844`, `docs/api/_emutos-config.md`):
+EmuDESK then shows such a file in its own text view. NewTOS does not build that
+view. A viewer is an ordinary application with an extension assignment
+(e.g. `.TXT` → QED), the same mechanism as for any other document, and
+replaceable. **Observable difference:** without an assignment the double-click
+does nothing. EmuCON's `more` is a separate question ([CON03](../TASK/CON03.md)).
+Ticket [GUI01](../TASK/GUI01.md).
+
 ## EmuTOS is the reference, not the template
 
 CLAUDE.md Rule 1 says EmuTOS source *is* the spec. Through this charter that

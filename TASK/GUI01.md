@@ -1,6 +1,6 @@
 # GUI01 — `CONF_WITH_SHOW_FILE`: Datei per Doppelklick anzeigen
 
-Status: **ZURUECKGESTELLT** (Lead 2026-09-24) · Prioritaet: **P4** · Typ: Funktionsluecke AES/Desktop — aus der Schaltertabelle (REF01)
+Status: **GESCHLOSSEN 2026-10-22** (Anwenderentscheid 2026-10-18: Betrachter als Anwendung + Zuordnung, kein eingebautes `show_file`; Abweichung benannt in `docs/COMPATIBILITY.md`) · Prioritaet: **P4** · Typ: Funktionsluecke AES/Desktop — aus der Schaltertabelle (REF01)
 
 Abhaengigkeiten: —
 
