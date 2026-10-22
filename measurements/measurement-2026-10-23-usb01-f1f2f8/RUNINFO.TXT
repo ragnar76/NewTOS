@@ -1,0 +1,84 @@
+USB01 F1/F2/F8 -- xHCI command ring with Link TRB, HID-boot class filter, logged enumeration limits
+====================================================================================================
+
+Date      2026-10-23
+Ticket    TASK/USB01.md ("Stand 2026-10-23": user approval of F1, F2, F8);
+          analysis docs/api/usb/hid-mouse-protocols.md (29c3aa50), fix list F0-F9
+Commits   0a1b80f4 F8 (logging + command counter), 7e7fbafa F1 (Link TRB), 190281c6 F2 (class filter)
+Who       Developer agent. No hardware touched, no card written, nothing pushed.
+
+WHAT
+----
+1. F1: before the fix, does a device tree that needs more than 15 xHCI commands lose devices?
+   After it, are all enumerated, and does a mouse enumerated after command #15 move the cursor?
+2. F2: does a non-HID interface with bInterfaceProtocol 1 still get taken as a keyboard?
+   Does a report-only HID still get SET_PROTOCOL(boot)?
+3. F8: is every limit that drops a device named in the log?
+4. Regression: keyboard + mouse on root ports still enumerate, the mouse still moves the cursor.
+
+HOW
+---
+QEMU 11.0.2 `-M virt,gic-version=2 -cpu cortex-a72 -m 272M -device ramfb -device qemu-xhci`. This is the
+tools/xtask qemu-virt machine line with a chosen USB topology (method/run-virt.sh). Serial to file. QMP on a
+relative unix socket in the session scratch.
+Kernels: method/build-virt.sh, a fresh qemu-virt dev build of the working tree at each step:
+  k-f8only.img fff21904650089b9186ed2e3dade6800b1e787decef6661a5dbca889f5e3cb6c  (= 0a1b80f4, before F1)
+  k-f1.img     8216f32a87c3618bf1dd3d07505d501a9f1de45e39fa063f64869b670e3f124f  (= 7e7fbafa, before F2)
+  k-f2.img     c80a35143fff02061a649855fdc35f7bde6ba6e47558a7ede3c241d1a3dad4d1  (= 190281c6)
+Images are not kept. usb-storage used an APFS clone (cp -c) of a zeroed 16 MiB raw file per run, deleted after.
+Mouse check: method/qmp_mouse.py waits for "[desk] desktop up". It takes a screendump, sends 20 x rel (+10,+6)
+through QMP input-send-event (QEMU's usb-mouse turns these into real HID boot reports on its interrupt
+endpoint) and takes a second screendump. method/pixdiff.py lists the differing pixels.
+
+Topologies (run-virt.sh):
+  default   usb-kbd + usb-mouse on root ports
+  hubtree   usb-hub (full speed) on a root port with 4 usb-kbd + 3 usb-mouse behind it: 8 device entries
+            (= MAX_HID) x 3 commands = 24 command TRBs
+  overfull  hubtree + one more usb-mouse on a root port (9th device)
+  storage   usb-storage + usb-kbd + usb-mouse
+  mtp       usb-mtp (Still Image, class 6/subclass 1/protocol 1, interrupt-IN event endpoint) + usb-tablet
+            (HID 3/0/0, report protocol only) + usb-kbd + usb-mouse
+
+RESULTS
+-------
+F1 (command ring)
+  serial/a-pre-f1-hubtree.log (k-f8only): commands 1-15 succeed. Then
+     "[usb] cmd timeout: command #16 at ring index 0 ..." and "enable slot failed (port 5 route 0x5)"
+     for commands #16, #17 and #18. The three mice at hub ports 5-7 are missing:
+     "enumeration done: 5 devices (4 keyboard/mouse), 18 commands issued".
+     This confirms analysis §3.1: the 16th command is lost.
+  serial/f-pre-f1-hubtree-mouse.log + screendumps/pre-hubtree-*.png: same kernel, cursor moved: 0 differing pixels.
+  serial/b-f1-hubtree.log (k-f1): all 8 enumerate, "enumeration done: 8 devices (7 keyboard/mouse),
+     24 commands issued" -- one and a half passes over the 16-entry ring.
+  serial/e-f1-hubtree-mouse.log + screendumps/f1-hubtree-*.png: the cursor moves from (959,539) to
+     (1159,659) = 20 x (+10,+6). The mice behind the hub were enumerated with commands 16-24.
+F8 (limits)
+  b: "hub slot 1: ports 8..8 not scanned -- all 8 device entries (MAX_HID, hubs included) in use"
+  serial/c-f1-overfull.log: in addition "root port 6: device not enumerated -- all 8 device entries ...".
+  i (below): one line per interface not used, with its class triple and the reason.
+F2 (class filter)
+  serial/h-pre-f2-mtp-tablet.log (k-f1): the MTP device is configured as a keyboard:
+     "HID iface 0 protocol 1 -> int-IN ep 0x83 max 64 ...", "HID configured: slot 1 ep 0x83 dci 7 (keyboard)".
+     The tablet gets SET_PROTOCOL(boot): "set_protocol(boot) failed".
+     This confirms analysis catalogue E in QEMU.
+  serial/i-f2-mtp-tablet.log (k-f2):
+     "slot 1 iface 0 alt 0 (class 6 subclass 1 protocol 1) not used: not a HID interface (class != 3)"
+     "slot 2 iface 0 alt 0 (class 3 subclass 0 protocol 0) not used: HID without boot subclass: ..."
+     keyboard and mouse configured, "4 devices (2 keyboard/mouse), 10 commands issued".
+  serial/g-f2-storage.log (k-f2): usb-storage "(class 8 subclass 6 protocol 80) not used: not a HID
+     interface". This is not a before/after case: storage has bulk endpoints only, so the old code did not take it either.
+Regression (mouse input)
+  d-f1-default-mouse, g-f2-storage, i-f2-mtp-tablet, j-f2-hubtree-mouse: the cursor moves by 20 x (+10,+6)
+  in every run, 138 differing pixels (69 old position + 69 new) -- screendumps/*-0-before / *-1-after.
+
+Host tests: cargo xtask test 1557 -> 1571 passed / 0 failed / 1 ignored (+5 xhci ring, +9 config descriptor).
+Clippy kernel (both boards) 125 = base, usb files 44 lines = base; host-test warnings 127 = base.
+
+NOT COVERED HERE (real Pi 4 only)
+---------------------------------
+QEMU raspi4b has no VL805/PCIe xHCI. Still open on the real Pi: the VL805 following the command-ring Link
+TRB, the two plug combinations of 2026-09-04, and the boot-log summary line.
+
+FILES
+-----
+method/run-virt.sh, build-virt.sh, qmp_mouse.py, pixdiff.py; serial/a..j; screendumps/ (14 PNG).
