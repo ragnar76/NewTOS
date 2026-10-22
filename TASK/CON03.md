@@ -30,3 +30,8 @@ Bezug: [GUI01](GUI01.md) — Textbetrachter im Desktop bleibt eine angemeldete
 Anwendung (Anwender 2026-10-18 bestaetigt).
 
 [Gemeinsame Regeln](README.md) gelten.
+
+## Anwenderentscheid 2026-10-22
+
+EmuCON als eigenes EL0-Programm (ADR-026-Muster wie NEWDESK), Befehlssatz
+1:1 nach `references/emutos/cli/`. Nicht in der Kernel-Konsole nachruesten.

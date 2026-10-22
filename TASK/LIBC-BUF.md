@@ -10,3 +10,10 @@ Konsole wie bei einer Datei. Upstream-stdio-Pfad. Pruefen, ob dasselbe auch
 `0abc634`) unterlaeuft; dann entscheiden.
 
 [Gemeinsame Regeln](README.md) gelten.
+
+## Anwenderentscheid 2026-10-22
+
+Fix einbauen: umgelenktes `stdout` soll nach dem ersten `printf` denselben
+Puffer behalten wie eine `fopen`-Datei (32 KiB, FS08-Regel), als Patch in
+`sdk/overlays/` bzw. `sdk/libc/overlay/` (Upstream bleibt unveraendert).
+Befund dazu: `docs/analysis/open-tickets-review-2026-10-19.md` §LIBC-BUF.
