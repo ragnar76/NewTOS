@@ -94,7 +94,7 @@ const INFO_LENGTH: i16 = 40;
 /// The NewTOS version string, as the boot screen's `Version` line prints it.
 /// The desktop's About box shows the same text from its own constant — see the
 /// block comment above.
-pub(crate) const VERSION_STRING: &str = "NewTOS 0.6";
+pub(crate) const VERSION_STRING: &str = "NewTOS 0.6.1";
 
 /// The project's independence notice, as the boot screen's footer carries it.
 /// This is the NewTOS counterpart of the GPL/attribution block EmuTOS puts in

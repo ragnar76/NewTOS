@@ -120,7 +120,7 @@ fn execute(line: &mut [u8; LINE_MAX], n: usize) -> bool {
         b"" => {}
         b"exit" | b"quit" => return true,
         b"help" => cmd_help(),
-        b"ver" => puts(b"NewTOS 0.6 - clean-room TOS for AArch64\r\n"),
+        b"ver" => puts(b"NewTOS 0.6.1 - clean-room TOS for AArch64\r\n"),
         b"cls" => crate::fbcon::clear_and_home(),
         b"pwd" => cmd_pwd(),
         b"cd" => cmd_cd(line, arg_start, n),
