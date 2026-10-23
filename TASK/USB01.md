@@ -58,4 +58,14 @@ F1/F2/F8 umgesetzt (`0a1b80f4`, `7e7fbafa`, `190281c6`, `7c1f621d`), Tester PASS
 (`34f73b01`). Echte Pi offen: Steckkombinationen, >15 Befehle am VL805,
 `C:\USBDIAG.LOG`. Nebenbefunde: [USB02](USB02.md).
 
+## Stand 2026-10-23 (Diagnosewerkzeug, Schritt 2)
+
+Anwender waehlt Weg (a). Spec-ENTWURF: [`docs/api/usb/usb-snapshot.md`](../docs/api/usb/usb-snapshot.md)
+(`Ssystem`-Modus 2022 + Konsolenprogramm `USBSNAP.NCP`, eine Textdatei je Geraet auf `C:\`),
+Modus-Zeile als DRAFT in `docs/api/gemdos/154-ssystem.md`. **Nichts gebaut**, wartet auf
+Freigabe und die Antworten zu §7 des Entwurfs. Wichtigster Befund: seit F2 werden
+Report-only-Geraete gar nicht mehr konfiguriert — der Kern braucht einen Beobachtungs-Pfad,
+sonst zeigt das Werkzeug genau die Maeuse nicht, derentwegen es gebaut wird. Aufwand
+geschaetzt 7–9 Tage (ohne Hardware-Iterationen).
+
 [Gemeinsame Regeln](README.md) gelten.

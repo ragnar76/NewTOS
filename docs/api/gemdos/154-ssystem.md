@@ -174,6 +174,16 @@ NewTOS identity, but that is a separate decision.
 | `S_NEWTOS_INPUTMODE` | 2020 | input | where the keyboard/mouse pump runs (timer pump / `input=aes`) — KEYOWNER |
 | `S_NEWTOS_RESET` | 2021 | kernel | restart the machine — the kernel entry of the OSHEADER reset stub (RST01), see below |
 
+### NewTOS-own modes — **DRAFT, not implemented** (pending user approval)
+
+Until implemented these numbers answer `EINVFN` like any unknown mode
+(`tos-api/src/gemdos/ssystem.rs:124`); `tos-api/tests/gemdos_ssystem_sysinfo.rs`
+still pins "2022 is not a mode" and moves to 2023 with the implementation.
+
+| Mode | Value | Group | Notes |
+|------|------:|-------|-------|
+| `S_NEWTOS_USBSNAP` | 2022 | input / USB | **DRAFT** (USB01 step 2): snapshot of the enumerated USB devices into a caller buffer — device list with hub/port route, speed, VID/PID, chosen driver role + rejection reason, raw device/configuration/HID-report descriptors, per-device ring of raw interrupt reports, optional timed mute of the input decoder. Versioned little-endian buffer, `Ssystem(2022, buf, len)` with a 32-byte request header at `buf`; `E_OK` / `ERROR` (no USB controller, e.g. `raspi4b`) / `EINVAL`. Full spec: [`../usb/usb-snapshot.md`](../usb/usb-snapshot.md) |
+
 **Why the number block is free.** FreeMiNT's `sys/mint/ssystem.h` (@ `f906416`)
 assigns 0–29, 100 and `0x54f8` (21752), and reserves two ranges by comment:
 *"additional informations about the kernel / reserved 900 - 999"* and *"debug
@@ -391,8 +401,9 @@ Where a fact is not known on a board, the answer is `ERROR` — the same rule as
 | 2019 | string | string | `ERROR` |
 | 2020 | 0 / 1 | 0 / 1 | `ERROR` |
 
-Tests: `tos-api/tests/gemdos_ssystem_sysinfo.rs` (2021 is the next free
-number and answers `EINVFN`).
+Tests: `tos-api/tests/gemdos_ssystem_sysinfo.rs` (2022 answers `EINVFN` until the
+DRAFT USB snapshot mode above is implemented; 2021 is `S_NEWTOS_RESET`, so 2022 was
+the next free number — corrected 2026-10-23, the old text called 2021 free).
 
 ---
 
